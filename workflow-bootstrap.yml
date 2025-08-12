@@ -1,0 +1,43 @@
+name: 'Calimero Bootstrap Workflow'
+description: 'Automated workflow for setting up Calimero nodes with application installation and identity management'
+stop_all_nodes: false
+wait_timeout: 60
+
+# Use existing nodes instead of creating new ones
+nodes:
+  calimero-node-1:
+    port: 2428
+    rpc_port: 2528
+    chain_id: 'testnet-1'
+  calimero-node-2:
+    port: 2429
+    rpc_port: 2529
+    chain_id: 'testnet-1'
+
+steps:
+  - name: 'Install Application on Node 1'
+    type: 'install_application'
+    node: 'calimero-node-1'
+    path: './kv_store.wasm'
+    dev: true
+    
+  - name: 'Create Context on Node 1'
+    type: 'create_context'
+    node: 'calimero-node-1'
+    application_id: '{{install.calimero-node-1}}'
+    
+  - name: 'Create Identity on Node 2'
+    type: 'create_identity'
+    node: 'calimero-node-2'
+    
+  - name: 'Wait for Identity Creation'
+    type: 'wait'
+    seconds: 5
+    
+  - name: 'Invite Node 2 from Node 1'
+    type: 'invite_identity'
+    node: 'calimero-node-1'
+    context_id: '{{context.calimero-node-1}}'
+    granter_id: '{{identity.calimero-node-1}}'
+    grantee_id: '{{identity.calimero-node-2}}'
+    capability: 'read'
