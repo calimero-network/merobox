@@ -1,38 +1,72 @@
 description: A sample workflow that demonstrates the bootstrap functionality
 name: Sample Calimero Workflow
+
 nodes:
   chain_id: testnet-1
   count: 2
   image: ghcr.io/calimero-network/merod:6a47604
   prefix: calimero-node
+
 steps:
-- dev: true
-  name: Install Application on Node 1
-  node: calimero-node-1
-  path: ./kv_store.wasm
-  type: install_application
-- application_id: '{{install.calimero-node-1}}'
-  name: Create Context on Node 1
-  node: calimero-node-1
-  type: create_context
-- name: Create Identity on Node 2
-  node: calimero-node-2
-  type: create_identity
-- name: Wait for Identity Creation
-  seconds: 5
-  type: wait
-- capability: member
-  context_id: '{{context.calimero-node-1}}'
-  grantee_id: '{{identity.calimero-node-2}}'
-  granter_id: '{{context.calimero-node-1.memberPublicKey}}'
-  name: Invite Node 2 from Node 1
-  node: calimero-node-1
-  type: invite_identity
-- context_id: '{{context.calimero-node-1}}'
-  invitee_id: '{{identity.calimero-node-2}}'
-  invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'
-  name: Join Context from Node 2
-  node: calimero-node-2
-  type: join_context
+  # Step 1: Install the application on the first node
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: ./kv_store.wasm
+    dev: true
+
+  # Step 2: Create a context using the installed application
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{install.calimero-node-1}}'
+
+  # Step 3: Generate an identity on the second node
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+
+  # Step 4: Wait for identity creation to complete
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Step 5: Invite the second node to join the context
+  - name: Invite Node 2 from Node 1
+    type: invite_identity
+    node: calimero-node-1
+    context_id: '{{context.calimero-node-1}}'
+    grantee_id: '{{identity.calimero-node-2}}'
+    granter_id: '{{context.calimero-node-1.memberPublicKey}}'
+    capability: member
+
+  # Step 6: Join the context from the second node
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context.calimero-node-1}}'
+    invitee_id: '{{identity.calimero-node-2}}'
+    invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'
+
+  # Step 7: Execute a contract call to set a key-value pair
+  - name: Execute Contract Call - Set Key-Value
+    type: execute
+    node: calimero-node-1
+    context_id: '{{context.calimero-node-1}}'
+    method: set
+    args:
+      key: hello
+      value: world
+
+  # Step 8: Execute a view call to retrieve the stored value
+  - name: Execute View Call - Get Value
+    type: execute
+    node: calimero-node-1
+    context_id: '{{context.calimero-node-2}}'
+    method: get
+    args:
+      key: hello
+
+# Configuration options
 stop_all_nodes: true
 wait_timeout: 60

@@ -7,6 +7,7 @@ A Python CLI tool for managing Calimero nodes in Docker containers.
 import click
 from commands import run, stop, list, logs, health, install, nuke, context, identity, bootstrap
 from commands.join import join
+from commands.execute import execute
 
 @click.group()
 @click.version_option(version="1.0.0")
@@ -25,6 +26,7 @@ cli.add_command(nuke)
 cli.add_command(context)
 cli.add_command(identity)
 cli.add_command(join)
+cli.add_command(execute)
 cli.add_command(bootstrap)
 
 if __name__ == '__main__':
