@@ -10,7 +10,7 @@ from commands.join import join
 from commands.execute import execute
 
 @click.group()
-@click.version_option(version="2.0.0")
+@click.version_option(version="0.1.0")
 def cli():
     """Merobox CLI - Manage Calimero nodes in Docker containers."""
     pass
