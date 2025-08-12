@@ -24,9 +24,9 @@ from .utils import (
 )
 
 # Import the async functions from other commands
-from .install import install_application_via_api
-from .context import create_context_via_api
-from .identity import generate_identity_via_api, invite_identity_via_api
+from .install import install_application_via_admin_api
+from .context import create_context_via_admin_api
+from .identity import generate_identity_via_admin_api, invite_identity_via_admin_api
 
 class WorkflowExecutor:
     """Executes Calimero workflows based on YAML configuration."""
@@ -117,18 +117,30 @@ class WorkflowExecutor:
                         return value
             
             elif placeholder.startswith('context.'):
-                # Format: {{context.node_name}}
+                # Format: {{context.node_name}} or {{context.node_name.field}}
                 parts = placeholder.split('.', 1)
                 if len(parts) == 2:
-                    node_name = parts[1]
+                    node_part = parts[1]
+                    # Check if there's a field specification (e.g., context.node_name.memberPublicKey)
+                    if '.' in node_part:
+                        node_name, field_name = node_part.split('.', 1)
+                    else:
+                        node_name = node_part
+                        field_name = None
+                    
                     context_key = f"context_{node_name}"
                     if context_key in self.workflow_results:
                         result = self.workflow_results[context_key]
-                        # Try to extract context ID from the result
+                        # Try to extract context ID or specific field from the result
                         if isinstance(result, dict):
                             # Handle nested data structure
                             actual_data = result.get('data', result)
-                            return actual_data.get('id', actual_data.get('contextId', actual_data.get('name', value)))
+                            if field_name:
+                                # Return specific field (e.g., memberPublicKey)
+                                return actual_data.get(field_name, value)
+                            else:
+                                # Return context ID
+                                return actual_data.get('id', actual_data.get('contextId', actual_data.get('name', value)))
                         return str(result)
                     else:
                         console.print(f"[yellow]Warning: Context result for {node_name} not found, using placeholder[/yellow]")
@@ -150,6 +162,36 @@ class WorkflowExecutor:
                         return str(result)
                     else:
                         console.print(f"[yellow]Warning: Identity result for {node_name} not found, using placeholder[/yellow]")
+                        return value
+            
+            elif placeholder.startswith('invite.'):
+                # Format: {{invite.node_name_identity.node_name}}
+                parts = placeholder.split('.', 1)
+                if len(parts) == 2:
+                    invite_part = parts[1]
+                    # Parse the format: node_name_identity.node_name
+                    if '_identity.' in invite_part:
+                        inviter_node, identity_node = invite_part.split('_identity.', 1)
+                        # First resolve the identity to get the actual public key
+                        identity_placeholder = f"{{{{identity.{identity_node}}}}}"
+                        actual_identity = self._resolve_dynamic_value(identity_placeholder)
+                        
+                        # Now construct the invite key using the actual identity
+                        invite_key = f"invite_{inviter_node}_{actual_identity}"
+                        
+                        if invite_key in self.workflow_results:
+                            result = self.workflow_results[invite_key]
+                            # Try to extract invitation data from the result
+                            if isinstance(result, dict):
+                                # Handle nested data structure
+                                actual_data = result.get('data', result)
+                                return actual_data.get('invitation', actual_data.get('id', actual_data.get('name', value)))
+                            return str(result)
+                        else:
+                            console.print(f"[yellow]Warning: Invite result for {invite_key} not found, using placeholder[/yellow]")
+                            return value
+                    else:
+                        console.print(f"[yellow]Warning: Invalid invite placeholder format {placeholder}, using as-is[/yellow]")
                         return value
             
             elif placeholder in self.dynamic_values:
@@ -299,6 +341,8 @@ class WorkflowExecutor:
                     success = await self._execute_invite_step(step)
                 elif step_type == 'wait':
                     success = await self._execute_wait_step(step)
+                elif step_type == 'join_context':
+                    success = await self._execute_join_step(step)
                 else:
                     console.print(f"[red]Unknown step type: {step_type}[/red]")
                     return False
@@ -336,14 +380,21 @@ class WorkflowExecutor:
         
         # Execute installation
         if is_dev and application_path:
-            result = await install_application_via_api(
-                rpc_url, 
-                path=application_path,
-                is_dev=True,
-                node_name=node_name
-            )
+                    result = await install_application_via_admin_api(
+            rpc_url, 
+            path=application_path,
+            is_dev=True,
+            node_name=node_name
+        )
         else:
-            result = await install_application_via_api(rpc_url, url=application_url)
+            result = await install_application_via_admin_api(rpc_url, url=application_url)
+        
+        # Log detailed API response
+        console.print(f"[cyan]🔍 Install API Response for {node_name}:[/cyan]")
+        console.print(f"  Success: {result.get('success')}")
+        console.print(f"  Data: {result.get('data')}")
+        if not result.get('success'):
+            console.print(f"  Error: {result.get('error')}")
         
         if result['success']:
             # Store result for later use
@@ -384,7 +435,14 @@ class WorkflowExecutor:
             return False
         
         # Execute context creation
-        result = await create_context_via_api(rpc_url, application_id)
+        result = await create_context_via_admin_api(rpc_url, application_id)
+        
+        # Log detailed API response
+        console.print(f"[cyan]🔍 Context Creation API Response for {node_name}:[/cyan]")
+        console.print(f"  Success: {result.get('success')}")
+        console.print(f"  Data: {result.get('data')}")
+        if not result.get('success'):
+            console.print(f"  Error: {result.get('error')}")
         
         if result['success']:
             # Store result for later use
@@ -415,7 +473,14 @@ class WorkflowExecutor:
             return False
         
         # Execute identity creation
-        result = await generate_identity_via_api(rpc_url)
+        result = await generate_identity_via_admin_api(rpc_url)
+        
+        # Log detailed API response
+        console.print(f"[cyan]🔍 Identity Creation API Response for {node_name}:[/cyan]")
+        console.print(f"  Success: {result.get('success')}")
+        console.print(f"  Data: {result.get('data')}")
+        if not result.get('success'):
+            console.print(f"  Error: {result.get('error')}")
         
         if result['success']:
             # Store result for later use
@@ -438,9 +503,9 @@ class WorkflowExecutor:
         """Execute an invite identity step."""
         node_name = step['node']
         context_id = self._resolve_dynamic_value(step['context_id'])
-        granter_id = self._resolve_dynamic_value(step['granter_id'])
-        grantee_id = self._resolve_dynamic_value(step['grantee_id'])
-        capability = step.get('capability', 'read')
+        inviter_id = self._resolve_dynamic_value(step['granter_id'])  # Keep granter_id for backward compatibility
+        invitee_id = self._resolve_dynamic_value(step['grantee_id'])  # Keep grantee_id for backward compatibility
+        capability = step.get('capability', 'member')
         
         # Get node RPC URL
         try:
@@ -450,14 +515,30 @@ class WorkflowExecutor:
             return False
         
         # Execute invitation
-        result = await invite_identity_via_api(
-            rpc_url, context_id, granter_id, grantee_id, capability
+        from .identity import invite_identity_via_admin_api
+        result = await invite_identity_via_admin_api(
+            rpc_url, context_id, inviter_id, invitee_id, capability
         )
+        
+        # Log detailed API response
+        console.print(f"[cyan]🔍 Invitation API Response for {node_name}:[/cyan]")
+        console.print(f"  Success: {result.get('success')}")
+        console.print(f"  Data: {result.get('data')}")
+        console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
+        console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
+        if not result.get('success'):
+            console.print(f"  Error: {result.get('error')}")
+            if 'tried_payloads' in result:
+                console.print(f"  Tried Payloads: {result['tried_payloads']}")
+            if 'errors' in result:
+                console.print(f"  Detailed Errors: {result['errors']}")
         
         if result['success']:
             # Store result for later use
-            step_key = f"invite_{node_name}_{grantee_id}"
-            self.workflow_results[step_key] = result['data']
+            step_key = f"invite_{node_name}_{invitee_id}"
+            # Extract the actual invitation data from the nested response
+            invitation_data = result['data'].get('data') if isinstance(result['data'], dict) else result['data']
+            self.workflow_results[step_key] = invitation_data
             return True
         else:
             console.print(f"[red]Invitation failed: {result.get('error', 'Unknown error')}[/red]")
@@ -469,6 +550,59 @@ class WorkflowExecutor:
         console.print(f"Waiting {wait_seconds} seconds...")
         await asyncio.sleep(wait_seconds)
         return True
+
+    async def _execute_join_step(self, step: Dict[str, Any]) -> bool:
+        """Execute a join context step."""
+        node_name = step['node']
+        context_id = self._resolve_dynamic_value(step['context_id'])
+        invitee_id = self._resolve_dynamic_value(step['invitee_id'])
+        invitation = self._resolve_dynamic_value(step['invitation'])
+        
+        # Debug: Show resolved values
+        console.print(f"[blue]Debug: Resolved values for join step:[/blue]")
+        console.print(f"  context_id: {context_id}")
+        console.print(f"  invitee_id: {invitee_id}")
+        console.print(f"  invitation: {invitation[:50] if isinstance(invitation, str) and len(invitation) > 50 else invitation}")
+        console.print(f"  invitation type: {type(invitation)}")
+        console.print(f"  invitation length: {len(invitation) if isinstance(invitation, str) else 'N/A'}")
+        
+        # Get node RPC URL
+        try:
+            rpc_url = get_node_rpc_url(node_name, self.manager)
+        except Exception as e:
+            console.print(f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]")
+            return False
+        
+        # Execute join
+        console.print(f"[blue]About to import join function...[/blue]")
+        from .join import join_context_via_admin_api
+        console.print(f"[blue]About to call join function...[/blue]")
+        result = await join_context_via_admin_api(
+            rpc_url, context_id, invitee_id, invitation
+        )
+        console.print(f"[blue]Join function returned: {result}[/blue]")
+        
+        # Log detailed API response
+        console.print(f"[cyan]🔍 Join API Response for {node_name}:[/cyan]")
+        console.print(f"  Success: {result.get('success')}")
+        console.print(f"  Data: {result.get('data')}")
+        console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
+        console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
+        if not result.get('success'):
+            console.print(f"  Error: {result.get('error')}")
+            if 'tried_payloads' in result:
+                console.print(f"  Tried Payloads: {result['tried_payloads']}")
+            if 'errors' in result:
+                console.print(f"  Detailed Errors: {result['errors']}")
+        
+        if result['success']:
+            # Store result for later use
+            step_key = f"join_{node_name}_{invitee_id}"
+            self.workflow_results[step_key] = result['data']
+            return True
+        else:
+            console.print(f"[red]Join failed: {result.get('error', 'Unknown error')}[/red]")
+            return False
 
 def load_workflow_config(config_path: str) -> Dict[str, Any]:
     """Load workflow configuration from YAML file."""
@@ -533,11 +667,19 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
             {
                 'name': 'Invite Node 2 from Node 1',
                 'type': 'invite_identity',
-                'node': 'calimero-node-1',
                 'context_id': '{{context.calimero-node-1}}',
-                'granter_id': '{{identity.calimero-node-1}}',
-                'grantee_id': '{{identity.calimero-node-2}}',
-                'capability': 'read'
+                'invitee_id': '{{identity.calimero-node-2}}',
+                'granter_id': '{{context.calimero-node-1.memberPublicKey}}',
+                'capability': 'member',
+                'node': 'calimero-node-1'
+            },
+            {
+                'name': 'Join Context from Node 2',
+                'type': 'join_context',
+                'context_id': '{{context.calimero-node-1}}',
+                'invitee_id': '{{identity.calimero-node-2}}',
+                'invitation': '{{invite.calimero-node-1_identity.calimero-node-2}}',
+                'node': 'calimero-node-2'
             }
         ]
     }

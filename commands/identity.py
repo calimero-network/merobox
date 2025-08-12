@@ -1,5 +1,5 @@
 """
-Identity command - List and generate identities for Calimero contexts.
+Identity command - List and generate identities for Calimero contexts using JSON-RPC client.
 """
 
 import click
@@ -49,45 +49,62 @@ def create_identity_table(identities_data: list, context_id: str) -> Table:
     
     return table
 
-async def list_identities_via_api(rpc_url: str, context_id: str) -> dict:
+async def list_identities_via_admin_api(rpc_url: str, context_id: str) -> dict:
     """List identities for a specific context using the admin API."""
     try:
-        import aiohttp
+        # Import the admin client
+        import sys
+        sys.path.append('./externals/calimero-client-py')
+        from calimero import AdminClient
         
-        async with aiohttp.ClientSession() as session:
-            endpoint = f"{rpc_url}/admin-api/contexts/{context_id}/identities"
-            headers = {'Content-Type': 'application/json'}
-            
-            async with session.get(endpoint, headers=headers, timeout=30) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return {'success': True, 'data': result}
-                else:
-                    error_text = await response.text()
-                    return {'success': False, 'error': f"HTTP {response.status}: {error_text}"}
+        # Create admin client and list identities
+        admin_client = AdminClient(rpc_url)
+        result = await admin_client.list_identities(context_id)
+        
+        return result
         
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-async def generate_identity_via_api(rpc_url: str) -> dict:
-    """Generate a new identity using the admin API as per Rust implementation."""
+async def generate_identity_via_admin_api(rpc_url: str) -> dict:
+    """Generate a new identity using the admin API."""
     try:
-        import aiohttp
+        # Import the admin client
+        import sys
+        sys.path.append('./externals/calimero-client-py')
+        from calimero import AdminClient
         
-        async with aiohttp.ClientSession() as session:
-            # Based on Rust implementation: admin-api/identity/context with no parameters
-            endpoint = f"{rpc_url}/admin-api/identity/context"
-            
-            headers = {'Content-Type': 'application/json'}
-            
-            # No payload needed as per Rust implementation
-            async with session.post(endpoint, json=None, headers=headers, timeout=30) as response:
-                if response.status in [200, 201]:
-                    result = await response.json()
-                    return {'success': True, 'data': result, 'endpoint': endpoint}
-                else:
-                    error_text = await response.text()
-                    return {'success': False, 'error': f"HTTP {response.status}: {error_text}"}
+        # Create admin client and generate identity
+        admin_client = AdminClient(rpc_url)
+        result = await admin_client.generate_identity()
+        
+        # Add endpoint info for compatibility
+        if result['success']:
+            result['endpoint'] = f"{rpc_url}/admin-api/identity/context"
+        
+        return result
+        
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+async def invite_identity_via_admin_api(rpc_url: str, context_id: str, inviter_id: str, invitee_id: str, capability: str = None) -> dict:
+    """Invite an identity to a context using the admin API."""
+    try:
+        # Import the admin client
+        import sys
+        sys.path.append('./externals/calimero-client-py')
+        from calimero import AdminClient
+        
+        # Create admin client and invite identity
+        admin_client = AdminClient(rpc_url)
+        result = await admin_client.invite_to_context(context_id, inviter_id, invitee_id)
+        
+        # Add endpoint and payload format info for compatibility
+        if result['success']:
+            result['endpoint'] = f"{rpc_url}/admin-api/contexts/invite"
+            result['payload_format'] = 0  # Standard format
+        
+        return result
         
     except Exception as e:
         return {'success': False, 'error': str(e)}
@@ -112,7 +129,7 @@ def list_identities(node, context_id, verbose):
     admin_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Listing identities for context {context_id} on node {node} via {admin_url}[/blue]")
     
-    result = run_async_function(list_identities_via_api, admin_url, context_id)
+    result = run_async_function(list_identities_via_admin_api, admin_url, context_id)
     
     if result['success']:
         response_data = result.get('data', {})
@@ -154,7 +171,7 @@ def generate(node, verbose=False):
     admin_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Generating new identity on node {node} via {admin_url}[/blue]")
     
-    result = run_async_function(generate_identity_via_api, admin_url)
+    result = run_async_function(generate_identity_via_admin_api, admin_url)
     
     # Show which endpoint was used if successful
     if result['success'] and 'endpoint' in result:
@@ -194,77 +211,15 @@ def generate(node, verbose=False):
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
-async def invite_identity_via_api(rpc_url: str, context_id: str, granter_id: str, grantee_id: str, capability: str) -> dict:
-    """Invite an identity to a context by granting capabilities using the admin API."""
-    try:
-        import aiohttp
-        
-        async with aiohttp.ClientSession() as session:
-            # Based on Rust implementation: use the correct grant endpoint
-            endpoint = f"{rpc_url}/admin-api/contexts/{context_id}/capabilities/grant"
-            
-            # Create payload for granting capabilities based on Rust implementation
-            # The Rust code shows: vec![(grantee_id, self.capability.into())]
-            # The API expects a vector of tuples, so we use a list of tuples
-            # Each tuple should have exactly 2 elements: [grantee_id, capability]
-            # Try different payload structures to match the API expectations
-            payload = [
-                [grantee_id, capability]
-            ]
-            
-            # Alternative payload formats to try if the first one fails
-            # Map common capability names to the expected enum values
-            capability_mapping = {
-                'member': 'ManageMembers',
-                'manage': 'ManageMembers', 
-                'admin': 'ManageApplication',
-                'proxy': 'Proxy'
-            }
-            
-            mapped_capability = capability_mapping.get(capability, capability)
-            
-            alternative_payloads = [
-                {"signer_id": granter_id, "capabilities": [[grantee_id, mapped_capability]]},  # With signer_id and capabilities
-                {"capabilities": [[grantee_id, mapped_capability]]},  # Just capabilities
-                {"signer_id": granter_id, "capabilities": [grantee_id, mapped_capability]},  # Alternative format
-                [grantee_id, mapped_capability],  # Simple tuple format
-            ]
-            
-            headers = {'Content-Type': 'application/json'}
-            
-            # Try different payload formats
-            errors = []
-            for i, test_payload in enumerate(alternative_payloads):
-                try:
-                    async with session.post(endpoint, json=test_payload, headers=headers, timeout=30) as response:
-                        if response.status in [200, 201]:
-                            result = await response.json()
-                            return {'success': True, 'data': result, 'endpoint': endpoint, 'payload_format': i}
-                        else:
-                            error_text = await response.text()
-                            errors.append(f"Format {i}: HTTP {response.status} - {error_text}")
-                            if response.status != 422:
-                                # If it's not a 422, stop trying
-                                return {'success': False, 'error': f"HTTP {response.status}: {error_text}", 'payload': test_payload, 'payload_format': i}
-                except Exception as e:
-                    errors.append(f"Format {i}: Exception - {str(e)}")
-                    continue
-            
-            # If all payload formats failed, return detailed error
-            return {'success': False, 'error': 'All payload formats failed', 'endpoint': endpoint, 'tried_payloads': alternative_payloads, 'errors': errors}
-        
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
 @identity.command()
 @click.option('--node', '-n', required=True, help='Node name to invite identity on')
 @click.option('--context-id', required=True, help='Context ID to invite identity to')
-@click.option('--granter-id', required=True, help='Public key of the granter (inviter)')
-@click.option('--grantee-id', required=True, help='Public key of the grantee (existing member)')
-@click.option('--capability', default='member', help='Capability to grant (default: member)')
+@click.option('--inviter-id', required=True, help='Public key of the inviter (context member)')
+@click.option('--invitee-id', required=True, help='Public key of the identity to invite')
+@click.option('--capability', default=None, help='Capability (not used in invitation, kept for compatibility)')
 @click.option('--verbose', '-v', is_flag=True, help='Show verbose output')
-def invite(node, context_id, granter_id, grantee_id, capability, verbose):
-    """Grant capabilities to an existing member of a context."""
+def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
+    """Invite an identity to join a context."""
     manager = CalimeroManager()
     
     # Check if node is running
@@ -272,9 +227,9 @@ def invite(node, context_id, granter_id, grantee_id, capability, verbose):
     
     # Get admin API URL and run invitation
     admin_url = get_node_rpc_url(node, manager)
-    console.print(f"[blue]Granting {capability} capability to identity {grantee_id} in context {context_id} on node {node} via {admin_url}[/blue]")
+    console.print(f"[blue]Inviting identity {invitee_id} to context {context_id} on node {node} via {admin_url}[/blue]")
     
-    result = run_async_function(invite_identity_via_api, admin_url, context_id, granter_id, grantee_id, capability)
+    result = run_async_function(invite_identity_via_jsonrpc, admin_url, context_id, inviter_id, invitee_id, capability)
     
     # Show which endpoint was used if successful
     if result['success'] and 'endpoint' in result:
@@ -283,17 +238,16 @@ def invite(node, context_id, granter_id, grantee_id, capability, verbose):
     if result['success']:
         response_data = result.get('data', {})
         
-        console.print(f"\n[green]✓ Capability granted successfully![/green]")
+        console.print(f"\n[green]✓ Identity invited successfully![/green]")
         
         # Create table
-        table = Table(title="Capability Grant Details", box=box.ROUNDED)
+        table = Table(title="Identity Invitation Details", box=box.ROUNDED)
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
         
         table.add_row("Context ID", context_id)
-        table.add_row("Granter ID", granter_id)
-        table.add_row("Grantee ID", grantee_id)
-        table.add_row("Capability", capability)
+        table.add_row("Inviter ID", inviter_id)
+        table.add_row("Invitee ID", invitee_id)
         
         console.print(table)
         
@@ -318,10 +272,12 @@ def invite(node, context_id, granter_id, grantee_id, capability, verbose):
         
         # Provide helpful information for common errors
         if "unable to grant privileges to non-member" in result.get('error', ''):
-            console.print(f"\n[yellow]Note: The grantee identity must already be a member of the context before granting capabilities.[/yellow]")
-            console.print(f"[yellow]This command is for granting capabilities to existing members, not for adding new members.[/yellow]")
+            console.print(f"\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]")
+            console.print(f"[yellow]The identity should be automatically added as a member when invited.[/yellow]")
         
         sys.exit(1)
+
+
 
 if __name__ == '__main__':
     identity()

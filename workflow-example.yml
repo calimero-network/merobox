@@ -15,11 +15,24 @@ steps:
   name: Create Context on Node 1
   node: calimero-node-1
   type: create_context
-- name: Create Identity on Node 1
-  node: calimero-node-1
+- name: Create Identity on Node 2
+  node: calimero-node-2
   type: create_identity
 - name: Wait for Identity Creation
   seconds: 5
   type: wait
+- capability: member
+  context_id: '{{context.calimero-node-1}}'
+  grantee_id: '{{identity.calimero-node-2}}'
+  granter_id: '{{context.calimero-node-1.memberPublicKey}}'
+  name: Invite Node 2 from Node 1
+  node: calimero-node-1
+  type: invite_identity
+- context_id: '{{context.calimero-node-1}}'
+  invitee_id: '{{identity.calimero-node-2}}'
+  invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'
+  name: Join Context from Node 2
+  node: calimero-node-2
+  type: join_context
 stop_all_nodes: true
 wait_timeout: 60

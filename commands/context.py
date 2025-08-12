@@ -1,5 +1,5 @@
 """
-Context command - Create and manage Calimero contexts using JSON-RPC admin API.
+Context command - Create and manage Calimero contexts using JSON-RPC client.
 """
 
 import click
@@ -14,78 +14,56 @@ from .manager import CalimeroManager
 
 console = Console()
 
-async def create_context_via_api(
+async def create_context_via_admin_api(
     rpc_url: str, 
     application_id: str
 ) -> dict:
-    """Create a Calimero context using the admin API as per the repository implementation."""
+    """Create a Calimero context using the admin API."""
     try:
-        import aiohttp
+        # Import the admin client
+        import sys
+        sys.path.append('./externals/calimero-client-py')
+        from calimero import AdminClient
         
-        async with aiohttp.ClientSession() as session:
-            # Use the correct endpoint as shown in the repository: admin-api/contexts
-            endpoint = f"{rpc_url}/admin-api/contexts"
-            
-            # Create payload for context creation based on the Rust implementation
-            payload = {
-                "applicationId": application_id,
-                "protocol": "near",
-                "initializationParams": [],
-            }
-            
-            headers = {'Content-Type': 'application/json'}
-            
-            async with session.post(endpoint, json=payload, headers=headers, timeout=30) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return {'success': True, 'data': result}
-                else:
-                    error_text = await response.text()
-                    return {'success': False, 'error': f"HTTP {response.status}: {error_text}"}
+        # Create admin client and create context
+        admin_client = AdminClient(rpc_url)
+        result = await admin_client.create_context(application_id)
+        
+        return result
         
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-async def list_contexts_via_api(rpc_url: str) -> dict:
+async def list_contexts_via_admin_api(rpc_url: str) -> dict:
     """List all Calimero contexts using the admin API."""
     try:
-        import aiohttp
+        # Import the admin client
+        import sys
+        sys.path.append('./externals/calimero-client-py')
+        from calimero import AdminClient
         
-        async with aiohttp.ClientSession() as session:
-            # Use the admin API endpoint for listing contexts
-            endpoint = f"{rpc_url}/admin-api/contexts"
-            
-            headers = {'Content-Type': 'application/json'}
-            
-            async with session.get(endpoint, headers=headers, timeout=30) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return {'success': True, 'data': result}
-                else:
-                    error_text = await response.text()
-                    return {'success': False, 'error': f"HTTP {response.status}: {error_text}"}
+        # Create admin client and list contexts
+        admin_client = AdminClient(rpc_url)
+        result = await admin_client.list_contexts()
+        
+        return result
         
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-async def get_context_via_api(rpc_url: str, context_id: str) -> dict:
+async def get_context_via_admin_api(rpc_url: str, context_id: str) -> dict:
     """Get information about a specific Calimero context using the admin API."""
     try:
-        import aiohttp
+        # Import the admin client
+        import sys
+        sys.path.append('./externals/calimero-client-py')
+        from calimero import AdminClient
         
-        async with aiohttp.ClientSession() as session:
-            # Use the admin API endpoint for getting context details
-            endpoint = f"{rpc_url}/admin-api/contexts/{context_id}"
-            
-            headers = {'Content-Type': 'application/json'}
-            
-            async with session.get(endpoint, headers=headers, timeout=30) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return {'success': True, 'data': result}
-                else:
-                    error_text = await response.text()
-                    return {'success': False, 'error': f"HTTP {response.status}: {error_text}"}
+        # Create admin client and get context
+        admin_client = AdminClient(rpc_url)
+        result = await admin_client.get_context(context_id)
+        
+        return result
         
     except Exception as e:
         return {'success': False, 'error': str(e)}
@@ -180,7 +158,7 @@ def create(node, application_id, timeout, verbose):
                 
                 # Create context creation task
                 create_task = loop.create_task(
-                    create_context_via_api(admin_url, application_id)
+                    create_context_via_admin_api(admin_url, application_id)
                 )
                 
                 # Wait for result with timeout
@@ -249,7 +227,7 @@ def list_contexts(node, verbose):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            result = loop.run_until_complete(list_contexts_via_api(admin_url))
+            result = loop.run_until_complete(list_contexts_via_admin_api(admin_url))
             loop.close()
             
             if result['success']:
@@ -321,7 +299,7 @@ def get(node, context_id, verbose):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            result = loop.run_until_complete(get_context_via_api(admin_url, context_id))
+            result = loop.run_until_complete(get_context_via_admin_api(admin_url, context_id))
             loop.close()
             
             if result['success']:
