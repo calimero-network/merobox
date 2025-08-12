@@ -126,7 +126,9 @@ class WorkflowExecutor:
                         result = self.workflow_results[context_key]
                         # Try to extract context ID from the result
                         if isinstance(result, dict):
-                            return result.get('id', result.get('contextId', result.get('name', value)))
+                            # Handle nested data structure
+                            actual_data = result.get('data', result)
+                            return actual_data.get('id', actual_data.get('contextId', actual_data.get('name', value)))
                         return str(result)
                     else:
                         console.print(f"[yellow]Warning: Context result for {node_name} not found, using placeholder[/yellow]")
@@ -142,7 +144,9 @@ class WorkflowExecutor:
                         result = self.workflow_results[identity_key]
                         # Try to extract public key from the result
                         if isinstance(result, dict):
-                            return result.get('publicKey', result.get('id', result.get('name', value)))
+                            # Handle nested data structure
+                            actual_data = result.get('data', result)
+                            return actual_data.get('publicKey', actual_data.get('id', actual_data.get('name', value)))
                         return str(result)
                     else:
                         console.print(f"[yellow]Warning: Identity result for {node_name} not found, using placeholder[/yellow]")
