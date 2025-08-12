@@ -53,8 +53,6 @@ async def list_identities_via_admin_api(rpc_url: str, context_id: str) -> dict:
     """List identities for a specific context using the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client and list identities
@@ -70,8 +68,6 @@ async def generate_identity_via_admin_api(rpc_url: str) -> dict:
     """Generate a new identity using the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client and generate identity
@@ -91,8 +87,6 @@ async def invite_identity_via_admin_api(rpc_url: str, context_id: str, inviter_i
     """Invite an identity to a context using the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client and invite identity

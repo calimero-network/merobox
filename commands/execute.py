@@ -32,8 +32,6 @@ async def execute_function_call(
     """
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client using the admin API URL

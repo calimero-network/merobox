@@ -21,8 +21,6 @@ async def create_context_via_admin_api(
     """Create a Calimero context using the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client and create context
@@ -38,8 +36,6 @@ async def list_contexts_via_admin_api(rpc_url: str) -> dict:
     """List all Calimero contexts using the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client and list contexts
@@ -55,8 +51,6 @@ async def get_context_via_admin_api(rpc_url: str, context_id: str) -> dict:
     """Get information about a specific Calimero context using the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client and get context

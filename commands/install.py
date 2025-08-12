@@ -34,8 +34,6 @@ async def install_application_via_admin_api(
     """Install an application using the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client

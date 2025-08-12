@@ -19,8 +19,6 @@ async def join_context_via_admin_api(rpc_url: str, context_id: str, invitee_id: 
     """Join a context using an invitation via the admin API."""
     try:
         # Import the admin client
-        import sys
-        sys.path.append('./externals/calimero-client-py')
         from calimero import AdminClient
         
         # Create admin client and join context
