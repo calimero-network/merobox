@@ -8,16 +8,23 @@ import sys
 from .executor import WorkflowExecutor
 from .config import load_workflow_config, create_sample_workflow_config
 
-@click.group()
-def bootstrap():
-    """Bootstrap command - Automate Calimero node workflows using YAML configuration files."""
-    pass
-
-@bootstrap.command()
-@click.argument('config_file', type=click.Path(exists=True))
+@click.command()
+@click.argument('config_file', type=click.Path(exists=True), required=False)
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
-def run(config_file, verbose):
-    """Run a workflow from a YAML configuration file."""
+@click.option('--create-sample', is_flag=True, help='Create a sample workflow configuration file')
+def bootstrap(config_file, verbose, create_sample):
+    """Execute a Calimero workflow from a YAML configuration file."""
+    
+    # Handle create-sample flag
+    if create_sample:
+        create_sample_workflow_config()
+        return
+    
+    # Require config_file if not creating sample
+    if not config_file:
+        console.print("[red]Error: CONFIG_FILE is required unless using --create-sample[/red]")
+        sys.exit(1)
+    
     try:
         # Load configuration
         config = load_workflow_config(config_file)
@@ -42,24 +49,6 @@ def run(config_file, verbose):
             
     except Exception as e:
         console.print(f"[red]Failed to execute workflow: {str(e)}[/red]")
-        sys.exit(1)
-
-@bootstrap.command()
-def create_sample():
-    """Create a sample workflow configuration file."""
-    create_sample_workflow_config()
-
-@bootstrap.command()
-@click.argument('config_file', type=click.Path(exists=True))
-def validate(config_file):
-    """Validate a workflow configuration file."""
-    try:
-        config = load_workflow_config(config_file)
-        console.print(f"[green]✓ Configuration file '{config_file}' is valid[/green]")
-        console.print(f"[blue]Workflow: {config.get('name', 'Unnamed')}[/blue]")
-        console.print(f"[blue]Steps: {len(config.get('steps', []))}[/blue]")
-    except Exception as e:
-        console.print(f"[red]❌ Configuration file is invalid: {str(e)}[/red]")
         sys.exit(1)
 
 # Import console for use in this module
