@@ -11,8 +11,10 @@ Instead of manually running:
 4. ✅ Create context on node 1 
 5. ✅ Create identity on node 2 
 6. ✅ Invite node 2 from node 1
+7. ✅ Join context from node 2
+8. ✅ Execute contract calls and view calls
 
-You can now run a single command: `merobox bootstrap run workflow-bootstrap.yml`
+You can now run a single command: `merobox bootstrap workflow-bootstrap.yml`
 
 ## Installation
 
@@ -39,7 +41,7 @@ This creates `workflow-example.yml` with a template you can customize.
 Execute a workflow from a YAML configuration file:
 
 ```bash
-merobox bootstrap run workflow-bootstrap.yml
+merobox bootstrap workflow-bootstrap.yml
 ```
 
 ### 3. Validate Configuration
@@ -57,7 +59,7 @@ The bootstrap command automatically captures dynamic values from each step and m
 ### Placeholder Format
 
 Placeholders use the format `{{type.node_name}}` where:
-- `type` is the step type (`install`, `context`, `identity`)
+- `type` is the step type (`install`, `context`, `identity`, `invite`, `join`)
 - `node_name` is the name of the node that executed the step
 
 ### Example Workflow with Dynamic Values
@@ -83,17 +85,35 @@ steps:
     type: 'invite_identity'
     node: 'calimero-node-1'
     context_id: '{{context.calimero-node-1}}'      # Uses result from context step
-    granter_id: '{{identity.calimero-node-1}}'     # Uses result from identity step
+    granter_id: '{{context.calimero-node-1.memberPublicKey}}'  # Uses specific field
     grantee_id: '{{identity.calimero-node-2}}'     # Uses result from identity step
-    capability: 'read'
+    capability: 'member'
+    
+  - name: 'Join Context from Node 2'
+    type: 'join_context'
+    node: 'calimero-node-2'
+    context_id: '{{context.calimero-node-1}}'      # Uses result from context step
+    invitee_id: '{{identity.calimero-node-2}}'     # Uses result from identity step
+    invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'  # Uses invite result
+    
+  - name: 'Execute Contract Call'
+    type: 'execute'
+    node: 'calimero-node-1'
+    context_id: '{{context.calimero-node-1}}'
+    method: 'set'
+    args:
+      key: hello
+      value: world
 ```
 
 ### How Dynamic Values Work
 
 1. **Install Step**: Captures the application ID returned from the installation
-2. **Context Step**: Uses the captured application ID to create a context, then captures the context ID
+2. **Context Step**: Uses the captured application ID to create a context, then captures the context ID and member public key
 3. **Identity Steps**: Capture the public keys returned from identity creation
 4. **Invite Step**: Uses all the captured values (context ID, granter public key, grantee public key)
+5. **Join Step**: Uses the context ID, invitee identity, and invitation data from previous steps
+6. **Execute Step**: Automatically detects and uses the correct executor public key from the context
 
 ## Workflow Configuration
 
@@ -135,9 +155,25 @@ steps:
     type: 'invite_identity'
     node: 'calimero-node-1'
     context_id: '{{context.calimero-node-1}}'      # Dynamic placeholder
-    granter_id: '{{identity.calimero-node-1}}'     # Dynamic placeholder
+    granter_id: '{{context.calimero-node-1.memberPublicKey}}'  # Dynamic placeholder
     grantee_id: '{{identity.calimero-node-2}}'     # Dynamic placeholder
-    capability: 'read'
+    capability: 'member'
+    
+  - name: 'Join Context from Node 2'
+    type: 'join_context'
+    node: 'calimero-node-2'
+    context_id: '{{context.calimero-node-1}}'      # Dynamic placeholder
+    invitee_id: '{{identity.calimero-node-2}}'     # Dynamic placeholder
+    invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'  # Dynamic placeholder
+    
+  - name: 'Execute Contract Call'
+    type: 'execute'
+    node: 'calimero-node-1'
+    context_id: '{{context.calimero-node-1}}'
+    method: 'set'
+    args:
+      key: hello
+      value: world
 ```
 
 ## Step Types
@@ -163,6 +199,7 @@ Creates a context for an application.
 
 **Dynamic Values Captured:**
 - Context ID (stored as `{{context.node_name}}`)
+- Member Public Key (accessible as `{{context.node_name.memberPublicKey}}`)
 
 ### `create_identity`
 Generates a new identity on a node.
@@ -179,9 +216,39 @@ Invites an identity to a context.
 **Options:**
 - `node`: Node performing the invitation
 - `context_id`: Context identifier (use `{{context.node_name}}` placeholder)
-- `granter_id`: Public key of the granter (use `{{identity.node_name}}` placeholder)
+- `granter_id`: Public key of the granter (use `{{context.node_name.memberPublicKey}}` placeholder)
 - `grantee_id`: Public key of the grantee (use `{{identity.node_name}}` placeholder)
-- `capability`: Permission level (default: 'read')
+- `capability`: Permission level (default: 'member')
+
+**Dynamic Values Captured:**
+- Invitation data (stored as `{{invite.node_name_identity.node_name}}`)
+
+### `join_context`
+Joins a context using an invitation.
+
+**Options:**
+- `node`: Node joining the context
+- `context_id`: Context identifier (use `{{context.node_name}}` placeholder)
+- `invitee_id`: Public key of the identity joining (use `{{identity.node_name}}` placeholder)
+- `invitation`: Invitation data from the invite step (use `{{invite.node_name_identity.node_name}}` placeholder)
+
+**Dynamic Values Captured:**
+- Join result data (stored as `{{join.node_name_identity.node_name}}`)
+
+### `execute`
+Executes contract calls, view calls, or function calls.
+
+**Options:**
+- `node`: Target node name
+- `context_id`: Context identifier (use `{{context.node_name}}` placeholder)
+- `method`: Method/function name to call
+- `args`: Arguments for the method call
+- `exec_type`: Execution type (optional, defaults to 'function_call')
+
+**Features:**
+- Automatically detects and uses the correct executor public key from the context
+- Supports complex argument structures
+- Comprehensive error reporting and debugging information
 
 ### `wait`
 Pauses execution for a specified duration.
@@ -215,13 +282,42 @@ nodes:
 
 ## Example Workflow
 
-The included `workflow-bootstrap.yml` file demonstrates a complete workflow that:
+The included `workflow-example.yml` file demonstrates a complete workflow that:
 - Stops all existing nodes
 - Starts 2 new nodes
 - Installs the KV store application on node 1
 - Creates a context for the application (using captured application ID)
 - Generates an identity on node 2
 - Invites node 2 to the context (using captured context ID and public keys)
+- Joins the context from node 2 (using captured invitation data)
+- Executes contract calls and view calls (with automatic executor detection)
+
+## Advanced Features
+
+### Field-Specific Placeholders
+Access specific fields from captured data:
+```yaml
+granter_id: '{{context.calimero-node-1.memberPublicKey}}'  # Access specific field
+```
+
+### Complex Dynamic Value Resolution
+The system automatically resolves nested placeholders and handles complex data structures:
+```yaml
+invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'  # Complex resolution
+```
+
+### Automatic Executor Detection
+Execute steps automatically detect and use the correct executor public key from the context:
+```yaml
+- name: 'Execute Contract Call'
+  type: 'execute'
+  node: 'calimero-node-1'
+  context_id: '{{context.calimero-node-1}}'  # Executor key automatically extracted
+  method: 'set'
+  args:
+    key: hello
+    value: world
+```
 
 ## Troubleshooting
 
@@ -230,6 +326,7 @@ The included `workflow-bootstrap.yml` file demonstrates a complete workflow that
 - **Node Readiness**: The system automatically waits for nodes to be ready before proceeding
 - **Error Handling**: Each step is validated and the workflow stops on first failure
 - **Dynamic Values**: Check the output for captured dynamic values to ensure placeholders are working
+- **Debug Information**: The system provides detailed debugging information for complex operations
 
 ## Extending the Workflow
 
@@ -242,3 +339,5 @@ You can add custom steps by extending the `WorkflowExecutor` class in `commands/
 3. **Flexibility**: Workflows work with any application or identity
 4. **Maintainability**: Changes to one step automatically propagate to dependent steps
 5. **Debugging**: Clear visibility into what values were captured and used
+6. **Complex Operations**: Support for multi-step workflows with automatic data flow
+7. **Field Access**: Access to specific fields within captured data structures
