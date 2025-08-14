@@ -18,7 +18,7 @@ def read_requirements():
 
 setup(
     name="merobox",
-    version="0.1.2",
+    version="0.1.3",
     author="Merobox Team",
     author_email="team@merobox.com",
     description="A Python CLI tool for managing Calimero nodes in Docker containers",

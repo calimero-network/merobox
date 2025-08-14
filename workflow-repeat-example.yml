@@ -1,0 +1,140 @@
+description: A comprehensive example workflow demonstrating the repeat step functionality
+name: Repeat Step Example Workflow
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:6a47604
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the application on the first node
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: ./kv_store.wasm
+    dev: true
+
+  # Step 2: Create a context using the installed application
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{install.calimero-node-1}}'
+
+  # Step 3: Generate an identity on the second node
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+
+  # Step 4: Wait for identity creation to complete
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Step 5: Invite the second node to join the context
+  - name: Invite Node 2 from Node 1
+    type: invite_identity
+    node: calimero-node-1
+    context_id: '{{context.calimero-node-1}}'
+    grantee_id: '{{identity.calimero-node-2}}'
+    granter_id: '{{context.calimero-node-1.memberPublicKey}}'
+    capability: member
+
+  # Step 6: Join the context from the second node
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context.calimero-node-1}}'
+    invitee_id: '{{identity.calimero-node-2}}'
+    invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'
+
+  # Step 7: Example 1 - Simple repeat with basic operations
+  - name: Simple Repeat Example
+    type: repeat
+    count: 3
+    steps:
+      - name: Set Key-Value Pair
+        type: call
+        node: calimero-node-1
+        context_id: '{{context.calimero-node-1}}'
+        method: set
+        args:
+          key: "simple_key_{{iteration}}"
+          value: "simple_value_{{iteration}}"
+      
+      - name: Wait for Set Operation
+        type: wait
+        seconds: 1
+
+  # Step 8: Example 2 - Repeat with multiple nested steps and different operations
+  - name: Complex Repeat Example
+    type: repeat
+    count: 2
+    steps:
+      - name: Set Multiple Key-Value Pairs
+        type: call
+        node: calimero-node-1
+        context_id: '{{context.calimero-node-1}}'
+        method: set
+        args:
+          key: "complex_key_{{iteration}}_a"
+          value: "complex_value_{{iteration}}_a"
+      
+      - name: Set Another Key-Value Pair
+        type: call
+        node: calimero-node-1
+        context_id: '{{context.calimero-node-1}}'
+        method: set
+        args:
+          key: "complex_key_{{iteration}}_b"
+          value: "complex_value_{{iteration}}_b"
+      
+      - name: Wait Between Operations
+        type: wait
+        seconds: 2
+      
+      - name: Retrieve First Key-Value Pair
+        type: call
+        node: calimero-node-2
+        context_id: '{{context.calimero-node-1}}'
+        method: get
+        args:
+          key: "complex_key_{{iteration}}_a"
+      
+      - name: Retrieve Second Key-Value Pair
+        type: call
+        node: calimero-node-2
+        context_id: '{{context.calimero-node-1}}'
+        method: get
+        args:
+          key: "complex_key_{{iteration}}_b"
+
+  # Step 9: Example 3 - Repeat with conditional-like behavior using different iteration values
+  - name: Iteration-Based Repeat Example
+    type: repeat
+    count: 4
+    steps:
+      - name: Set Data Based on Iteration
+        type: call
+        node: calimero-node-1
+        context_id: '{{context.calimero-node-1}}'
+        method: set
+        args:
+          key: "iteration_{{iteration}}"
+          value: "data_for_iteration_{{iteration}}"
+      
+      - name: Wait for Propagation
+        type: wait
+        seconds: 1
+      
+      - name: Verify Data from Different Node
+        type: call
+        node: calimero-node-2
+        context_id: '{{context.calimero-node-1}}'
+        method: get
+        args:
+          key: "iteration_{{iteration}}"
+
+# Configuration options
+stop_all_nodes: true
+wait_timeout: 60

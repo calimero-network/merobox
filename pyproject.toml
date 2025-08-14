@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "merobox"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Python CLI tool for managing Calimero nodes in Docker containers"
 readme = "README.md"
 license = {text = "MIT"}

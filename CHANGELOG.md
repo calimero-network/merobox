@@ -7,10 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2024-01-XX
+
 ### Added
-- PyPI packaging configuration
-- Modern Python packaging with pyproject.toml
-- Development dependencies and tooling configuration
+- **Repeat Step Functionality**: New workflow step type that executes nested steps multiple times
+- **Iteration Variables**: Support for `{{iteration}}`, `{{iteration_index}}`, `{{iteration_zero_based}}`, and `{{iteration_one_based}}` placeholders
+- **Nested Step Support**: All existing step types can be used within repeat steps
+- **Comprehensive Documentation**: Added detailed README for repeat step functionality with examples
+
+### Features
+- **Repeat Step Type**: Execute a set of nested steps for a specified number of iterations
+- **Dynamic Value Substitution**: Use iteration variables in nested step configurations
+- **Sequential Execution**: Steps execute in order for each iteration with proper error handling
+- **Recursive Support**: Repeat steps can contain other repeat steps for complex workflows
+
+### Technical Details
+- New `RepeatStep` class in `commands/bootstrap/steps.py`
+- Enhanced dynamic value resolution for iteration placeholders
+- Updated executor to handle repeat step type
+- Comprehensive workflow examples demonstrating various use cases
+- Maintains backward compatibility with existing workflows
+
+### Examples
+- Simple repetition of operations
+- Complex multi-step sequences
+- Testing scenarios with multiple iterations
+- Batch operations with different parameters
 
 ## [0.1.2] - 2024-01-XX
 

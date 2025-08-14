@@ -17,7 +17,8 @@ from .steps import (
     InviteIdentityStep,
     JoinContextStep,
     ExecuteStep,
-    WaitStep
+    WaitStep,
+    RepeatStep
 )
 
 class WorkflowExecutor:
@@ -238,5 +239,7 @@ class WorkflowExecutor:
             return ExecuteStep(step_config)
         elif step_type == 'wait':
             return WaitStep(step_config)
+        elif step_type == 'repeat':
+            return RepeatStep(step_config)
         else:
             return None

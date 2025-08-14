@@ -79,6 +79,33 @@ steps:
     args:
       key: hello
 
+  # Step 10: Repeat a set of operations multiple times
+  # Demonstrates the new repeat step functionality
+  - name: Repeat Operations Multiple Times
+    type: repeat
+    count: 3
+    steps:
+      - name: Set Key-Value Pair
+        type: call
+        node: calimero-node-1
+        context_id: '{{context.calimero-node-1}}'
+        method: set
+        args:
+          key: "iteration_{{iteration}}"
+          value: "value_{{iteration}}"
+      
+      - name: Wait for Set Operation
+        type: wait
+        seconds: 2
+      
+      - name: Get Key-Value Pair
+        type: call
+        node: calimero-node-2
+        context_id: '{{context.calimero-node-1}}'
+        method: get
+        args:
+          key: "iteration_{{iteration}}"
+
 # Configuration options
 stop_all_nodes: true
 wait_timeout: 60
