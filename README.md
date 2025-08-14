@@ -108,14 +108,14 @@ Execute contract calls directly:
 
 ```bash
 # Contract call
-python merobox_cli.py execute \
+python merobox_cli.py call \
   --node calimero-node-1 \
   --context-id your-context-id \
   --function set \
   --args '{"key": "hello", "value": "world"}'
 
 # View call (read-only)
-python merobox_cli.py execute \
+python merobox_cli.py call \
   --node calimero-node-1 \
   --context-id your-context-id \
   --function get \
@@ -143,18 +143,17 @@ steps:
 
   # Execute contract calls
   - name: Set Key-Value
-    type: execute
+    type: call
     node: calimero-node-1
-    context_id: '{{context.calimero-node-1}}'
     method: set
     args:
       key: hello
       value: world
 
+  # Execute view calls
   - name: Get Value
-    type: execute
-    node: calimero-node-1
-    context_id: '{{context.calimero-node-1}}'
+    type: call
+    node: calimero-node-2
     method: get
     args:
       key: hello

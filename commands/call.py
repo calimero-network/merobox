@@ -1,5 +1,5 @@
 """
-Execute command - Execute function calls using JSON-RPC client.
+Call command - Execute function calls using JSON-RPC client.
 """
 
 import click
@@ -12,7 +12,7 @@ from .manager import CalimeroManager
 
 console = Console()
 
-async def execute_function_call(
+async def call_function(
     rpc_url: str,
     context_id: str,
     function_name: str,
@@ -85,7 +85,7 @@ def run_async_function(func, *args, **kwargs):
 @click.option('--context-id', required=True, help='Context ID to execute in')
 @click.option('--function', required=True, help='Function name to call')
 @click.option('--args', help='JSON string of arguments for the function call')
-def execute(node: str, context_id: str, function: str, args: str = None):
+def call(node: str, context_id: str, function: str, args: str = None):
     """Execute function calls."""
     
     # Initialize manager and get RPC URL from node name
@@ -100,29 +100,42 @@ def execute(node: str, context_id: str, function: str, args: str = None):
         try:
             import json
             parsed_args = json.loads(args)
-        except json.JSONDecodeError:
-            console.print("[red]Invalid JSON in --args parameter[/red]")
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Error parsing JSON arguments: {str(e)}[/red]")
             return
     
     # Execute the function call
     result = run_async_function(
-        execute_function_call, 
-        rpc_url, context_id, function, parsed_args
+        call_function,
+        rpc_url,
+        context_id,
+        function,
+        parsed_args
     )
     
     if result:
         if result.get('success'):
             console.print(Panel(
-                f"[green]Execution successful![/green]\n\n"
+                f"[green]Function call successful![/green]\n\n"
+                f"Function: {function}\n"
+                f"Context: {context_id}\n"
+                f"Node: {node}\n"
                 f"Result: {result.get('data', 'No data returned')}",
-                title="Execute Result"
+                title="Function Call Result",
+                border_style="green"
             ))
         else:
             console.print(Panel(
-                f"[red]Execution failed![/red]\n\n"
+                f"[red]Function call failed![/red]\n\n"
+                f"Function: {function}\n"
+                f"Context: {context_id}\n"
+                f"Node: {node}\n"
                 f"Error: {result.get('error', 'Unknown error')}",
-                title="Execute Result"
+                title="Function Call Error",
+                border_style="red"
             ))
+    else:
+        console.print("[red]Failed to execute function call[/red]")
 
 if __name__ == '__main__':
-    execute()
+    call()

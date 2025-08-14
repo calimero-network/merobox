@@ -7,10 +7,10 @@ A Python CLI tool for managing Calimero nodes in Docker containers.
 import click
 from commands import run, stop, list, logs, health, install, nuke, context, identity, bootstrap
 from commands.join import join
-from commands.execute import execute
+from commands.call import call
 
 @click.group()
-@click.version_option(version="0.1.1")
+@click.version_option(version="0.1.2")
 def cli():
     """Merobox CLI - Manage Calimero nodes in Docker containers."""
     pass
@@ -26,7 +26,7 @@ cli.add_command(nuke)
 cli.add_command(context)
 cli.add_command(identity)
 cli.add_command(join)
-cli.add_command(execute)
+cli.add_command(call)
 cli.add_command(bootstrap)
 
 if __name__ == '__main__':

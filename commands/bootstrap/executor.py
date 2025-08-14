@@ -234,7 +234,7 @@ class WorkflowExecutor:
             return InviteIdentityStep(step_config)
         elif step_type == 'join_context':
             return JoinContextStep(step_config)
-        elif step_type == 'execute':
+        elif step_type == 'call':
             return ExecuteStep(step_config)
         elif step_type == 'wait':
             return WaitStep(step_config)

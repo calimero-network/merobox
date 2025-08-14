@@ -56,7 +56,7 @@ steps:
   # Step 7: Execute a contract call to set a key-value pair
   # Automatically detects and uses the executor public key from the context
   - name: Execute Contract Call - Set Key-Value
-    type: execute
+    type: call
     node: calimero-node-1
     context_id: '{{context.calimero-node-1}}'
     method: set
@@ -72,7 +72,7 @@ steps:
   # Step 9: Execute a view call to retrieve the stored value
   # Demonstrates cross-node execution using the joined context
   - name: Execute View Call - Get Value
-    type: execute
+    type: call
     node: calimero-node-2
     context_id: '{{context.calimero-node-1}}'
     method: get

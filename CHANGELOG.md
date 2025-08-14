@@ -12,7 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modern Python packaging with pyproject.toml
 - Development dependencies and tooling configuration
 
-## [0.1.0] - 2024-01-XX
+## [0.1.2] - 2024-01-XX
+
+### Changed
+- **Renamed `execute` command to `call`**: Improved command naming for better clarity
+- **Updated workflow step type**: Changed from `type: execute` to `type: call` in YAML workflows
+- **Enhanced command structure**: Better organized command modules and imports
+
+### Technical Details
+- Renamed `commands/execute.py` to `commands/call.py`
+- Updated all CLI imports and references
+- Updated bootstrap workflow system to use `call` step type
+- Updated documentation and examples throughout
+- Maintained backward compatibility in functionality
+
+## [0.1.1] - 2024-01-XX
 
 ### Added
 - Initial release of Merobox CLI

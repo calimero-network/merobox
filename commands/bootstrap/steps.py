@@ -9,7 +9,7 @@ from ..install import install_application_via_admin_api
 from ..context import create_context_via_admin_api
 from ..identity import generate_identity_via_admin_api, invite_identity_via_admin_api
 from ..join import join_context_via_admin_api
-from ..execute import execute_function_call
+from ..call import call_function
 
 class BaseStep:
     """Base class for all workflow steps."""
@@ -463,7 +463,7 @@ class ExecuteStep(BaseStep):
                 exec_type = 'function_call'
             
             if exec_type in ['contract_call', 'view_call', 'function_call']:
-                result = await execute_function_call(
+                result = await call_function(
                     rpc_url, context_id, method, args, executor_public_key
                 )
             else:

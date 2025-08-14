@@ -85,7 +85,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
             },
             {
                 'name': 'Execute Contract Call Example',
-                'type': 'execute',
+                'type': 'call',
                 'node': 'calimero-node-1',
                 'context_id': '{{context.calimero-node-1}}',
                 'method': 'set',

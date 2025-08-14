@@ -97,7 +97,7 @@ steps:
     invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'  # Uses invite result
     
   - name: 'Execute Contract Call'
-    type: 'execute'
+    type: 'call'
     node: 'calimero-node-1'
     context_id: '{{context.calimero-node-1}}'
     method: 'set'
@@ -167,7 +167,7 @@ steps:
     invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'  # Dynamic placeholder
     
   - name: 'Execute Contract Call'
-    type: 'execute'
+    type: 'call'
     node: 'calimero-node-1'
     context_id: '{{context.calimero-node-1}}'
     method: 'set'
@@ -235,7 +235,7 @@ Joins a context using an invitation.
 **Dynamic Values Captured:**
 - Join result data (stored as `{{join.node_name_identity.node_name}}`)
 
-### `execute`
+### `call`
 Executes contract calls, view calls, or function calls.
 
 **Options:**
@@ -310,7 +310,7 @@ invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'  # Complex res
 Execute steps automatically detect and use the correct executor public key from the context:
 ```yaml
 - name: 'Execute Contract Call'
-  type: 'execute'
+  type: 'call'
   node: 'calimero-node-1'
   context_id: '{{context.calimero-node-1}}'  # Executor key automatically extracted
   method: 'set'
