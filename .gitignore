@@ -67,3 +67,8 @@ externals/
 # Temporary files
 *.tmp
 *.temp
+
+# PyPI publishing
+.pypirc
+*.pypirc
+.pypirc.*

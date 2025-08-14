@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "merobox"
+version = "0.1.1"
+description = "A Python CLI tool for managing Calimero nodes in Docker containers"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Merobox Team", email = "team@merobox.com"}
+]
+maintainers = [
+    {name = "Merobox Team", email = "team@merobox.com"}
+]
+keywords = ["calimero", "blockchain", "docker", "cli", "workflow"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "click>=8.0.0",
+    "docker>=6.0.0",
+    "rich>=13.0.0",
+    "PyYAML>=6.0.0",
+    "calimero-client-py>=0.1.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "twine",
+    "pytest",
+    "pytest-asyncio",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/merobox/merobox"
+Documentation = "https://github.com/merobox/merobox#readme"
+Repository = "https://github.com/merobox/merobox"
+Issues = "https://github.com/merobox/merobox/issues"
+Changelog = "https://github.com/merobox/merobox/blob/main/CHANGELOG.md"
+
+[project.scripts]
+merobox = "merobox.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["merobox*", "commands*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.wasm", "*.yml", "*.md"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc", "__pycache__", "*.pyo", "*.pyd", ".git*", "venv*", ".venv*", "data*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

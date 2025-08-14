@@ -64,7 +64,12 @@ steps:
       key: hello
       value: world
 
-  # Step 8: Execute a view call to retrieve the stored value
+  # Step 8: Wait for the set operation to complete and propagate
+  - name: Wait for Set Operation
+    type: wait
+    seconds: 3
+
+  # Step 9: Execute a view call to retrieve the stored value
   # Demonstrates cross-node execution using the joined context
   - name: Execute View Call - Get Value
     type: execute

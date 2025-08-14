@@ -1,0 +1,31 @@
+# Include README and documentation
+include README.md
+include BOOTSTRAP_README.md
+include GLIBC_ISSUE.md
+include workflow-example.yml
+include example_usage.py
+
+# Include WASM files
+include *.wasm
+
+# Include requirements
+include requirements.txt
+
+# Include package configuration
+include pyproject.toml
+include setup.py
+
+# Include commands package
+recursive-include commands *.py
+
+# Exclude unnecessary files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude .git*
+global-exclude venv*
+global-exclude .venv*
+global-exclude data*
+global-exclude .DS_Store
+global-exclude *.log

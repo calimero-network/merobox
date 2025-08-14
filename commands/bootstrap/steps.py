@@ -66,23 +66,38 @@ class BaseStep:
                         node_name = node_part
                         field_name = None
                     
-                    context_key = f"context_{node_name}"
-                    if context_key in workflow_results:
-                        result = workflow_results[context_key]
-                        # Try to extract context ID or specific field from the result
-                        if isinstance(result, dict):
-                            # Handle nested data structure
-                            actual_data = result.get('data', result)
-                            if field_name:
-                                # Return specific field (e.g., memberPublicKey)
+                    if field_name:
+                        # For field access (e.g., memberPublicKey), look in workflow_results
+                        context_key = f"context_{node_name}"
+                        if context_key in workflow_results:
+                            result = workflow_results[context_key]
+                            # Try to extract specific field from the result
+                            if isinstance(result, dict):
+                                # Handle nested data structure
+                                actual_data = result.get('data', result)
                                 return actual_data.get(field_name, value)
-                            else:
-                                # Return context ID
-                                return actual_data.get('id', actual_data.get('contextId', actual_data.get('name', value)))
-                        return str(result)
+                        else:
+                            console.print(f"[yellow]Warning: Context result for {node_name} not found, using placeholder[/yellow]")
+                            return value
                     else:
-                        console.print(f"[yellow]Warning: Context result for {node_name} not found, using placeholder[/yellow]")
-                        return value
+                        # For context ID access, look in dynamic_values first
+                        context_id_key = f"context_id_{node_name}"
+                        if context_id_key in dynamic_values:
+                            return dynamic_values[context_id_key]
+                        
+                        # Fallback to workflow_results
+                        context_key = f"context_{node_name}"
+                        if context_key in workflow_results:
+                            result = workflow_results[context_key]
+                            # Try to extract context ID from the result
+                            if isinstance(result, dict):
+                                # Handle nested data structure
+                                actual_data = result.get('data', result)
+                                return actual_data.get('id', actual_data.get('contextId', actual_data.get('name', value)))
+                            return str(result)
+                        else:
+                            console.print(f"[yellow]Warning: Context result for {node_name} not found, using placeholder[/yellow]")
+                            return value
             
             elif placeholder.startswith('identity.'):
                 # Format: {{identity.node_name}}
