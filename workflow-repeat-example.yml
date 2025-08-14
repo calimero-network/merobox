@@ -136,5 +136,6 @@ steps:
           key: "iteration_{{iteration}}"
 
 # Configuration options
-stop_all_nodes: true
+stop_all_nodes: true   # Stop all nodes at the end of workflow
+restart: false          # Don't restart nodes at the beginning of workflow
 wait_timeout: 60

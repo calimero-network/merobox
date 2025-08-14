@@ -36,18 +36,25 @@ class WorkflowExecutor:
         console.print(f"\n[bold blue]🚀 Executing Workflow: {workflow_name}[/bold blue]")
         
         try:
-            # Step 1: Stop all nodes if requested
-            if self.config.get('stop_all_nodes', False):
-                console.print("\n[bold yellow]Step 1: Stopping all nodes...[/bold yellow]")
-                if not self.manager.stop_all_nodes():
-                    console.print("[red]Failed to stop all nodes[/red]")
-                    return False
-                console.print("[green]✓ All nodes stopped[/green]")
-                time.sleep(2)  # Give time for cleanup
+            # Check if we should restart nodes at the beginning
+            restart_nodes = self.config.get('restart', False)
+            stop_all_nodes = self.config.get('stop_all_nodes', False)
             
-            # Step 2: Start nodes
-            console.print("\n[bold yellow]Step 2: Starting nodes...[/bold yellow]")
-            if not await self._start_nodes():
+            # Step 1: Restart nodes if requested (at beginning)
+            if restart_nodes:
+                console.print("\n[bold yellow]Step 1: Restarting workflow nodes (restart=true)...[/bold yellow]")
+                if not self.manager.stop_all_nodes():
+                    console.print("[red]Failed to stop workflow nodes[/red]")
+                    return False
+                console.print("[green]✓ Workflow nodes stopped[/green]")
+                time.sleep(2)  # Give time for cleanup
+            else:
+                console.print("\n[bold blue]Step 1: Checking workflow nodes (restart=false)...[/bold blue]")
+                console.print("[cyan]Will reuse existing nodes if they're running...[/cyan]")
+            
+            # Step 2: Start nodes (or check if they're already running)
+            console.print("\n[bold yellow]Step 2: Managing nodes...[/bold yellow]")
+            if not await self._start_nodes(restart_nodes):
                 return False
             
             # Step 3: Wait for nodes to be ready
@@ -59,6 +66,18 @@ class WorkflowExecutor:
             console.print("\n[bold yellow]Step 4: Executing workflow steps...[/bold yellow]")
             if not await self._execute_workflow_steps():
                 return False
+            
+            # Step 5: Stop all nodes if requested (at end)
+            if stop_all_nodes:
+                console.print("\n[bold yellow]Step 5: Stopping all nodes (stop_all_nodes=true)...[/bold yellow]")
+                if not self.manager.stop_all_nodes():
+                    console.print("[red]Failed to stop all nodes[/red]")
+                    # Don't return False here as workflow completed successfully
+                else:
+                    console.print("[green]✓ All nodes stopped[/green]")
+            else:
+                console.print("\n[bold blue]Step 5: Leaving nodes running (stop_all_nodes=false)...[/bold blue]")
+                console.print("[cyan]Nodes will continue running for future workflows[/cyan]")
             
             console.print(f"\n[bold green]🎉 Workflow '{workflow_name}' completed successfully![/bold green]")
             
@@ -74,7 +93,7 @@ class WorkflowExecutor:
             console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
             return False
     
-    async def _start_nodes(self) -> bool:
+    async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get('nodes', {})
         
@@ -89,9 +108,37 @@ class WorkflowExecutor:
             chain_id = nodes_config.get('chain_id', 'testnet-1')
             image = nodes_config.get('image')
             
-            console.print(f"Starting {count} nodes with prefix '{prefix}'...")
-            if not self.manager.run_multiple_nodes(count, prefix=prefix, chain_id=chain_id, image=image):
-                return False
+            if restart:
+                console.print(f"Starting {count} nodes with prefix '{prefix}' (restart mode)...")
+                if not self.manager.run_multiple_nodes(count, prefix=prefix, chain_id=chain_id, image=image):
+                    return False
+            else:
+                console.print(f"Checking {count} nodes with prefix '{prefix}' (no restart mode)...")
+                # Check if nodes are already running
+                running_nodes = 0
+                for i in range(count):
+                    node_name = f"{prefix}-{i+1}"
+                    try:
+                        existing_container = self.manager.client.containers.get(node_name)
+                        if existing_container.status == 'running':
+                            console.print(f"[green]✓ Node '{node_name}' is already running[/green]")
+                            running_nodes += 1
+                        else:
+                            console.print(f"[yellow]Node '{node_name}' exists but not running, starting...[/yellow]")
+                            # Start the specific node
+                            if not self.manager.run_node(node_name, 2428 + i, 2528 + i, chain_id, None, image):
+                                return False
+                    except docker.errors.NotFound:
+                        console.print(f"[cyan]Node '{node_name}' doesn't exist, creating...[/cyan]")
+                        if not self.manager.run_node(node_name, 2428 + i, 2528 + i, chain_id, None, image):
+                            return False
+                
+                if running_nodes == count:
+                    console.print(f"[green]✓ All {count} nodes are already running[/green]")
+                elif running_nodes > 0:
+                    console.print(f"[green]✓ {running_nodes}/{count} nodes were already running, {count - running_nodes} started[/green]")
+                else:
+                    console.print(f"[green]✓ All {count} nodes started[/green]")
         else:
             # Handle individual node configurations
             for node_name, node_config in nodes_config.items():
@@ -100,8 +147,23 @@ class WorkflowExecutor:
                     try:
                         existing_container = self.manager.client.containers.get(node_name)
                         if existing_container.status == 'running':
-                            console.print(f"[green]✓ Node '{node_name}' is already running[/green]")
-                            continue
+                            if restart:
+                                console.print(f"[yellow]Node '{node_name}' is running but restart requested, stopping...[/yellow]")
+                                existing_container.stop()
+                                existing_container.remove()
+                                # Start fresh
+                                port = node_config.get('port', 2428)
+                                rpc_port = node_config.get('rpc_port', 2528)
+                                chain_id = node_config.get('chain_id', 'testnet-1')
+                                image = node_config.get('image')
+                                data_dir = node_config.get('data_dir')
+                                
+                                console.print(f"Starting node '{node_name}'...")
+                                if not self.manager.run_node(node_name, port, rpc_port, chain_id, data_dir, image):
+                                    return False
+                            else:
+                                console.print(f"[green]✓ Node '{node_name}' is already running[/green]")
+                                continue
                         else:
                             console.print(f"[yellow]Node '{node_name}' exists but not running, attempting to start...[/yellow]")
                     except docker.errors.NotFound:
@@ -121,8 +183,17 @@ class WorkflowExecutor:
                     try:
                         existing_container = self.manager.client.containers.get(node_config)
                         if existing_container.status == 'running':
-                            console.print(f"[green]✓ Node '{node_config}' is already running[/green]")
-                            continue
+                            if restart:
+                                console.print(f"[yellow]Node '{node_config}' is running but restart requested, stopping...[/yellow]")
+                                existing_container.stop()
+                                existing_container.remove()
+                                # Start fresh
+                                console.print(f"Starting node '{node_config}'...")
+                                if not self.manager.run_node(node_config):
+                                    return False
+                            else:
+                                console.print(f"[green]✓ Node '{node_config}' is already running[/green]")
+                                continue
                         else:
                             console.print(f"[yellow]Node '{node_config}' exists but not running, attempting to start...[/yellow]")
                     except docker.errors.NotFound:
@@ -131,7 +202,7 @@ class WorkflowExecutor:
                         if not self.manager.run_node(node_config):
                             return False
         
-        console.print("[green]✓ All nodes are ready[/green]")
+        console.print("[green]✓ Node management completed[/green]")
         return True
     
     async def _wait_for_nodes_ready(self) -> bool:

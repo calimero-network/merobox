@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2024-01-XX
+
+### Changed
+- **Node Management Behavior**: `restart` flag now controls node restart at the **beginning** of workflows, `stop_all_nodes` controls stopping at the **end** of workflows
+- **Workflow Execution Flow**: Restart logic moved to beginning, cleanup logic moved to end for more logical behavior
+
+### Features
+- **Logical Node Lifecycle**: Clear separation between start and end node management
+- **Improved Workflow Control**: Better control over when nodes are restarted vs. cleaned up
+- **Enhanced Development Experience**: More efficient workflow reruns with node reuse options
+
+### Technical Details
+- Updated workflow executor to handle restart at beginning and cleanup at end
+- Enhanced node management logic for better workflow control
+- Improved logging and step descriptions for clearer execution flow
+- Maintains backward compatibility with existing workflows
+
 ## [0.1.3] - 2024-01-XX
 
 ### Added
@@ -14,12 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Iteration Variables**: Support for `{{iteration}}`, `{{iteration_index}}`, `{{iteration_zero_based}}`, and `{{iteration_one_based}}` placeholders
 - **Nested Step Support**: All existing step types can be used within repeat steps
 - **Comprehensive Documentation**: Added detailed README for repeat step functionality with examples
+- **Restart Flag**: New `restart` configuration option to control whether nodes are restarted when rerunning workflows
+
+### Changed
+- **Node Management Behavior**: `restart` flag now controls node restart at the **beginning** of workflows, `stop_all_nodes` controls stopping at the **end** of workflows
 
 ### Features
 - **Repeat Step Type**: Execute a set of nested steps for a specified number of iterations
 - **Dynamic Value Substitution**: Use iteration variables in nested step configurations
 - **Sequential Execution**: Steps execute in order for each iteration with proper error handling
 - **Recursive Support**: Repeat steps can contain other repeat steps for complex workflows
+- **Smart Node Management**: Control node restart behavior with `restart` and `stop_all_nodes` flags
+- **Efficient Workflow Reruns**: Reuse existing running nodes to avoid unnecessary restarts
+- **Logical Node Lifecycle**: `restart` controls beginning behavior, `stop_all_nodes` controls end behavior
 
 ### Technical Details
 - New `RepeatStep` class in `commands/bootstrap/steps.py`
@@ -27,12 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated executor to handle repeat step type
 - Comprehensive workflow examples demonstrating various use cases
 - Maintains backward compatibility with existing workflows
+- Enhanced node management with restart flag support
+- Improved workflow executor with smart node reuse logic
+- Updated workflow execution flow: restart at beginning, stop at end
 
 ### Examples
 - Simple repetition of operations
 - Complex multi-step sequences
 - Testing scenarios with multiple iterations
 - Batch operations with different parameters
+- Efficient workflow reruns without node restarts
+- Selective node restart for specific workflows
+- Logical node lifecycle management
 
 ## [0.1.2] - 2024-01-XX
 
