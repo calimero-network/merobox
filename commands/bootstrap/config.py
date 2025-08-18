@@ -39,7 +39,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
             'count': 2,
             'prefix': 'calimero-node',
             'chain_id': 'testnet-1',
-            'image': 'ghcr.io/calimero-network/merod:6a47604'
+            'image': 'merod-compatible:latest'
         },
         
         'steps': [

@@ -1,0 +1,15 @@
+FROM debian:testing
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the merod binary
+COPY merod /usr/local/bin/merod
+RUN chmod +x /usr/local/bin/merod
+
+# Set up entry point
+ENTRYPOINT ["/usr/local/bin/merod"]

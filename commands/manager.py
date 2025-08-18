@@ -78,7 +78,7 @@ class CalimeroManager:
             # Prepare container configuration
             container_config = {
                 'name': container_name,
-                'image': image or 'ghcr.io/calimero-network/merod:6a47604',
+                'image': image or 'merod-compatible:latest',
                 'detach': True,
                 'user': 'root',  # Override the default user in the image
                 'privileged': True,  # Run in privileged mode to avoid permission issues

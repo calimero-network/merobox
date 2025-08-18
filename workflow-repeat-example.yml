@@ -4,7 +4,7 @@ name: Repeat Step Example Workflow
 nodes:
   chain_id: testnet-1
   count: 2
-  image: ghcr.io/calimero-network/merod:6a47604
+  image: merod-compatible:latest
   prefix: calimero-node
 
 steps:
