@@ -1,0 +1,126 @@
+description: A sample workflow that demonstrates the bootstrap functionality with dynamic value capture
+name: Sample Calimero Workflow
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: merod-compatible:latest
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the application on the first node
+  # This captures the application ID for use in subsequent steps
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    url: https://calimero-only-peers-dev.s3.amazonaws.com/uploads/5b8ca89013859d093c6b49d4ad558335.wasm
+    dev: true
+
+  # Step 2: Create a context using the installed application
+  # Uses the captured application ID from step 1
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{install.calimero-node-1}}'
+    params: '{"name": "CurbTest","is_dm": false, "default_channels": [{"name": "general"}],"created_at": 1751952997, "owner_username": "Bob"}'
+
+  # Step 3: Generate an identity on the second node
+  # This captures the public key for use in invitation and joining
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+
+  # Step 4: Wait for identity creation to complete
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Step 5: Invite the second node to join the context
+  # Uses captured values: context ID, member public key, and identity public key
+  - name: Invite Node 2 from Node 1
+    type: invite_identity
+    node: calimero-node-1
+    context_id: '{{context.calimero-node-1}}'
+    grantee_id: '{{identity.calimero-node-2}}'
+    granter_id: '{{context.calimero-node-1.memberPublicKey}}'
+    capability: member
+
+  # Step 6: Join the context from the second node
+  # Uses captured values: context ID, invitee identity, and invitation data
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context.calimero-node-1}}'
+    invitee_id: '{{identity.calimero-node-2}}'
+    invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'
+
+  # Step 7: Join chat from Node 2
+  - name: Join Chat from Node 2
+    type: call
+    node: calimero-node-2
+    context_id: '{{context.calimero-node-1}}'
+    method: join_chat
+    args:
+      username: "Alice"
+
+  # Step 8: Wait for join operation to complete
+  - name: Wait for Join Operation
+    type: wait
+    seconds: 3
+
+  # Step 9: Send message from Node 1 to general channel
+  - name: Send Message from Node 1 - Hello Node1
+    type: call
+    node: calimero-node-1
+    context_id: '{{context.calimero-node-1}}'
+    method: send_message
+    args:
+      group:
+        channel: "general"
+      message: "hello node1"
+      parent_message: null
+      timestamp: 1751652997
+      sender_username: "Bob"
+
+  # Step 10: Wait for message to be sent
+  - name: Wait for Message Send
+    type: wait
+    seconds: 2
+
+  # Step 11: Send message from Node 2 to general channel
+  - name: Send Message from Node 2 - Hello Node2
+    type: call
+    node: calimero-node-2
+    context_id: '{{context.calimero-node-1}}'
+    method: send_message
+    args:
+      group:
+        channel: "general"
+      message: "hello node2"
+      parent_message: null
+      timestamp: 1751653000
+      sender_username: "Alice"
+
+  # Step 12: Wait for message to be sent
+  - name: Wait for Second Message Send
+    type: wait
+    seconds: 2
+
+  # Step 13: Get messages from Node 1
+  - name: Get Messages from Node 1
+    type: call
+    node: calimero-node-1
+    context_id: '{{context.calimero-node-1}}'
+    method: get_messages
+    args:
+      group:
+        channel: 
+          name: "general"
+      parent_message: null
+      limit: 10
+      offset: 0
+
+# Configuration options
+stop_all_nodes: false   # Stop all nodes at the end of workflow
+restart: false          # Don't restart nodes at the beginning of workflow
+wait_timeout: 60
