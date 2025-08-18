@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2024-12-19
+
+### Added
+- **Script Step Functionality**: New generic `script` step type for workflow execution
+- **Flexible Script Targeting**: Support for `target: "image"` (Docker image) and `target: "nodes"` (running nodes)
+- **Workflow Reorganization**: Centralized workflow examples in `workflow-examples/` directory
+- **Resource Organization**: Scripts moved to `workflow-examples/scripts/` and resources to `workflow-examples/res/`
+- **Documentation Consolidation**: Single comprehensive README.md combining all previous documentation
+
+### Changed
+- **Refactored Script Execution**: Replaced separate `pre_script` and `post_script` flags with unified `script` step type
+- **Enhanced Error Handling**: Improved workflow execution with immediate termination on failures
+- **Updated Command Examples**: All examples now use `merobox` command directly instead of `python merobox_cli.py`
+- **Improved File Structure**: Better organization of workflow examples and associated resources
+
+### Technical Details
+- New `ScriptStep` class in `commands/bootstrap/steps/script.py`
+- Enhanced workflow executor with better error handling and script step support
+- Removed legacy `execute_pre_script` and `execute_post_script_on_nodes` methods
+- Updated all workflow YAML files to use new script step syntax
+- Consolidated documentation into single README.md file
+- Reorganized file structure for better maintainability
+
+### Examples
+- Script execution on Docker images before node startup
+- Script execution on all running nodes after startup
+- Unified script step configuration in workflow YAML
+- Improved workflow organization and resource management
+
 ## [0.1.5] - 2024-01-XX
 
 ### Changed
