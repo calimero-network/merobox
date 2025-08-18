@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2024-12-19
+
+### Fixed
+- **Version Consistency**: Ensure all version references are properly synchronized across all files
+- **Build Artifacts**: Rebuild package with correct version numbers in all source files
+
+### Technical Details
+- Updated version to 0.1.7 in pyproject.toml, setup.py, merobox_cli.py, merobox/cli.py, and merobox/__init__.py
+- Fixed version mismatch between package metadata and source code versions
+
 ## [0.1.6] - 2024-12-19
 
 ### Added
