@@ -16,7 +16,8 @@ console = Console()
 
 async def create_context_via_admin_api(
     rpc_url: str, 
-    application_id: str
+    application_id: str,
+    initialization_params: list = None
 ) -> dict:
     """Create a Calimero context using the admin API."""
     try:
@@ -25,7 +26,7 @@ async def create_context_via_admin_api(
         
         # Create admin client and create context
         admin_client = AdminClient(rpc_url)
-        result = await admin_client.create_context(application_id)
+        result = await admin_client.create_context(application_id, initialization_params=initialization_params)
         
         return result
         

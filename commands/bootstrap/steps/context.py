@@ -15,6 +15,19 @@ class CreateContextStep(BaseStep):
         node_name = self.config['node']
         application_id = self._resolve_dynamic_value(self.config['application_id'], workflow_results, dynamic_values)
         
+        initialization_params = None
+        if 'params' in self.config:
+            try:
+                import json
+                params_json = self.config['params']
+                params_dict = json.loads(params_json)
+                params_bytes = json.dumps(params_dict).encode('utf-8')
+                initialization_params = list(params_bytes)
+                console.print(f"[blue]Using initialization params as bytes: {initialization_params[:50]}...[/blue]")
+            except json.JSONDecodeError as e:
+                console.print(f"[red]Failed to parse params JSON: {str(e)}[/red]")
+                return False
+
         # Get node RPC URL
         try:
             from ...manager import CalimeroManager
@@ -25,7 +38,7 @@ class CreateContextStep(BaseStep):
             return False
         
         # Execute context creation
-        result = await create_context_via_admin_api(rpc_url, application_id)
+        result = await create_context_via_admin_api(rpc_url, application_id, initialization_params)
         
         # Log detailed API response
         console.print(f"[cyan]🔍 Context Creation API Response for {node_name}:[/cyan]")
