@@ -78,14 +78,14 @@ class CalimeroManager:
             # Prepare container configuration
             container_config = {
                 'name': container_name,
-                'image': image or 'ghcr.io/calimero-network/merod:6a47604',
+                'image': image or 'ghcr.io/calimero-network/merod:latest',
                 'detach': True,
                 'user': 'root',  # Override the default user in the image
                 'privileged': True,  # Run in privileged mode to avoid permission issues
                 'environment': {
                     'CALIMERO_HOME': '/app/data',
                     'NODE_NAME': node_name,
-                    'RUST_LOG': 'debug',
+                    'RUST_LOG': 'info',
                 },
                 'ports': {
                     '2428/tcp': port,  # Map external P2P port to internal P2P port (0.0.0.0:2428)
