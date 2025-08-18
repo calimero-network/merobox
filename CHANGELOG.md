@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2024-01-XX
+
+### Changed
+- **Docker Image Update**: Updated merod image from specific commit to `latest` for better maintainability
+- **Log Level Optimization**: Changed default RUST_LOG level from `debug` to `info` for production use
+
+### Technical Details
+- Updated Docker image reference in manager.py from `ghcr.io/calimero-network/merod:6a47604` to `ghcr.io/calimero-network/merod:latest`
+- Modified RUST_LOG environment variable from `debug` to `info` for better performance and reduced log verbosity
+
 ## [0.1.4] - 2024-01-XX
 
 ### Changed
