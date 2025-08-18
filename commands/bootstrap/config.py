@@ -100,6 +100,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         
         console.print(f"[green]✓ Sample workflow configuration created: {output_path}[/green]")
         console.print("[yellow]Note: Dynamic values are automatically captured and used with placeholders[/yellow]")
+        console.print("[yellow]Note: Use 'script' step type to execute scripts on Docker images or running nodes[/yellow]")
         
     except Exception as e:
         console.print(f"[red]Failed to create sample configuration: {str(e)}[/red]")

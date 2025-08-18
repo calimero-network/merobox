@@ -1,0 +1,30 @@
+name: "Script Steps Test Workflow"
+description: "Simple test of script step functionality"
+
+nodes:
+  count: 2
+  prefix: "calimero-node"
+  image: "ghcr.io/calimero-network/merod:edge"
+
+steps:
+  - name: "Pre-Node Setup Script"
+    type: "script"
+    description: "Install tools and setup environment before starting nodes"
+    script: "./workflow-examples/scripts/install-tools-pre-script.sh"
+    target: "image"
+  
+  - name: "Post-Node Health Check"
+    type: "script"
+    description: "Verify node health and status"
+    script: "./workflow-examples/scripts/example-post-script.sh"
+    target: "nodes"
+  
+  - name: "Wait a moment"
+    type: "wait"
+    seconds: 2
+  
+  - name: "Final Status Check"
+    type: "script"
+    description: "Final verification of all nodes"
+    script: "./workflow-examples/scripts/example-post-script.sh"
+    target: "nodes"

@@ -10,6 +10,7 @@ from .join import JoinContextStep
 from .execute import ExecuteStep
 from .wait import WaitStep
 from .repeat import RepeatStep
+from .script import ScriptStep
 
 __all__ = [
     'BaseStep',
@@ -21,4 +22,5 @@ __all__ = [
     'ExecuteStep',
     'WaitStep',
     'RepeatStep',
+    'ScriptStep',
 ]

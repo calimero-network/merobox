@@ -44,7 +44,7 @@ class WorkflowExecutor:
             if restart_nodes:
                 console.print("\n[bold yellow]Step 1: Restarting workflow nodes (restart=true)...[/bold yellow]")
                 if not self.manager.stop_all_nodes():
-                    console.print("[red]Failed to stop workflow nodes[/red]")
+                    console.print("[red]❌ Failed to stop workflow nodes - stopping workflow[/red]")
                     return False
                 console.print("[green]✓ Workflow nodes stopped[/green]")
                 time.sleep(2)  # Give time for cleanup
@@ -52,19 +52,22 @@ class WorkflowExecutor:
                 console.print("\n[bold blue]Step 1: Checking workflow nodes (restart=false)...[/bold blue]")
                 console.print("[cyan]Will reuse existing nodes if they're running...[/cyan]")
             
-            # Step 2: Start nodes (or check if they're already running)
+            # Step 2: Manage nodes
             console.print("\n[bold yellow]Step 2: Managing nodes...[/bold yellow]")
             if not await self._start_nodes(restart_nodes):
+                console.print("[red]❌ Node management failed - stopping workflow[/red]")
                 return False
             
             # Step 3: Wait for nodes to be ready
             console.print("\n[bold yellow]Step 3: Waiting for nodes to be ready...[/bold yellow]")
             if not await self._wait_for_nodes_ready():
+                console.print("[red]❌ Nodes not ready - stopping workflow[/red]")
                 return False
             
             # Step 4: Execute workflow steps
             console.print("\n[bold yellow]Step 4: Executing workflow steps...[/bold yellow]")
             if not await self._execute_workflow_steps():
+                console.print("[red]❌ Workflow steps failed - stopping workflow[/red]")
                 return False
             
             # Step 5: Stop all nodes if requested (at end)
@@ -295,22 +298,34 @@ class WorkflowExecutor:
         return True
     
     def _create_step_executor(self, step_type: str, step_config: Dict[str, Any]):
-        """Create the appropriate step executor based on step type."""
+        """Create a step executor based on the step type."""
         if step_type == 'install_application':
+            from .steps import InstallApplicationStep
             return InstallApplicationStep(step_config)
         elif step_type == 'create_context':
+            from .steps import CreateContextStep
             return CreateContextStep(step_config)
         elif step_type == 'create_identity':
+            from .steps import CreateIdentityStep
             return CreateIdentityStep(step_config)
         elif step_type == 'invite_identity':
+            from .steps import InviteIdentityStep
             return InviteIdentityStep(step_config)
         elif step_type == 'join_context':
+            from .steps import JoinContextStep
             return JoinContextStep(step_config)
         elif step_type == 'call':
+            from .steps import ExecuteStep
             return ExecuteStep(step_config)
         elif step_type == 'wait':
+            from .steps import WaitStep
             return WaitStep(step_config)
         elif step_type == 'repeat':
+            from .steps import RepeatStep
             return RepeatStep(step_config)
+        elif step_type == 'script':
+            from .steps import ScriptStep
+            return ScriptStep(step_config)
         else:
+            console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

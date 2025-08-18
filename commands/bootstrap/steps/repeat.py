@@ -70,20 +70,31 @@ class RepeatStep(BaseStep):
         return True
     
     def _create_nested_step_executor(self, step_type: str, step_config: Dict[str, Any]):
-        """Create the appropriate step executor for nested steps."""
+        """Create a nested step executor based on the step type."""
         if step_type == 'install_application':
+            from . import InstallApplicationStep
             return InstallApplicationStep(step_config)
         elif step_type == 'create_context':
+            from . import CreateContextStep
             return CreateContextStep(step_config)
         elif step_type == 'create_identity':
+            from . import CreateIdentityStep
             return CreateIdentityStep(step_config)
         elif step_type == 'invite_identity':
+            from . import InviteIdentityStep
             return InviteIdentityStep(step_config)
         elif step_type == 'join_context':
+            from . import JoinContextStep
             return JoinContextStep(step_config)
         elif step_type == 'call':
+            from . import ExecuteStep
             return ExecuteStep(step_config)
         elif step_type == 'wait':
+            from . import WaitStep
             return WaitStep(step_config)
+        elif step_type == 'script':
+            from . import ScriptStep
+            return ScriptStep(step_config)
         else:
+            console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None
