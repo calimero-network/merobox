@@ -11,8 +11,7 @@ include requirements.txt
 # Include package configuration
 include setup.py
 
-# Include docs folder
-recursive-include merobox/docs *.md
+# Documentation is now in README.md
 
 # Exclude unnecessary files
 global-exclude *.pyc

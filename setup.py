@@ -59,9 +59,7 @@ setup(
         ],
     },
     include_package_data=True,
-    package_data={
-        "merobox": ["docs/*.md"],
-    },
+    package_data={},
     exclude_package_data={
         "*": ["*.pyc", "__pycache__", "*.pyo", "*.pyd", ".git*", "venv*", ".venv*", "data*"],
     },
