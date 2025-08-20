@@ -20,6 +20,26 @@ class ScriptStep(BaseStep):
         self.target = config.get('target', 'image')  # 'image' or 'nodes'
         self.description = config.get('description', f'Execute script: {self.script_path}')
     
+    def _get_exportable_variables(self):
+        """
+        Define which variables this step can export.
+        
+        Available variables from script execution:
+        - exit_code: Script exit code
+        - output: Script output/result
+        - execution_time: Time taken to execute the script
+        - node_name: Name of the node where script was executed
+        - script_path: Path to the executed script
+        - env_vars: Environment variables set by the script (if any)
+        """
+        return [
+            ('exit_code', 'script_exit_code_{node_name}', 'Script exit code'),
+            ('output', 'script_output_{node_name}', 'Script output/result'),
+            ('execution_time', 'script_execution_time_{node_name}', 'Time taken to execute the script'),
+            ('script_path', 'script_path_{node_name}', 'Path to the executed script'),
+            ('env_vars', 'script_env_vars_{node_name}', 'Environment variables set by the script'),
+        ]
+    
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         """Execute the script step."""
         if not self.script_path:
@@ -30,6 +50,10 @@ class ScriptStep(BaseStep):
             console.print(f"[red]❌ Script file not found: {self.script_path}[/red]")
             return False
         
+        # Validate export configuration
+        if not self._validate_export_config():
+            console.print(f"[yellow]⚠️  Script step export configuration validation failed[/yellow]")
+        
         console.print(f"\n[bold blue]📜 {self.description}[/bold blue]")
         
         if self.target == 'image':
@@ -39,6 +63,42 @@ class ScriptStep(BaseStep):
         else:
             console.print(f"[red]❌ Unknown target type: {self.target}[/red]")
             return False
+    
+    def _export_script_results(self, node_name: str, exit_code: int, output: str, execution_time: float, dynamic_values: Dict[str, Any]) -> None:
+        """Export script execution results to dynamic values."""
+        script_results = {
+            'exit_code': exit_code,
+            'output': output,
+            'execution_time': execution_time,
+            'script_path': self.script_path,
+            'node_name': node_name,
+        }
+        
+        # Export individual variables
+        for key, value in script_results.items():
+            if key == 'node_name':
+                continue  # Skip node_name as it's used in the template
+            target_key = f'script_{key}_{node_name}'
+            dynamic_values[target_key] = value
+            console.print(f"[blue]📝 Exported script {key} → {target_key}: {value}[/blue]")
+        
+        # Export environment variables if any were set
+        env_vars = {}
+        common_env_vars = [
+            'NODE_READY', 'NODE_HOSTNAME', 'NODE_TIMESTAMP', 'CALIMERO_HOME',
+            'TOOLS_INSTALLED', 'CURL_AVAILABLE', 'PERF_AVAILABLE',
+            'PACKAGE_MANAGER', 'UPDATE_CMD', 'INSTALL_CMD'
+        ]
+        
+        for var_name in common_env_vars:
+            if var_name in os.environ:
+                env_vars[var_name] = os.environ[var_name]
+        
+        if env_vars:
+            dynamic_values[f'script_env_vars_{node_name}'] = env_vars
+            console.print(f"[blue]📝 Exported {len(env_vars)} environment variables for {node_name}[/blue]")
+            for var_name, var_value in env_vars.items():
+                console.print(f"  {var_name}={var_value}")
     
     async def _execute_on_image(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         """Execute script on a Docker image before starting nodes."""
@@ -109,7 +169,9 @@ class ScriptStep(BaseStep):
                 if result.exit_code != 0:
                     console.print(f"[yellow]Warning: Could not make script executable: {result.output.decode()}[/yellow]")
                 
+                start_time = time.time()
                 result = container.exec_run(["/bin/sh", "/tmp/script.sh"])
+                execution_time = time.time() - start_time
                 
                 output = result.output.decode('utf-8', errors='replace')
                 if output.strip():
@@ -119,6 +181,9 @@ class ScriptStep(BaseStep):
                 if result.exit_code != 0:
                     console.print(f"[red]Script failed with exit code: {result.exit_code}[/red]")
                     return False
+                
+                # Export script results
+                self._export_script_results('image', result.exit_code, output, execution_time, dynamic_values)
                 
                 console.print("[green]✓ Script executed successfully[/green]")
                 return True
@@ -196,7 +261,9 @@ class ScriptStep(BaseStep):
                             console.print(f"[yellow]Warning: Could not make script executable on {node_name}: {result.output.decode()}[/yellow]")
                         
                         # Execute the script
+                        start_time = time.time()
                         result = container.exec_run(["/bin/sh", f"/tmp/{script_name}"])
+                        execution_time = time.time() - start_time
                         
                         # Display script output
                         output = result.output.decode('utf-8', errors='replace')
@@ -211,6 +278,9 @@ class ScriptStep(BaseStep):
                         else:
                             console.print(f"[green]✓ Script executed successfully on {node_name}[/green]")
                             success_count += 1
+                        
+                        # Export script results for this node
+                        self._export_script_results(node_name, result.exit_code, output, execution_time, dynamic_values)
                         
                         # Clean up script from container
                         try:

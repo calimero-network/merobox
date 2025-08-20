@@ -11,11 +11,28 @@ from .base import BaseStep
 class JoinContextStep(BaseStep):
     """Execute a join context step."""
     
+    def _get_exportable_variables(self):
+        """
+        Define which variables this step can export.
+        
+        Available variables from join_context API response:
+        - contextId: ID of the context joined (this is what the API actually returns)
+        - memberPublicKey: Public key of the member who joined
+        """
+        return [
+            ('contextId', 'join_context_id_{node_name}_{invitee_id}', 'ID of the context joined'),
+            ('memberPublicKey', 'join_member_public_key_{node_name}_{invitee_id}', 'Public key of the member who joined'),
+        ]
+    
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         node_name = self.config['node']
         context_id = self._resolve_dynamic_value(self.config['context_id'], workflow_results, dynamic_values)
         invitee_id = self._resolve_dynamic_value(self.config['invitee_id'], workflow_results, dynamic_values)
         invitation = self._resolve_dynamic_value(self.config['invitation'], workflow_results, dynamic_values)
+        
+        # Validate export configuration
+        if not self._validate_export_config():
+            console.print(f"[yellow]⚠️  Join step export configuration validation failed[/yellow]")
         
         # Debug: Show resolved values
         console.print(f"[blue]Debug: Resolved values for join step:[/blue]")
@@ -55,9 +72,18 @@ class JoinContextStep(BaseStep):
                 console.print(f"  Detailed Errors: {result['errors']}")
         
         if result['success']:
+            # Check if the JSON-RPC response contains an error
+            if self._check_jsonrpc_error(result['data']):
+                return False
+            
             # Store result for later use
             step_key = f"join_{node_name}_{invitee_id}"
             workflow_results[step_key] = result['data']
+            
+            # Export variables using the new standardized approach
+            # Note: We need to handle the invitee_id dynamically for the export
+            self._export_variables(result['data'], node_name, dynamic_values)
+            
             return True
         else:
             console.print(f"[red]Join failed: {result.get('error', 'Unknown error')}[/red]")

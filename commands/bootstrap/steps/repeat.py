@@ -16,16 +16,48 @@ from .wait import WaitStep
 class RepeatStep(BaseStep):
     """Execute nested steps multiple times."""
     
+    def _get_exportable_variables(self):
+        """
+        Define which variables this step can export.
+        
+        Available variables from repeat execution:
+        - iteration: Current iteration number (1-based)
+        - iteration_index: Current iteration index (0-based)
+        - iteration_zero_based: Current iteration index (0-based, alias)
+        - iteration_one_based: Current iteration number (1-based, alias)
+        - total_iterations: Total number of iterations
+        - current_step: Current step being executed
+        - step_count: Total number of nested steps
+        """
+        return [
+            ('iteration', 'iteration', 'Current iteration number (1-based)'),
+            ('iteration_index', 'iteration_index', 'Current iteration index (0-based)'),
+            ('iteration_zero_based', 'iteration_zero_based', 'Current iteration index (0-based, alias)'),
+            ('iteration_one_based', 'iteration_one_based', 'Current iteration number (1-based, alias)'),
+            ('total_iterations', 'total_iterations', 'Total number of iterations'),
+            ('current_step', 'current_step', 'Current step being executed'),
+            ('step_count', 'step_count', 'Total number of nested steps'),
+        ]
+    
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         repeat_count = self.config.get('count', 1)
         nested_steps = self.config.get('steps', [])
         step_name = self.config.get('name', 'Repeat Step')
+        
+        # Validate export configuration
+        if not self._validate_export_config():
+            console.print(f"[yellow]⚠️  Repeat step export configuration validation failed[/yellow]")
         
         if not nested_steps:
             console.print("[yellow]No nested steps specified for repeat[/yellow]")
             return True
         
         console.print(f"[cyan]🔄 Executing {len(nested_steps)} nested steps {repeat_count} times...[/cyan]")
+        
+        # Export repeat configuration variables
+        dynamic_values['total_iterations'] = repeat_count
+        dynamic_values['step_count'] = len(nested_steps)
+        console.print(f"[blue]📝 Exported repeat configuration: total_iterations={repeat_count}, step_count={len(nested_steps)}[/blue]")
         
         for iteration in range(repeat_count):
             console.print(f"\n[bold blue]📋 Iteration {iteration + 1}/{repeat_count}[/bold blue]")
@@ -43,6 +75,10 @@ class RepeatStep(BaseStep):
             for step_idx, step in enumerate(nested_steps):
                 step_type = step.get('type')
                 nested_step_name = step.get('name', f"Nested Step {step_idx + 1}")
+                
+                # Update current step information
+                iteration_dynamic_values['current_step'] = nested_step_name
+                iteration_dynamic_values['current_step_index'] = step_idx + 1
                 
                 console.print(f"  [cyan]Executing {nested_step_name} ({step_type})...[/cyan]")
                 

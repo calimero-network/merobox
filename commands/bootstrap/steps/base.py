@@ -2,7 +2,7 @@
 Base step class for all workflow steps.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 from ...utils import console
 
 
@@ -11,10 +11,203 @@ class BaseStep:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
+        # Define which variables this step can export and their mapping
+        self.exportable_variables = self._get_exportable_variables()
+    
+    def _get_exportable_variables(self) -> List[Tuple[str, str, str]]:
+        """
+        Define which variables this step can export.
+        Returns a list of tuples: (source_field, target_key, description)
+        
+        Override this method in subclasses to specify exportable variables.
+        """
+        return []
+    
+    def _export_variable(self, dynamic_values: Dict[str, Any], source_field: str, target_key: str, value: Any, description: str = None) -> None:
+        """
+        Export a variable to dynamic_values with explicit documentation.
+        
+        Args:
+            dynamic_values: The dynamic values dictionary to update
+            source_field: The source field name from the API response
+            target_key: The target key in dynamic_values
+            value: The value to export
+            description: Optional description of what this variable represents
+        """
+        if value is not None:
+            dynamic_values[target_key] = value
+            desc_text = f" ({description})" if description else ""
+            console.print(f"[blue]📝 Exported {source_field} → {target_key}: {value}{desc_text}[/blue]")
+        else:
+            console.print(f"[yellow]⚠️  Could not export {source_field} → {target_key} (value is None)[/yellow]")
+    
+    def _export_variables_from_response(self, response_data: Dict[str, Any], node_name: str, dynamic_values: Dict[str, Any]) -> None:
+        """
+        Export variables automatically based on exportable_variables configuration.
+        This method is called for backward compatibility when no custom outputs are specified.
+        
+        Args:
+            response_data: The API response data
+            node_name: The name of the node
+            dynamic_values: The dynamic values dictionary to update
+        """
+        if not self.exportable_variables:
+            return
+        
+        # Extract the actual data (handle nested structures)
+        actual_data = response_data.get('data', response_data) if isinstance(response_data, dict) else response_data
+        
+        for source_field, target_key_template, description in self.exportable_variables:
+            # Replace placeholders in target_key_template
+            target_key = target_key_template.replace('{node_name}', node_name)
+            
+            # Skip if this variable has already been exported by custom outputs
+            if target_key in dynamic_values:
+                continue
+            
+            # Extract value from response
+            if isinstance(actual_data, dict):
+                value = actual_data.get(source_field)
+            else:
+                value = None
+            
+            # Export the variable
+            self._export_variable(dynamic_values, source_field, target_key, value, description)
+    
+    def _export_custom_outputs(self, response_data: Dict[str, Any], node_name: str, dynamic_values: Dict[str, Any]) -> None:
+        """
+        Export variables based on custom outputs configuration specified by the user.
+        
+        Args:
+            response_data: The API response data
+            node_name: The name of the node
+            dynamic_values: The dynamic values dictionary to update
+        """
+        outputs_config = self.config.get('outputs', {})
+        if not outputs_config:
+            return
+        
+        # Extract the actual data (handle nested structures)
+        actual_data = response_data.get('data', response_data) if isinstance(response_data, dict) else response_data
+        
+        console.print(f"[cyan]🔧 Processing custom outputs configuration for {node_name}:[/cyan]")
+        
+        for exported_variable, assigned_var in outputs_config.items():
+            # Handle different types of assigned_var
+            if isinstance(assigned_var, str):
+                # Simple string assignment
+                if assigned_var in actual_data:
+                    value = actual_data[assigned_var]
+                    target_key = exported_variable
+                    dynamic_values[target_key] = value
+                    console.print(f"[blue]📝 Custom export: {assigned_var} → {target_key}: {value}[/blue]")
+                else:
+                    console.print(f"[yellow]⚠️  Custom export failed: field '{assigned_var}' not found in response[/yellow]")
+                    console.print(f"[yellow]   Available fields: {list(actual_data.keys()) if isinstance(actual_data, dict) else 'N/A'}[/yellow]")
+            
+            elif isinstance(assigned_var, dict):
+                # Complex assignment with node name replacement
+                if 'field' in assigned_var:
+                    field_name = assigned_var['field']
+                    if field_name in actual_data:
+                        value = actual_data[field_name]
+                        # Handle node name replacement in the target key
+                        target_key = assigned_var.get('target', exported_variable)
+                        target_key = target_key.replace('{node_name}', node_name)
+                        dynamic_values[target_key] = value
+                        console.print(f"[blue]📝 Custom export: {field_name} → {target_key}: {value}[/blue]")
+                    else:
+                        console.print(f"[yellow]⚠️  Custom export failed: field '{field_name}' not found in response[/yellow]")
+                        console.print(f"[yellow]   Available fields: {list(actual_data.keys()) if isinstance(actual_data, dict) else 'N/A'}[/yellow]")
+                else:
+                    console.print(f"[yellow]⚠️  Invalid custom export config: missing 'field' in {assigned_var}[/yellow]")
+            
+            else:
+                console.print(f"[yellow]⚠️  Invalid custom export config: {assigned_var} is not a string or dict[/yellow]")
+    
+    def _export_variables(self, response_data: Dict[str, Any], node_name: str, dynamic_values: Dict[str, Any]) -> None:
+        """
+        Main export method that handles both automatic and custom exports.
+        
+        Args:
+            response_data: The API response data
+            node_name: The name of the node
+            dynamic_values: The dynamic values dictionary to update
+        """
+        # First, handle custom outputs if specified
+        if 'outputs' in self.config:
+            self._export_custom_outputs(response_data, node_name, dynamic_values)
+        
+        # Then, handle automatic exports for backward compatibility, but only for variables not already exported
+        if self.exportable_variables:
+            self._export_variables_from_response(response_data, node_name, dynamic_values)
+    
+    def _validate_export_config(self) -> bool:
+        """
+        Validate that the step configuration properly defines exportable variables.
+        Returns True if valid, False otherwise.
+        """
+        # Check if custom outputs are configured
+        if 'outputs' in self.config:
+            outputs_config = self.config['outputs']
+            if not isinstance(outputs_config, dict):
+                console.print(f"[yellow]⚠️  Step {self.__class__.__name__} has invalid outputs config: must be a dictionary[/yellow]")
+                return False
+            
+            # Validate each output configuration
+            for exported_var, assigned_var in outputs_config.items():
+                if not isinstance(exported_var, str):
+                    console.print(f"[yellow]⚠️  Invalid output key '{exported_var}': must be a string[/yellow]")
+                    return False
+                
+                if isinstance(assigned_var, str):
+                    # Simple string assignment is valid
+                    pass
+                elif isinstance(assigned_var, dict):
+                    # Complex assignment must have 'field' key
+                    if 'field' not in assigned_var:
+                        console.print(f"[yellow]⚠️  Invalid output config for '{exported_var}': missing 'field' key[/yellow]")
+                        return False
+                else:
+                    console.print(f"[yellow]⚠️  Invalid output config for '{exported_var}': must be string or dict[/yellow]")
+                    return False
+            
+            console.print(f"[blue]✅ Custom outputs configuration validated: {len(outputs_config)} outputs defined[/blue]")
+            return True
+        
+        # Check if automatic exports are configured
+        if not hasattr(self, 'exportable_variables') or not self.exportable_variables:
+            console.print(f"[yellow]⚠️  Step {self.__class__.__name__} has no exportable variables defined[/yellow]")
+            return False
+        
+        console.print(f"[blue]✅ Automatic exports configuration validated: {len(self.exportable_variables)} variables defined[/blue]")
+        return True
     
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         """Execute the step. Must be implemented by subclasses."""
         raise NotImplementedError
+    
+    def _check_jsonrpc_error(self, result_data: Any) -> bool:
+        """
+        Check if the API response contains a JSON-RPC error.
+        
+        Args:
+            result_data: The 'data' field from the API response
+            
+        Returns:
+            True if a JSON-RPC error was found (workflow should fail), False otherwise
+        """
+        if isinstance(result_data, dict) and 'error' in result_data:
+            # JSON-RPC error - fail the workflow
+            error_info = result_data['error']
+            if isinstance(error_info, dict):
+                error_type = error_info.get('type', 'Unknown')
+                error_data = error_info.get('data', 'No details')
+                console.print(f"[red]JSON-RPC Error: {error_type} - {error_data}[/red]")
+            else:
+                console.print(f"[red]JSON-RPC Error: {error_info}[/red]")
+            return True
+        return False
     
     def _resolve_dynamic_value(self, value: str, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> str:
         """Resolve dynamic values using placeholders and captured results."""
@@ -24,6 +217,10 @@ class BaseStep:
         # Replace placeholders with actual values
         if value.startswith('{{') and value.endswith('}}'):
             placeholder = value[2:-2].strip()
+            
+            # First, check if this is a simple custom output variable name
+            if placeholder in dynamic_values:
+                return dynamic_values[placeholder]
             
             # Handle different placeholder types
             if placeholder.startswith('install.'):

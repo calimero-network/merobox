@@ -272,10 +272,12 @@ Installs an application on a specified node.
   node: "calimero-node-1"
   path: "./app.wasm"
   dev: true
+  outputs:
+    app_id: id                      # Export 'id' field as 'app_id'
 ```
 
 **Dynamic Values Captured:**
-- Application ID (stored as `{{install.node_name}}`)
+- Application ID (stored as `{{app_id}}`)
 
 #### `create_context`
 Creates a context for an application.
@@ -284,12 +286,15 @@ Creates a context for an application.
 - name: "Create Context"
   type: "create_context"
   node: "calimero-node-1"
-  application_id: "{{install.calimero-node-1}}"
+  application_id: "{{app_id}}"
+  outputs:
+    context_id: id                  # Export 'id' field as 'context_id'
+    member_public_key: memberPublicKey  # Export 'memberPublicKey' as 'member_public_key'
 ```
 
 **Dynamic Values Captured:**
-- Context ID (stored as `{{context.node_name}}`)
-- Member Public Key (accessible as `{{context.node_name.memberPublicKey}}`)
+- Context ID (stored as `{{context_id}}`)
+- Member Public Key (accessible as `{{member_public_key}}`)
 
 #### `create_identity`
 Generates a new identity on a node.
@@ -298,26 +303,30 @@ Generates a new identity on a node.
 - name: "Generate Identity"
   type: "create_identity"
   node: "calimero-node-2"
+  outputs:
+    public_key: publicKey           # Export 'publicKey' as 'public_key'
 ```
 
 **Dynamic Values Captured:**
-- Public key (stored as `{{identity.node_name}}`)
+- Public key (stored as `{{public_key}}`)
 
 #### `invite_identity`
-Invites an identity to a context.
+Invites an identity to join a context.
 
 ```yaml
 - name: "Invite Identity"
   type: "invite_identity"
   node: "calimero-node-1"
-  context_id: "{{context.calimero-node-1}}"
-  granter_id: "{{context.calimero-node-1.memberPublicKey}}"
-  grantee_id: "{{identity.calimero-node-2}}"
+  context_id: "{{context_id}}"
+  granter_id: "{{member_public_key}}"
+  grantee_id: "{{public_key}}"
   capability: "member"
+  outputs:
+    invitation: invitation           # Export 'invitation' as 'invitation'
 ```
 
 **Dynamic Values Captured:**
-- Invitation data (stored as `{{invite.node_name_identity.node_name}}`)
+- Invitation data (stored as `{{invitation}}`)
 
 #### `join_context`
 Joins a context using an invitation.
@@ -326,9 +335,9 @@ Joins a context using an invitation.
 - name: "Join Context"
   type: "join_context"
   node: "calimero-node-2"
-  context_id: "{{context.calimero-node-1}}"
-  invitee_id: "{{identity.calimero-node-2}}"
-  invitation: "{{invite.calimero-node-1_identity.calimero-node-2}}"
+  context_id: "{{context_id}}"
+  invitee_id: "{{public_key}}"
+  invitation: "{{invitation}}"
 ```
 
 #### `call`
@@ -338,11 +347,13 @@ Executes contract calls, view calls, or function calls.
 - name: "Set Key-Value"
   type: "call"
   node: "calimero-node-1"
-  context_id: "{{context.calimero-node-1}}"
+  context_id: "{{context_id}}"
   method: "set"
   args:
     key: "hello"
     value: "world"
+  outputs:
+    call_result: result             # Export 'result' as 'call_result'
 ```
 
 **Features:**
@@ -438,44 +449,55 @@ steps:
     node: "calimero-node-1"
     path: "./app.wasm"
     dev: true
+    outputs:
+      app_id: id                      # Export 'id' field as 'app_id'
 
   # Create context using captured app ID
   - name: "Create Context"
     type: "create_context"
     node: "calimero-node-1"
-    application_id: "{{install.calimero-node-1}}"
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: id                  # Export 'id' field as 'context_id'
+      member_public_key: memberPublicKey  # Export 'memberPublicKey' as 'member_public_key'
 
   # Generate identity
   - name: "Generate Identity"
     type: "create_identity"
     node: "calimero-node-2"
+    outputs:
+      public_key: publicKey           # Export 'publicKey' as 'public_key'
 
   # Invite using captured values
   - name: "Invite Identity"
     type: "invite_identity"
     node: "calimero-node-1"
-    context_id: "{{context.calimero-node-1}}"
-    granter_id: "{{context.calimero-node-1.memberPublicKey}}"
-    grantee_id: "{{identity.calimero-node-2}}"
+    context_id: "{{context_id}}"
+    granter_id: "{{member_public_key}}"
+    grantee_id: "{{public_key}}"
     capability: "member"
+    outputs:
+      invitation: invitation           # Export 'invitation' as 'invitation'
 
   # Join using invitation
   - name: "Join Context"
     type: "join_context"
     node: "calimero-node-2"
-    context_id: "{{context.calimero-node-1}}"
-    invitee_id: "{{identity.calimero-node-2}}"
-    invitation: "{{invite.calimero-node-1_identity.calimero-node-2}}"
+    context_id: "{{context_id}}"
+    invitee_id: "{{public_key}}"
+    invitation: "{{invitation}}"
 
   # Execute contract calls
   - name: "Set Key-Value"
     type: "call"
     node: "calimero-node-1"
-    context_id: "{{context.calimero-node-1}}"
+    context_id: "{{context_id}}"
     method: "set"
     args:
       key: "hello"
       value: "world"
+    outputs:
+      call_result: result             # Export 'result' as 'call_result'
 ```
 
 ## 📁 Workflow Examples

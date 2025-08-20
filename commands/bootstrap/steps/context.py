@@ -11,9 +11,26 @@ from .base import BaseStep
 class CreateContextStep(BaseStep):
     """Execute a create context step."""
     
+    def _get_exportable_variables(self):
+        """
+        Define which variables this step can export.
+        
+        Available variables from create_context API response:
+        - contextId: Context ID (this is what the API actually returns)
+        - memberPublicKey: Public key of the context member
+        """
+        return [
+            ('contextId', 'context_id_{node_name}', 'Context ID - primary identifier for the created context'),
+            ('memberPublicKey', 'context_member_public_key_{node_name}', 'Public key of the context member'),
+        ]
+    
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         node_name = self.config['node']
         application_id = self._resolve_dynamic_value(self.config['application_id'], workflow_results, dynamic_values)
+        
+        # Validate export configuration
+        if not self._validate_export_config():
+            console.print(f"[yellow]⚠️  Context step export configuration validation failed[/yellow]")
         
         initialization_params = None
         if 'params' in self.config:
@@ -48,16 +65,29 @@ class CreateContextStep(BaseStep):
             console.print(f"  Error: {result.get('error')}")
         
         if result['success']:
+            # Check if the JSON-RPC response contains an error
+            if self._check_jsonrpc_error(result['data']):
+                return False
+            
             # Store result for later use
             step_key = f"context_{node_name}"
             workflow_results[step_key] = result['data']
             
-            # Extract and store key information
-            if isinstance(result['data'], dict):
-                context_id = result['data'].get('id', result['data'].get('contextId', result['data'].get('name')))
-                if context_id:
-                    dynamic_values[f'context_id_{node_name}'] = context_id
-                    console.print(f"[blue]📝 Captured context ID for {node_name}: {context_id}[/blue]")
+            # Export variables using the new standardized approach
+            self._export_variables(result['data'], node_name, dynamic_values)
+            
+            # Legacy support: ensure context_id is always available for backward compatibility
+            if f'context_id_{node_name}' not in dynamic_values:
+                # Try to extract from the raw response as fallback
+                if isinstance(result['data'], dict):
+                    context_id = result['data'].get('id', result['data'].get('contextId', result['data'].get('name')))
+                    if context_id:
+                        dynamic_values[f'context_id_{node_name}'] = context_id
+                        console.print(f"[blue]📝 Fallback: Captured context ID for {node_name}: {context_id}[/blue]")
+                    else:
+                        console.print(f"[yellow]⚠️  No context ID found in response. Available keys: {list(result['data'].keys())}[/yellow]")
+                else:
+                    console.print(f"[yellow]⚠️  Context result is not a dict: {type(result['data'])}[/yellow]")
             
             return True
         else:

@@ -4,7 +4,7 @@ name: Repeat Step Example Workflow
 nodes:
   chain_id: testnet-1
   count: 2
-  image: ghcr.io/calimero-network/merod:6a47604
+  image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
 
 steps:
@@ -14,17 +14,24 @@ steps:
     node: calimero-node-1
     path: ./workflow-examples/res/kv_store.wasm
     dev: true
+    outputs:
+      app_id: applicationId          # Export 'applicationId' field as 'app_id'
 
   # Step 2: Create a context using the installed application
   - name: Create Context on Node 1
     type: create_context
     node: calimero-node-1
-    application_id: '{{install.calimero-node-1}}'
+    application_id: '{{app_id}}'
+    outputs:
+      context_id: contextId          # Export 'contextId' field as 'context_id'
+      member_public_key: memberPublicKey  # Export 'memberPublicKey' as 'member_public_key'
 
   # Step 3: Generate an identity on the second node
   - name: Create Identity on Node 2
     type: create_identity
     node: calimero-node-2
+    outputs:
+      public_key: publicKey         # Export 'publicKey' as 'public_key'
 
   # Step 4: Wait for identity creation to complete
   - name: Wait for Identity Creation
@@ -35,32 +42,39 @@ steps:
   - name: Invite Node 2 from Node 1
     type: invite_identity
     node: calimero-node-1
-    context_id: '{{context.calimero-node-1}}'
-    grantee_id: '{{identity.calimero-node-2}}'
-    granter_id: '{{context.calimero-node-1.memberPublicKey}}'
+    context_id: '{{context_id}}'
+    grantee_id: '{{public_key}}'
+    granter_id: '{{member_public_key}}'
     capability: member
+    outputs:
+      invitation: invitation         # Export 'invitation' as 'invitation'
 
   # Step 6: Join the context from the second node
   - name: Join Context from Node 2
     type: join_context
     node: calimero-node-2
-    context_id: '{{context.calimero-node-1}}'
-    invitee_id: '{{identity.calimero-node-2}}'
-    invitation: '{{invite.calimero-node-1_identity.calimero-node-2}}'
+    context_id: '{{context_id}}'
+    invitee_id: '{{public_key}}'
+    invitation: '{{invitation}}'
 
   # Step 7: Example 1 - Simple repeat with basic operations
   - name: Simple Repeat Example
     type: repeat
     count: 3
+    outputs:
+      current_iteration: iteration   # Export 'iteration' as 'current_iteration'
     steps:
       - name: Set Key-Value Pair
         type: call
         node: calimero-node-1
-        context_id: '{{context.calimero-node-1}}'
+        context_id: '{{context_id}}'
+        executor_public_key: '{{member_public_key}}'
         method: set
         args:
-          key: "simple_key_{{iteration}}"
-          value: "simple_value_{{iteration}}"
+          key: "simple_key_{{current_iteration}}"
+          value: "simple_value_{{current_iteration}}"
+        outputs:
+          simple_set_result: result  # Export 'result' as 'simple_set_result'
       
       - name: Wait for Set Operation
         type: wait
@@ -70,24 +84,32 @@ steps:
   - name: Complex Repeat Example
     type: repeat
     count: 2
+    outputs:
+      current_iteration: iteration   # Export 'iteration' as 'current_iteration'
     steps:
       - name: Set Multiple Key-Value Pairs
         type: call
         node: calimero-node-1
-        context_id: '{{context.calimero-node-1}}'
+        context_id: '{{context_id}}'
+        executor_public_key: '{{member_public_key}}'
         method: set
         args:
-          key: "complex_key_{{iteration}}_a"
-          value: "complex_value_{{iteration}}_a"
+          key: "complex_key_{{current_iteration}}_a"
+          value: "complex_value_{{current_iteration}}_a"
+        outputs:
+          complex_set_a_result: result  # Export 'result' as 'complex_set_a_result'
       
       - name: Set Another Key-Value Pair
         type: call
         node: calimero-node-1
-        context_id: '{{context.calimero-node-1}}'
+        context_id: '{{context_id}}'
+        executor_public_key: '{{member_public_key}}'
         method: set
         args:
-          key: "complex_key_{{iteration}}_b"
-          value: "complex_value_{{iteration}}_b"
+          key: "complex_key_{{current_iteration}}_b"
+          value: "complex_value_{{current_iteration}}_b"
+        outputs:
+          complex_set_b_result: result  # Export 'result' as 'complex_set_b_result'
       
       - name: Wait Between Operations
         type: wait
@@ -96,32 +118,43 @@ steps:
       - name: Retrieve First Key-Value Pair
         type: call
         node: calimero-node-2
-        context_id: '{{context.calimero-node-1}}'
+        context_id: '{{context_id}}'
+        executor_public_key: '{{public_key}}'
         method: get
         args:
-          key: "complex_key_{{iteration}}_a"
+          key: "complex_key_{{current_iteration}}_a"
+        outputs:
+          complex_get_a_result: result  # Export 'result' as 'complex_get_a_result'
       
       - name: Retrieve Second Key-Value Pair
         type: call
         node: calimero-node-2
-        context_id: '{{context.calimero-node-1}}'
+        context_id: '{{context_id}}'
+        executor_public_key: '{{public_key}}'
         method: get
         args:
-          key: "complex_key_{{iteration}}_b"
+          key: "complex_key_{{current_iteration}}_b"
+        outputs:
+          complex_get_b_result: result  # Export 'result' as 'complex_get_b_result'
 
   # Step 9: Example 3 - Repeat with conditional-like behavior using different iteration values
   - name: Iteration-Based Repeat Example
     type: repeat
     count: 4
+    outputs:
+      current_iteration: iteration   # Export 'iteration' as 'current_iteration'
     steps:
       - name: Set Data Based on Iteration
         type: call
         node: calimero-node-1
-        context_id: '{{context.calimero-node-1}}'
+        context_id: '{{context_id}}'
+        executor_public_key: '{{member_public_key}}'
         method: set
         args:
-          key: "iteration_{{iteration}}"
-          value: "data_for_iteration_{{iteration}}"
+          key: "iteration_{{current_iteration}}"
+          value: "data_for_iteration_{{current_iteration}}"
+        outputs:
+          iteration_set_result: result  # Export 'result' as 'iteration_set_result'
       
       - name: Wait for Propagation
         type: wait
@@ -130,10 +163,13 @@ steps:
       - name: Verify Data from Different Node
         type: call
         node: calimero-node-2
-        context_id: '{{context.calimero-node-1}}'
+        context_id: '{{context_id}}'
+        executor_public_key: '{{public_key}}'
         method: get
         args:
-          key: "iteration_{{iteration}}"
+          key: "iteration_{{current_iteration}}"
+        outputs:
+          iteration_get_result: result  # Export 'result' as 'iteration_get_result'
 
 # Configuration options
 stop_all_nodes: true   # Stop all nodes at the end of workflow

@@ -11,8 +11,23 @@ from .base import BaseStep
 class CreateIdentityStep(BaseStep):
     """Execute a create identity step."""
     
+    def _get_exportable_variables(self):
+        """
+        Define which variables this step can export.
+        
+        Available variables from generate_identity API response:
+        - publicKey: Public key of the generated identity (this is what the API actually returns)
+        """
+        return [
+            ('publicKey', 'public_key_{node_name}', 'Public key of the generated identity'),
+        ]
+    
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         node_name = self.config['node']
+        
+        # Validate export configuration
+        if not self._validate_export_config():
+            console.print(f"[yellow]⚠️  CreateIdentity step export configuration validation failed[/yellow]")
         
         # Get node RPC URL
         try:
@@ -34,16 +49,29 @@ class CreateIdentityStep(BaseStep):
             console.print(f"  Error: {result.get('error')}")
         
         if result['success']:
+            # Check if the JSON-RPC response contains an error
+            if self._check_jsonrpc_error(result['data']):
+                return False
+            
             # Store result for later use
             step_key = f"identity_{node_name}"
             workflow_results[step_key] = result['data']
             
-            # Extract and store key information
-            if isinstance(result['data'], dict):
-                public_key = result['data'].get('publicKey', result['data'].get('id', result['data'].get('name')))
-                if public_key:
-                    dynamic_values[f'public_key_{node_name}'] = public_key
-                    console.print(f"[blue]📝 Captured public key for {node_name}: {public_key}[/blue]")
+            # Export variables using the new standardized approach
+            self._export_variables(result['data'], node_name, dynamic_values)
+            
+            # Legacy support: ensure public_key is always available for backward compatibility
+            if f'public_key_{node_name}' not in dynamic_values:
+                # Try to extract from the raw response as fallback
+                if isinstance(result['data'], dict):
+                    public_key = result['data'].get('publicKey', result['data'].get('id', result['data'].get('name')))
+                    if public_key:
+                        dynamic_values[f'public_key_{node_name}'] = public_key
+                        console.print(f"[blue]📝 Fallback: Captured public key for {node_name}: {public_key}[/blue]")
+                    else:
+                        console.print(f"[yellow]⚠️  No public key found in response. Available keys: {list(result['data'].keys())}[/yellow]")
+                else:
+                    console.print(f"[yellow]⚠️  Identity result is not a dict: {type(result['data'])}[/yellow]")
             
             return True
         else:
@@ -54,12 +82,27 @@ class CreateIdentityStep(BaseStep):
 class InviteIdentityStep(BaseStep):
     """Execute an invite identity step."""
     
+    def _get_exportable_variables(self):
+        """
+        Define which variables this step can export.
+        
+        Available variables from invite_identity API response:
+        - invitation: Invitation data for joining the context (this is what the API actually returns)
+        """
+        return [
+            ('invitation', 'invitation_data_{node_name}_{invitee_id}', 'Invitation data for joining the context'),
+        ]
+    
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         node_name = self.config['node']
         context_id = self._resolve_dynamic_value(self.config['context_id'], workflow_results, dynamic_values)
         inviter_id = self._resolve_dynamic_value(self.config['granter_id'], workflow_results, dynamic_values)
         invitee_id = self._resolve_dynamic_value(self.config['grantee_id'], workflow_results, dynamic_values)
         capability = self.config.get('capability', 'member')
+        
+        # Validate export configuration
+        if not self._validate_export_config():
+            console.print(f"[yellow]⚠️  InviteIdentity step export configuration validation failed[/yellow]")
         
         # Get node RPC URL
         try:
@@ -89,11 +132,24 @@ class InviteIdentityStep(BaseStep):
                 console.print(f"  Detailed Errors: {result['errors']}")
         
         if result['success']:
+            # Check if the JSON-RPC response contains an error
+            if self._check_jsonrpc_error(result['data']):
+                return False
+            
             # Store result for later use
             step_key = f"invite_{node_name}_{invitee_id}"
             # Extract the actual invitation data from the nested response
             invitation_data = result['data'].get('data') if isinstance(result['data'], dict) else result['data']
             workflow_results[step_key] = invitation_data
+            
+            # Special handling for invitation export since the data field IS the invitation
+            # The result structure is {'success': True, 'data': {'data': 'invitation_string'}}
+            # The _export_variables method expects to work with the response['data'] part
+            # So we need to create: {'invitation': 'invitation_string'} as the response_data
+            actual_invitation = result['data'].get('data') if isinstance(result['data'], dict) else result['data']
+            synthetic_response_data = {'invitation': actual_invitation}
+            self._export_variables(synthetic_response_data, node_name, dynamic_values)
+            
             return True
         else:
             console.print(f"[red]Invitation failed: {result.get('error', 'Unknown error')}[/red]")

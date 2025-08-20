@@ -1,0 +1,43 @@
+description: A simple workflow that creates a context 100 times in a loop
+name: Context Creation Loop Workflow
+
+nodes:
+  chain_id: testnet-1
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the application on the first node
+  # This captures the application ID for use in subsequent steps
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId          # Export 'applicationId' field as 'app_id'
+
+  # Step 2: Repeat context creation 100 times
+  - name: Create Context 10 Times
+    type: repeat
+    count: 10
+    outputs:
+      current_iteration: iteration   # Export 'iteration' as 'current_iteration'
+      total_iterations: total_iterations
+    steps:
+      - name: Create Context
+        type: create_context
+        node: calimero-node-1
+        application_id: '{{app_id}}'
+        outputs:
+          context_id: contextId     # Export 'contextId' field as 'context_id'
+      
+      - name: Wait Between Creations
+        type: wait
+        seconds: 1
+
+# Configuration options
+stop_all_nodes: true   # Stop all nodes at the end of workflow
+restart: false          # Don't restart nodes at the beginning of workflow
+wait_timeout: 60

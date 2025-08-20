@@ -1,0 +1,147 @@
+description: A workflow example demonstrating custom outputs configuration for dynamic variables
+name: Custom Outputs Example Workflow
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the application with custom outputs
+  - name: Install Application with Custom Names
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      my_app_id: applicationId         # Export 'applicationId' field as 'my_app_id'
+      node_specific_id:                # Export 'applicationId' with node name replacement
+        field: applicationId
+        target: app_id_{node_name}
+
+  # Step 2: Create context using custom output names
+  - name: Create Context with Custom Names
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{my_app_id}}'    # Use custom output name
+    outputs:
+      my_context_id: contextId         # Export 'contextId' as 'my_context_id'
+      member_key: memberPublicKey      # Export 'memberPublicKey' as 'member_key'
+      node_context_id:                 # Export 'contextId' with node name
+        field: contextId
+        target: context_id_{node_name}
+
+  # Step 3: Generate identity with custom outputs
+  - name: Create Identity with Custom Names
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      my_public_key: publicKey         # Export 'publicKey' as 'my_public_key'
+      node_public_key:                 # Export 'publicKey' with node name
+        field: publicKey
+        target: public_key_{node_name}
+
+  # Step 4: Wait for identity creation to complete
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Step 5: Invite identity using custom output names
+  - name: Invite Identity with Custom Names
+    type: invite_identity
+    node: calimero-node-1
+    context_id: '{{my_context_id}}'    # Use custom context ID
+    granter_id: '{{member_key}}'       # Use custom member key
+    grantee_id: '{{my_public_key}}'    # Use custom public key
+    capability: member
+    outputs:
+      my_invitation: invitation        # Export 'invitation' as 'my_invitation'
+
+  # Step 6: Join context using custom output names
+  - name: Join Context with Custom Names
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{my_context_id}}'    # Use custom context ID
+    invitee_id: '{{my_public_key}}'    # Use custom public key
+    invitation: '{{my_invitation}}'    # Use custom invitation
+
+  # Step 7: Execute contract call using custom output names
+  - name: Execute Contract Call with Custom Names
+    type: call
+    node: calimero-node-1
+    context_id: '{{my_context_id}}'    # Use custom context ID
+    executor_public_key: '{{member_key}}'
+    method: set
+    args:
+      key: "hello"
+      value: "world"
+    outputs:
+      call_result: result              # Export 'result' as 'call_result'
+
+  # Step 8: Wait for the set operation to complete
+  - name: Wait for Set Operation
+    type: wait
+    seconds: 3
+
+  # Step 9: Execute view call using custom output names
+  - name: Execute View Call with Custom Names
+    type: call
+    node: calimero-node-2
+    context_id: '{{my_context_id}}'    # Use custom context ID
+    executor_public_key: '{{my_public_key}}'
+    method: get
+    args:
+      key: "hello"
+    outputs:
+      get_result: result               # Export 'result' as 'get_result'
+
+  # Step 10: Execute script with custom outputs
+  - name: Execute Script with Custom Names
+    type: script
+    target: nodes
+    script: ./workflow-examples/scripts/example-post-script.sh
+    outputs:
+      script_result: output            # Export 'output' as 'script_result'
+      exit_code: exit_code            # Export 'exit_code' as 'exit_code'
+      execution_time: execution_time  # Export 'execution_time' as 'execution_time'
+
+  # Step 11: Repeat operations with custom outputs
+  - name: Repeat Operations with Custom Names
+    type: repeat
+    count: 3
+    outputs:
+      current_iteration: iteration     # Export 'iteration' as 'current_iteration'
+      total_count: total_iterations   # Export 'total_iterations' as 'total_count'
+    steps:
+      - name: Set Key-Value Pair
+        type: call
+        node: calimero-node-1
+        context_id: '{{my_context_id}}'
+        executor_public_key: '{{member_key}}'
+        method: set
+        args:
+          key: "iteration_{{current_iteration}}"
+          value: "value_{{current_iteration}}"
+        outputs:
+          iteration_result: result     # Export 'result' as 'iteration_result'
+      
+      - name: Wait Between Operations
+        type: wait
+        seconds: 1
+      
+      - name: Get Key-Value Pair
+        type: call
+        node: calimero-node-2
+        context_id: '{{my_context_id}}'
+        executor_public_key: '{{my_public_key}}'
+        method: get
+        args:
+          key: "iteration_{{current_iteration}}"
+        outputs:
+          iteration_get_result: result # Export 'result' as 'iteration_get_result'
+
+# Configuration options
+stop_all_nodes: true   # Stop all nodes at the end of workflow
+restart: false          # Don't restart nodes at the beginning of workflow
+wait_timeout: 60

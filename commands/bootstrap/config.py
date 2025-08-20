@@ -47,49 +47,60 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
                 'name': 'Install Application on Node 1',
                 'type': 'install_application',
                 'node': 'calimero-node-1',
-                'path': './kv_store.wasm',
-                'dev': True
+                'path': './workflow-examples/res/kv_store.wasm',
+                'dev': True,
+                'outputs': {
+                    'app_id': 'id'
+                }
             },
             {
                 'name': 'Create Context on Node 1',
                 'type': 'create_context',
                 'node': 'calimero-node-1',
-                'application_id': '{{install.calimero-node-1}}'
+                'application_id': '{{app_id}}',
+                'outputs': {
+                    'context_id': 'id',
+                    'member_public_key': 'memberPublicKey'
+                }
             },
             {
                 'name': 'Create Identity on Node 2',
                 'type': 'create_identity',
-                'node': 'calimero-node-2'
+                'node': 'calimero-node-2',
+                'outputs': {
+                    'public_key': 'publicKey'
+                }
             },
             {
-                'name': 'Wait for Identity Creation',
-                'type': 'wait',
-                'seconds': 5
-            },
-            {
-                'name': 'Invite Node 2 from Node 1',
+                'name': 'Invite Identity',
                 'type': 'invite_identity',
                 'node': 'calimero-node-1',
-                'context_id': '{{context.calimero-node-1}}',
-                'grantee_id': '{{identity.calimero-node-2}}',
-                'granter_id': '{{context.calimero-node-1.memberPublicKey}}',
-                'capability': 'member'
+                'context_id': '{{context_id}}',
+                'grantee_id': '{{public_key}}',
+                'granter_id': '{{member_public_key}}',
+                'capability': 'member',
+                'outputs': {
+                    'invitation': 'invitation'
+                }
             },
             {
                 'name': 'Join Context from Node 2',
                 'type': 'join_context',
                 'node': 'calimero-node-2',
-                'context_id': '{{context.calimero-node-1}}',
-                'invitee_id': '{{identity.calimero-node-2}}',
-                'invitation': '{{invite.calimero-node-1_identity.calimero-node-2}}'
+                'context_id': '{{context_id}}',
+                'invitee_id': '{{public_key}}',
+                'invitation': '{{invitation}}'
             },
             {
                 'name': 'Execute Contract Call Example',
                 'type': 'call',
                 'node': 'calimero-node-1',
-                'context_id': '{{context.calimero-node-1}}',
+                'context_id': '{{context_id}}',
                 'method': 'set',
-                'args': {'key': 'hello', 'value': 'world'}
+                'args': {'key': 'hello', 'value': 'world'},
+                'outputs': {
+                    'call_result': 'result'
+                }
             }
         ]
     }

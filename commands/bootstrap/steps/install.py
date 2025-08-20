@@ -11,11 +11,26 @@ from .base import BaseStep
 class InstallApplicationStep(BaseStep):
     """Execute an install application step."""
     
+    def _get_exportable_variables(self):
+        """
+        Define which variables this step can export.
+        
+        Available variables from install_application API response:
+        - applicationId: Application ID (this is what the API actually returns)
+        """
+        return [
+            ('applicationId', 'app_id_{node_name}', 'Application ID - primary identifier for the installed application'),
+        ]
+    
     async def execute(self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> bool:
         node_name = self.config['node']
         application_path = self.config.get('path')
         application_url = self.config.get('url')
         is_dev = self.config.get('dev', False)
+        
+        # Validate export configuration
+        if not self._validate_export_config():
+            console.print(f"[yellow]⚠️  Install step export configuration validation failed[/yellow]")
         
         if not application_path and not application_url:
             console.print("[red]No application path or URL specified[/red]")
@@ -49,6 +64,10 @@ class InstallApplicationStep(BaseStep):
             console.print(f"  Error: {result.get('error')}")
         
         if result['success']:
+            # Check if the JSON-RPC response contains an error
+            if self._check_jsonrpc_error(result['data']):
+                return False
+            
             # Store result for later use
             step_key = f"install_{node_name}"
             workflow_results[step_key] = result['data']
@@ -56,18 +75,22 @@ class InstallApplicationStep(BaseStep):
             # Debug: Show what we actually received
             console.print(f"[blue]📝 Install result data: {result['data']}[/blue]")
             
-            # Extract and store key information
-            if isinstance(result['data'], dict):
-                # Handle nested data structure
-                actual_data = result['data'].get('data', result['data'])
-                app_id = actual_data.get('id', actual_data.get('applicationId', actual_data.get('name')))
-                if app_id:
-                    dynamic_values[f'app_id_{node_name}'] = app_id
-                    console.print(f"[blue]📝 Captured application ID for {node_name}: {app_id}[/blue]")
+            # Export variables using the new standardized approach
+            self._export_variables(result['data'], node_name, dynamic_values)
+            
+            # Legacy support: ensure app_id is always available for backward compatibility
+            if f'app_id_{node_name}' not in dynamic_values:
+                # Try to extract from the raw response as fallback
+                if isinstance(result['data'], dict):
+                    actual_data = result['data'].get('data', result['data'])
+                    app_id = actual_data.get('id', actual_data.get('applicationId', actual_data.get('name')))
+                    if app_id:
+                        dynamic_values[f'app_id_{node_name}'] = app_id
+                        console.print(f"[blue]📝 Fallback: Captured application ID for {node_name}: {app_id}[/blue]")
+                    else:
+                        console.print(f"[yellow]⚠️  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]")
                 else:
-                    console.print(f"[yellow]⚠️  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]")
-            else:
-                console.print(f"[yellow]⚠️  Install result is not a dict: {type(result['data'])}[/yellow]")
+                    console.print(f"[yellow]⚠️  Install result is not a dict: {type(result['data'])}[/yellow]")
             
             return True
         else:
