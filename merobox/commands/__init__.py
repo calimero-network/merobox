@@ -15,7 +15,6 @@ from merobox.commands.identity import identity
 from merobox.commands.bootstrap import bootstrap
 from merobox.commands.call import call
 from merobox.commands.join import join
-from merobox.commands.docs import docs
 
 __all__ = [
     "CalimeroManager",
