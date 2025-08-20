@@ -13,5 +13,7 @@ from .nuke import nuke
 from .context import context
 from .identity import identity
 from .bootstrap import bootstrap
+from .call import call
+from .join import join
 
-__all__ = ['CalimeroManager', 'run', 'stop', 'list', 'logs', 'health', 'install', 'nuke', 'context', 'identity', 'bootstrap']
+__all__ = ['CalimeroManager', 'run', 'stop', 'list', 'logs', 'health', 'install', 'nuke', 'context', 'identity', 'bootstrap', 'call', 'join']

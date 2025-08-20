@@ -18,14 +18,14 @@ def read_requirements():
 
 setup(
     name="merobox",
-    version="0.1.7",
+    version="0.1.8",
     author="Merobox Team",
     author_email="team@merobox.com",
     description="A Python CLI tool for managing Calimero nodes in Docker containers",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
     url="https://github.com/merobox/merobox",
-    packages=find_packages(include=["commands*"]),
+    packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",

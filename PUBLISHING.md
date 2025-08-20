@@ -105,7 +105,7 @@ twine upload dist/*
 
 The package includes:
 
-- **Core CLI**: `merobox_cli.py` with Click-based interface
+- **Core CLI**: `merobox/cli.py` with Click-based interface
 - **Commands**: Modular command implementations in `commands/` directory
 - **Workflows**: YAML-based workflow configuration support
 - **Documentation**: README, bootstrap guide, and examples
@@ -118,7 +118,7 @@ The package includes:
 1. **Update version in multiple files**:
    - `pyproject.toml`
    - `setup.py`
-   - `merobox_cli.py`
+   - `merobox/cli.py`
    - `CHANGELOG.md`
 
 2. **Commit version changes**:

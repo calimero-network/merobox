@@ -5,7 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.8] - 2024-12-19
+
+### Fixed
+- **Embedded Placeholder Replacement**: Fixed issue where `{{current_iteration}}` placeholders inside strings like `"complex_key_{{current_iteration}}_b"` were not being replaced
+- **Variable Resolution**: Enhanced dynamic value resolution to handle placeholders embedded within strings, not just complete placeholder strings
+- **Repeat Step Custom Outputs**: Fixed repeat step to properly process and export custom output variables like `current_iteration`
+
+### Added
+- **Enhanced Variable Resolution**: Added support for embedded placeholders within strings in workflow arguments
+- **Recursive Args Processing**: ExecuteStep now recursively processes the entire args dictionary through the dynamic value resolver
+- **Custom Outputs Processing**: RepeatStep now properly processes custom outputs configuration for each iteration
+
+### Technical Details
+- Enhanced `_resolve_dynamic_value` method in `BaseStep` to detect and process embedded placeholders
+- Added `_resolve_single_placeholder` helper method for individual placeholder resolution
+- Updated `ExecuteStep` to use `_resolve_args_dynamic_values` for recursive args processing
+- Enhanced `RepeatStep` with `_export_iteration_variables` method for custom outputs processing
+- Maintains backward compatibility while adding new embedded placeholder functionality
+
+### Examples
+- `"complex_key_{{current_iteration}}_b"` now correctly resolves to `"complex_key_1_b"`, `"complex_key_2_b"`, etc.
+- All repeat step examples now work correctly with embedded iteration variables
+- Improved workflow execution with proper variable replacement in complex string arguments
 
 ## [0.1.7] - 2024-12-19
 
@@ -14,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Build Artifacts**: Rebuild package with correct version numbers in all source files
 
 ### Technical Details
-- Updated version to 0.1.7 in pyproject.toml, setup.py, merobox_cli.py, merobox/cli.py, and merobox/__init__.py
+- Updated version to 0.1.7 in pyproject.toml, setup.py, merobox/cli.py, and merobox/__init__.py
 - Fixed version mismatch between package metadata and source code versions
 
 ## [0.1.6] - 2024-12-19
