@@ -1,4 +1,4 @@
-.PHONY: help build clean install format format-check lint test release
+.PHONY: help build clean install format format-check lint test check publish test-publish release
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -26,6 +26,20 @@ lint: format-check ## Run all linting checks
 test: ## Run tests (placeholder)
 	@echo "No tests configured yet"
 
-release: build ## Build and release to PyPI
+check: build ## Check the built package
 	twine check dist/*
-	twine upload dist/*
+
+test-publish: check ## Test publish to TestPyPI
+	twine upload --repository testpypi dist/*
+
+publish: check ## Publish to PyPI (requires confirmation)
+	@echo "⚠️  Are you sure you want to publish to PyPI?"
+	@read -p "Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		twine upload dist/*; \
+		echo "✅ Package published to PyPI!"; \
+	else \
+		echo "❌ Publishing cancelled"; \
+	fi
+
+release: publish ## Full release process (build, check, publish)

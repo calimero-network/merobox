@@ -85,14 +85,29 @@ make build
 # Check package with twine
 make check
 
+# Test publish to TestPyPI
+make test-publish
+
 # Publish to PyPI (requires confirmation)
 make publish
 
+# Full release process (build, check, publish)
+make release
+
 # Install in development mode
-make install-dev
+make install
 
 # Clean build artifacts
 make clean
+
+# Format code with Black
+make format
+
+# Check code formatting
+make format-check
+
+# Run all linting checks
+make lint
 
 # Show all available commands
 make help
@@ -105,20 +120,34 @@ make help
    ```bash
    make check
    ```
-3. **Release to PyPI**:
+3. **Test publish to TestPyPI** (optional):
+   ```bash
+   make test-publish
+   ```
+4. **Release to PyPI**:
    ```bash
    make publish
    ```
-4. **Verify release** at [https://pypi.org/project/merobox/](https://pypi.org/project/merobox/)
+   Or use the full release process:
+   ```bash
+   make release
+   ```
+5. **Verify release** at [https://pypi.org/project/merobox/](https://pypi.org/project/merobox/)
 
 ### Development Workflow
 
 ```bash
 # Install development dependencies
-make install-dev
+make install
 
 # Make changes to code
 # ...
+
+# Format code
+make format
+
+# Check formatting
+make format-check
 
 # Build and test package
 make build
