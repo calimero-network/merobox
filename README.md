@@ -2,650 +2,803 @@
 
 A comprehensive Python CLI tool for managing Calimero nodes in Docker containers and executing complex blockchain workflows.
 
-## Features
+## 📚 Table of Contents
 
-- **Node Management**: Start, stop, and monitor Calimero nodes in Docker containers
-- **Workflow Orchestration**: Execute complex multi-step workflows with YAML configuration
+- [🚀 Quick Start](#-quick-start)
+- [✨ Features](#-features)
+- [📖 Workflow Guide](#-workflow-guide)
+- [🔧 API Reference](#-api-reference)
+- [🛠️ Development Guide](#️-development-guide)
+- [❓ Troubleshooting](#-troubleshooting)
+- [🏗️ Project Structure](#️-project-structure)
+- [📋 Requirements](#-requirements)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+- [🆘 Support](#-support)
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+# From PyPI
+pip install merobox
+
+# From source
+git clone https://github.com/calimero-network/merobox.git
+cd merobox
+pip install -e .
+```
+
+### Basic Usage
+
+```bash
+# Start Calimero nodes
+merobox run --count 2
+
+# Check node status
+merobox list
+merobox health
+
+# Execute a workflow
+merobox bootstrap run workflow.yml
+
+# Stop all nodes
+merobox stop --all
+```
+
+## ✨ Features
+
+- **Node Management**: Start, stop, and monitor Calimero nodes in Docker
+- **Workflow Orchestration**: Execute complex multi-step workflows with YAML
 - **Context Management**: Create and manage blockchain contexts
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
-- **Dynamic Variables**: Advanced placeholder resolution with embedded variable support
+- **Dynamic Variables**: Advanced placeholder resolution with embedded support
 
-## Installation
+---
 
-### From PyPI
-```bash
-pip install merobox
+## 📖 Workflow Guide
+
+### Overview
+
+Merobox workflows are defined in YAML files and executed through the `bootstrap` command. Workflows can include multiple steps like installing applications, creating contexts, managing identities, and executing function calls.
+
+### Workflow Structure
+
+```yaml
+name: "Sample Workflow"
+nodes:
+  - calimero-node-1
+  - calimero-node-2
+
+steps:
+  - name: "Install Application"
+    type: "install"
+    node: "calimero-node-1"
+    path: "./app.wasm"
+    outputs:
+      applicationId: "app_id"
 ```
 
-### From Source
-```bash
-git clone <repository-url>
-cd merobox
-pip install -e .
+### Step Types
+
+#### Install Step
+Installs WASM applications on Calimero nodes.
+
+```yaml
+- name: "Install App"
+  type: "install"
+  node: "calimero-node-1"
+  path: "./application.wasm"  # Local path
+  # OR
+  url: "https://example.com/app.wasm"  # Remote URL
+  dev: true  # Development mode
+  outputs:
+    applicationId: "app_id"
 ```
 
-### Development Installation
+#### Context Step
+Creates blockchain contexts for applications.
+
+```yaml
+- name: "Create Context"
+  type: "context"
+  node: "calimero-node-1"
+  application_id: "{{app_id}}"
+  params:
+    param1: "value1"
+  outputs:
+    contextId: "context_id"
+    memberPublicKey: "member_key"
+```
+
+#### Identity Step
+Generates cryptographic identities.
+
+```yaml
+- name: "Create Identity"
+  type: "identity"
+  node: "calimero-node-2"
+  outputs:
+    publicKey: "public_key"
+```
+
+#### Invite Step
+Invites identities to join contexts.
+
+```yaml
+- name: "Invite Identity"
+  type: "invite"
+  node: "calimero-node-1"
+  context_id: "{{context_id}}"
+  grantee_id: "{{public_key}}"
+  outputs:
+    invitation: "invitation_data"
+```
+
+#### Join Step
+Joins contexts using invitations.
+
+```yaml
+- name: "Join Context"
+  type: "join"
+  node: "calimero-node-2"
+  context_id: "{{context_id}}"
+  invitee_id: "{{public_key}}"
+  invitation: "{{invitation_data}}"
+```
+
+#### Execute Step
+Executes smart contract functions.
+
+```yaml
+- name: "Call Function"
+  type: "call"
+  node: "calimero-node-1"
+  context_id: "{{context_id}}"
+  method: "set"
+  args:
+    key: "hello"
+    value: "world"
+  executor_public_key: "{{member_key}}"
+  outputs:
+    result: "function_result"
+```
+
+#### Wait Step
+Adds delays between steps.
+
+```yaml
+- name: "Wait"
+  type: "wait"
+  seconds: 5
+```
+
+#### Repeat Step
+Executes steps multiple times.
+
+```yaml
+- name: "Repeat Operations"
+  type: "repeat"
+  count: 3
+  steps:
+    - name: "Set Value"
+      type: "call"
+      node: "calimero-node-1"
+      context_id: "{{context_id}}"
+      method: "set"
+      args:
+        key: "iteration_{{current_iteration}}"
+        value: "value_{{current_iteration}}"
+      executor_public_key: "{{member_key}}"
+      outputs:
+        result: "iteration_result"
+    - name: "Wait"
+      type: "wait"
+      seconds: 2
+  outputs:
+    iteration: "current_iteration"
+```
+
+### Dynamic Variables
+
+Workflows support dynamic variable substitution using `{{variable_name}}` syntax.
+
+#### Variable Sources
+- **Step Outputs**: Variables exported by previous steps
+- **Workflow Context**: Global workflow variables
+- **Environment**: System environment variables
+
+#### Embedded Variables
+Variables can be embedded within strings:
+
+```yaml
+args:
+  key: "user_{{user_id}}_data_{{iteration}}"
+```
+
+#### Variable Resolution
+- Variables are resolved at execution time
+- Missing variables cause workflow failures
+- Use `outputs` sections to export variables for later use
+
+### Output Configuration
+
+Each step can export variables for use in subsequent steps:
+
+```yaml
+outputs:
+  variableName: "export_name"  # Maps API response field to export name
+```
+
+### Example Workflow
+
+See `workflow-examples/workflow-example.yml` for a complete example.
+
+---
+
+## 🔧 API Reference
+
+### Command Overview
+
 ```bash
-git clone <repository-url>
+merobox [OPTIONS] COMMAND [ARGS]...
+```
+
+### Global Options
+
+- `--version`: Show version and exit
+- `--help`: Show help message and exit
+
+### Core Commands
+
+#### `merobox run`
+Start Calimero nodes.
+
+```bash
+merobox run [OPTIONS]
+```
+
+**Options:**
+- `--count INTEGER`: Number of nodes to start (default: 1)
+- `--prefix TEXT`: Node name prefix (default: "calimero-node")
+- `--restart`: Restart existing nodes
+- `--help`: Show help message
+
+#### `merobox stop`
+Stop Calimero nodes.
+
+```bash
+merobox stop [OPTIONS]
+```
+
+**Options:**
+- `--all`: Stop all running nodes
+- `--prefix TEXT`: Stop nodes with specific prefix
+- `--help`: Show help message
+
+#### `merobox list`
+List running Calimero nodes.
+
+```bash
+merobox list [OPTIONS]
+```
+
+**Options:**
+- `--help`: Show help message
+
+#### `merobox health`
+Check health status of nodes.
+
+```bash
+merobox health [OPTIONS]
+```
+
+**Options:**
+- `--help`: Show help message
+
+#### `merobox logs`
+View node logs.
+
+```bash
+merobox logs [OPTIONS] NODE_NAME
+```
+
+**Options:**
+- `--follow`: Follow log output
+- `--help`: Show help message
+
+#### `merobox bootstrap`
+Execute workflows and validate configurations.
+
+```bash
+merobox bootstrap [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+- `run <config_file>`: Execute a workflow
+- `validate <config_file>`: Validate workflow configuration
+- `create-sample`: Create a sample workflow file
+
+**Options:**
+- `--help`: Show help message
+
+#### `merobox install`
+Install applications on nodes.
+
+```bash
+merobox install [OPTIONS] NODE_NAME PATH_OR_URL
+```
+
+**Options:**
+- `--dev`: Development mode installation
+- `--help`: Show help message
+
+#### `merobox context`
+Manage blockchain contexts.
+
+```bash
+merobox context [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+- `create`: Create a new context
+- `list`: List contexts
+- `show`: Show context details
+
+#### `merobox identity`
+Manage cryptographic identities.
+
+```bash
+merobox identity [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+- `generate`: Generate new identity
+- `list`: List identities
+- `show`: Show identity details
+
+#### `merobox call`
+Execute smart contract functions.
+
+```bash
+merobox call [OPTIONS] NODE_NAME CONTEXT_ID METHOD [ARGS]...
+```
+
+**Options:**
+- `--executor-key TEXT`: Executor public key
+- `--exec-type TEXT`: Execution type
+- `--help`: Show help message
+
+#### `merobox join`
+Join blockchain contexts.
+
+```bash
+merobox join [OPTIONS] NODE_NAME CONTEXT_ID INVITEE_ID INVITATION
+```
+
+**Options:**
+- `--help`: Show help message
+
+#### `merobox nuke`
+Remove all node data and containers.
+
+```bash
+merobox nuke [OPTIONS]
+```
+
+**Options:**
+- `--help`: Show help message
+
+### Configuration Files
+
+#### Workflow Configuration
+Workflows are defined in YAML files with the following structure:
+
+```yaml
+name: "Workflow Name"
+nodes:
+  - "node-name-1"
+  - "node-name-2"
+
+steps:
+  - name: "Step Name"
+    type: "step_type"
+    # ... step-specific configuration
+
+stop_all_nodes: true  # Optional: stop nodes after completion
+```
+
+#### Environment Variables
+- `CALIMERO_IMAGE`: Docker image for Calimero nodes
+- `DOCKER_HOST`: Docker daemon connection string
+- `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
+
+---
+
+## 🛠️ Development Guide
+
+### Environment Setup
+
+#### Prerequisites
+- Python 3.8+
+- Docker 20.10+
+- Git
+
+#### Local Development
+```bash
+# Clone repository
+git clone https://github.com/calimero-network/merobox.git
 cd merobox
-python -m venv venv
+
+# Create virtual environment
+python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install in development mode
 pip install -e .
 ```
 
-## Quick Start
-
-### 1. Start Calimero Nodes
+#### Development Dependencies
 ```bash
-# Start a single node
-merobox run
-
-# Start multiple nodes
-merobox run --count 3
-
-# Start with custom ports
-merobox run --base-port 3000 --base-rpc-port 3100
+pip install -r requirements.txt
 ```
 
-### 2. List Running Nodes
-```bash
-merobox list
+### Project Structure
+
+```
+merobox/
+├── merobox/                    # Main package
+│   ├── __init__.py            # Package initialization
+│   ├── cli.py                 # CLI entry point
+│   └── commands/              # Command implementations
+│       ├── __init__.py        # Commands package
+│       ├── manager.py         # Docker node management
+│       ├── run.py             # Node startup
+│       ├── stop.py            # Node shutdown
+│       ├── list.py            # Node listing
+│       ├── health.py          # Health checking
+│       ├── logs.py            # Log viewing
+│       ├── install.py         # Application installation
+│       ├── context.py         # Context management
+│       ├── identity.py        # Identity management
+│       ├── call.py            # Function execution
+│       ├── join.py            # Context joining
+│       ├── nuke.py            # Data cleanup
+│       ├── utils.py           # Utility functions
+│       └── bootstrap/         # Workflow orchestration
+│           ├── __init__.py
+│           ├── bootstrap.py   # Main bootstrap command
+│           ├── config.py      # Configuration loading
+│           ├── run/           # Workflow execution
+│           │   ├── __init__.py
+│           │   ├── executor.py # Workflow executor
+│           │   └── run.py     # Execution logic
+│           ├── steps/         # Step implementations
+│           │   ├── __init__.py
+│           │   ├── base.py    # Base step class
+│           │   ├── install.py # Install step
+│           │   ├── context.py # Context step
+│           │   ├── identity.py # Identity step
+│           │   ├── execute.py # Execute step
+│           │   ├── join.py    # Join step
+│           │   ├── wait.py    # Wait step
+│           │   ├── repeat.py  # Repeat step
+│           │   └── script.py  # Script step
+│           └── validate/      # Validation logic
+│               ├── __init__.py
+│               └── validator.py
+├── workflow-examples/          # Example workflows
+├── requirements.txt            # Python dependencies
+├── setup.py                   # Package configuration
+├── Makefile                   # Build automation
+├── README.md                  # This file
+└── LICENSE                    # MIT License
 ```
 
-### 3. Check Node Health
+### Building and Testing
+
+#### Build Commands
 ```bash
-merobox health
-```
+# Show all available commands
+make help
 
-### 4. Execute Workflows
-```bash
-# Run a workflow from YAML file
-merobox bootstrap workflow.yml
-
-# Create a sample workflow
-merobox bootstrap --create-sample
-```
-
-### 5. Execute Function Calls
-```bash
-merobox call --node calimero-node-1 --context-id <context-id> --function get --args '{"key": "example"}'
-```
-
-## Development and Release
-
-### Package Management with Makefile
-
-The project uses a Makefile for all package management tasks:
-
-```bash
-# Build the package
+# Build package
 make build
 
-# Check package with twine
+# Check package
 make check
-
-# Test publish to TestPyPI
-make test-publish
-
-# Publish to PyPI (requires confirmation)
-make publish
-
-# Full release process (build, check, publish)
-make release
 
 # Install in development mode
 make install
-
-# Clean build artifacts
-make clean
-
-# Format code with Black
-make format
-
-# Check code formatting
-make format-check
-
-# Run all linting checks
-make lint
-
-# Show all available commands
-make help
-```
-
-### Release Process
-
-1. **Update version** in `merobox/__init__.py` and `setup.py`
-2. **Build and check** the package:
-   ```bash
-   make check
-   ```
-3. **Test publish to TestPyPI** (optional):
-   ```bash
-   make test-publish
-   ```
-4. **Release to PyPI**:
-   ```bash
-   make publish
-   ```
-   Or use the full release process:
-   ```bash
-   make release
-   ```
-5. **Verify release** at [https://pypi.org/project/merobox/](https://pypi.org/project/merobox/)
-
-### Development Workflow
-
-```bash
-# Install development dependencies
-make install
-
-# Make changes to code
-# ...
 
 # Format code
 make format
 
 # Check formatting
 make format-check
+```
 
-# Build and test package
-make build
+#### Testing
+```bash
+# Run tests (when implemented)
+make test
+
+# Run specific test file
+python -m pytest tests/test_specific.py
+```
+
+#### Code Quality
+```bash
+# Format code with Black
+make format
+
+# Check formatting
+make format-check
+
+# Lint code (when implemented)
+make lint
+```
+
+### Adding New Commands
+
+1. Create command file in `merobox/commands/`
+2. Implement Click command function
+3. Add import to `merobox/commands/__init__.py`
+4. Update `__all__` list
+5. Test with `python3 merobox/cli.py --help`
+
+### Adding New Step Types
+
+1. Create step file in `merobox/commands/bootstrap/steps/`
+2. Inherit from `BaseStep`
+3. Implement required methods:
+   - `_get_required_fields()`
+   - `_validate_field_types()`
+   - `execute()`
+4. Add step type mapping in executor
+5. Update validation logic
+
+### Release Process
+
+#### Version Management
+- Update version in `merobox/__init__.py`
+- Update version in `merobox/cli.py`
+- Update version in `setup.py`
+- Add entry to `CHANGELOG.md`
+
+#### Publishing
+```bash
+# Build and check
 make check
 
-# Install locally for testing
-make install
+# Test publish to TestPyPI
+make test-publish
 
-# When ready to release
+# Publish to PyPI
 make publish
 ```
 
-## Commands
-
-### Core Commands
-
-- **`merobox run <workflow.yml>`** - Run a workflow from a YAML file
-- **`merobox stop`** - Stop all running Calimero nodes
-- **`merobox list`** - List all Calimero nodes and their status
-- **`merobox health`** - Check health of all Calimero nodes
-- **`merobox logs <node_name>`** - View logs for a specific node
-- **`merobox nuke`** - Stop and remove all Calimero nodes and data
-
-### Workflow Commands
-
-- **`merobox bootstrap run <workflow.yml>`** - Execute a Calimero workflow from a YAML configuration file
-- **`merobox bootstrap validate <workflow.yml>`** - Validate a Calimero workflow YAML configuration file without executing it
-- **`merobox bootstrap create-sample`** - Create a sample workflow configuration file
-
-### Node Management
-
-- **`merobox install`** - Install Calimero nodes
-- **`merobox join <context_id>`** - Join a Calimero context
-- **`merobox call <method> [args...]`** - Execute a contract call
-- **`merobox context <action>`** - Manage Calimero contexts
-- **`merobox identity <action>`** - Manage Calimero identities
-
-## Workflow Configuration
-
-Workflows are defined in YAML files and support complex orchestration patterns:
-
-### Basic Workflow Structure
-```yaml
-metadata:
-  name: "My Workflow"
-  description: "Example workflow description"
-  version: "1.0"
-
-global_config:
-  stop_all_nodes: false
-  restart_nodes: false
-  node_count: 2
-
-steps:
-  - name: "Start Nodes"
-    type: "wait"
-    config:
-      duration: 5
-```
-
-### Supported Step Types
-
-#### `install`
-Install applications on nodes.
-```yaml
-- name: "Install App"
-  type: "install"
-  config:
-    node: "calimero-node-1"
-    path: "./app.wasm"
-```
-
-#### `context`
-Create blockchain contexts.
-```yaml
-- name: "Create Context"
-  type: "context"
-  config:
-    node: "calimero-node-1"
-    application_id: "{{app_id}}"
-```
-
-#### `identity`
-Create cryptographic identities.
-```yaml
-- name: "Create Identity"
-  type: "identity"
-  config:
-    node: "calimero-node-2"
-```
-
-#### `invite`
-Send context invitations.
-```yaml
-- name: "Invite Node"
-  type: "invite"
-  config:
-    node: "calimero-node-1"
-    context_id: "{{context_id}}"
-    invitee_id: "{{public_key}}"
-```
-
-#### `join`
-Join contexts using invitations.
-```yaml
-- name: "Join Context"
-  type: "join"
-  config:
-    node: "calimero-node-2"
-    invitation: "{{invitation}}"
-```
-
-#### `call`
-Execute function calls.
-```yaml
-- name: "Execute Function"
-  type: "call"
-  config:
-    node: "calimero-node-1"
-    context_id: "{{context_id}}"
-    method: "set"
-    args:
-      key: "example_{{current_iteration}}"
-      value: "data_{{current_iteration}}"
-```
-
-#### `wait`
-Add delays between steps.
-```yaml
-- name: "Wait"
-  type: "wait"
-  config:
-    duration: 10
-```
-
-#### `repeat`
-Execute nested steps multiple times.
-```yaml
-- name: "Repeat Operations"
-  type: "repeat"
-  config:
-    iterations: 3
-    outputs:
-      current_iteration: "iteration"
-    steps:
-      - name: "Set Data"
-        type: "call"
-        config:
-          method: "set"
-          args:
-            key: "key_{{current_iteration}}"
-            value: "value_{{current_iteration}}"
-```
-
-### Dynamic Variables
-
-The workflow system supports powerful dynamic variable resolution:
-
-**Important**: Variables are NOT automatically exported. They must be explicitly specified in the `outputs` configuration of each step.
-
-#### Built-in Variables
-- `{{iteration}}`: Current iteration number (1-based)
-- `{{iteration_index}}`: Current iteration index (0-based)
-- `{{iteration_zero_based}}`: Same as iteration_index
-- `{{iteration_one_based}}`: Same as iteration
-
-#### Custom Variables
-Define custom variable mappings in step outputs:
-```yaml
-outputs:
-  app_id: "applicationId"
-  context_id: "contextId"
-  public_key: "publicKey"
-```
-
-#### Embedded Placeholders
-Variables can be embedded within strings:
-```yaml
-args:
-  key: "complex_key_{{current_iteration}}_suffix"
-  value: "data_for_iteration_{{current_iteration}}"
-```
-
-#### Explicit Export Configuration
-All variables must be explicitly configured to be exported. For example, to export the context ID and member public key:
-
-```yaml
-- name: "Create Context"
-  type: "context"
-  config:
-    node: "calimero-node-1"
-    application_id: "{{app_id}}"
-    outputs:
-      context_id: "contextId"
-      member_key: "memberPublicKey"
-```
-
-## Examples
-
-### Simple Node Setup
-```bash
-# Start 2 nodes
-merobox run --count 2
-
-# Check status
-merobox list
-merobox health
-
-# Stop all nodes
-merobox stop --all
-```
-
-### Workflow Execution
-```bash
-# Create sample workflow
-merobox bootstrap --create-sample
-
-# Execute workflow
-merobox bootstrap workflow.yml
-
-# Execute with verbose output
-merobox bootstrap -v workflow.yml
-```
-
-### Manual Operations
-```bash
-# Install application
-merobox install --node calimero-node-1 --path ./app.wasm
-
-# Create context
-merobox context create --node calimero-node-1 --app-id <app-id>
-
-# Execute function
-merobox call --node calimero-node-1 --context-id <context-id> --function get --args '{"key": "test"}'
-```
-
-## Advanced Workflow Patterns
-
-### Complex Data Flows
-Chain multiple operations with variable passing:
-
-```yaml
-steps:
-  - name: "Setup"
-    type: "install"
-    config:
-      path: "./app.wasm"
-      outputs:
-        app_id: "applicationId"
-
-  - name: "Create Environment"
-    type: "context"
-    config:
-      application_id: "{{app_id}}"  # Use from previous step
-      outputs:
-        ctx_id: "contextId"
-
-  - name: "Process Data"
-    type: "repeat"
-    config:
-      iterations: 5
-      outputs:
-        current_iter: "iteration"
-      steps:
-        - type: "call"
-          config:
-            context_id: "{{ctx_id}}"  # Use from context step
-            method: "process"
-            args:
-              data_id: "batch_{{current_iter}}"  # Use iteration variable
-```
-
-### Multi-Node Context Sharing
-```yaml
-metadata:
-  name: "Multi-Node Setup"
-  description: "Set up shared context across multiple nodes"
-
-global_config:
-  node_count: 2
-  stop_all_nodes: true
-
-steps:
-  - name: "Install App on Node 1"
-    type: "install"
-    config:
-      node: "calimero-node-1"
-      path: "./app.wasm"
-      outputs:
-        app_id: "applicationId"
-
-  - name: "Create Context"
-    type: "context"
-    config:
-      node: "calimero-node-1"
-      application_id: "{{app_id}}"
-      outputs:
-        context_id: "contextId"
-        member_key: "memberPublicKey"
-
-  - name: "Create Identity on Node 2"
-    type: "identity"
-    config:
-      node: "calimero-node-2"
-      outputs:
-        invitee_key: "publicKey"
-
-  - name: "Invite Node 2"
-    type: "invite"
-    config:
-      node: "calimero-node-1"
-      context_id: "{{context_id}}"
-      invitee_id: "{{invitee_key}}"
-      outputs:
-        invitation: "invitation"
-
-  - name: "Join from Node 2"
-    type: "join"
-    config:
-      node: "calimero-node-2"
-      invitation: "{{invitation}}"
-
-  - name: "Test Cross-Node Operations"
-    type: "call"
-    config:
-      node: "calimero-node-2"
-      context_id: "{{context_id}}"
-      method: "get"
-      args:
-        key: "shared_data"
-      executor_public_key: "{{invitee_key}}"
-```
-
-## Development
-
-### Project Structure
-```
-merobox/
-├── merobox/
-│   ├── cli.py              # Main CLI entry point
-│   └── commands/           # Command implementations
-│       ├── run.py          # Node management
-│       ├── call.py         # Function execution
-│       ├── bootstrap/      # Workflow orchestration
-│       │   ├── executor.py # Workflow execution engine
-│       │   └── steps/      # Step implementations
-│       └── ...
-├── workflow-examples/      # Example workflows
-├── requirements.txt       # Dependencies
-├── setup.py              # Package configuration
-└── Makefile              # Build and release automation
-```
-
-### Running Tests
-```bash
-# Install in development mode
-make install-dev
-
-# Run example workflows
-merobox bootstrap workflow-examples/workflow-example.yml
-```
-
-### Building from Source
-```bash
-# Build package
-make build
-
-# Install locally
-make install
-```
-
-## Docker Requirements
-
-Merobox requires Docker to be installed and running:
-
-- **Docker Engine**: 20.10+ recommended
-- **Docker Compose**: Optional, for complex setups
-- **Permissions**: User must have Docker access
-
-### Docker Setup
-
-#### Linux
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sh get-docker.sh
-
-# Add user to docker group
-sudo usermod -aG docker $USER
-```
-
-#### macOS
-```bash
-# Install Docker Desktop
-brew install --cask docker
-```
-
-#### Windows
-Download and install Docker Desktop from [docker.com](https://www.docker.com/products/docker-desktop).
-
-## Troubleshooting
+#### Release Checklist
+- [ ] All tests pass
+- [ ] Documentation updated
+- [ ] Version bumped
+- [ ] Changelog updated
+- [ ] Package builds successfully
+- [ ] Package validates with twine
+- [ ] Published to PyPI
+
+---
+
+## ❓ Troubleshooting
 
 ### Common Issues
 
-#### Docker Permission Denied
+#### Node Startup Problems
+
+**Issue**: Nodes fail to start
 ```bash
-# Add user to docker group (Linux)
-sudo usermod -aG docker $USER
-# Log out and back in
+Error: Failed to start Calimero node
 ```
 
-#### Port Conflicts
+**Solutions**:
+1. Check Docker is running: `docker ps`
+2. Verify port availability: `netstat -tulpn | grep :2528`
+3. Check Docker permissions: `docker run hello-world`
+4. Clean up existing containers: `merobox nuke`
+
+**Issue**: Port conflicts
 ```bash
-# Use custom ports
-merobox run --base-port 4000 --base-rpc-port 4100
+Error: Port 2528 already in use
 ```
 
-#### Node Startup Issues
+**Solutions**:
+1. Stop conflicting services: `lsof -ti:2528 | xargs kill`
+2. Use different ports: `merobox run --count 1`
+3. Clean up: `merobox stop --all`
+
+#### Workflow Execution Issues
+
+**Issue**: Dynamic variable resolution fails
 ```bash
-# Check Docker status
-docker ps
-
-# View node logs
-merobox logs --node calimero-node-1
-
-# Clean restart
-merobox nuke
-merobox run
+Error: Variable '{{missing_var}}' not found
 ```
 
-#### Workflow Failures
+**Solutions**:
+1. Check variable names in workflow
+2. Verify previous steps export variables
+3. Use `merobox bootstrap validate` to check configuration
+4. Check variable naming consistency
+
+**Issue**: Step validation fails
 ```bash
-# Run with verbose output
-merobox bootstrap -v workflow.yml
-
-# Check node health
-merobox health
-
-# Review logs
-merobox logs --node <node-name>
+Error: Required field 'node' missing
 ```
 
-### Error Output Format
+**Solutions**:
+1. Validate workflow: `merobox bootstrap validate workflow.yml`
+2. Check step configuration
+3. Verify required fields are present
+4. Check field types and values
 
-Errors are displayed in a consistent format:
+**Issue**: API calls fail
+```bash
+Error: API request failed
 ```
-[red]Error: [/red]Descriptive error message
-[yellow]Suggestion: [/yellow]Helpful suggestion for resolution
+
+**Solutions**:
+1. Check node health: `merobox health`
+2. Verify node is ready: `merobox list`
+3. Check network connectivity
+4. Verify API endpoints
+
+#### Docker Issues
+
+**Issue**: Container creation fails
+```bash
+Error: Failed to create container
 ```
 
-## Environment Variables
+**Solutions**:
+1. Check Docker daemon: `docker info`
+2. Verify image exists: `docker images calimero/calimero`
+3. Check disk space: `df -h`
+4. Restart Docker: `sudo systemctl restart docker`
 
-Merobox respects these environment variables:
+**Issue**: Container networking problems
+```bash
+Error: Network connection failed
+```
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MEROBOX_DATA_DIR` | Default data directory for nodes | `./data` |
-| `MEROBOX_DOCKER_IMAGE` | Default Docker image | `ghcr.io/calimero-network/node:latest` |
-| `MEROBOX_BASE_PORT` | Default base P2P port | `2428` |
-| `MEROBOX_BASE_RPC_PORT` | Default base RPC port | `2528` |
+**Solutions**:
+1. Check Docker network: `docker network ls`
+2. Verify container networking: `docker inspect <container>`
+3. Check firewall settings
+4. Restart Docker networking
 
-## Performance Considerations
+#### Performance Issues
 
-### Resource Usage
+**Issue**: Slow workflow execution
+```bash
+Workflow taking longer than expected
+```
 
-- **Memory**: Each node requires ~100-500MB RAM
-- **Storage**: Each node requires ~50-100MB disk space
-- **CPU**: Moderate CPU usage during operation
-- **Network**: P2P and RPC ports per node
+**Solutions**:
+1. Check node resources: `docker stats`
+2. Monitor system resources: `htop`, `iotop`
+3. Optimize workflow steps
+4. Use appropriate wait times
 
-### Scaling Limits
+**Issue**: High memory usage
+```bash
+Container using excessive memory
+```
 
-- **Max nodes**: Limited by available ports and system resources
-- **Concurrent operations**: Commands are generally synchronous
-- **Workflow complexity**: Large workflows may require significant time
+**Solutions**:
+1. Check memory limits: `docker stats`
+2. Monitor memory usage: `free -h`
+3. Restart nodes if needed
+4. Check for memory leaks
 
-### Optimization Tips
+### Debugging
 
-1. Use `--base-port` to avoid port conflicts
-2. Clean up unused nodes with `merobox stop --all`
-3. Use `merobox nuke` to free disk space
-4. Monitor system resources during large workflows
+#### Enable Debug Logging
+```bash
+export LOG_LEVEL=DEBUG
+merobox bootstrap run workflow.yml
+```
 
-## Contributing
+#### Verbose Output
+```bash
+merobox bootstrap run --verbose workflow.yml
+```
+
+#### Check Node Logs
+```bash
+merobox logs <node_name> --follow
+```
+
+#### Inspect Containers
+```bash
+docker exec -it <container_name> /bin/sh
+docker inspect <container_name>
+```
+
+#### Network Diagnostics
+```bash
+# Check container networking
+docker network inspect bridge
+
+# Test connectivity
+docker exec <container> ping <target>
+
+# Check port binding
+netstat -tulpn | grep :2528
+```
+
+### Getting Help
+
+1. **Check Documentation**: Review relevant sections above
+2. **Validate Workflows**: Use `merobox bootstrap validate`
+3. **Check Logs**: Review node and application logs
+4. **Community Support**: [GitHub Issues](https://github.com/calimero-network/merobox/issues)
+5. **Command Help**: `merobox --help` or `merobox <command> --help`
+
+---
+
+## 🏗️ Project Structure
+
+```
+merobox/
+├── merobox/                    # Main package
+│   ├── cli.py                 # CLI entry point
+│   └── commands/              # Command implementations
+│       ├── bootstrap/         # Workflow orchestration
+│       ├── run.py             # Node management
+│       ├── call.py            # Function execution
+│       └── ...                # Other commands
+├── workflow-examples/          # Example workflows
+├── Makefile                   # Build automation
+└── README.md                  # This comprehensive documentation
+```
+
+## 📋 Requirements
+
+- **Python**: 3.8+
+- **Docker**: 20.10+ for Calimero nodes
+- **OS**: Linux, macOS, Windows
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
+2. Create a feature branch
 3. Make your changes
 4. Add tests if applicable
 5. Submit a pull request
 
-## License
+See the [Development Guide](#️-development-guide) section above for detailed contribution instructions.
+
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Support
+## 🆘 Support
 
-For issues and questions:
-- GitHub Issues: Report bugs and request features
-- Documentation: Check this README and inline help (`merobox --help`)
-- Examples: See `workflow-examples/` directory
+- **Documentation**: This comprehensive README
+- **Examples**: See `workflow-examples/` directory
+- **Issues**: [GitHub Issues](https://github.com/calimero-network/merobox/issues)
+- **Help**: `merobox --help` for command help
+
+## 🔗 Quick Links
+
+- **[🚀 Quick Start](#-quick-start)**
+- **[📖 Workflow Guide](#-workflow-guide)**
+- **[🔧 API Reference](#-api-reference)**
+- **[🛠️ Development Guide](#️-development-guide)**
+- **[❓ Troubleshooting](#-troubleshooting)**
+- **[Examples](workflow-examples/) directory**
+- **[Source](https://github.com/calimero-network/merobox)**

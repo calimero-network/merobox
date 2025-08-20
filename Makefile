@@ -30,16 +30,30 @@ check: build ## Check the built package
 	twine check dist/*
 
 test-publish: check ## Test publish to TestPyPI
-	twine upload --repository testpypi dist/*
+	@if [ "$$CI" = "true" ] || [ "$$GITHUB_ACTIONS" = "true" ]; then \
+		echo "🧪 Publishing to TestPyPI (CI mode)"; \
+		twine upload --repository testpypi dist/*; \
+		echo "✅ Package published to TestPyPI!"; \
+	else \
+		echo "🧪 Publishing to TestPyPI"; \
+		twine upload --repository testpypi dist/*; \
+		echo "✅ Package published to TestPyPI!"; \
+	fi
 
 publish: check ## Publish to PyPI (requires confirmation)
-	@echo "⚠️  Are you sure you want to publish to PyPI?"
-	@read -p "Type 'yes' to confirm: " confirm; \
-	if [ "$$confirm" = "yes" ]; then \
+	@if [ "$$CI" = "true" ] || [ "$$GITHUB_ACTIONS" = "true" ]; then \
+		echo "🚀 Publishing to PyPI (CI mode)"; \
 		twine upload dist/*; \
 		echo "✅ Package published to PyPI!"; \
 	else \
-		echo "❌ Publishing cancelled"; \
+		echo "⚠️  Are you sure you want to publish to PyPI?"; \
+		read -p "Type 'yes' to confirm: " confirm; \
+		if [ "$$confirm" = "yes" ]; then \
+			twine upload dist/*; \
+			echo "✅ Package published to PyPI!"; \
+		else \
+			echo "❌ Publishing cancelled"; \
+		fi; \
 	fi
 
 release: publish ## Full release process (build, check, publish)
