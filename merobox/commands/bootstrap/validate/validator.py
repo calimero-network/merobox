@@ -15,39 +15,40 @@ from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 
+
 def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
     """
     Validate a workflow configuration without executing it.
-    
+
     Args:
         config: The workflow configuration dictionary
         verbose: Whether to show detailed validation information
-    
+
     Returns:
         Dictionary with 'valid' boolean and 'errors' list
     """
     errors = []
-    
+
     # Check required top-level fields
-    required_fields = ['name', 'nodes', 'steps']
+    required_fields = ["name", "nodes", "steps"]
     for field in required_fields:
         if field not in config:
             errors.append(f"Missing required field: {field}")
-    
+
     # Validate nodes configuration
-    if 'nodes' in config:
-        nodes = config['nodes']
+    if "nodes" in config:
+        nodes = config["nodes"]
         if not isinstance(nodes, dict):
             errors.append("'nodes' must be a dictionary")
         else:
-            required_node_fields = ['chain_id', 'count', 'image', 'prefix']
+            required_node_fields = ["chain_id", "count", "image", "prefix"]
             for field in required_node_fields:
                 if field not in nodes:
                     errors.append(f"Missing required node field: {field}")
-    
+
     # Validate steps configuration
-    if 'steps' in config:
-        steps = config['steps']
+    if "steps" in config:
+        steps = config["steps"]
         if not isinstance(steps, list):
             errors.append("'steps' must be a list")
         elif len(steps) == 0:
@@ -58,69 +59,69 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
                 if not isinstance(step, dict):
                     errors.append(f"Step {i+1} must be a dictionary")
                     continue
-                
-                step_name = step.get('name', f'Step {i+1}')
-                step_type = step.get('type')
-                
+
+                step_name = step.get("name", f"Step {i+1}")
+                step_type = step.get("type")
+
                 if not step_type:
                     errors.append(f"Step '{step_name}' is missing 'type' field")
                     continue
-                
+
                 # Validate step-specific requirements
                 step_errors = validate_step_config(step, step_name, step_type)
                 errors.extend(step_errors)
-    
-    return {
-        'valid': len(errors) == 0,
-        'errors': errors
-    }
+
+    return {"valid": len(errors) == 0, "errors": errors}
+
 
 def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
     """
     Validate a single step configuration.
-    
+
     Args:
         step: The step configuration dictionary
         step_name: Name of the step for error reporting
         step_type: Type of the step
-    
+
     Returns:
         List of validation errors
     """
     errors = []
-    
+
     # Import step classes dynamically to avoid circular imports
     try:
-        if step_type == 'install_application':
+        if step_type == "install_application":
             step_class = InstallApplicationStep
-        elif step_type == 'create_context':
+        elif step_type == "create_context":
             step_class = CreateContextStep
-        elif step_type == 'create_identity':
+        elif step_type == "create_identity":
             step_class = CreateIdentityStep
-        elif step_type == 'invite_identity':
+        elif step_type == "invite_identity":
             step_class = InviteIdentityStep
-        elif step_type == 'join_context':
+        elif step_type == "join_context":
             step_class = JoinContextStep
-        elif step_type == 'call':
+        elif step_type == "call":
             step_class = ExecuteStep
-        elif step_type == 'repeat':
+        elif step_type == "repeat":
             step_class = RepeatStep
-        elif step_type == 'wait':
+        elif step_type == "wait":
             step_class = WaitStep
-        elif step_type == 'script':
+        elif step_type == "script":
             step_class = ScriptStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors
-        
+
         # Create a temporary step instance to trigger validation
         # This will catch any validation errors without executing
         try:
             temp_step = step_class(step)
         except Exception as e:
             errors.append(f"Step '{step_name}' validation failed: {str(e)}")
-            
+
     except ImportError as e:
-        errors.append(f"Step '{step_name}' validation failed: Could not import step class for type '{step_type}': {str(e)}")
-    
+        errors.append(
+            f"Step '{step_name}' validation failed: Could not import step class for type '{step_type}': {str(e)}"
+        )
+
     return errors

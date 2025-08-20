@@ -8,22 +8,25 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from merobox.commands.utils import console
 
-def load_workflow_config(config_path: str, validate_only: bool = False) -> Dict[str, Any]:
+
+def load_workflow_config(
+    config_path: str, validate_only: bool = False
+) -> Dict[str, Any]:
     """Load workflow configuration from YAML file."""
     try:
-        with open(config_path, 'r') as file:
+        with open(config_path, "r") as file:
             config = yaml.safe_load(file)
-        
+
         # Skip basic validation if this is just for validation purposes
         if not validate_only:
             # Validate required fields
-            required_fields = ['name', 'nodes']
+            required_fields = ["name", "nodes"]
             for field in required_fields:
                 if field not in config:
                     raise ValueError(f"Missing required field: {field}")
-        
+
         return config
-        
+
     except FileNotFoundError:
         raise FileNotFoundError(f"Workflow configuration file not found: {config_path}")
     except yaml.YAMLError as e:
@@ -31,91 +34,85 @@ def load_workflow_config(config_path: str, validate_only: bool = False) -> Dict[
     except Exception as e:
         raise ValueError(f"Failed to load configuration: {str(e)}")
 
+
 def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
     """Create a sample workflow configuration file."""
     sample_config = {
-        'name': 'Sample Calimero Workflow',
-        'description': 'A sample workflow that demonstrates the bootstrap functionality with dynamic value capture',
-        'stop_all_nodes': True,  # Stop all existing nodes before starting
-        'wait_timeout': 60,  # Wait up to 60 seconds for nodes to be ready
-        
-        'nodes': {
-            'count': 2,
-            'prefix': 'calimero-node',
-            'chain_id': 'testnet-1',
-            'image': 'ghcr.io/calimero-network/merod:6a47604'
+        "name": "Sample Calimero Workflow",
+        "description": "A sample workflow that demonstrates the bootstrap functionality with dynamic value capture",
+        "stop_all_nodes": True,  # Stop all existing nodes before starting
+        "wait_timeout": 60,  # Wait up to 60 seconds for nodes to be ready
+        "nodes": {
+            "count": 2,
+            "prefix": "calimero-node",
+            "chain_id": "testnet-1",
+            "image": "ghcr.io/calimero-network/merod:6a47604",
         },
-        
-        'steps': [
+        "steps": [
             {
-                'name': 'Install Application on Node 1',
-                'type': 'install_application',
-                'node': 'calimero-node-1',
-                'path': './workflow-examples/res/kv_store.wasm',
-                'dev': True,
-                'outputs': {
-                    'app_id': 'id'
-                }
+                "name": "Install Application on Node 1",
+                "type": "install_application",
+                "node": "calimero-node-1",
+                "path": "./workflow-examples/res/kv_store.wasm",
+                "dev": True,
+                "outputs": {"app_id": "id"},
             },
             {
-                'name': 'Create Context on Node 1',
-                'type': 'create_context',
-                'node': 'calimero-node-1',
-                'application_id': '{{app_id}}',
-                'outputs': {
-                    'context_id': 'id',
-                    'member_public_key': 'memberPublicKey'
-                }
+                "name": "Create Context on Node 1",
+                "type": "create_context",
+                "node": "calimero-node-1",
+                "application_id": "{{app_id}}",
+                "outputs": {"context_id": "id", "member_public_key": "memberPublicKey"},
             },
             {
-                'name': 'Create Identity on Node 2',
-                'type': 'create_identity',
-                'node': 'calimero-node-2',
-                'outputs': {
-                    'public_key': 'publicKey'
-                }
+                "name": "Create Identity on Node 2",
+                "type": "create_identity",
+                "node": "calimero-node-2",
+                "outputs": {"public_key": "publicKey"},
             },
             {
-                'name': 'Invite Identity',
-                'type': 'invite_identity',
-                'node': 'calimero-node-1',
-                'context_id': '{{context_id}}',
-                'grantee_id': '{{public_key}}',
-                'granter_id': '{{member_public_key}}',
-                'capability': 'member',
-                'outputs': {
-                    'invitation': 'invitation'
-                }
+                "name": "Invite Identity",
+                "type": "invite_identity",
+                "node": "calimero-node-1",
+                "context_id": "{{context_id}}",
+                "grantee_id": "{{public_key}}",
+                "granter_id": "{{member_public_key}}",
+                "capability": "member",
+                "outputs": {"invitation": "invitation"},
             },
             {
-                'name': 'Join Context from Node 2',
-                'type': 'join_context',
-                'node': 'calimero-node-2',
-                'context_id': '{{context_id}}',
-                'invitee_id': '{{public_key}}',
-                'invitation': '{{invitation}}'
+                "name": "Join Context from Node 2",
+                "type": "join_context",
+                "node": "calimero-node-2",
+                "context_id": "{{context_id}}",
+                "invitee_id": "{{public_key}}",
+                "invitation": "{{invitation}}",
             },
             {
-                'name': 'Execute Contract Call Example',
-                'type': 'call',
-                'node': 'calimero-node-1',
-                'context_id': '{{context_id}}',
-                'method': 'set',
-                'args': {'key': 'hello', 'value': 'world'},
-                'outputs': {
-                    'call_result': 'result'
-                }
-            }
-        ]
+                "name": "Execute Contract Call Example",
+                "type": "call",
+                "node": "calimero-node-1",
+                "context_id": "{{context_id}}",
+                "method": "set",
+                "args": {"key": "hello", "value": "world"},
+                "outputs": {"call_result": "result"},
+            },
+        ],
     }
-    
+
     try:
-        with open(output_path, 'w') as file:
+        with open(output_path, "w") as file:
             yaml.dump(sample_config, file, default_flow_style=False, indent=2)
-        
-        console.print(f"[green]✓ Sample workflow configuration created: {output_path}[/green]")
-        console.print("[yellow]Note: Dynamic values are automatically captured and used with placeholders[/yellow]")
-        console.print("[yellow]Note: Use 'script' step type to execute scripts on Docker images or running nodes[/yellow]")
-        
+
+        console.print(
+            f"[green]✓ Sample workflow configuration created: {output_path}[/green]"
+        )
+        console.print(
+            "[yellow]Note: Dynamic values are automatically captured and used with placeholders[/yellow]"
+        )
+        console.print(
+            "[yellow]Note: Use 'script' step type to execute scripts on Docker images or running nodes[/yellow]"
+        )
+
     except Exception as e:
         console.print(f"[red]Failed to create sample configuration: {str(e)}[/red]")

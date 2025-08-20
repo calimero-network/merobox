@@ -17,17 +17,17 @@ from merobox.commands.call import call
 from merobox.commands.join import join
 
 __all__ = [
-    'CalimeroManager',
-    'run',
-    'stop',
-    'list',
-    'logs',
-    'health',
-    'install',
-    'nuke',
-    'context',
-    'identity',
-    'bootstrap',
-    'call',
-    'join'
+    "CalimeroManager",
+    "run",
+    "stop",
+    "list",
+    "logs",
+    "health",
+    "install",
+    "nuke",
+    "context",
+    "identity",
+    "bootstrap",
+    "call",
+    "join",
 ]

@@ -14,14 +14,18 @@ import click
 import sys
 from merobox.commands.bootstrap.run import run_workflow_sync
 from merobox.commands.bootstrap.validate import validate_workflow_config
-from merobox.commands.bootstrap.config import load_workflow_config, create_sample_workflow_config
+from merobox.commands.bootstrap.config import (
+    load_workflow_config,
+    create_sample_workflow_config,
+)
 from merobox.commands.utils import console
+
 
 @click.group()
 def bootstrap():
     """
     Execute and validate Calimero workflows from YAML configuration files.
-    
+
     This command provides three main operations:
     • run: Execute a complete workflow
     • validate: Check workflow configuration for errors
@@ -29,13 +33,14 @@ def bootstrap():
     """
     pass
 
+
 @bootstrap.command()
-@click.argument('config_file', type=click.Path(exists=True), required=True)
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
+@click.argument("config_file", type=click.Path(exists=True), required=True)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 def run(config_file, verbose):
     """
     Execute a Calimero workflow from a YAML configuration file.
-    
+
     This command will:
     1. Load and validate the workflow configuration
     2. Start/restart Calimero nodes as needed
@@ -47,35 +52,38 @@ def run(config_file, verbose):
     if not success:
         sys.exit(1)
 
+
 @bootstrap.command()
-@click.argument('config_file', type=click.Path(exists=True), required=True)
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
+@click.argument("config_file", type=click.Path(exists=True), required=True)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 def validate(config_file, verbose):
     """
     Validate a Calimero workflow YAML configuration file.
-    
+
     This command performs comprehensive validation:
     • Checks required fields and structure
     • Validates step configurations
     • Ensures proper field types
     • Reports all validation errors
-    
+
     Use this before running workflows to catch configuration issues early.
     """
     try:
         # Load configuration with validation-only mode
         config = load_workflow_config(config_file, validate_only=True)
-        
+
         # Validate the workflow configuration
         validation_result = validate_workflow_config(config, verbose)
-        
-        if validation_result['valid']:
-            console.print(f"\n[bold green]✅ Workflow configuration is valid![/bold green]")
+
+        if validation_result["valid"]:
+            console.print(
+                f"\n[bold green]✅ Workflow configuration is valid![/bold green]"
+            )
             if verbose:
                 console.print(f"\n[bold]Configuration Summary:[/bold]")
                 console.print(f"  Name: {config.get('name', 'Unnamed')}")
                 console.print(f"  Steps: {len(config.get('steps', []))}")
-                nodes_config = config.get('nodes', {})
+                nodes_config = config.get("nodes", {})
                 if isinstance(nodes_config, dict):
                     console.print(f"  Nodes: {nodes_config.get('count', 'N/A')}")
                     console.print(f"  Chain ID: {nodes_config.get('chain_id', 'N/A')}")
@@ -83,29 +91,34 @@ def validate(config_file, verbose):
                     console.print(f"  Nodes: N/A")
                     console.print(f"  Chain ID: N/A")
         else:
-            console.print(f"\n[bold red]❌ Workflow configuration validation failed![/bold red]")
-            for error in validation_result['errors']:
+            console.print(
+                f"\n[bold red]❌ Workflow configuration validation failed![/bold red]"
+            )
+            for error in validation_result["errors"]:
                 console.print(f"  [red]• {error}[/red]")
             sys.exit(1)
-            
+
     except Exception as e:
         console.print(f"[red]Failed to validate workflow: {str(e)}[/red]")
         sys.exit(1)
 
+
 @bootstrap.command()
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 def create_sample(verbose):
     """
     Create a sample workflow configuration file.
-    
+
     This generates a complete, working example workflow that demonstrates:
     • Basic node configuration
     • Common workflow steps
     • Dynamic variable usage
     • Output configuration
-    
+
     The sample file can be used as a starting point for custom workflows.
     """
     create_sample_workflow_config()
     if verbose:
-        console.print("\n[green]Sample workflow configuration created successfully![/green]")
+        console.print(
+            "\n[green]Sample workflow configuration created successfully![/green]"
+        )
