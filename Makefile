@@ -13,7 +13,7 @@ clean: ## Clean build artifacts
 	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 build: clean ## Build the package
-	python -m build
+	python setup.py sdist bdist_wheel
 
 check: build ## Check the built package
 	twine check dist/*
