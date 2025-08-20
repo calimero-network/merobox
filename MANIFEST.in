@@ -1,9 +1,6 @@
 # Include README and documentation
 include README.md
-include BOOTSTRAP_README.md
-include GLIBC_ISSUE.md
-include workflow-example.yml
-include example_usage.py
+include LICENSE
 
 # Include WASM files
 include *.wasm
@@ -12,11 +9,10 @@ include *.wasm
 include requirements.txt
 
 # Include package configuration
-include pyproject.toml
 include setup.py
 
-# Include commands package
-recursive-include commands *.py
+# Include docs folder
+recursive-include merobox/docs *.md
 
 # Exclude unnecessary files
 global-exclude *.pyc

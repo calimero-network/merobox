@@ -8,7 +8,7 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 
 ```bash
 # From PyPI
-pip install merobox
+pipx install merobox
 
 # From source
 git clone https://github.com/calimero-network/merobox.git
@@ -35,10 +35,10 @@ merobox stop --all
 
 ## 📚 Documentation
 
-- **[📖 Workflow Guide](docs/WORKFLOW_GUIDE.md)** - Complete guide to creating and executing workflows
-- **[🔧 API Reference](docs/API_REFERENCE.md)** - All commands, options, and configuration
-- **[🛠️ Development Guide](docs/DEVELOPMENT.md)** - Building, testing, and contributing
-- **[❓ Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[📖 Workflow Guide](merobox/docs/WORKFLOW_GUIDE.md)** - Complete guide to creating and executing workflows
+- **[🔧 API Reference](merobox/docs/API_REFERENCE.md)** - All commands, options, and configuration
+- **[🛠️ Development Guide](merobox/docs/DEVELOPMENT.md)** - Building, testing, and contributing
+- **[❓ Troubleshooting](merobox/docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## ✨ Features
 
