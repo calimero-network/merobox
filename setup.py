@@ -11,7 +11,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="merobox",
-    version="0.1.8",
+    version="0.1.9",
     author="Merobox Team",
     author_email="team@merobox.com",
     description="A Python CLI tool for managing Calimero nodes in Docker containers",

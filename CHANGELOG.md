@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2024-12-19
+
+### Added
+- **Bootstrap Command Refactoring**: Split bootstrap command into logical subcommands (run, validate, create-sample)
+- **Modular Architecture**: Reorganized bootstrap steps into separate modules for better maintainability
+- **Input Validation Framework**: Comprehensive validation for all step types with required field checking
+- **Explicit Export Enforcement**: Variables are now only exported when explicitly configured in outputs
+- **Code Formatting**: Added Black formatter with GitHub Actions CI integration
+- **Documentation Reorganization**: Created docs/ folder with topic-specific documentation files
+
+### Changed
+- **Command Structure**: `merobox bootstrap` now requires subcommand (run, validate, create-sample)
+- **Import Strategy**: Converted all imports to absolute imports for better package compatibility
+- **Validation Logic**: Moved validation functions to dedicated validator module
+- **Step Execution**: Separated workflow execution logic into dedicated run module
+- **CLI Organization**: Better separation of concerns between command definition and execution logic
+
+### Fixed
+- **Import Paths**: Resolved dynamic import issues in bootstrap executor
+- **Validation Errors**: Fixed missing field validation for all step types
+- **Documentation Links**: Ensured PyPI compatibility for documentation structure
+
 ## [0.1.8] - 2024-12-19
 
 ### Added

@@ -45,7 +45,7 @@ except ImportError:
 
 
 @click.group()
-@click.version_option(version="0.1.8")
+@click.version_option(version="0.1.9")
 def cli():
     """Merobox CLI - Manage Calimero nodes in Docker containers."""
     pass
