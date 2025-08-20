@@ -5,47 +5,25 @@ A Python CLI tool for managing Calimero nodes in Docker containers.
 """
 
 import click
-import sys
-import os
 
-# Handle imports for both direct execution and package import
-try:
-    # Try relative imports first (when imported as package)
-    from .commands import (
-        run,
-        stop,
-        list,
-        logs,
-        health,
-        install,
-        nuke,
-        context,
-        identity,
-        bootstrap,
-        call,
-        join,
-    )
-except ImportError:
-    # Fallback to absolute imports (when run directly)
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from commands import (
-        run,
-        stop,
-        list,
-        logs,
-        health,
-        install,
-        nuke,
-        context,
-        identity,
-        bootstrap,
-        call,
-        join,
-    )
+from merobox.commands import (
+    run,
+    stop,
+    list,
+    logs,
+    health,
+    install,
+    nuke,
+    context,
+    identity,
+    bootstrap,
+    call,
+    join,
+)
 
 
 @click.group()
-@click.version_option(version="0.1.11")
+@click.version_option(version="0.1.12")
 def cli():
     """Merobox CLI - Manage Calimero nodes in Docker containers."""
     pass
