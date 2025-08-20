@@ -13,7 +13,7 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 
 ## Installation
 
-### From PyPI (Coming Soon)
+### From PyPI
 ```bash
 pip install merobox
 ```
@@ -70,6 +70,65 @@ merobox bootstrap --create-sample
 ### 5. Execute Function Calls
 ```bash
 merobox call --node calimero-node-1 --context-id <context-id> --function get --args '{"key": "example"}'
+```
+
+## Development and Release
+
+### Package Management with Makefile
+
+The project uses a Makefile for all package management tasks:
+
+```bash
+# Build the package
+make build
+
+# Check package with twine
+make check
+
+# Publish to PyPI (requires confirmation)
+make publish
+
+# Install in development mode
+make install-dev
+
+# Clean build artifacts
+make clean
+
+# Show all available commands
+make help
+```
+
+### Release Process
+
+1. **Update version** in `merobox/__init__.py` and `setup.py`
+2. **Build and check** the package:
+   ```bash
+   make check
+   ```
+3. **Release to PyPI**:
+   ```bash
+   make publish
+   ```
+4. **Verify release** at [https://pypi.org/project/merobox/](https://pypi.org/project/merobox/)
+
+### Development Workflow
+
+```bash
+# Install development dependencies
+make install-dev
+
+# Make changes to code
+# ...
+
+# Build and test package
+make build
+make check
+
+# Install locally for testing
+make install
+
+# When ready to release
+make publish
 ```
 
 ## Command Reference
@@ -289,6 +348,8 @@ Execute nested steps multiple times.
 
 The workflow system supports powerful dynamic variable resolution:
 
+**Important**: Variables are NOT automatically exported. They must be explicitly specified in the `outputs` configuration of each step.
+
 #### Built-in Variables
 - `{{iteration}}`: Current iteration number (1-based)
 - `{{iteration_index}}`: Current iteration index (0-based)
@@ -310,6 +371,20 @@ Variables can be embedded within strings:
 args:
   key: "complex_key_{{current_iteration}}_suffix"
   value: "data_for_iteration_{{current_iteration}}"
+```
+
+#### Explicit Export Configuration
+All variables must be explicitly configured to be exported. For example, to export the context ID and member public key:
+
+```yaml
+- name: "Create Context"
+  type: "context"
+  config:
+    node: "calimero-node-1"
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: "contextId"
+      member_key: "memberPublicKey"
 ```
 
 ## Examples
@@ -464,13 +539,14 @@ merobox/
 │       └── ...
 ├── workflow-examples/      # Example workflows
 ├── requirements.txt       # Dependencies
-└── setup.py              # Package configuration
+├── setup.py              # Package configuration
+└── Makefile              # Build and release automation
 ```
 
 ### Running Tests
 ```bash
 # Install in development mode
-pip install -e .
+make install-dev
 
 # Run example workflows
 merobox bootstrap workflow-examples/workflow-example.yml
@@ -479,10 +555,10 @@ merobox bootstrap workflow-examples/workflow-example.yml
 ### Building from Source
 ```bash
 # Build package
-python -m build
+make build
 
 # Install locally
-pip install dist/merobox-*.whl
+make install
 ```
 
 ## Docker Requirements

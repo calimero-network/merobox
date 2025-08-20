@@ -15,6 +15,9 @@ class CreateContextStep(BaseStep):
         """
         Define which variables this step can export.
         
+        Note: These variables are NOT automatically exported.
+        They must be explicitly specified in the 'outputs' configuration.
+        
         Available variables from create_context API response:
         - contextId: Context ID (this is what the API actually returns)
         - memberPublicKey: Public key of the context member

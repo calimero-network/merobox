@@ -127,20 +127,19 @@ class BaseStep:
     
     def _export_variables(self, response_data: Dict[str, Any], node_name: str, dynamic_values: Dict[str, Any]) -> None:
         """
-        Main export method that handles both automatic and custom exports.
+        Main export method that handles only custom outputs (explicit exports).
         
         Args:
             response_data: The API response data
             node_name: The name of the node
             dynamic_values: The dynamic values dictionary to update
         """
-        # First, handle custom outputs if specified
+        # Only handle custom outputs - no automatic exports
         if 'outputs' in self.config:
             self._export_custom_outputs(response_data, node_name, dynamic_values)
-        
-        # Then, handle automatic exports for backward compatibility, but only for variables not already exported
-        if self.exportable_variables:
-            self._export_variables_from_response(response_data, node_name, dynamic_values)
+        else:
+            console.print(f"[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]")
+            console.print(f"[yellow]   To export variables, add an 'outputs' section to your step configuration.[/yellow]")
     
     def _validate_export_config(self) -> bool:
         """
