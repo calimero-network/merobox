@@ -8,9 +8,9 @@ import docker
 from typing import Dict, List, Any, Optional
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
-from ..manager import CalimeroManager
-from ..utils import console
-from .steps import (
+from ...manager import CalimeroManager
+from ...utils import console
+from ..steps import (
     InstallApplicationStep,
     CreateContextStep,
     CreateIdentityStep,

@@ -6,17 +6,19 @@ import yaml
 from typing import Dict, Any
 from ..utils import console
 
-def load_workflow_config(config_path: str) -> Dict[str, Any]:
+def load_workflow_config(config_path: str, validate_only: bool = False) -> Dict[str, Any]:
     """Load workflow configuration from YAML file."""
     try:
         with open(config_path, 'r') as file:
             config = yaml.safe_load(file)
         
-        # Validate required fields
-        required_fields = ['name', 'nodes']
-        for field in required_fields:
-            if field not in config:
-                raise ValueError(f"Missing required field: {field}")
+        # Skip basic validation if this is just for validation purposes
+        if not validate_only:
+            # Validate required fields
+            required_fields = ['name', 'nodes']
+            for field in required_fields:
+                if field not in config:
+                    raise ValueError(f"Missing required field: {field}")
         
         return config
         

@@ -131,101 +131,30 @@ make install
 make publish
 ```
 
-## Command Reference
+## Commands
+
+### Core Commands
+
+- **`merobox run <workflow.yml>`** - Run a workflow from a YAML file
+- **`merobox stop`** - Stop all running Calimero nodes
+- **`merobox list`** - List all Calimero nodes and their status
+- **`merobox health`** - Check health of all Calimero nodes
+- **`merobox logs <node_name>`** - View logs for a specific node
+- **`merobox nuke`** - Stop and remove all Calimero nodes and data
+
+### Workflow Commands
+
+- **`merobox bootstrap run <workflow.yml>`** - Execute a Calimero workflow from a YAML configuration file
+- **`merobox bootstrap validate <workflow.yml>`** - Validate a Calimero workflow YAML configuration file without executing it
+- **`merobox bootstrap create-sample`** - Create a sample workflow configuration file
 
 ### Node Management
 
-#### `merobox run`
-Start Calimero node(s) in Docker containers.
-
-**Options:**
-- `--count, -c`: Number of nodes to run (default: 1)
-- `--base-port, -p`: Base P2P port (auto-detect if not specified)
-- `--base-rpc-port, -r`: Base RPC port (auto-detect if not specified)
-- `--chain-id`: Chain ID (default: testnet-1)
-- `--prefix`: Node name prefix (default: calimero-node)
-- `--data-dir`: Custom data directory for single node
-- `--image`: Custom Docker image to use
-
-#### `merobox stop`
-Stop Calimero node(s).
-
-**Options:**
-- `--node`: Specific node name to stop
-- `--all`: Stop all running nodes
-
-#### `merobox list`
-List all running Calimero nodes with their status and ports.
-
-#### `merobox logs`
-Show logs from a specific node.
-
-**Options:**
-- `--node`: Node name (required)
-- `--follow, -f`: Follow log output
-
-#### `merobox health`
-Check the health status of all running Calimero nodes.
-
-#### `merobox nuke`
-Delete all Calimero node data folders for complete cleanup.
-
-### Context Management
-
-#### `merobox context`
-Manage Calimero contexts for different blockchain environments.
-
-**Subcommands:**
-- `create`: Create a new context
-- `list`: List contexts for a node
-- `delete`: Delete a context
-
-### Identity Management
-
-#### `merobox identity`
-Manage Calimero identities for contexts.
-
-**Subcommands:**
-- `create`: Create a new identity
-- `list`: List identities for a node
-
-### Application Management
-
-#### `merobox install`
-Install applications on Calimero nodes.
-
-**Options:**
-- `--node`: Target node name (required)
-- `--path`: Path to application file (required)
-
-### Function Execution
-
-#### `merobox call`
-Execute function calls on deployed applications.
-
-**Options:**
-- `--node`: Node name to execute on (required)
-- `--context-id`: Context ID to execute in (required)
-- `--function`: Function name to call (required)
-- `--args`: JSON string of function arguments
-
-### Context Joining
-
-#### `merobox join context`
-Join a context using an invitation.
-
-**Options:**
-- `--node`: Node name (required)
-- `--invitation`: Invitation string (required)
-
-### Workflow Orchestration
-
-#### `merobox bootstrap`
-Execute complex workflows from YAML configuration files.
-
-**Options:**
-- `--verbose, -v`: Enable verbose output
-- `--create-sample`: Create a sample workflow configuration file
+- **`merobox install`** - Install Calimero nodes
+- **`merobox join <context_id>`** - Join a Calimero context
+- **`merobox call <method> [args...]`** - Execute a contract call
+- **`merobox context <action>`** - Manage Calimero contexts
+- **`merobox identity <action>`** - Manage Calimero identities
 
 ## Workflow Configuration
 
