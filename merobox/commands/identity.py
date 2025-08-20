@@ -3,23 +3,21 @@ Identity command - List and generate identities for Calimero contexts using JSON
 """
 
 import click
+import asyncio
 import sys
+from typing import Dict, Any, Optional
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from .manager import CalimeroManager
-from .utils import (
-    get_node_rpc_url, 
-    check_node_running, 
-    run_async_function,
-    extract_nested_data,
-    console
-)
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import get_node_rpc_url, console
+
 
 def extract_identities_from_response(response_data: dict) -> list:
     """Extract identities from different possible response structures."""
-    identities_data = extract_nested_data(response_data, 'identities')
+    identities_data = response_data.get("identities")
     return identities_data if identities_data else []
+
 
 def create_identity_table(identities_data: list, context_id: str) -> Table:
     """Create a table to display identities."""
@@ -28,250 +26,284 @@ def create_identity_table(identities_data: list, context_id: str) -> Table:
     table.add_column("Context ID", style="cyan")
     table.add_column("Public Key", style="yellow")
     table.add_column("Status", style="blue")
-    
+
     for identity_info in identities_data:
         if isinstance(identity_info, dict):
             # Handle case where identity_info is a dictionary
             table.add_row(
-                identity_info.get('id', 'Unknown'),
-                identity_info.get('contextId', 'Unknown'),
-                identity_info.get('publicKey', 'Unknown'),
-                identity_info.get('status', 'Unknown')
+                identity_info.get("id", "Unknown"),
+                identity_info.get("contextId", "Unknown"),
+                identity_info.get("publicKey", "Unknown"),
+                identity_info.get("status", "Unknown"),
             )
         else:
             # Handle case where identity_info is a string (just the ID)
-            table.add_row(
-                str(identity_info), 
-                context_id,
-                'N/A', 
-                'Active'
-            )
-    
+            table.add_row(str(identity_info), context_id, "N/A", "Active")
+
     return table
+
 
 async def list_identities_via_admin_api(rpc_url: str, context_id: str) -> dict:
     """List identities for a specific context using the admin API."""
     try:
         # Import the admin client
         from calimero import AdminClient
-        
+
         # Create admin client and list identities
         admin_client = AdminClient(rpc_url)
         result = await admin_client.list_identities(context_id)
-        
+
         return result
-        
+
     except Exception as e:
-        return {'success': False, 'error': str(e)}
+        return {"success": False, "error": str(e)}
+
 
 async def generate_identity_via_admin_api(rpc_url: str) -> dict:
     """Generate a new identity using the admin API."""
     try:
         # Import the admin client
         from calimero import AdminClient
-        
+
         # Create admin client and generate identity
         admin_client = AdminClient(rpc_url)
         result = await admin_client.generate_identity()
-        
-        # Add endpoint info for compatibility
-        if result['success']:
-            result['endpoint'] = f"{rpc_url}/admin-api/identity/context"
-        
-        return result
-        
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
 
-async def invite_identity_via_admin_api(rpc_url: str, context_id: str, inviter_id: str, invitee_id: str, capability: str = None) -> dict:
+        # Add endpoint info for compatibility
+        if result["success"]:
+            result["endpoint"] = f"{rpc_url}/admin-api/identity/context"
+
+        return result
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def invite_identity_via_admin_api(
+    rpc_url: str,
+    context_id: str,
+    inviter_id: str,
+    invitee_id: str,
+    capability: str = None,
+) -> dict:
     """Invite an identity to a context using the admin API."""
     try:
         # Import the admin client
         from calimero import AdminClient
-        
+
         # Create admin client and invite identity
         admin_client = AdminClient(rpc_url)
-        result = await admin_client.invite_to_context(context_id, inviter_id, invitee_id)
-        
+        result = await admin_client.invite_to_context(
+            context_id, inviter_id, invitee_id
+        )
+
         # Add endpoint and payload format info for compatibility
-        if result['success']:
-            result['endpoint'] = f"{rpc_url}/admin-api/contexts/invite"
-            result['payload_format'] = 0  # Standard format
-        
+        if result["success"]:
+            result["endpoint"] = f"{rpc_url}/admin-api/contexts/invite"
+            result["payload_format"] = 0  # Standard format
+
         return result
-        
+
     except Exception as e:
-        return {'success': False, 'error': str(e)}
+        return {"success": False, "error": str(e)}
+
 
 @click.group()
 def identity():
     """Manage Calimero identities for contexts."""
     pass
 
+
 @identity.command()
-@click.option('--node', '-n', required=True, help='Node name to list identities from')
-@click.option('--context-id', required=True, help='Context ID to list identities for')
-@click.option('--verbose', '-v', is_flag=True, help='Show verbose output')
+@click.option("--node", "-n", required=True, help="Node name to list identities from")
+@click.option("--context-id", required=True, help="Context ID to list identities for")
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def list_identities(node, context_id, verbose):
     """List identities for a specific context on a node."""
     manager = CalimeroManager()
-    
+
     # Check if node is running
-    check_node_running(node, manager)
-    
+    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
+
     # Get admin API URL and run listing
     admin_url = get_node_rpc_url(node, manager)
-    console.print(f"[blue]Listing identities for context {context_id} on node {node} via {admin_url}[/blue]")
-    
-    result = run_async_function(list_identities_via_admin_api, admin_url, context_id)
-    
-    if result['success']:
-        response_data = result.get('data', {})
+    console.print(
+        f"[blue]Listing identities for context {context_id} on node {node} via {admin_url}[/blue]"
+    )
+
+    result = asyncio.run(list_identities_via_admin_api(admin_url, context_id))
+
+    if result["success"]:
+        response_data = result.get("data", {})
         identities_data = extract_identities_from_response(response_data)
-        
+
         if not identities_data:
-            console.print(f"\n[yellow]No identities found for context {context_id} on node {node}[/yellow]")
+            console.print(
+                f"\n[yellow]No identities found for context {context_id} on node {node}[/yellow]"
+            )
             if verbose:
                 console.print(f"\n[bold]Response structure:[/bold]")
                 console.print(f"{result}")
             return
-        
+
         console.print(f"\n[green]Found {len(identities_data)} identity(ies):[/green]")
-        
+
         # Create and display table
         table = create_identity_table(identities_data, context_id)
         console.print(table)
-        
+
         if verbose:
             console.print(f"\n[bold]Full response:[/bold]")
             console.print(f"{result}")
-            
+
     else:
         console.print(f"\n[red]✗ Failed to list identities[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
+
 @identity.command()
-@click.option('--node', '-n', required=True, help='Node name to generate identity on')
-@click.option('--verbose', '-v', is_flag=True, help='Show verbose output')
+@click.option("--node", "-n", required=True, help="Node name to generate identity on")
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def generate(node, verbose=False):
     """Generate a new identity using the admin API."""
     manager = CalimeroManager()
-    
+
     # Check if node is running
-    check_node_running(node, manager)
-    
+    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
+
     # Get admin API URL and run generation
     admin_url = get_node_rpc_url(node, manager)
-    console.print(f"[blue]Generating new identity on node {node} via {admin_url}[/blue]")
-    
-    result = run_async_function(generate_identity_via_admin_api, admin_url)
-    
+    console.print(
+        f"[blue]Generating new identity on node {node} via {admin_url}[/blue]"
+    )
+
+    result = asyncio.run(generate_identity_via_admin_api(admin_url))
+
     # Show which endpoint was used if successful
-    if result['success'] and 'endpoint' in result:
+    if result["success"] and "endpoint" in result:
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
-    
-    if result['success']:
-        response_data = result.get('data', {})
-        
+
+    if result["success"]:
+        response_data = result.get("data", {})
+
         # Extract identity information from response
-        identity_data = response_data.get('identity') or response_data.get('data') or response_data
-        
+        identity_data = (
+            response_data.get("identity") or response_data.get("data") or response_data
+        )
+
         if identity_data:
             console.print(f"\n[green]✓ Identity generated successfully![/green]")
-            
+
             # Create table
             table = Table(title="New Identity Details", box=box.ROUNDED)
             table.add_column("Property", style="cyan")
             table.add_column("Value", style="green")
-            
-            if 'id' in identity_data:
-                table.add_row("Identity ID", identity_data['id'])
-            if 'publicKey' in identity_data:
-                table.add_row("Public Key", identity_data['publicKey'])
 
-            
+            if "id" in identity_data:
+                table.add_row("Identity ID", identity_data["id"])
+            if "publicKey" in identity_data:
+                table.add_row("Public Key", identity_data["publicKey"])
+
             console.print(table)
         else:
             console.print(f"\n[green]✓ Identity generated successfully![/green]")
             console.print(f"[yellow]Response: {response_data}[/yellow]")
-        
+
         if verbose:
             console.print(f"\n[bold]Full response:[/bold]")
             console.print(f"{result}")
-            
+
     else:
         console.print(f"\n[red]✗ Failed to generate identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
+
 @identity.command()
-@click.option('--node', '-n', required=True, help='Node name to invite identity on')
-@click.option('--context-id', required=True, help='Context ID to invite identity to')
-@click.option('--inviter-id', required=True, help='Public key of the inviter (context member)')
-@click.option('--invitee-id', required=True, help='Public key of the identity to invite')
-@click.option('--capability', default=None, help='Capability (not used in invitation, kept for compatibility)')
-@click.option('--verbose', '-v', is_flag=True, help='Show verbose output')
+@click.option("--node", "-n", required=True, help="Node name to invite identity on")
+@click.option("--context-id", required=True, help="Context ID to invite identity to")
+@click.option(
+    "--inviter-id", required=True, help="Public key of the inviter (context member)"
+)
+@click.option(
+    "--invitee-id", required=True, help="Public key of the identity to invite"
+)
+@click.option(
+    "--capability",
+    default=None,
+    help="Capability (not used in invitation, kept for compatibility)",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
     """Invite an identity to join a context."""
     manager = CalimeroManager()
-    
+
     # Check if node is running
-    check_node_running(node, manager)
-    
+    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
+
     # Get admin API URL and run invitation
     admin_url = get_node_rpc_url(node, manager)
-    console.print(f"[blue]Inviting identity {invitee_id} to context {context_id} on node {node} via {admin_url}[/blue]")
-    
-    result = run_async_function(invite_identity_via_jsonrpc, admin_url, context_id, inviter_id, invitee_id, capability)
-    
+    console.print(
+        f"[blue]Inviting identity {invitee_id} to context {context_id} on node {node} via {admin_url}[/blue]"
+    )
+
+    result = asyncio.run(
+        invite_identity_via_admin_api(
+            admin_url, context_id, inviter_id, invitee_id, capability
+        )
+    )
+
     # Show which endpoint was used if successful
-    if result['success'] and 'endpoint' in result:
+    if result["success"] and "endpoint" in result:
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
-    
-    if result['success']:
-        response_data = result.get('data', {})
-        
+
+    if result["success"]:
+        response_data = result.get("data", {})
+
         console.print(f"\n[green]✓ Identity invited successfully![/green]")
-        
+
         # Create table
         table = Table(title="Identity Invitation Details", box=box.ROUNDED)
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
-        
+
         table.add_row("Context ID", context_id)
         table.add_row("Inviter ID", inviter_id)
         table.add_row("Invitee ID", invitee_id)
-        
+
         console.print(table)
-        
+
         if verbose:
             console.print(f"\n[bold]Full response:[/bold]")
             console.print(f"{result}")
-            
+
     else:
         console.print(f"\n[red]✗ Failed to invite identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
-        
+
         # Show detailed error information if available
-        if 'errors' in result:
+        if "errors" in result:
             console.print(f"\n[yellow]Detailed errors:[/yellow]")
-            for error in result['errors']:
+            for error in result["errors"]:
                 console.print(f"[red]  {error}[/red]")
-        
-        if 'tried_payloads' in result:
+
+        if "tried_payloads" in result:
             console.print(f"\n[yellow]Tried payload formats:[/yellow]")
-            for i, payload in enumerate(result['tried_payloads']):
+            for i, payload in enumerate(result["tried_payloads"]):
                 console.print(f"[dim]  Format {i}: {payload}[/dim]")
-        
+
         # Provide helpful information for common errors
-        if "unable to grant privileges to non-member" in result.get('error', ''):
-            console.print(f"\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]")
-            console.print(f"[yellow]The identity should be automatically added as a member when invited.[/yellow]")
-        
+        if "unable to grant privileges to non-member" in result.get("error", ""):
+            console.print(
+                f"\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]"
+            )
+            console.print(
+                f"[yellow]The identity should be automatically added as a member when invited.[/yellow]"
+            )
+
         sys.exit(1)
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     identity()

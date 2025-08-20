@@ -11,17 +11,45 @@ import os
 # Handle imports for both direct execution and package import
 try:
     # Try relative imports first (when imported as package)
-    from .commands import run, stop, list, logs, health, install, nuke, context, identity, bootstrap, call, join
+    from .commands import (
+        run,
+        stop,
+        list,
+        logs,
+        health,
+        install,
+        nuke,
+        context,
+        identity,
+        bootstrap,
+        call,
+        join,
+    )
 except ImportError:
     # Fallback to absolute imports (when run directly)
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    from commands import run, stop, list, logs, health, install, nuke, context, identity, bootstrap, call, join
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from commands import (
+        run,
+        stop,
+        list,
+        logs,
+        health,
+        install,
+        nuke,
+        context,
+        identity,
+        bootstrap,
+        call,
+        join,
+    )
+
 
 @click.group()
 @click.version_option(version="0.1.8")
 def cli():
     """Merobox CLI - Manage Calimero nodes in Docker containers."""
     pass
+
 
 # Add commands to the CLI group
 cli.add_command(run)
@@ -37,5 +65,5 @@ cli.add_command(join)
 cli.add_command(call)
 cli.add_command(bootstrap)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()

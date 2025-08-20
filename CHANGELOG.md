@@ -7,176 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.8] - 2024-12-19
 
-### Fixed
-- **Embedded Placeholder Replacement**: Fixed issue where `{{current_iteration}}` placeholders inside strings like `"complex_key_{{current_iteration}}_b"` were not being replaced
-- **Variable Resolution**: Enhanced dynamic value resolution to handle placeholders embedded within strings, not just complete placeholder strings
-- **Repeat Step Custom Outputs**: Fixed repeat step to properly process and export custom output variables like `current_iteration`
-
 ### Added
-- **Enhanced Variable Resolution**: Added support for embedded placeholders within strings in workflow arguments
-- **Recursive Args Processing**: ExecuteStep now recursively processes the entire args dictionary through the dynamic value resolver
-- **Custom Outputs Processing**: RepeatStep now properly processes custom outputs configuration for each iteration
+- **PyPI Release**: Package now available on PyPI for easy installation
+- **Makefile Automation**: Complete build and release automation using Makefile
+- **Release Documentation**: Comprehensive release process documentation in README
+- **Development Workflow**: Streamlined development and release process
+
+### Changed
+- **Package Structure**: Moved commands/ into merobox/commands/ for proper package layout
+- **Build System**: Switched to setup.py for better metadata version control
+- **CLI Entry Point**: Removed duplicate merobox_cli.py, using merobox/cli.py as canonical entry point
+- **Documentation**: Consolidated all documentation into comprehensive README.md
+
+### Fixed
+- **Embedded Placeholders**: Fixed dynamic variable resolution for placeholders within strings (e.g., `complex_key_{{current_iteration}}_b`)
+- **Variable Resolution**: Added recursive args processing for dynamic variables in ExecuteStep
+- **Repeat Step Outputs**: Implemented custom outputs for repeat steps with proper iteration variable mapping
+- **Metadata Compatibility**: Resolved PyPI upload issues by using compatible metadata version 2.1
+- **Import Strategy**: CLI now supports both package and direct script execution
+
+### Removed
+- **Duplicate CLI**: Removed redundant merobox_cli.py entry point
+- **Redundant Scripts**: Removed scripts/publish.py in favor of Makefile automation
+- **pyproject.toml**: Simplified to use only setup.py for better compatibility
 
 ### Technical Details
-- Enhanced `_resolve_dynamic_value` method in `BaseStep` to detect and process embedded placeholders
-- Added `_resolve_single_placeholder` helper method for individual placeholder resolution
-- Updated `ExecuteStep` to use `_resolve_args_dynamic_values` for recursive args processing
-- Enhanced `RepeatStep` with `_export_iteration_variables` method for custom outputs processing
-- Maintains backward compatibility while adding new embedded placeholder functionality
-
-### Examples
-- `"complex_key_{{current_iteration}}_b"` now correctly resolves to `"complex_key_1_b"`, `"complex_key_2_b"`, etc.
-- All repeat step examples now work correctly with embedded iteration variables
-- Improved workflow execution with proper variable replacement in complex string arguments
+- **Metadata Version**: Fixed from 2.4 to 2.1 for PyPI compatibility
+- **Package Layout**: Standard Python package structure with merobox/commands/ subpackage
+- **Build Commands**: `make build`, `make check`, `make publish` for streamlined workflow
+- **Development Mode**: `make install-dev` for local development installation
 
 ## [0.1.7] - 2024-12-19
 
+### Added
+- **Dynamic Variable Resolution**: Support for placeholders like `{{variable_name}}` in workflow configurations
+- **Workflow Orchestration**: Multi-step workflow execution with YAML configuration
+- **Bootstrap System**: Automated workflow execution engine
+- **Step Types**: Install, context, identity, invite, join, call, wait, and repeat steps
+- **Embedded Placeholder Support**: Variables can be embedded within strings (e.g., `key_{{iteration}}_suffix`)
+
+### Changed
+- **Package Structure**: Reorganized commands into logical modules
+- **CLI Framework**: Enhanced Click-based command-line interface
+- **Documentation**: Added comprehensive workflow examples and usage guides
+
 ### Fixed
-- **Version Consistency**: Ensure all version references are properly synchronized across all files
-- **Build Artifacts**: Rebuild package with correct version numbers in all source files
+- **Variable Replacement**: Corrected logic for resolving dynamic values in workflow steps
+- **Iteration Handling**: Fixed repeat step variable mapping and output processing
+- **Args Processing**: Added recursive processing for dynamic values in function call arguments
 
-### Technical Details
-- Updated version to 0.1.7 in pyproject.toml, setup.py, merobox/cli.py, and merobox/__init__.py
-- Fixed version mismatch between package metadata and source code versions
-
-## [0.1.6] - 2024-12-19
+## [0.1.6] - 2024-12-18
 
 ### Added
-- **Script Step Functionality**: New generic `script` step type for workflow execution
-- **Flexible Script Targeting**: Support for `target: "image"` (Docker image) and `target: "nodes"` (running nodes)
-- **Workflow Reorganization**: Centralized workflow examples in `workflow-examples/` directory
-- **Resource Organization**: Scripts moved to `workflow-examples/scripts/` and resources to `workflow-examples/res/`
-- **Documentation Consolidation**: Single comprehensive README.md combining all previous documentation
+- **Workflow Support**: Basic workflow execution capabilities
+- **Dynamic Variables**: Initial placeholder replacement system
+- **Step Framework**: Extensible step execution architecture
 
 ### Changed
-- **Refactored Script Execution**: Replaced separate `pre_script` and `post_script` flags with unified `script` step type
-- **Enhanced Error Handling**: Improved workflow execution with immediate termination on failures
-- **Updated Command Examples**: All examples now use `merobox` command directly instead of `python merobox_cli.py`
-- **Improved File Structure**: Better organization of workflow examples and associated resources
+- **CLI Structure**: Reorganized command structure for better maintainability
+- **Error Handling**: Improved error reporting and user feedback
 
-### Technical Details
-- New `ScriptStep` class in `commands/bootstrap/steps/script.py`
-- Enhanced workflow executor with better error handling and script step support
-- Removed legacy `execute_pre_script` and `execute_post_script_on_nodes` methods
-- Updated all workflow YAML files to use new script step syntax
-- Consolidated documentation into single README.md file
-- Reorganized file structure for better maintainability
-
-### Examples
-- Script execution on Docker images before node startup
-- Script execution on all running nodes after startup
-- Unified script step configuration in workflow YAML
-- Improved workflow organization and resource management
-
-## [0.1.5] - 2024-01-XX
-
-### Changed
-- **Docker Image Update**: Updated merod image from specific commit to `latest` for better maintainability
-- **Log Level Optimization**: Changed default RUST_LOG level from `debug` to `info` for production use
-
-### Technical Details
-- Updated Docker image reference in manager.py from `ghcr.io/calimero-network/merod:6a47604` to `ghcr.io/calimero-network/merod:latest`
-- Modified RUST_LOG environment variable from `debug` to `info` for better performance and reduced log verbosity
-
-## [0.1.4] - 2024-01-XX
-
-### Changed
-- **Node Management Behavior**: `restart` flag now controls node restart at the **beginning** of workflows, `stop_all_nodes` controls stopping at the **end** of workflows
-- **Workflow Execution Flow**: Restart logic moved to beginning, cleanup logic moved to end for more logical behavior
-
-### Features
-- **Logical Node Lifecycle**: Clear separation between start and end node management
-- **Improved Workflow Control**: Better control over when nodes are restarted vs. cleaned up
-- **Enhanced Development Experience**: More efficient workflow reruns with node reuse options
-
-### Technical Details
-- Updated workflow executor to handle restart at beginning and cleanup at end
-- Enhanced node management logic for better workflow control
-- Improved logging and step descriptions for clearer execution flow
-- Maintains backward compatibility with existing workflows
-
-## [0.1.3] - 2024-01-XX
+## [0.1.5] - 2024-12-17
 
 ### Added
-- **Repeat Step Functionality**: New workflow step type that executes nested steps multiple times
-- **Iteration Variables**: Support for `{{iteration}}`, `{{iteration_index}}`, `{{iteration_zero_based}}`, and `{{iteration_one_based}}` placeholders
-- **Nested Step Support**: All existing step types can be used within repeat steps
-- **Comprehensive Documentation**: Added detailed README for repeat step functionality with examples
-- **Restart Flag**: New `restart` configuration option to control whether nodes are restarted when rerunning workflows
+- **Context Management**: Create and manage blockchain contexts
+- **Identity Management**: Generate and manage cryptographic identities
+- **Function Execution**: Execute smart contract functions via JSON-RPC
 
 ### Changed
-- **Node Management Behavior**: `restart` flag now controls node restart at the **beginning** of workflows, `stop_all_nodes` controls stopping at the **end** of workflows
+- **Node Communication**: Enhanced JSON-RPC client for better node interaction
+- **Command Structure**: Reorganized CLI commands for logical grouping
 
-### Features
-- **Repeat Step Type**: Execute a set of nested steps for a specified number of iterations
-- **Dynamic Value Substitution**: Use iteration variables in nested step configurations
-- **Sequential Execution**: Steps execute in order for each iteration with proper error handling
-- **Recursive Support**: Repeat steps can contain other repeat steps for complex workflows
-- **Smart Node Management**: Control node restart behavior with `restart` and `stop_all_nodes` flags
-- **Efficient Workflow Reruns**: Reuse existing running nodes to avoid unnecessary restarts
-- **Logical Node Lifecycle**: `restart` controls beginning behavior, `stop_all_nodes` controls end behavior
-
-### Technical Details
-- New `RepeatStep` class in `commands/bootstrap/steps.py`
-- Enhanced dynamic value resolution for iteration placeholders
-- Updated executor to handle repeat step type
-- Comprehensive workflow examples demonstrating various use cases
-- Maintains backward compatibility with existing workflows
-- Enhanced node management with restart flag support
-- Improved workflow executor with smart node reuse logic
-- Updated workflow execution flow: restart at beginning, stop at end
-
-### Examples
-- Simple repetition of operations
-- Complex multi-step sequences
-- Testing scenarios with multiple iterations
-- Batch operations with different parameters
-- Efficient workflow reruns without node restarts
-- Selective node restart for specific workflows
-- Logical node lifecycle management
-
-## [0.1.2] - 2024-01-XX
-
-### Changed
-- **Renamed `execute` command to `call`**: Improved command naming for better clarity
-- **Updated workflow step type**: Changed from `type: execute` to `type: call` in YAML workflows
-- **Enhanced command structure**: Better organized command modules and imports
-
-### Technical Details
-- Renamed `commands/execute.py` to `commands/call.py`
-- Updated all CLI imports and references
-- Updated bootstrap workflow system to use `call` step type
-- Updated documentation and examples throughout
-- Maintained backward compatibility in functionality
-
-## [0.1.1] - 2024-01-XX
+## [0.1.4] - 2024-12-16
 
 ### Added
-- Initial release of Merobox CLI
-- Docker container management for Calimero nodes
-- Application installation and management
-- Context creation and management
-- Identity generation and management
-- Context invitation and joining
-- Contract execution (contract calls, view calls, function calls)
-- Automated workflow execution with bootstrap command
-- Dynamic value capture and placeholder resolution
-- Cross-node operations and data sharing
+- **Multi-Node Support**: Start and manage multiple Calimero nodes
+- **Port Management**: Automatic port detection and assignment
+- **Health Monitoring**: Node health status checking
 
-### Features
-- **Node Management**: Start, stop, and manage multiple Calimero nodes
-- **Application Management**: Install and manage WASM applications
-- **Context Management**: Create and manage application contexts
-- **Identity Management**: Generate and manage node identities
-- **Access Control**: Invite and join contexts with proper permissions
-- **Contract Execution**: Execute smart contract operations
-- **Workflow Automation**: Define and execute multi-step workflows
-- **Dynamic Values**: Capture and reuse values between workflow steps
+### Changed
+- **Docker Integration**: Improved container management and monitoring
+- **Error Handling**: Better error reporting and recovery
 
-### Technical Details
-- Built with Click for CLI interface
-- Rich for enhanced terminal output
-- Docker SDK for container management
-- Calimero client SDK integration
-- YAML-based workflow configuration
-- Modular command architecture
+## [0.1.3] - 2024-12-15
+
+### Added
+- **Application Installation**: Install WASM applications on nodes
+- **Log Management**: View and follow node logs
+- **Data Cleanup**: Complete node data removal with nuke command
+
+### Changed
+- **CLI Interface**: Enhanced command-line interface with better help and options
+- **Docker Management**: Improved container lifecycle management
+
+## [0.1.2] - 2024-12-14
+
+### Added
+- **Basic Node Management**: Start, stop, and list Calimero nodes
+- **Docker Integration**: Container-based node deployment
+- **Configuration Management**: Customizable node settings
+
+### Changed
+- **Project Structure**: Initial package organization
+- **Dependencies**: Added core dependencies for Docker and CLI operations
+
+## [0.1.1] - 2024-12-13
+
+### Added
+- **Project Foundation**: Initial project setup and structure
+- **Basic CLI Framework**: Click-based command-line interface foundation
+- **Documentation**: Basic README and project documentation
+
+## [0.1.0] - 2024-12-12
+
+### Added
+- **Initial Release**: Project creation and basic structure
+- **License**: MIT License for open source development
+- **Project Configuration**: Basic setup.py and project metadata
