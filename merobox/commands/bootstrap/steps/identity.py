@@ -2,7 +2,7 @@
 Identity management step executors.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from ...utils import get_node_rpc_url, console
 from ...identity import generate_identity_via_admin_api, invite_identity_via_admin_api
 from .base import BaseStep
@@ -10,6 +10,25 @@ from .base import BaseStep
 
 class CreateIdentityStep(BaseStep):
     """Execute a create identity step."""
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['node']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate node is a string
+        if not isinstance(self.config.get('node'), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
     
     def _get_exportable_variables(self):
         """
@@ -81,6 +100,34 @@ class CreateIdentityStep(BaseStep):
 
 class InviteIdentityStep(BaseStep):
     """Execute an invite identity step."""
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['node', 'context_id', 'granter_id', 'grantee_id']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate node is a string
+        if not isinstance(self.config.get('node'), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+        # Validate context_id is a string
+        if not isinstance(self.config.get('context_id'), str):
+            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+        # Validate granter_id is a string
+        if not isinstance(self.config.get('granter_id'), str):
+            raise ValueError(f"Step '{step_name}': 'granter_id' must be a string")
+        # Validate grantee_id is a string
+        if not isinstance(self.config.get('grantee_id'), str):
+            raise ValueError(f"Step '{step_name}': 'grantee_id' must be a string")
     
     def _get_exportable_variables(self):
         """

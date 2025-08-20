@@ -2,7 +2,7 @@
 Create context step executor.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from ...utils import get_node_rpc_url, console
 from ...context import create_context_via_admin_api
 from .base import BaseStep
@@ -10,6 +10,33 @@ from .base import BaseStep
 
 class CreateContextStep(BaseStep):
     """Execute a create context step."""
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['node', 'application_id']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate node is a string
+        if not isinstance(self.config.get('node'), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+        
+        # Validate application_id is a string
+        if not isinstance(self.config.get('application_id'), str):
+            raise ValueError(f"Step '{step_name}': 'application_id' must be a string")
+        
+        # Validate params is JSON string if provided
+        if 'params' in self.config and not isinstance(self.config['params'], str):
+            raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
     
     def _get_exportable_variables(self):
         """

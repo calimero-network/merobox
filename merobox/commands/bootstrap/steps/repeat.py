@@ -2,7 +2,7 @@
 Repeat step executor for executing nested steps multiple times.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from ...utils import console
 from .base import BaseStep
 from .install import InstallApplicationStep
@@ -15,6 +15,37 @@ from .wait import WaitStep
 
 class RepeatStep(BaseStep):
     """Execute nested steps multiple times."""
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['count', 'steps']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate count is an integer
+        if not isinstance(self.config.get('count'), int):
+            raise ValueError(f"Step '{step_name}': 'count' must be an integer")
+        
+        # Validate count is positive
+        if self.config.get('count', 0) <= 0:
+            raise ValueError(f"Step '{step_name}': 'count' must be a positive integer")
+        
+        # Validate steps is a list
+        if not isinstance(self.config.get('steps'), list):
+            raise ValueError(f"Step '{step_name}': 'steps' must be a list")
+        
+        # Validate steps list is not empty
+        if not self.config.get('steps'):
+            raise ValueError(f"Step '{step_name}': 'steps' list cannot be empty")
     
     def _get_exportable_variables(self):
         """

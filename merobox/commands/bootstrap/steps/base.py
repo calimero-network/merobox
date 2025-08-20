@@ -13,6 +13,10 @@ class BaseStep:
         self.config = config
         # Define which variables this step can export and their mapping
         self.exportable_variables = self._get_exportable_variables()
+        # Validate required fields before proceeding
+        self._validate_required_fields()
+        # Validate field types
+        self._validate_field_types()
     
     def _get_exportable_variables(self) -> List[Tuple[str, str, str]]:
         """
@@ -22,6 +26,43 @@ class BaseStep:
         Override this method in subclasses to specify exportable variables.
         """
         return []
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        Override this method in subclasses to specify required fields.
+        
+        Returns:
+            List of required field names
+        """
+        return []
+    
+    def _validate_required_fields(self) -> None:
+        """
+        Validate that all required fields are present in the configuration.
+        Raises ValueError if any required fields are missing.
+        """
+        required_fields = self._get_required_fields()
+        missing_fields = []
+        
+        for field in required_fields:
+            if field not in self.config or self.config[field] is None:
+                missing_fields.append(field)
+        
+        if missing_fields:
+            step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+            step_type = self.config.get('type', 'Unknown')
+            raise ValueError(
+                f"Step '{step_name}' (type: {step_type}) is missing required fields: {', '.join(missing_fields)}. "
+                f"Required fields: {', '.join(required_fields)}"
+            )
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        Override this method in subclasses to add type validation.
+        """
+        pass
     
     def _export_variable(self, dynamic_values: Dict[str, Any], source_field: str, target_key: str, value: Any, description: str = None) -> None:
         """

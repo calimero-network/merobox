@@ -2,7 +2,7 @@
 Install application step executor.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from ...utils import get_node_rpc_url, console
 from ...install import install_application_via_admin_api
 from .base import BaseStep
@@ -10,6 +10,41 @@ from .base import BaseStep
 
 class InstallApplicationStep(BaseStep):
     """Execute an install application step."""
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['node']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate node is a string
+        if not isinstance(self.config.get('node'), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+        
+        # Validate path is a string if provided
+        if 'path' in self.config and not isinstance(self.config['path'], str):
+            raise ValueError(f"Step '{step_name}': 'path' must be a string")
+        
+        # Validate url is a string if provided
+        if 'url' in self.config and not isinstance(self.config['url'], str):
+            raise ValueError(f"Step '{step_name}': 'url' must be a string")
+        
+        # Validate dev is a boolean if provided
+        if 'dev' in self.config and not isinstance(self.config['dev'], bool):
+            raise ValueError(f"Step '{step_name}': 'dev' must be a boolean")
+        
+        # Validate that either path or url is provided
+        if 'path' not in self.config and 'url' not in self.config:
+            raise ValueError(f"Step '{step_name}': Either 'path' or 'url' must be provided")
     
     def _get_exportable_variables(self):
         """

@@ -6,7 +6,7 @@ import os
 import time
 import tarfile
 import io
-from typing import Dict, Any
+from typing import Dict, Any, List
 from .base import BaseStep
 from ...utils import console
 
@@ -19,6 +19,37 @@ class ScriptStep(BaseStep):
         self.script_path = config.get('script')
         self.target = config.get('target', 'image')  # 'image' or 'nodes'
         self.description = config.get('description', f'Execute script: {self.script_path}')
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['script']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate script is a string
+        if not isinstance(self.config.get('script'), str):
+            raise ValueError(f"Step '{step_name}': 'script' must be a string")
+        
+        # Validate target is a string if provided
+        if 'target' in self.config and not isinstance(self.config['target'], str):
+            raise ValueError(f"Step '{step_name}': 'target' must be a string")
+        
+        # Validate target value is valid if provided
+        if 'target' in self.config and self.config['target'] not in ['image', 'nodes']:
+            raise ValueError(f"Step '{step_name}': 'target' must be either 'image' or 'nodes'")
+        
+        # Validate description is a string if provided
+        if 'description' in self.config and not isinstance(self.config['description'], str):
+            raise ValueError(f"Step '{step_name}': 'description' must be a string")
     
     def _get_exportable_variables(self):
         """

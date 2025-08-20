@@ -2,7 +2,7 @@
 Execute step executor for contract calls.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from ...utils import get_node_rpc_url, console
 from ...call import call_function
 from .base import BaseStep
@@ -10,6 +10,45 @@ from .base import BaseStep
 
 class ExecuteStep(BaseStep):
     """Execute a contract execution step."""
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['node', 'context_id', 'method']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate node is a string
+        if not isinstance(self.config.get('node'), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+        
+        # Validate context_id is a string
+        if not isinstance(self.config.get('context_id'), str):
+            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+        
+        # Validate method is a string
+        if not isinstance(self.config.get('method'), str):
+            raise ValueError(f"Step '{step_name}': 'method' must be a string")
+        
+        # Validate args is a dict if provided
+        if 'args' in self.config and not isinstance(self.config['args'], dict):
+            raise ValueError(f"Step '{step_name}': 'args' must be a dictionary")
+        
+        # Validate executor_public_key is a string if provided
+        if 'executor_public_key' in self.config and not isinstance(self.config['executor_public_key'], str):
+            raise ValueError(f"Step '{step_name}': 'executor_public_key' must be a string")
+        
+        # Validate exec_type is a string if provided
+        if 'exec_type' in self.config and not isinstance(self.config['exec_type'], str):
+            raise ValueError(f"Step '{step_name}': 'exec_type' must be a string")
     
     def _get_exportable_variables(self):
         """

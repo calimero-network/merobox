@@ -2,7 +2,7 @@
 Join context step executor.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from ...utils import get_node_rpc_url, console
 from ...join import join_context_via_admin_api
 from .base import BaseStep
@@ -10,6 +10,37 @@ from .base import BaseStep
 
 class JoinContextStep(BaseStep):
     """Execute a join context step."""
+    
+    def _get_required_fields(self) -> List[str]:
+        """
+        Define which fields are required for this step.
+        
+        Returns:
+            List of required field names
+        """
+        return ['node', 'context_id', 'invitee_id', 'invitation']
+    
+    def _validate_field_types(self) -> None:
+        """
+        Validate that fields have the correct types.
+        """
+        step_name = self.config.get('name', f'Unnamed {self.config.get("type", "Unknown")} step')
+        
+        # Validate node is a string
+        if not isinstance(self.config.get('node'), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+        
+        # Validate context_id is a string
+        if not isinstance(self.config.get('context_id'), str):
+            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+        
+        # Validate invitee_id is a string
+        if not isinstance(self.config.get('invitee_id'), str):
+            raise ValueError(f"Step '{step_name}': 'invitee_id' must be a string")
+        
+        # Validate invitation is a string
+        if not isinstance(self.config.get('invitation'), str):
+            raise ValueError(f"Step '{step_name}': 'invitation' must be a string")
     
     def _get_exportable_variables(self):
         """
