@@ -71,6 +71,9 @@ class RepeatStep(BaseStep):
                 'iteration_one_based': iteration + 1
             })
             
+            # Process custom outputs configuration for this iteration
+            self._export_iteration_variables(iteration + 1, iteration_dynamic_values)
+            
             # Execute each nested step in sequence
             for step_idx, step in enumerate(nested_steps):
                 step_type = step.get('type')
@@ -104,6 +107,37 @@ class RepeatStep(BaseStep):
         
         console.print(f"[green]✓ All {repeat_count} iterations completed successfully[/green]")
         return True
+    
+    def _export_iteration_variables(self, iteration: int, dynamic_values: Dict[str, Any]) -> None:
+        """Export iteration variables based on custom outputs configuration."""
+        outputs_config = self.config.get('outputs', {})
+        if not outputs_config:
+            return
+        
+        console.print(f"[blue]📝 Processing custom outputs for iteration {iteration}...[/blue]")
+        
+        for export_name, export_config in outputs_config.items():
+            if isinstance(export_config, str):
+                # Simple field assignment (e.g., current_iteration: iteration)
+                source_field = export_config
+                if source_field in dynamic_values:
+                    source_value = dynamic_values[source_field]
+                    dynamic_values[export_name] = source_value
+                    console.print(f"  📝 Custom export: {source_field} → {export_name}: {source_value}")
+                else:
+                    console.print(f"[yellow]Warning: Source field {source_field} not found in dynamic values[/yellow]")
+            elif isinstance(export_config, dict):
+                # Complex field assignment with node name replacement
+                source_field = export_config.get('field')
+                target_template = export_config.get('target')
+                if source_field and target_template and 'node_name' in target_template:
+                    if source_field in dynamic_values:
+                        source_value = dynamic_values[source_field]
+                        # For repeat steps, we don't have node names, so just use the source value
+                        dynamic_values[export_name] = source_value
+                        console.print(f"  📝 Custom export: {source_field} → {export_name}: {source_value}")
+                    else:
+                        console.print(f"[yellow]Warning: Source field {source_field} not found in dynamic values[/yellow]")
     
     def _create_nested_step_executor(self, step_type: str, step_config: Dict[str, Any]):
         """Create a nested step executor based on the step type."""

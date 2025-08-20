@@ -29,6 +29,9 @@ class ExecuteStep(BaseStep):
         method = self.config.get('method')
         args = self.config.get('args', {})
 
+        # Resolve dynamic values in args recursively
+        resolved_args = self._resolve_args_dynamic_values(args, workflow_results, dynamic_values)
+
         # Validate export configuration
         if not self._validate_export_config():
             console.print(f"[yellow]⚠️  Execute step export configuration validation failed[/yellow]")
@@ -63,7 +66,7 @@ class ExecuteStep(BaseStep):
         console.print(f"  context_id: {context_id}")
         console.print(f"  exec_type: {exec_type}")
         console.print(f"  method: {method}")
-        console.print(f"  args: {args}")
+        console.print(f"  args: {resolved_args}")
         console.print(f"  executor_public_key: {executor_public_key}")
         
         # Get node RPC URL
@@ -83,7 +86,7 @@ class ExecuteStep(BaseStep):
             
             if exec_type in ['contract_call', 'view_call', 'function_call']:
                 result = await call_function(
-                    rpc_url, context_id, method, args, executor_public_key
+                    rpc_url, context_id, method, resolved_args, executor_public_key
                 )
             else:
                 console.print(f"[red]Unknown execution type: {exec_type}[/red]")
@@ -117,3 +120,17 @@ class ExecuteStep(BaseStep):
         except Exception as e:
             console.print(f"[red]Execution failed with error: {str(e)}[/red]")
             return False
+    
+    def _resolve_args_dynamic_values(self, args: Any, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]) -> Any:
+        """Recursively resolve dynamic values in args dictionary or other data structures."""
+        if isinstance(args, dict):
+            resolved_args = {}
+            for key, value in args.items():
+                resolved_args[key] = self._resolve_args_dynamic_values(value, workflow_results, dynamic_values)
+            return resolved_args
+        elif isinstance(args, list):
+            return [self._resolve_args_dynamic_values(item, workflow_results, dynamic_values) for item in args]
+        elif isinstance(args, str):
+            return self._resolve_dynamic_value(args, workflow_results, dynamic_values)
+        else:
+            return args
