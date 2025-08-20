@@ -4,14 +4,16 @@ Nuke command - Delete all Calimero node data folders for complete reset.
 
 import click
 import os
-import shutil
+import sys
+import time
+from typing import Dict, Any, Optional
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from .manager import CalimeroManager
-from .utils import format_file_size, console
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import format_file_size, console
 
 def find_calimero_data_dirs() -> list:
     """Find all Calimero node data directories."""

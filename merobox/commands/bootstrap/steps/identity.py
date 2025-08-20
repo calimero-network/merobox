@@ -2,10 +2,11 @@
 Identity management step executors.
 """
 
+import asyncio
 from typing import Dict, Any, List
-from ...utils import get_node_rpc_url, console
-from ...identity import generate_identity_via_admin_api, invite_identity_via_admin_api
-from .base import BaseStep
+from merobox.commands.utils import get_node_rpc_url, console
+from merobox.commands.identity import generate_identity_via_admin_api, invite_identity_via_admin_api
+from merobox.commands.bootstrap.steps.base import BaseStep
 
 
 class CreateIdentityStep(BaseStep):
@@ -50,7 +51,7 @@ class CreateIdentityStep(BaseStep):
         
         # Get node RPC URL
         try:
-            from ...manager import CalimeroManager
+            from merobox.commands.manager import CalimeroManager
             manager = CalimeroManager()
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
@@ -153,7 +154,7 @@ class InviteIdentityStep(BaseStep):
         
         # Get node RPC URL
         try:
-            from ...manager import CalimeroManager
+            from merobox.commands.manager import CalimeroManager
             manager = CalimeroManager()
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:

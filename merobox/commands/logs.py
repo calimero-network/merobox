@@ -3,7 +3,8 @@ Logs command - Show logs from a specific node.
 """
 
 import click
-from .manager import CalimeroManager
+import sys
+from merobox.commands.manager import CalimeroManager
 
 @click.command()
 @click.argument('node_name')

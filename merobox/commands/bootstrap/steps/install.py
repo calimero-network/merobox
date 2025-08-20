@@ -2,10 +2,12 @@
 Install application step executor.
 """
 
+import os
+import asyncio
 from typing import Dict, Any, List
-from ...utils import get_node_rpc_url, console
-from ...install import install_application_via_admin_api
-from .base import BaseStep
+from merobox.commands.utils import get_node_rpc_url, console
+from merobox.commands.install import install_application_via_admin_api
+from merobox.commands.bootstrap.steps.base import BaseStep
 
 
 class InstallApplicationStep(BaseStep):
@@ -73,7 +75,7 @@ class InstallApplicationStep(BaseStep):
         
         # Get node RPC URL
         try:
-            from ...manager import CalimeroManager
+            from merobox.commands.manager import CalimeroManager
             manager = CalimeroManager()
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:

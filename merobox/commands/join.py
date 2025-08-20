@@ -3,15 +3,15 @@ Join command - Join Calimero contexts using invitations via admin API.
 """
 
 import click
+import asyncio
 import sys
+from typing import Dict, Any, Optional
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from .manager import CalimeroManager
-from .utils import (
-    get_node_rpc_url, 
-    check_node_running, 
-    run_async_function,
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import (
+    get_node_rpc_url,
     console
 )
 
@@ -50,14 +50,11 @@ def context(node, context_id, invitee_id, invitation, verbose):
     """Join a context using an invitation."""
     manager = CalimeroManager()
     
-    # Check if node is running
-    check_node_running(node, manager)
-    
     # Get admin API URL and run join
     admin_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Joining context {context_id} on node {node} as {invitee_id} via {admin_url}[/blue]")
     
-    result = run_async_function(join_context_via_jsonrpc, admin_url, context_id, invitee_id, invitation)
+    result = asyncio.run(join_context_via_admin_api(admin_url, context_id, invitee_id, invitation))
     
     # Show which endpoint was used if successful
     if result['success'] and 'endpoint' in result:
@@ -94,16 +91,9 @@ def context(node, context_id, invitee_id, invitation, verbose):
             for error in result['errors']:
                 console.print(f"[red]  {error}[/red]")
         
-        if 'tried_payloads' in result:
-            console.print(f"\n[yellow]Tried payload formats:[/yellow]")
-            for i, payload in enumerate(result['tried_payloads']):
-                console.print(f"[dim]  Format {i}: {payload}[/dim]")
-        
-        # Provide helpful information for common errors
-        if "not found" in result.get('error', '').lower():
-            console.print(f"\n[yellow]Note: Make sure the context ID and invitation are correct.[/yellow]")
-        elif "unauthorized" in result.get('error', '').lower():
-            console.print(f"\n[yellow]Note: The invitation may have expired or be invalid.[/yellow]")
+        if verbose:
+            console.print(f"\n[bold]Full response:[/bold]")
+            console.print(f"{result}")
         
         sys.exit(1)
 

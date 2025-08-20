@@ -4,7 +4,7 @@ Stop command - Stop Calimero node(s).
 
 import click
 import sys
-from .manager import CalimeroManager
+from merobox.commands.manager import CalimeroManager
 
 @click.command()
 @click.argument('node_name', required=False)

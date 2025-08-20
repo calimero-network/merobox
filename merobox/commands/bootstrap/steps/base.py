@@ -3,7 +3,7 @@ Base step class for all workflow steps.
 """
 
 from typing import Dict, Any, List, Tuple
-from ...utils import console
+from merobox.commands.utils import console
 
 
 class BaseStep:

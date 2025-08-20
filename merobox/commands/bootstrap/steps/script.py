@@ -3,12 +3,13 @@ Script execution step for bootstrap workflow.
 """
 
 import os
-import time
-import tarfile
-import io
-from typing import Dict, Any, List
-from .base import BaseStep
-from ...utils import console
+import asyncio
+import subprocess
+import tempfile
+from typing import Dict, Any, List, Optional
+from pathlib import Path
+from merobox.commands.utils import console
+from merobox.commands.bootstrap.steps.base import BaseStep
 
 
 class ScriptStep(BaseStep):
@@ -156,7 +157,7 @@ class ScriptStep(BaseStep):
             try:
                 # Create container with the script mounted
                 try:
-                    from ...manager import CalimeroManager
+                    from merobox.commands.manager import CalimeroManager
                     manager = CalimeroManager()
                     
                     container = manager.client.containers.run(
@@ -244,7 +245,7 @@ class ScriptStep(BaseStep):
                 return False
             
             # Get all running Calimero nodes
-            from ...manager import CalimeroManager
+            from merobox.commands.manager import CalimeroManager
             manager = CalimeroManager()
             
             containers = manager.client.containers.list(

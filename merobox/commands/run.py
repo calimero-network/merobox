@@ -4,8 +4,8 @@ Run command - Start Calimero node(s) in Docker containers.
 
 import click
 import sys
-from .manager import CalimeroManager
-from .utils import validate_port
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import validate_port
 
 @click.command()
 @click.option('--count', '-c', default=1, help='Number of nodes to run (default: 1)')

@@ -3,7 +3,7 @@ List command - List all running Calimero nodes.
 """
 
 import click
-from .manager import CalimeroManager
+from merobox.commands.manager import CalimeroManager
 
 @click.command()
 def list():

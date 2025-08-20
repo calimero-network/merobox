@@ -2,10 +2,11 @@
 Join context step executor.
 """
 
+import asyncio
 from typing import Dict, Any, List
-from ...utils import get_node_rpc_url, console
-from ...join import join_context_via_admin_api
-from .base import BaseStep
+from merobox.commands.utils import get_node_rpc_url, console
+from merobox.commands.join import join_context_via_admin_api
+from merobox.commands.bootstrap.steps.base import BaseStep
 
 
 class JoinContextStep(BaseStep):
@@ -75,7 +76,7 @@ class JoinContextStep(BaseStep):
         
         # Get node RPC URL
         try:
-            from ...manager import CalimeroManager
+            from merobox.commands.manager import CalimeroManager
             manager = CalimeroManager()
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:

@@ -1,13 +1,7 @@
 """
-Bootstrap command package - Automate Calimero node workflows using YAML configuration files.
-
-This package provides:
-- bootstrap: Main CLI command with run/validate/create-sample subcommands
-- Workflow execution engine
-- Step-by-step workflow processing
-- Configuration validation
+Bootstrap module - Workflow orchestration and execution.
 """
 
-from .bootstrap import bootstrap
+from merobox.commands.bootstrap.bootstrap import bootstrap
 
 __all__ = ['bootstrap']

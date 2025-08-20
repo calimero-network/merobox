@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from .manager import CalimeroManager
+from merobox.commands.manager import CalimeroManager
 
 console = Console()
 

@@ -4,8 +4,8 @@ Wait step executor.
 
 import asyncio
 from typing import Dict, Any, List
-from ...utils import console
-from .base import BaseStep
+from merobox.commands.utils import console
+from merobox.commands.bootstrap.steps.base import BaseStep
 
 
 class WaitStep(BaseStep):

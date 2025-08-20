@@ -2,13 +2,18 @@
 Shared utilities for Calimero CLI commands.
 """
 
-import asyncio
+import os
 import sys
-from typing import Optional, Dict, Any, List
+import time
+import asyncio
+import subprocess
+from typing import Dict, Any, Optional, List
+from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from .manager import CalimeroManager
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from merobox.commands.manager import CalimeroManager
 
 console = Console()
 

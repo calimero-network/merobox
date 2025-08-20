@@ -3,22 +3,21 @@ Identity command - List and generate identities for Calimero contexts using JSON
 """
 
 import click
+import asyncio
 import sys
+from typing import Dict, Any, Optional
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from .manager import CalimeroManager
-from .utils import (
-    get_node_rpc_url, 
-    check_node_running, 
-    run_async_function,
-    extract_nested_data,
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import (
+    get_node_rpc_url,
     console
 )
 
 def extract_identities_from_response(response_data: dict) -> list:
     """Extract identities from different possible response structures."""
-    identities_data = extract_nested_data(response_data, 'identities')
+    identities_data = response_data.get('identities')
     return identities_data if identities_data else []
 
 def create_identity_table(identities_data: list, context_id: str) -> Table:
@@ -117,13 +116,13 @@ def list_identities(node, context_id, verbose):
     manager = CalimeroManager()
     
     # Check if node is running
-    check_node_running(node, manager)
+    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
     
     # Get admin API URL and run listing
     admin_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Listing identities for context {context_id} on node {node} via {admin_url}[/blue]")
     
-    result = run_async_function(list_identities_via_admin_api, admin_url, context_id)
+    result = asyncio.run(list_identities_via_admin_api(admin_url, context_id))
     
     if result['success']:
         response_data = result.get('data', {})
@@ -159,13 +158,13 @@ def generate(node, verbose=False):
     manager = CalimeroManager()
     
     # Check if node is running
-    check_node_running(node, manager)
+    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
     
     # Get admin API URL and run generation
     admin_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Generating new identity on node {node} via {admin_url}[/blue]")
     
-    result = run_async_function(generate_identity_via_admin_api, admin_url)
+    result = asyncio.run(generate_identity_via_admin_api(admin_url))
     
     # Show which endpoint was used if successful
     if result['success'] and 'endpoint' in result:
@@ -217,13 +216,13 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
     manager = CalimeroManager()
     
     # Check if node is running
-    check_node_running(node, manager)
+    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
     
     # Get admin API URL and run invitation
     admin_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Inviting identity {invitee_id} to context {context_id} on node {node} via {admin_url}[/blue]")
     
-    result = run_async_function(invite_identity_via_jsonrpc, admin_url, context_id, inviter_id, invitee_id, capability)
+    result = asyncio.run(invite_identity_via_admin_api(admin_url, context_id, inviter_id, invitee_id, capability))
     
     # Show which endpoint was used if successful
     if result['success'] and 'endpoint' in result:

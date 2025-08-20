@@ -10,9 +10,9 @@ This module handles the execution of Calimero workflows including:
 
 import asyncio
 import sys
-from .executor import WorkflowExecutor
-from ..config import load_workflow_config
-from ...utils import console
+from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+from merobox.commands.bootstrap.config import load_workflow_config
+from merobox.commands.utils import console
 
 async def run_workflow(config_file: str, verbose: bool = False) -> bool:
     """
@@ -30,7 +30,7 @@ async def run_workflow(config_file: str, verbose: bool = False) -> bool:
         config = load_workflow_config(config_file)
         
         # Create and execute workflow
-        from ...manager import CalimeroManager
+        from merobox.commands.manager import CalimeroManager
         manager = CalimeroManager()
         executor = WorkflowExecutor(config, manager)
         

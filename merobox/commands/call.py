@@ -4,11 +4,13 @@ Call command - Execute function calls using JSON-RPC client.
 
 import click
 import asyncio
+import sys
 from typing import Dict, Any, Optional
 from rich.console import Console
-from rich.panel import Panel
-from .utils import get_node_rpc_url
-from .manager import CalimeroManager
+from rich.table import Table
+from rich import box
+from merobox.commands.utils import get_node_rpc_url
+from merobox.commands.manager import CalimeroManager
 
 console = Console()
 

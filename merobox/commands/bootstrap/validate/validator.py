@@ -5,6 +5,16 @@ This module provides comprehensive validation for workflow configurations
 without requiring full workflow execution.
 """
 
+from merobox.commands.bootstrap.steps.install import InstallApplicationStep
+from merobox.commands.bootstrap.steps.context import CreateContextStep
+from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
+from merobox.commands.bootstrap.steps.identity import InviteIdentityStep
+from merobox.commands.bootstrap.steps.join import JoinContextStep
+from merobox.commands.bootstrap.steps.execute import ExecuteStep
+from merobox.commands.bootstrap.steps.repeat import RepeatStep
+from merobox.commands.bootstrap.steps.wait import WaitStep
+from merobox.commands.bootstrap.steps.script import ScriptStep
+
 def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
     """
     Validate a workflow configuration without executing it.
@@ -82,31 +92,22 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
     # Import step classes dynamically to avoid circular imports
     try:
         if step_type == 'install_application':
-            from ..steps.install import InstallApplicationStep
             step_class = InstallApplicationStep
         elif step_type == 'create_context':
-            from ..steps.context import CreateContextStep
             step_class = CreateContextStep
         elif step_type == 'create_identity':
-            from ..steps.identity import CreateIdentityStep
             step_class = CreateIdentityStep
         elif step_type == 'invite_identity':
-            from ..steps.identity import InviteIdentityStep
             step_class = InviteIdentityStep
         elif step_type == 'join_context':
-            from ..steps.join import JoinContextStep
             step_class = JoinContextStep
         elif step_type == 'call':
-            from ..steps.execute import ExecuteStep
             step_class = ExecuteStep
         elif step_type == 'repeat':
-            from ..steps.repeat import RepeatStep
             step_class = RepeatStep
         elif step_type == 'wait':
-            from ..steps.wait import WaitStep
             step_class = WaitStep
         elif step_type == 'script':
-            from ..steps.script import ScriptStep
             step_class = ScriptStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")

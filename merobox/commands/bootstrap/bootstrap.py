@@ -12,10 +12,10 @@ a clean, organized interface for workflow management.
 
 import click
 import sys
-from .run import run_workflow_sync
-from .validate import validate_workflow_config
-from .config import load_workflow_config, create_sample_workflow_config
-from ..utils import console
+from merobox.commands.bootstrap.run import run_workflow_sync
+from merobox.commands.bootstrap.validate import validate_workflow_config
+from merobox.commands.bootstrap.config import load_workflow_config, create_sample_workflow_config
+from merobox.commands.utils import console
 
 @click.group()
 def bootstrap():

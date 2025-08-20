@@ -8,9 +8,9 @@ import docker
 from typing import Dict, List, Any, Optional
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
-from ...manager import CalimeroManager
-from ...utils import console
-from ..steps import (
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import console
+from merobox.commands.bootstrap.steps import (
     InstallApplicationStep,
     CreateContextStep,
     CreateIdentityStep,
@@ -300,31 +300,31 @@ class WorkflowExecutor:
     def _create_step_executor(self, step_type: str, step_config: Dict[str, Any]):
         """Create a step executor based on the step type."""
         if step_type == 'install_application':
-            from .steps import InstallApplicationStep
+            from merobox.commands.bootstrap.steps import InstallApplicationStep
             return InstallApplicationStep(step_config)
         elif step_type == 'create_context':
-            from .steps import CreateContextStep
+            from merobox.commands.bootstrap.steps import CreateContextStep
             return CreateContextStep(step_config)
         elif step_type == 'create_identity':
-            from .steps import CreateIdentityStep
+            from merobox.commands.bootstrap.steps import CreateIdentityStep
             return CreateIdentityStep(step_config)
         elif step_type == 'invite_identity':
-            from .steps import InviteIdentityStep
+            from merobox.commands.bootstrap.steps import InviteIdentityStep
             return InviteIdentityStep(step_config)
         elif step_type == 'join_context':
-            from .steps import JoinContextStep
+            from merobox.commands.bootstrap.steps import JoinContextStep
             return JoinContextStep(step_config)
         elif step_type == 'call':
-            from .steps import ExecuteStep
+            from merobox.commands.bootstrap.steps import ExecuteStep
             return ExecuteStep(step_config)
         elif step_type == 'wait':
-            from .steps import WaitStep
+            from merobox.commands.bootstrap.steps import WaitStep
             return WaitStep(step_config)
         elif step_type == 'repeat':
-            from .steps import RepeatStep
+            from merobox.commands.bootstrap.steps import RepeatStep
             return RepeatStep(step_config)
         elif step_type == 'script':
-            from .steps import ScriptStep
+            from merobox.commands.bootstrap.steps import ScriptStep
             return ScriptStep(step_config)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
