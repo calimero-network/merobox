@@ -144,23 +144,37 @@ class WorkflowExecutor:
             if isinstance(nodes_config, dict):
                 image = nodes_config.get("image")
                 if image:
-                    console.print(f"[yellow]Force pulling workflow image: {image}[/yellow]")
+                    console.print(
+                        f"[yellow]Force pulling workflow image: {image}[/yellow]"
+                    )
                     if not self.manager.force_pull_image(image):
-                        console.print(f"[red]Warning: Failed to force pull image: {image}[/red]")
-                        console.print("[yellow]Workflow will continue with existing image[/yellow]")
-                
+                        console.print(
+                            f"[red]Warning: Failed to force pull image: {image}[/red]"
+                        )
+                        console.print(
+                            "[yellow]Workflow will continue with existing image[/yellow]"
+                        )
+
                 # Check for images in individual node configurations
                 for node_name, node_config in nodes_config.items():
                     if isinstance(node_config, dict) and "image" in node_config:
                         image = node_config["image"]
-                        console.print(f"[yellow]Force pulling image for node {node_name}: {image}[/yellow]")
+                        console.print(
+                            f"[yellow]Force pulling image for node {node_name}: {image}[/yellow]"
+                        )
                         if not self.manager.force_pull_image(image):
-                            console.print(f"[red]Warning: Failed to force pull image for {node_name}: {image}[/red]")
-                            console.print("[yellow]Workflow will continue with existing image[/yellow]")
-                        
+                            console.print(
+                                f"[red]Warning: Failed to force pull image for {node_name}: {image}[/red]"
+                            )
+                            console.print(
+                                "[yellow]Workflow will continue with existing image[/yellow]"
+                            )
+
         except Exception as e:
             console.print(f"[red]Error during force pull: {str(e)}[/red]")
-            console.print("[yellow]Workflow will continue with existing images[/yellow]")
+            console.print(
+                "[yellow]Workflow will continue with existing images[/yellow]"
+            )
 
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""

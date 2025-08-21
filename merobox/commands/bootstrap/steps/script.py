@@ -202,10 +202,12 @@ class ScriptStep(BaseStep):
                     from merobox.commands.manager import CalimeroManager
 
                     manager = CalimeroManager()
-                    
+
                     # Ensure the image is available
                     if not manager._ensure_image_pulled(image):
-                        console.print(f"[red]✗ Cannot proceed without image: {image}[/red]")
+                        console.print(
+                            f"[red]✗ Cannot proceed without image: {image}[/red]"
+                        )
                         return False
 
                     container = manager.client.containers.run(

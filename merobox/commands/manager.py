@@ -31,12 +31,12 @@ class CalimeroManager:
         """Check if the image name indicates a remote registry."""
         # Check if image contains a registry (has slashes and a tag)
         return "/" in image and ":" in image
-    
+
     def force_pull_image(self, image: str) -> bool:
         """Force pull an image even if it exists locally."""
         try:
             console.print(f"[yellow]Force pulling image: {image}[/yellow]")
-            
+
             # Remove local image if it exists
             try:
                 local_image = self.client.images.get(image)
@@ -44,10 +44,10 @@ class CalimeroManager:
                 self.client.images.remove(image, force=True)
             except docker.errors.ImageNotFound:
                 pass
-            
+
             # Pull the fresh image
             return self._ensure_image_pulled(image)
-            
+
         except Exception as e:
             console.print(f"[red]✗ Error force pulling image {image}: {str(e)}[/red]")
             return False
@@ -68,22 +68,26 @@ class CalimeroManager:
             try:
                 # Pull the image
                 self.client.images.pull(image)
-                
+
                 console.print(f"[green]✓ Successfully pulled image: {image}[/green]")
                 return True
-                
+
             except docker.errors.NotFound:
                 console.print(f"[red]✗ Image {image} not found in registry[/red]")
                 return False
             except docker.errors.APIError as e:
-                console.print(f"[red]✗ Docker API error pulling {image}: {str(e)}[/red]")
+                console.print(
+                    f"[red]✗ Docker API error pulling {image}: {str(e)}[/red]"
+                )
                 return False
             except Exception as e:
                 console.print(f"[red]✗ Failed to pull image {image}: {str(e)}[/red]")
                 return False
 
         except Exception as e:
-            console.print(f"[red]✗ Error checking/pulling image {image}: {str(e)}[/red]")
+            console.print(
+                f"[red]✗ Error checking/pulling image {image}: {str(e)}[/red]"
+            )
             return False
 
     def run_node(
@@ -99,10 +103,12 @@ class CalimeroManager:
         try:
             # Determine the image to use
             image_to_use = image or "ghcr.io/calimero-network/merod:edge"
-            
+
             # Ensure the image is available
             if not self._ensure_image_pulled(image_to_use):
-                console.print(f"[red]✗ Cannot proceed without image: {image_to_use}[/red]")
+                console.print(
+                    f"[red]✗ Cannot proceed without image: {image_to_use}[/red]"
+                )
                 return False
 
             # Check if containers already exist and clean them up

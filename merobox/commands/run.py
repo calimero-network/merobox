@@ -25,7 +25,11 @@ console = Console()
 )
 @click.option("--data-dir", help="Custom data directory for single node")
 @click.option("--image", help="Custom Docker image to use")
-@click.option("--force-pull", is_flag=True, help="Force pull the Docker image even if it exists locally")
+@click.option(
+    "--force-pull",
+    is_flag=True,
+    help="Force pull the Docker image even if it exists locally",
+)
 def run(count, base_port, base_rpc_port, chain_id, prefix, data_dir, image, force_pull):
     """Run Calimero node(s) in Docker containers."""
     calimero_manager = CalimeroManager()
