@@ -456,6 +456,84 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 
 ## 🛠️ Development Guide
 
+### Testing with Merobox
+
+Merobox can be used as a lightweight test harness for your Python projects. Use the built-in helpers in `merobox.testing` to spin up ephemeral Calimero nodes for integration tests and tear them down automatically.
+
+#### Basic Cluster Management
+
+**Context manager:**
+```python
+from merobox.testing import cluster
+
+with cluster(count=2, prefix="ci", image="ghcr.io/calimero-network/merod:edge") as env:
+    # env["nodes"] -> ["ci-1", "ci-2"]
+    # env["endpoints"]["ci-1"] -> http://localhost:<rpc_port>
+    ...  # call your code against the endpoints
+```
+
+**Pytest fixture:**
+```python
+# conftest.py
+from merobox.testing import pytest_cluster
+
+merobox_cluster = pytest_cluster(count=2, scope="session")
+
+# test_example.py
+def test_something(merobox_cluster):
+    endpoints = merobox_cluster["endpoints"]
+    assert len(endpoints) == 2
+```
+
+#### Workflow-based Pretest Setup
+
+For more complex test scenarios, you can run entire Merobox workflows as pretest setup:
+
+**Context manager:**
+```python
+from merobox.testing import workflow
+
+with workflow("workflow-examples/workflow-example.yml", prefix="pretest") as env:
+    # env["workflow_result"] -> True/False (workflow execution success)
+    # env["nodes"] -> List of nodes created by the workflow
+    # env["endpoints"] -> RPC endpoints for each node
+    # env["manager"] -> CalimeroManager instance
+    
+    # Your test logic here
+    # The workflow environment is automatically cleaned up on exit
+```
+
+**Pytest fixture:**
+```python
+# conftest.py
+from merobox.testing import pytest_workflow
+
+merobox_workflow = pytest_workflow(
+    workflow_path="workflow-examples/workflow-example.yml",
+    prefix="pretest",
+    scope="session"
+)
+
+# test_example.py
+def test_with_workflow_setup(merobox_workflow):
+    workflow_result = merobox_workflow["workflow_result"]
+    assert workflow_result is True
+    
+    nodes = merobox_workflow["nodes"]
+    endpoints = merobox_workflow["endpoints"]
+    # ... your test logic
+```
+
+**Options for workflow testing:**
+- `workflow_path`: Path to the workflow YAML file
+- `prefix`: Node name prefix filter
+- `image`: Custom Docker image
+- `chain_id`: Blockchain chain ID
+- `wait_for_ready`: Whether to wait for nodes to be ready
+- `scope`: Pytest fixture scope (function, class, module, session)
+
+See `testing-examples/` for runnable examples including workflow pretest setup.
+
 ### Environment Setup
 
 #### Prerequisites

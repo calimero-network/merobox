@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hello-world-example"
+version = "0.1.0"
+description = "Example project demonstrating Merobox integration for testing"
+authors = [{name = "Example Developer", email = "dev@example.com"}]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "requests",
+    "pytest",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.setuptools.packages.find]
+where = ["src"]
