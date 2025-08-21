@@ -23,7 +23,7 @@ from merobox.commands import (
 
 
 @click.group()
-@click.version_option(version="0.1.12")
+@click.version_option(version="0.1.13")
 def cli():
     """Merobox CLI - Manage Calimero nodes in Docker containers."""
     pass
