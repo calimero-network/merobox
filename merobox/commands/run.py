@@ -6,6 +6,9 @@ import click
 import sys
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import validate_port
+from rich.console import Console
+
+console = Console()
 
 
 @click.command()
@@ -22,9 +25,17 @@ from merobox.commands.utils import validate_port
 )
 @click.option("--data-dir", help="Custom data directory for single node")
 @click.option("--image", help="Custom Docker image to use")
-def run(count, base_port, base_rpc_port, chain_id, prefix, data_dir, image):
+@click.option("--force-pull", is_flag=True, help="Force pull the Docker image even if it exists locally")
+def run(count, base_port, base_rpc_port, chain_id, prefix, data_dir, image, force_pull):
     """Run Calimero node(s) in Docker containers."""
     calimero_manager = CalimeroManager()
+
+    # Handle force pull if specified
+    if force_pull and image:
+        console.print(f"[yellow]Force pulling image: {image}[/yellow]")
+        if not calimero_manager.force_pull_image(image):
+            console.print(f"[red]Failed to force pull image: {image}[/red]")
+            sys.exit(1)
 
     # Convert port parameters to integers if provided
     if base_port is not None:

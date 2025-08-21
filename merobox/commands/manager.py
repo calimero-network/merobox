@@ -27,6 +27,65 @@ class CalimeroManager:
             sys.exit(1)
         self.nodes = {}
 
+    def _is_remote_image(self, image: str) -> bool:
+        """Check if the image name indicates a remote registry."""
+        # Check if image contains a registry (has slashes and a tag)
+        return "/" in image and ":" in image
+    
+    def force_pull_image(self, image: str) -> bool:
+        """Force pull an image even if it exists locally."""
+        try:
+            console.print(f"[yellow]Force pulling image: {image}[/yellow]")
+            
+            # Remove local image if it exists
+            try:
+                local_image = self.client.images.get(image)
+                console.print(f"[cyan]Removing local image: {image}[/cyan]")
+                self.client.images.remove(image, force=True)
+            except docker.errors.ImageNotFound:
+                pass
+            
+            # Pull the fresh image
+            return self._ensure_image_pulled(image)
+            
+        except Exception as e:
+            console.print(f"[red]✗ Error force pulling image {image}: {str(e)}[/red]")
+            return False
+
+    def _ensure_image_pulled(self, image: str) -> bool:
+        """Ensure the specified Docker image is available locally, pulling if remote."""
+        try:
+            # Check if image exists locally
+            try:
+                self.client.images.get(image)
+                console.print(f"[cyan]✓ Image {image} already available locally[/cyan]")
+                return True
+            except docker.errors.ImageNotFound:
+                pass
+
+            # Image not found locally, attempt to pull it
+            console.print(f"[yellow]Pulling image: {image}[/yellow]")
+            try:
+                # Pull the image
+                self.client.images.pull(image)
+                
+                console.print(f"[green]✓ Successfully pulled image: {image}[/green]")
+                return True
+                
+            except docker.errors.NotFound:
+                console.print(f"[red]✗ Image {image} not found in registry[/red]")
+                return False
+            except docker.errors.APIError as e:
+                console.print(f"[red]✗ Docker API error pulling {image}: {str(e)}[/red]")
+                return False
+            except Exception as e:
+                console.print(f"[red]✗ Failed to pull image {image}: {str(e)}[/red]")
+                return False
+
+        except Exception as e:
+            console.print(f"[red]✗ Error checking/pulling image {image}: {str(e)}[/red]")
+            return False
+
     def run_node(
         self,
         node_name: str,
@@ -38,6 +97,14 @@ class CalimeroManager:
     ) -> bool:
         """Run a Calimero node container."""
         try:
+            # Determine the image to use
+            image_to_use = image or "ghcr.io/calimero-network/merod:edge"
+            
+            # Ensure the image is available
+            if not self._ensure_image_pulled(image_to_use):
+                console.print(f"[red]✗ Cannot proceed without image: {image_to_use}[/red]")
+                return False
+
             # Check if containers already exist and clean them up
             for container_name in [node_name, f"{node_name}-init"]:
                 try:
@@ -102,7 +169,7 @@ class CalimeroManager:
             # Prepare container configuration
             container_config = {
                 "name": container_name,
-                "image": image or "ghcr.io/calimero-network/merod:edge",
+                "image": image_to_use,
                 "detach": True,
                 "user": "root",  # Override the default user in the image
                 "privileged": True,  # Run in privileged mode to avoid permission issues

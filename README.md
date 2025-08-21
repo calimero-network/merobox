@@ -264,6 +264,8 @@ merobox run [OPTIONS]
 - `--count INTEGER`: Number of nodes to start (default: 1)
 - `--prefix TEXT`: Node name prefix (default: "calimero-node")
 - `--restart`: Restart existing nodes
+- `--image TEXT`: Custom Docker image to use
+- `--force-pull`: Force pull Docker image even if it exists locally
 - `--help`: Show help message
 
 #### `merobox stop`
@@ -398,6 +400,9 @@ Workflows are defined in YAML files with the following structure:
 
 ```yaml
 name: "Workflow Name"
+# Force pull Docker images even if they exist locally
+force_pull_image: false
+
 nodes:
   - "node-name-1"
   - "node-name-2"
@@ -409,6 +414,38 @@ steps:
 
 stop_all_nodes: true  # Optional: stop nodes after completion
 ```
+
+**Configuration Options:**
+- `force_pull_image`: When set to `true`, forces Docker to pull fresh images from registries, even if they exist locally. Useful for ensuring latest versions or during development.
+
+### Docker Image Management
+
+Merobox provides automatic Docker image management to ensure your workflows always have the required images:
+
+#### **Automatic Image Pulling**
+- **Remote Detection**: Automatically detects when images are from remote registries
+- **Smart Pulling**: Only pulls images that aren't available locally
+- **Progress Display**: Shows real-time pull progress and status
+
+#### **Force Pull Options**
+1. **CLI Flag**: Use `--force-pull` with the `run` command for individual operations
+   ```bash
+   merobox run --image ghcr.io/calimero-network/merod:edge --force-pull
+   ```
+
+2. **Workflow Configuration**: Set `force_pull_image: true` in your workflow YAML
+   ```yaml
+   name: "My Workflow"
+   force_pull_image: true  # Will force pull all images
+   nodes:
+     image: ghcr.io/calimero-network/merod:edge
+   ```
+
+#### **Use Cases**
+- **Development**: Always get latest images during development
+- **Testing**: Ensure consistent image versions across environments
+- **CI/CD**: Force fresh pulls in automated workflows
+- **Production**: Update images without manual intervention
 
 #### Environment Variables
 - `CALIMERO_IMAGE`: Docker image for Calimero nodes

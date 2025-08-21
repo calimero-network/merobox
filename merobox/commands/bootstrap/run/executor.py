@@ -45,6 +45,15 @@ class WorkflowExecutor:
         )
 
         try:
+            # Check if we should force pull images
+            force_pull_images = self.config.get("force_pull_image", False)
+            if force_pull_images:
+                console.print(
+                    "\n[bold yellow]🔄 Force pulling workflow images (force_pull_image=true)...[/bold yellow]"
+                )
+                await self._force_pull_workflow_images()
+                console.print("[green]✓ Image force pull completed[/green]")
+
             # Check if we should restart nodes at the beginning
             restart_nodes = self.config.get("restart", False)
             stop_all_nodes = self.config.get("stop_all_nodes", False)
@@ -126,6 +135,32 @@ class WorkflowExecutor:
         except Exception as e:
             console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
             return False
+
+    async def _force_pull_workflow_images(self) -> None:
+        """Force pull all Docker images specified in the workflow configuration."""
+        try:
+            # Get image from nodes configuration
+            nodes_config = self.config.get("nodes", {})
+            if isinstance(nodes_config, dict):
+                image = nodes_config.get("image")
+                if image:
+                    console.print(f"[yellow]Force pulling workflow image: {image}[/yellow]")
+                    if not self.manager.force_pull_image(image):
+                        console.print(f"[red]Warning: Failed to force pull image: {image}[/red]")
+                        console.print("[yellow]Workflow will continue with existing image[/yellow]")
+                
+                # Check for images in individual node configurations
+                for node_name, node_config in nodes_config.items():
+                    if isinstance(node_config, dict) and "image" in node_config:
+                        image = node_config["image"]
+                        console.print(f"[yellow]Force pulling image for node {node_name}: {image}[/yellow]")
+                        if not self.manager.force_pull_image(image):
+                            console.print(f"[red]Warning: Failed to force pull image for {node_name}: {image}[/red]")
+                            console.print("[yellow]Workflow will continue with existing image[/yellow]")
+                        
+        except Exception as e:
+            console.print(f"[red]Error during force pull: {str(e)}[/red]")
+            console.print("[yellow]Workflow will continue with existing images[/yellow]")
 
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""

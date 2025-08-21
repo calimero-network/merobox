@@ -34,6 +34,7 @@ async def run_workflow(config_file: str, verbose: bool = False) -> bool:
         from merobox.commands.manager import CalimeroManager
 
         manager = CalimeroManager()
+        
         executor = WorkflowExecutor(config, manager)
 
         # Execute workflow
