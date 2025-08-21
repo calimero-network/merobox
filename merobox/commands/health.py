@@ -4,6 +4,7 @@ Health command - Check Calimero node health using admin API.
 
 import click
 import asyncio
+import aiohttp
 import sys
 from typing import Dict, Any, Optional
 from rich.console import Console
@@ -17,7 +18,13 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console
+from merobox.commands.utils import (
+    get_node_rpc_url,
+    console,
+    run_async_function,
+    extract_nested_data,
+    check_node_running,
+)
 
 
 async def check_node_health(rpc_url: str) -> dict:
