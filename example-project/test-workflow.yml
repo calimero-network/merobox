@@ -1,0 +1,23 @@
+description: Test workflow with different ports to avoid conflicts
+name: Test Workflow
+
+# Don't force pull to avoid unnecessary downloads
+force_pull_image: false
+
+nodes:
+  test-workflow-1:
+    chain_id: testnet-1
+    image: ghcr.io/calimero-network/merod:edge
+    # Use explicit ports to avoid conflicts with test fixtures
+    port: 2440  # Different from fixture ports (2428, 2430)
+    rpc_port: 2540  # Different from fixture ports (2528, 2530)
+
+steps:
+  - name: Wait for node to be ready
+    type: wait
+    seconds: 2  # Reduced wait time for faster execution
+
+# Configuration options
+stop_all_nodes: false  # Keep nodes running for reuse across tests
+restart: false          # Don't restart nodes at the beginning of workflow
+wait_timeout: 30        # Reduced timeout for faster execution
