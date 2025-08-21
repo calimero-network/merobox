@@ -14,6 +14,7 @@ from hello_world.client import Client
 # Main session-scoped fixtures for reuse across all tests
 # ============================================================================
 
+
 @nodes(count=3, prefix="shared-test", scope="session")
 def shared_cluster():
     """Main shared cluster with 3 nodes for all tests - session scoped for maximum reuse"""
@@ -29,6 +30,7 @@ def shared_workflow():
 # ============================================================================
 # Convenience fixtures that reuse the shared cluster
 # ============================================================================
+
 
 @pytest.fixture
 def merobox_cluster(shared_cluster):
@@ -105,6 +107,7 @@ def simple_workflow_environment(shared_workflow):
 # ============================================================================
 # Backward compatibility fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def endpoints(shared_cluster):

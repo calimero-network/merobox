@@ -81,7 +81,9 @@ def cluster(
         raise RuntimeError("Failed to start Merobox cluster")
 
     try:
-        endpoints: Dict[str, str] = {n: get_node_rpc_url(n, manager) for n in node_names}
+        endpoints: Dict[str, str] = {
+            n: get_node_rpc_url(n, manager) for n in node_names
+        }
         yield ClusterEnv(nodes=node_names, endpoints=endpoints, manager=manager)
     finally:
         if stop_all:
@@ -124,18 +126,19 @@ def workflow(
         raise FileNotFoundError(f"Workflow file not found: {workflow_path}")
 
     manager = CalimeroManager()
-    
+
     try:
         # Execute the workflow
         console.print(f"[blue]Running workflow: {workflow_path.name}[/blue]")
-        
+
         # Load workflow configuration
         from merobox.commands.bootstrap.config import load_workflow_config
+
         config = load_workflow_config(str(workflow_path))
-        
+
         executor = WorkflowExecutor(config, manager)
         workflow_result = asyncio.run(executor.execute_workflow())
-        
+
         if not workflow_result:
             console.print(f"[red]Workflow execution failed: {workflow_path.name}[/red]")
             raise RuntimeError(f"Workflow execution failed: {workflow_path.name}")
@@ -155,12 +158,13 @@ def workflow(
         # Filter nodes by prefix if specified
         if prefix != "test-node":
             running_nodes = [n for n in running_nodes if n.startswith(prefix)]
-        
+
         # Wait for nodes to be ready if requested
         if wait_for_ready and running_nodes:
             console.print("[blue]Waiting for nodes to be ready...[/blue]")
             # Simple wait - in practice you might want more sophisticated health checking
             import time
+
             time.sleep(5)  # Basic wait for services to start
 
         endpoints: Dict[str, str] = {
@@ -171,7 +175,7 @@ def workflow(
             nodes=running_nodes,
             endpoints=endpoints,
             manager=manager,
-            workflow_result=workflow_result
+            workflow_result=workflow_result,
         )
 
     finally:
@@ -277,22 +281,25 @@ def pytest_workflow(
 # Cleaner, more Pythonic API
 # ============================================================================
 
+
 def nodes(count: int = 1, *, prefix: str = "test", scope: str = "function", **kwargs):
     """
     Decorator to create a clean pytest fixture for Calimero nodes.
-    
+
     Usage:
         @nodes(count=2, scope="session")
         def my_cluster():
             '''Two nodes available for the entire test session'''
             pass
+
         def test_something(my_cluster):
             nodes = my_cluster.nodes
             endpoints = my_cluster.endpoints
     """
-    import pytest
 
     def decorator(func):
+        import pytest
+
         @pytest.fixture(scope=scope)
         def _fixture():
             with cluster(count=count, prefix=prefix, **kwargs) as env:
@@ -300,50 +307,57 @@ def nodes(count: int = 1, *, prefix: str = "test", scope: str = "function", **kw
                 class NodeCluster:
                     def __init__(self, env):
                         self.nodes = env["nodes"]
-                        self.endpoints = env["endpoints"] 
+                        self.endpoints = env["endpoints"]
                         self.manager = env["manager"]
-                        
+
                     def __getitem__(self, key):
                         # Backward compatibility
-                        return {"nodes": self.nodes, "endpoints": self.endpoints, "manager": self.manager}[key]
-                        
+                        return {
+                            "nodes": self.nodes,
+                            "endpoints": self.endpoints,
+                            "manager": self.manager,
+                        }[key]
+
                     def node(self, index_or_name):
                         """Get a specific node by index or name"""
                         if isinstance(index_or_name, int):
                             return self.nodes[index_or_name]
                         return index_or_name
-                        
+
                     def endpoint(self, index_or_name):
                         """Get endpoint for a specific node"""
                         node_name = self.node(index_or_name)
                         return self.endpoints[node_name]
-                
+
                 yield NodeCluster(env)
-        
+
         # Copy function metadata
         _fixture.__name__ = func.__name__
         _fixture.__doc__ = func.__doc__ or f"Merobox cluster with {count} nodes"
-        
+
         return _fixture
+
     return decorator
 
 
 def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **kwargs):
     """
     Decorator to create a clean pytest fixture that runs a workflow.
-    
+
     Usage:
         @run_workflow("my-workflow.yml", scope="session")
         def my_setup():
             '''Workflow setup for testing'''
             pass
+
         def test_something(my_setup):
             assert my_setup.success
             nodes = my_setup.nodes
     """
-    import pytest
 
     def decorator(func):
+        import pytest
+
         @pytest.fixture(scope=scope)
         def _fixture():
             with workflow(workflow_path, **kwargs) as env:
@@ -354,48 +368,51 @@ def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **
                         self.endpoints = env["endpoints"]
                         self.manager = env["manager"]
                         self.success = env["workflow_result"]
-                        
+
                     def __getitem__(self, key):
                         # Backward compatibility
                         return {
-                            "nodes": self.nodes, 
-                            "endpoints": self.endpoints, 
+                            "nodes": self.nodes,
+                            "endpoints": self.endpoints,
                             "manager": self.manager,
-                            "workflow_result": self.success
+                            "workflow_result": self.success,
                         }[key]
-                        
+
                     def node(self, index_or_name):
                         """Get a specific node by index or name"""
                         if isinstance(index_or_name, int):
                             return self.nodes[index_or_name]
                         return index_or_name
-                        
+
                     def endpoint(self, index_or_name):
                         """Get endpoint for a specific node"""
                         node_name = self.node(index_or_name)
                         return self.endpoints[node_name]
-                
+
                 yield WorkflowEnvironment(env)
-        
+
         # Copy function metadata
         _fixture.__name__ = func.__name__
         _fixture.__doc__ = func.__doc__ or f"Workflow environment from {workflow_path}"
-        
+
         return _fixture
+
     return decorator
 
 
 def using(*fixtures):
     """
     Helper to combine multiple test fixtures cleanly.
-    
+
     Usage:
         @nodes(count=2)
         def cluster():
             pass
+
         @run_workflow("setup.yml")
         def workflow_env():
             pass
+
         def test_combined(using(cluster, workflow_env)):
             # Access both fixtures
             pass
