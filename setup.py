@@ -9,9 +9,12 @@ from setuptools import setup, find_packages
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
+# Import version from merobox package
+from merobox import __version__
+
 setup(
     name="merobox",
-    version="0.1.15",
+    version=__version__,
     author="Merobox Team",
     author_email="team@merobox.com",
     description="A Python CLI tool for managing Calimero nodes in Docker containers",
