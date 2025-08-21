@@ -439,6 +439,16 @@ class CalimeroManager:
             console.print(f"[red]Failed to stop all nodes: {str(e)}[/red]")
             return False
 
+    def get_running_nodes(self) -> List[str]:
+        """Return a list of names for running Calimero node containers."""
+        try:
+            containers = self.client.containers.list(
+                filters={"label": "calimero.node=true", "status": "running"}
+            )
+            return [c.name for c in containers]
+        except Exception:
+            return []
+
     def list_nodes(self) -> None:
         """List all running Calimero nodes."""
         try:
