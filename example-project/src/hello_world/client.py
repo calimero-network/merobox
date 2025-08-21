@@ -14,7 +14,7 @@ class Client:
 
     def __init__(self, base_url: str):
         """Initialize client with base URL."""
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url.rstrip('/')
         self.session = requests.Session()
 
     def health_check(self) -> Dict[str, Any]:
@@ -29,17 +29,13 @@ class Client:
     def get_node_info(self) -> Dict[str, Any]:
         """Get basic node information."""
         try:
-            response = self.session.get(
-                f"{self.base_url}/admin-api/node-info", timeout=10
-            )
+            response = self.session.get(f"{self.base_url}/admin-api/node-info", timeout=10)
             response.raise_for_status()
             return {"success": True, "data": response.json()}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def create_context(
-        self, name: str, metadata: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def create_context(self, name: str, metadata: Optional[str] = None) -> Dict[str, Any]:
         """Create a new context."""
         try:
             payload = {"name": name}
@@ -47,7 +43,9 @@ class Client:
                 payload["metadata"] = metadata
 
             response = self.session.post(
-                f"{self.base_url}/admin-api/contexts", json=payload, timeout=30
+                f"{self.base_url}/admin-api/contexts",
+                json=payload,
+                timeout=30
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -57,9 +55,7 @@ class Client:
     def list_contexts(self) -> Dict[str, Any]:
         """List all available contexts."""
         try:
-            response = self.session.get(
-                f"{self.base_url}/admin-api/contexts", timeout=10
-            )
+            response = self.session.get(f"{self.base_url}/admin-api/contexts", timeout=10)
             response.raise_for_status()
             return {"success": True, "data": response.json()}
         except Exception as e:
@@ -72,11 +68,13 @@ class Client:
             payload = {
                 "path": app_path,
                 "is_dev": is_dev,
-                "metadata": "Hello World App",
+                "metadata": "Hello World App"
             }
-
+            
             response = self.session.post(
-                f"{self.base_url}/admin-api/applications", json=payload, timeout=60
+                f"{self.base_url}/admin-api/applications",
+                json=payload,
+                timeout=60
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}

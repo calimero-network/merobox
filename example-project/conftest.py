@@ -11,13 +11,8 @@ from hello_world.client import Client
 
 
 # ============================================================================
-# Clean, decorator-based fixtures using the new API
-# ============================================================================
-
-# ============================================================================
 # Main session-scoped fixtures for reuse across all tests
 # ============================================================================
-
 
 @nodes(count=3, prefix="shared-test", scope="session")
 def shared_cluster():
@@ -34,7 +29,6 @@ def shared_workflow():
 # ============================================================================
 # Convenience fixtures that reuse the shared cluster
 # ============================================================================
-
 
 @pytest.fixture
 def merobox_cluster(shared_cluster):
@@ -112,7 +106,6 @@ def simple_workflow_environment(shared_workflow):
 # Backward compatibility fixtures
 # ============================================================================
 
-
 @pytest.fixture
 def endpoints(shared_cluster):
     """Quick access to endpoints from the shared cluster"""
@@ -121,18 +114,45 @@ def endpoints(shared_cluster):
 
 @pytest.fixture
 def client(shared_cluster):
-    """Pre-configured client for the first node in the shared cluster"""
-    first_endpoint = shared_cluster.endpoint(0)
-    return Client(first_endpoint)
-
-
-@pytest.fixture
-def blockchain_endpoints(shared_cluster):
-    """Provide endpoints for testing."""
-    return shared_cluster.endpoints
+    """Quick access to client from the shared cluster"""
+    return Client(shared_cluster.endpoint(0))
 
 
 @pytest.fixture
 def blockchain_nodes(shared_cluster):
-    """Provide node names for testing."""
+    """Quick access to nodes from the shared cluster"""
     return shared_cluster.nodes
+
+
+@pytest.fixture
+def blockchain_endpoints(shared_cluster):
+    """Quick access to endpoints from the shared cluster"""
+    return shared_cluster.endpoints
+
+
+@pytest.fixture
+def blockchain_manager(shared_cluster):
+    """Quick access to manager from the shared cluster"""
+    return shared_cluster.manager
+
+
+# ============================================================================
+# Legacy fixtures for backward compatibility
+# ============================================================================
+
+@pytest.fixture
+def merobox_nodes(shared_cluster):
+    """Legacy fixture for backward compatibility"""
+    return shared_cluster.nodes
+
+
+@pytest.fixture
+def merobox_endpoints(shared_cluster):
+    """Legacy fixture for backward compatibility"""
+    return shared_cluster.endpoints
+
+
+@pytest.fixture
+def merobox_manager(shared_cluster):
+    """Legacy fixture for backward compatibility"""
+    return shared_cluster.manager
