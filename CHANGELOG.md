@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2024-12-19
+
+### Added
+- **Docker Image Force Pull**: New `force_pull_image` workflow configuration option
+- **CLI Force Pull Flag**: `--force-pull` option for the `run` command
+- **Automatic Image Management**: Smart Docker image pulling with remote detection
+- **Image Pull Progress**: Real-time feedback during Docker image operations
+
+### Changed
+- **Image Handling**: Enhanced Docker image management with automatic remote detection
+- **Workflow Configuration**: Added `force_pull_image` flag to workflow YAML files
+- **Documentation**: Comprehensive documentation for Docker image management features
+
+### Technical Details
+- **Remote Detection**: Automatically identifies remote images (containing `/` and `:`)
+- **Smart Pulling**: Only pulls images when necessary, with force pull override options
+- **Error Handling**: Graceful fallback when image operations fail
+- **Integration**: Seamlessly integrated into both CLI commands and workflow execution
+
 ## [0.1.10] - 2024-12-19
 
 ### Fixed

@@ -42,6 +42,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "description": "A sample workflow that demonstrates the bootstrap functionality with dynamic value capture",
         "stop_all_nodes": True,  # Stop all existing nodes before starting
         "wait_timeout": 60,  # Wait up to 60 seconds for nodes to be ready
+        "force_pull_image": False,  # Force pull Docker images even if they exist locally
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",

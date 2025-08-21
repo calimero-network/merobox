@@ -1,0 +1,21 @@
+description: Test workflow demonstrating the force_pull_image feature
+name: Force Pull Image Test
+
+# Force pull Docker images even if they exist locally
+force_pull_image: true
+
+nodes:
+  chain_id: testnet-1
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: test-node
+
+steps:
+  - name: Wait for node to be ready
+    type: wait
+    seconds: 5
+
+# Configuration options
+stop_all_nodes: true   # Stop all nodes at the end of workflow
+restart: false          # Don't restart nodes at the beginning of workflow
+wait_timeout: 60
