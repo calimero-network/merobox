@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict, Union
+from typing import Dict, List, Optional, TypedDict, Union, Any
 
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import get_node_rpc_url, console
@@ -119,7 +119,7 @@ def workflow(
         wait_for_ready: Whether to wait for nodes to be ready after workflow execution.
 
     Yields:
-        WorkflowEnv with node names, endpoints map, manager, and workflow execution result.
+        WorkflowEnv with node names, endpoints map, manager, workflow execution result, and captured dynamic values.
     """
     workflow_path = Path(workflow_path)
     if not workflow_path.exists():
@@ -167,16 +167,24 @@ def workflow(
 
             time.sleep(5)  # Basic wait for services to start
 
-        endpoints: Dict[str, str] = {
+        endpoints: Dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in running_nodes
         }
 
-        yield WorkflowEnv(
+        # Create enhanced WorkflowEnv with dynamic values
+        workflow_env = WorkflowEnv(
             nodes=running_nodes,
             endpoints=endpoints,
             manager=manager,
             workflow_result=workflow_result,
         )
+        
+        # Add dynamic values to the environment if available
+        if hasattr(executor, 'dynamic_values') and executor.dynamic_values:
+            workflow_env["dynamic_values"] = executor.dynamic_values
+            console.print(f"[blue]📋 Captured {len(executor.dynamic_values)} dynamic values from workflow[/blue]")
+
+        yield workflow_env
 
     finally:
         if stop_all:
@@ -368,6 +376,9 @@ def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **
                         self.endpoints = env["endpoints"]
                         self.manager = env["manager"]
                         self.success = env["workflow_result"]
+                        # Expose dynamic values if available
+                        self.dynamic_values = env.get("dynamic_values", {})
+                        self.workflow_result = env.get("dynamic_values", {})  # Alias for backward compatibility
 
                     def __getitem__(self, key):
                         # Backward compatibility
@@ -376,6 +387,7 @@ def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **
                             "endpoints": self.endpoints,
                             "manager": self.manager,
                             "workflow_result": self.success,
+                            "dynamic_values": self.dynamic_values,
                         }[key]
 
                     def node(self, index_or_name):
@@ -388,6 +400,14 @@ def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **
                         """Get endpoint for a specific node"""
                         node_name = self.node(index_or_name)
                         return self.endpoints[node_name]
+                    
+                    def get_captured_value(self, key, default=None):
+                        """Get a captured dynamic value from the workflow execution"""
+                        return self.dynamic_values.get(key, default)
+                    
+                    def list_captured_values(self):
+                        """List all captured dynamic values from the workflow execution"""
+                        return list(self.dynamic_values.keys())
 
                 yield WorkflowEnvironment(env)
 

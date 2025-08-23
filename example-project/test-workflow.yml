@@ -16,6 +16,24 @@ steps:
   - name: Wait for node to be ready
     type: wait
     seconds: 2  # Reduced wait time for faster execution
+  
+  # Add application installation step to test for bugs
+  - name: Install Test Application
+    type: install_application
+    node: test-workflow-1
+    path: ../workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId  # Capture the application ID for testing
+  
+  # Add context creation step to demonstrate dynamic variable capture
+  - name: Create Test Context
+    type: create_context
+    node: test-workflow-1
+    application_id: '{{app_id}}'  # Use the captured app_id from previous step
+    outputs:
+      context_id: contextId  # Capture the context ID
+      member_public_key: memberPublicKey  # Capture the member public key
 
 # Configuration options
 stop_all_nodes: false  # Keep nodes running for reuse across tests
