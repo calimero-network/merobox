@@ -9,6 +9,8 @@ nodes:
   count: 2
   image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
+  base_port: 9000
+  base_rpc_port: 9100
 
 steps:
   # Step 1: Install the application on the first node
