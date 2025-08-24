@@ -226,7 +226,12 @@ class WorkflowExecutor:
                             )
                             # Start the specific node
                             if not self.manager.run_node(
-                                node_name, base_port + i, base_rpc_port + i, chain_id, None, image
+                                node_name,
+                                base_port + i,
+                                base_rpc_port + i,
+                                chain_id,
+                                None,
+                                image,
                             ):
                                 return False
                     except docker.errors.NotFound:
@@ -234,7 +239,12 @@ class WorkflowExecutor:
                             f"[cyan]Node '{node_name}' doesn't exist, creating...[/cyan]"
                         )
                         if not self.manager.run_node(
-                            node_name, base_port + i, base_rpc_port + i, chain_id, None, image
+                            node_name,
+                            base_port + i,
+                            base_rpc_port + i,
+                            chain_id,
+                            None,
+                            image,
                         ):
                             return False
 
@@ -273,7 +283,12 @@ class WorkflowExecutor:
 
                                 console.print(f"Starting node '{node_name}'...")
                                 if not self.manager.run_node(
-                                    node_name, port, rpc_port, node_chain_id, data_dir, node_image
+                                    node_name,
+                                    port,
+                                    rpc_port,
+                                    node_chain_id,
+                                    data_dir,
+                                    node_image,
                                 ):
                                     return False
                             else:
@@ -295,7 +310,12 @@ class WorkflowExecutor:
 
                         console.print(f"Starting node '{node_name}'...")
                         if not self.manager.run_node(
-                            node_name, port, rpc_port, node_chain_id, data_dir, node_image
+                            node_name,
+                            port,
+                            rpc_port,
+                            node_chain_id,
+                            data_dir,
+                            node_image,
                         ):
                             return False
                 else:
@@ -315,7 +335,12 @@ class WorkflowExecutor:
                                 # Start fresh
                                 console.print(f"Starting node '{node_config}'...")
                                 if not self.manager.run_node(
-                                    node_config, base_port, base_rpc_port, chain_id, None, image
+                                    node_config,
+                                    base_port,
+                                    base_rpc_port,
+                                    chain_id,
+                                    None,
+                                    image,
                                 ):
                                     return False
                             else:
