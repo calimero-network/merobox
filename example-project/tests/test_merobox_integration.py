@@ -6,11 +6,12 @@ and test the Hello World client against real running nodes.
 """
 
 import pytest
-from hello_world.client import Client
 
 
 def test_client_with_single_node(shared_cluster):
     """Test the Hello World client with a single test node."""
+    from hello_world.client import Client
+    
     # Get the endpoint for our test node
     endpoint = shared_cluster.endpoint(0)
     
@@ -29,6 +30,8 @@ def test_client_with_single_node(shared_cluster):
 
 def test_client_with_multiple_nodes(multi_test_nodes):
     """Test the Hello World client with multiple test nodes."""
+    from hello_world.client import Client
+    
     # Verify we have the expected number of nodes
     assert len(multi_test_nodes.nodes) == 2
     
@@ -47,6 +50,8 @@ def test_client_with_multiple_nodes(multi_test_nodes):
 
 def test_workflow_environment(workflow_environment):
     """Test using a workflow-created environment."""
+    from hello_world.client import Client
+    
     # Verify workflow executed successfully
     assert workflow_environment.success
     
@@ -97,6 +102,8 @@ def test_node_endpoint_consistency(shared_cluster):
 
 def test_client_methods_availability(shared_cluster):
     """Test that the client has all expected methods."""
+    from hello_world.client import Client
+    
     endpoint = shared_cluster.endpoint(0)
     client = Client(endpoint)
     
