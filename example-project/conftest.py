@@ -7,7 +7,6 @@ This file demonstrates the new, cleaner Merobox testing API.
 import pytest
 from pathlib import Path
 from merobox.testing import nodes, run_workflow
-from hello_world.client import Client
 
 
 # ============================================================================
@@ -130,6 +129,7 @@ def endpoints(shared_cluster):
 @pytest.fixture
 def client(shared_cluster):
     """Quick access to client from the shared cluster"""
+    from hello_world.client import Client
     return Client(shared_cluster.endpoint(0))
 
 
