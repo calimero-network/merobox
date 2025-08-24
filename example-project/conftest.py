@@ -21,9 +21,21 @@ def shared_cluster():
     pass
 
 
+@nodes(count=2, prefix="multi-test", scope="function")
+def multi_test_nodes():
+    """Create multiple test nodes for cluster testing - function scoped for isolation"""
+    pass
+
+
 @run_workflow("test-workflow.yml", prefix="shared-workflow", scope="session")
 def shared_workflow():
     """Shared workflow setup for advanced testing - session scoped for reuse"""
+    pass
+
+
+@run_workflow("../workflow-examples/workflow-example.yml", prefix="workflow-demo", scope="function")
+def workflow_environment():
+    """Create a test environment using a workflow - function scoped for isolation"""
     pass
 
 
