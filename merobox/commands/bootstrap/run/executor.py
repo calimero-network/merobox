@@ -184,19 +184,23 @@ class WorkflowExecutor:
             console.print("[red]No nodes configuration found[/red]")
             return False
 
+        # Get base ports from configuration (available for all node types)
+        base_port = nodes_config.get("base_port", 2428)
+        base_rpc_port = nodes_config.get("base_rpc_port", 2528)
+        chain_id = nodes_config.get("chain_id", "testnet-1")
+        image = nodes_config.get("image")
+        prefix = nodes_config.get("prefix", "calimero-node")
+
         # Handle multiple nodes
         if "count" in nodes_config:
             count = nodes_config["count"]
-            prefix = nodes_config.get("prefix", "calimero-node")
-            chain_id = nodes_config.get("chain_id", "testnet-1")
-            image = nodes_config.get("image")
 
             if restart:
                 console.print(
                     f"Starting {count} nodes with prefix '{prefix}' (restart mode)..."
                 )
                 if not self.manager.run_multiple_nodes(
-                    count, prefix=prefix, chain_id=chain_id, image=image
+                    count, base_port, base_rpc_port, chain_id, prefix, image
                 ):
                     return False
             else:
@@ -222,7 +226,12 @@ class WorkflowExecutor:
                             )
                             # Start the specific node
                             if not self.manager.run_node(
-                                node_name, 2428 + i, 2528 + i, chain_id, None, image
+                                node_name,
+                                base_port + i,
+                                base_rpc_port + i,
+                                chain_id,
+                                None,
+                                image,
                             ):
                                 return False
                     except docker.errors.NotFound:
@@ -230,7 +239,12 @@ class WorkflowExecutor:
                             f"[cyan]Node '{node_name}' doesn't exist, creating...[/cyan]"
                         )
                         if not self.manager.run_node(
-                            node_name, 2428 + i, 2528 + i, chain_id, None, image
+                            node_name,
+                            base_port + i,
+                            base_rpc_port + i,
+                            chain_id,
+                            None,
+                            image,
                         ):
                             return False
 
@@ -261,15 +275,20 @@ class WorkflowExecutor:
                                 existing_container.stop()
                                 existing_container.remove()
                                 # Start fresh
-                                port = node_config.get("port", 2428)
-                                rpc_port = node_config.get("rpc_port", 2528)
-                                chain_id = node_config.get("chain_id", "testnet-1")
-                                image = node_config.get("image")
+                                port = node_config.get("port", base_port)
+                                rpc_port = node_config.get("rpc_port", base_rpc_port)
+                                node_chain_id = node_config.get("chain_id", chain_id)
+                                node_image = node_config.get("image", image)
                                 data_dir = node_config.get("data_dir")
 
                                 console.print(f"Starting node '{node_name}'...")
                                 if not self.manager.run_node(
-                                    node_name, port, rpc_port, chain_id, data_dir, image
+                                    node_name,
+                                    port,
+                                    rpc_port,
+                                    node_chain_id,
+                                    data_dir,
+                                    node_image,
                                 ):
                                     return False
                             else:
@@ -283,15 +302,20 @@ class WorkflowExecutor:
                             )
                     except docker.errors.NotFound:
                         # Node doesn't exist, create it
-                        port = node_config.get("port", 2428)
-                        rpc_port = node_config.get("rpc_port", 2528)
-                        chain_id = node_config.get("chain_id", "testnet-1")
-                        image = node_config.get("image")
+                        port = node_config.get("port", base_port)
+                        rpc_port = node_config.get("rpc_port", base_rpc_port)
+                        node_chain_id = node_config.get("chain_id", chain_id)
+                        node_image = node_config.get("image", image)
                         data_dir = node_config.get("data_dir")
 
                         console.print(f"Starting node '{node_name}'...")
                         if not self.manager.run_node(
-                            node_name, port, rpc_port, chain_id, data_dir, image
+                            node_name,
+                            port,
+                            rpc_port,
+                            node_chain_id,
+                            data_dir,
+                            node_image,
                         ):
                             return False
                 else:
@@ -310,7 +334,14 @@ class WorkflowExecutor:
                                 existing_container.remove()
                                 # Start fresh
                                 console.print(f"Starting node '{node_config}'...")
-                                if not self.manager.run_node(node_config):
+                                if not self.manager.run_node(
+                                    node_config,
+                                    base_port,
+                                    base_rpc_port,
+                                    chain_id,
+                                    None,
+                                    image,
+                                ):
                                     return False
                             else:
                                 console.print(
@@ -324,7 +355,9 @@ class WorkflowExecutor:
                     except docker.errors.NotFound:
                         # Node doesn't exist, create it
                         console.print(f"Starting node '{node_config}'...")
-                        if not self.manager.run_node(node_config):
+                        if not self.manager.run_node(
+                            node_config, base_port, base_rpc_port, chain_id, None, image
+                        ):
                             return False
 
         console.print("[green]✓ Node management completed[/green]")

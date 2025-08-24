@@ -7,7 +7,6 @@ This file demonstrates the new, cleaner Merobox testing API.
 import pytest
 from pathlib import Path
 from merobox.testing import nodes, run_workflow
-from hello_world.client import Client
 
 
 # ============================================================================
@@ -21,10 +20,22 @@ def shared_cluster():
     pass
 
 
-@run_workflow("test-workflow.yml", prefix="shared-workflow", scope="session")
+@nodes(count=2, prefix="multi-test", scope="function")
+def multi_test_nodes():
+    """Create multiple test nodes for cluster testing - function scoped for isolation"""
+    pass
+
+
+@run_workflow("./workflows/workflow-example.yml", prefix="shared-workflow", scope="session")
 def shared_workflow():
     """Shared workflow setup for advanced testing - session scoped for reuse"""
     pass
+
+
+@pytest.fixture
+def workflow_environment(shared_workflow):
+    """Create a test environment using the shared workflow"""
+    return shared_workflow
 
 
 # ============================================================================
@@ -92,11 +103,6 @@ def merobox_simple_workflow(shared_workflow):
     return shared_workflow
 
 
-@pytest.fixture
-def workflow_environment(shared_workflow):
-    """Alias for shared_workflow"""
-    return shared_workflow
-
 
 @pytest.fixture
 def simple_workflow_environment(shared_workflow):
@@ -118,6 +124,7 @@ def endpoints(shared_cluster):
 @pytest.fixture
 def client(shared_cluster):
     """Quick access to client from the shared cluster"""
+    from hello_world.client import Client
     return Client(shared_cluster.endpoint(0))
 
 
@@ -142,6 +149,7 @@ def blockchain_manager(shared_cluster):
 # ============================================================================
 # Legacy fixtures for backward compatibility
 # ============================================================================
+
 
 @pytest.fixture
 def merobox_nodes(shared_cluster):

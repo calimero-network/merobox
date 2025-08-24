@@ -6,12 +6,14 @@ This project demonstrates how to integrate **Merobox** as a testing framework fo
 
 ## 🚀 Features
 
+- **Merobox Integration**: Direct package usage with `pip install -e ..`
 - **Simple Cluster Testing**: Basic node cluster setup and teardown
 - **Workflow-based Testing**: Complex Calimero setup scenarios using Merobox workflows
 - **Automatic Cleanup**: Resources are automatically cleaned up after tests
 - **Multiple Fixture Scopes**: Session and function-level fixtures for different testing needs
 - **Performance Optimized**: Efficient node reuse across tests with consolidated fixtures
 - **Resilient Testing**: Robust error handling and retry logic for network operations
+- **Real Package Usage**: Demonstrates actual merobox import and usage patterns
 
 ## ⚡ Performance Optimizations
 
@@ -43,9 +45,8 @@ example-project/
 │       ├── __init__.py
 │       └── client.py                 # Example client
 ├── tests/
-│   ├── test_basic_integration.py    # Basic cluster tests
-│   └── test_workflow_integration.py # Workflow-based tests
-├── conftest.py                      # Pytest fixtures
+│   └── test_merobox_integration.py  # Merobox integration tests
+├── conftest.py                      # Pytest fixtures (includes workflow & multi-test-nodes)
 ├── pyproject.toml                   # Project configuration
 └── README.md                        # This file
 ```
@@ -58,6 +59,22 @@ cd example-project
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+2. **Merobox Package Integration:**
+The project now includes the merobox package installed in editable mode (`-e ../` in requirements.txt). This allows you to:
+- Import merobox directly in your code: `from merobox.testing import nodes, run_workflow`
+- Use merobox functionality in tests and demos
+- Develop against the actual merobox source code
+- Test merobox features as they're developed
+
+3. **Verify Installation:**
+```bash
+# Run the demo to see merobox in action
+python demo.py
+
+# Check that merobox is available
+python -c "import merobox; print('Merobox version:', merobox.__version__)"
 ```
 
 ## 🧪 Running Tests
@@ -79,16 +96,13 @@ pytest -v
 
 ### Test Categories
 
-- **Basic Integration Tests** (`test_basic_integration.py`):
-  - Simple cluster setup and teardown
-  - Basic node health checking
-  - Endpoint validation
-
-- **Workflow Integration Tests** (`test_workflow_integration.py`):
-  - Complex workflow execution
-  - Context operations
-  - Application installation
-  - Multi-node consistency testing
+- **Merobox Integration Tests** (`test_merobox_integration.py`):
+  - Direct merobox package usage
+  - Node fixture testing (single and multi-node)
+  - Workflow environment testing
+  - Client integration with real nodes
+  - Manager access and endpoint consistency
+  - All fixtures defined in `conftest.py` for reuse
 
 ## 🔧 Configuration
 
