@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, TypedDict, Union, Any
 
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import get_node_rpc_url, console
-from merobox.commands.bootstrap.executor import WorkflowExecutor
+from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 
 
 # ============================================================================
@@ -73,48 +73,43 @@ def cluster(
         ClusterEnv with node names, endpoints map, and manager.
     """
     manager = CalimeroManager()
-    node_names = []
 
     try:
-        # Start nodes
-        for i in range(count):
-            node_name = f"{prefix}-{i + 1}"
-            node_names.append(node_name)
+        # Use the efficient run_multiple_nodes method instead of manual loop
+        success = manager.run_multiple_nodes(
+            count=count,
+            prefix=prefix,
+            image=image,
+            chain_id=chain_id,
+            base_port=base_port,
+            base_rpc_port=base_rpc_port,
+        )
+        
+        if not success:
+            raise RuntimeError(f"Failed to start Merobox cluster with {count} nodes")
 
-            try:
-                manager.start_node(
-                    node_name,
-                    image=image,
-                    chain_id=chain_id,
-                    base_port=base_port,
-                    base_rpc_port=base_rpc_port,
-                )
-            except Exception:
-                pass
+        # Get the node names that were actually started
+        node_names = [f"{prefix}-{i+1}" for i in range(count)]
+        
+        # Wait for nodes to be ready if requested
+        if wait_for_ready:
+            console.print("[blue]Waiting for nodes to be ready...[/blue]")
+            import time
+            time.sleep(5)  # Basic wait for services to start
 
-        if not node_names:
-            raise RuntimeError("Failed to start any Merobox nodes")
-
-    except Exception as e:
-        # Clean up any started nodes
-        if stop_all:
-            for node in node_names:
-                try:
-                    manager.stop_node(node)
-                except Exception:
-                    pass
-        raise RuntimeError(f"Failed to start Merobox cluster: {e}")
-
-    try:
         endpoints: Dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in node_names
         }
+        
         yield ClusterEnv(nodes=node_names, endpoints=endpoints, manager=manager)
+        
     finally:
         if stop_all:
-            for node in node_names:
+            # Stop all nodes that were created
+            for i in range(count):
+                node_name = f"{prefix}-{i+1}"
                 try:
-                    manager.stop_node(node)
+                    manager.stop_node(node_name)
                 except Exception:
                     pass
 
