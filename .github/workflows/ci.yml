@@ -58,7 +58,7 @@ jobs:
       run: |
         merobox --version
         merobox --help
-        merobox bootstrap run test-workflow.yml --verbose
+        merobox bootstrap run workflow-examples/workflow-example.yml --verbose
 
   test-example-project:
     runs-on: ubuntu-latest
