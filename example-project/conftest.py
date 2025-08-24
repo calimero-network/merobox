@@ -26,16 +26,16 @@ def multi_test_nodes():
     pass
 
 
-@run_workflow("../workflow-examples/workflow-example.yml", prefix="shared-workflow", scope="session")
+@run_workflow("./workflows/workflow-example.yml", prefix="shared-workflow", scope="session")
 def shared_workflow():
     """Shared workflow setup for advanced testing - session scoped for reuse"""
     pass
 
 
-@run_workflow("../workflow-examples/workflow-example.yml", prefix="workflow-demo", scope="function")
-def workflow_environment():
-    """Create a test environment using a workflow - function scoped for isolation"""
-    pass
+@pytest.fixture
+def workflow_environment(shared_workflow):
+    """Create a test environment using the shared workflow"""
+    return shared_workflow
 
 
 # ============================================================================
@@ -101,6 +101,7 @@ def merobox_workflow(shared_workflow):
 def merobox_simple_workflow(shared_workflow):
     """Alias for shared_workflow"""
     return shared_workflow
+
 
 
 @pytest.fixture
