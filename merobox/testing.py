@@ -148,6 +148,9 @@ def workflow(
 
     manager = CalimeroManager()
 
+    # Initialize running_nodes at the beginning to avoid UnboundLocalError
+    running_nodes = []
+    
     try:
         # Execute the workflow
         console.print(f"[blue]Running workflow: {workflow_path.name}[/blue]")
@@ -211,7 +214,7 @@ def workflow(
         yield workflow_env
 
     finally:
-        if stop_all:
+        if stop_all and running_nodes:
             # Stop all nodes that were created
             for node in running_nodes:
                 try:
