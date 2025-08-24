@@ -84,25 +84,26 @@ def cluster(
             base_port=base_port,
             base_rpc_port=base_rpc_port,
         )
-        
+
         if not success:
             raise RuntimeError(f"Failed to start Merobox cluster with {count} nodes")
 
         # Get the node names that were actually started
         node_names = [f"{prefix}-{i+1}" for i in range(count)]
-        
+
         # Wait for nodes to be ready if requested
         if wait_for_ready:
             console.print("[blue]Waiting for nodes to be ready...[/blue]")
             import time
+
             time.sleep(5)  # Basic wait for services to start
 
         endpoints: Dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in node_names
         }
-        
+
         yield ClusterEnv(nodes=node_names, endpoints=endpoints, manager=manager)
-        
+
     finally:
         if stop_all:
             # Stop all nodes that were created
