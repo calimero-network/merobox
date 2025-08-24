@@ -150,7 +150,7 @@ def workflow(
 
     # Initialize running_nodes at the beginning to avoid UnboundLocalError
     running_nodes = []
-    
+
     try:
         # Execute the workflow
         console.print(f"[blue]Running workflow: {workflow_path.name}[/blue]")

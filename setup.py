@@ -64,7 +64,16 @@ setup(
     include_package_data=True,
     package_data={},
     exclude_package_data={
-        "*": ["*.pyc", "__pycache__", "*.pyo", "*.pyd", ".git*", "venv*", ".venv*", "data*"],
+        "*": [
+            "*.pyc",
+            "__pycache__",
+            "*.pyo",
+            "*.pyd",
+            ".git*",
+            "venv*",
+            ".venv*",
+            "data*",
+        ],
     },
     zip_safe=False,
 )

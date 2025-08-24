@@ -143,6 +143,7 @@ def blockchain_manager(shared_cluster):
 # Legacy fixtures for backward compatibility
 # ============================================================================
 
+
 @pytest.fixture
 def merobox_nodes(shared_cluster):
     """Legacy fixture for backward compatibility"""

@@ -102,23 +102,29 @@ def test_workflow_application_installation(workflow_environment):
 
     # Test that the application was successfully installed by the workflow
     # The workflow should have installed kv_store.wasm and captured the app_id
-    if hasattr(workflow_environment, 'success') and workflow_environment.success:
+    if hasattr(workflow_environment, "success") and workflow_environment.success:
         print(f"Workflow executed successfully, checking for installed application")
-        
+
         # Test that the node is healthy and can respond to requests
         health_result = client.health_check()
-        assert health_result["success"] is True, f"Node {first_node} health check failed"
-        
+        assert (
+            health_result["success"] is True
+        ), f"Node {first_node} health check failed"
+
         # Test that we can get node info (basic API functionality)
         node_info = client.get_node_info()
         if node_info["success"]:
             print(f"Successfully retrieved node info for {first_node}")
         else:
-            print(f"Node info retrieval failed: {node_info.get('error', 'Unknown error')}")
-            
+            print(
+                f"Node info retrieval failed: {node_info.get('error', 'Unknown error')}"
+            )
+
         print(f"Application installation test completed for node {first_node}")
     else:
-        print("Workflow did not complete successfully, skipping application installation test")
+        print(
+            "Workflow did not complete successfully, skipping application installation test"
+        )
 
 
 def test_workflow_node_consistency(workflow_environment):
@@ -156,13 +162,17 @@ def test_workflow_cleanup(workflow_environment):
 def test_workflow_dynamic_variable_capture(workflow_environment):
     """Test that dynamically captured variables from the workflow are accessible."""
     # Test that the workflow executed successfully
-    assert workflow_environment.success is True, "Workflow should have completed successfully"
-    
+    assert (
+        workflow_environment.success is True
+    ), "Workflow should have completed successfully"
+
     print("✅ Workflow execution successful, checking dynamic variable capture...")
-    
+
     # Test that we can access the captured variables using the new API
-    print(f"📋 Available captured values: {workflow_environment.list_captured_values()}")
-    
+    print(
+        f"📋 Available captured values: {workflow_environment.list_captured_values()}"
+    )
+
     # Test application ID capture
     app_id = workflow_environment.get_captured_value("app_id")
     if app_id:
@@ -171,7 +181,7 @@ def test_workflow_dynamic_variable_capture(workflow_environment):
         assert len(app_id) > 0, "Application ID should not be empty"
     else:
         print("⚠️  Application ID not captured from workflow")
-    
+
     # Test context ID capture
     context_id = workflow_environment.get_captured_value("context_id")
     if context_id:
@@ -180,25 +190,36 @@ def test_workflow_dynamic_variable_capture(workflow_environment):
         assert len(context_id) > 0, "Context ID should not be empty"
     else:
         print("⚠️  Context ID not captured from workflow")
-    
+
     # Test member public key capture
     member_public_key = workflow_environment.get_captured_value("member_public_key")
     if member_public_key:
         print(f"✅ Captured member public key: {member_public_key}")
-        assert isinstance(member_public_key, str), "Member public key should be a string"
+        assert isinstance(
+            member_public_key, str
+        ), "Member public key should be a string"
         assert len(member_public_key) > 0, "Member public key should not be empty"
     else:
         print("⚠️  Member public key not captured from workflow")
-    
+
     # Test that we can also access via the workflow_result attribute (backward compatibility)
-    if hasattr(workflow_environment, 'workflow_result') and workflow_environment.workflow_result:
-        print(f"✅ Backward compatibility: workflow_result contains {len(workflow_environment.workflow_result)} values")
-        
+    if (
+        hasattr(workflow_environment, "workflow_result")
+        and workflow_environment.workflow_result
+    ):
+        print(
+            f"✅ Backward compatibility: workflow_result contains {len(workflow_environment.workflow_result)} values"
+        )
+
         # Test accessing specific values
         if "app_id" in workflow_environment.workflow_result:
-            print(f"✅ Backward compatibility: app_id = {workflow_environment.workflow_result['app_id']}")
-        
+            print(
+                f"✅ Backward compatibility: app_id = {workflow_environment.workflow_result['app_id']}"
+            )
+
         if "context_id" in workflow_environment.workflow_result:
-            print(f"✅ Backward compatibility: context_id = {workflow_environment.workflow_result['context_id']}")
-            
+            print(
+                f"✅ Backward compatibility: context_id = {workflow_environment.workflow_result['context_id']}"
+            )
+
     print("✅ Dynamic variable capture test completed successfully")
