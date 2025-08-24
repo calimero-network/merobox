@@ -21,8 +21,10 @@ from merobox.commands.bootstrap.executor import WorkflowExecutor
 # Type definitions
 # ============================================================================
 
+
 class ClusterEnv(TypedDict):
     """Environment for a cluster of Calimero nodes."""
+
     nodes: List[str]
     endpoints: Dict[str, str]
     manager: CalimeroManager
@@ -30,6 +32,7 @@ class ClusterEnv(TypedDict):
 
 class WorkflowEnv(TypedDict):
     """Environment for a workflow execution."""
+
     nodes: List[str]
     endpoints: Dict[str, str]
     manager: CalimeroManager
@@ -40,6 +43,7 @@ class WorkflowEnv(TypedDict):
 # ============================================================================
 # Context managers for testing
 # ============================================================================
+
 
 @contextmanager
 def cluster(
@@ -87,7 +91,7 @@ def cluster(
                 )
             except Exception:
                 pass
-        
+
         if not node_names:
             raise RuntimeError("Failed to start any Merobox nodes")
 
@@ -102,7 +106,9 @@ def cluster(
         raise RuntimeError(f"Failed to start Merobox cluster: {e}")
 
     try:
-        endpoints: Dict[str, Any] = {n: get_node_rpc_url(n, manager) for n in node_names}
+        endpoints: Dict[str, Any] = {
+            n: get_node_rpc_url(n, manager) for n in node_names
+        }
         yield ClusterEnv(nodes=node_names, endpoints=endpoints, manager=manager)
     finally:
         if stop_all:
@@ -221,6 +227,7 @@ def workflow(
 # ============================================================================
 # Pytest fixture decorators
 # ============================================================================
+
 
 def nodes(count: int = 1, *, prefix: str = "test", scope: str = "function", **kwargs):
     """
