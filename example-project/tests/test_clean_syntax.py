@@ -199,7 +199,7 @@ def test_workflow_node_interaction(force_pull_setup):
 
         assert result["success"] is True, f"Health check failed: {result}"
     else:
-        print("No nodes running after workflow completion (expected for this workflow)")
+        print("No nodes running after workflow completion (expected behavior)")
 
 
 def test_mixed_fixture_usage(cluster_a):

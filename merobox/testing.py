@@ -1,11 +1,8 @@
 """
-Testing helpers for using Merobox as a lightweight test harness.
+Merobox testing framework for Python applications.
 
-Provides:
-- cluster: context manager to start/stop a set of Calimero nodes for tests
-- workflow: context manager to run a workflow as pretest setup
-- nodes: decorator to create pytest fixtures with clean syntax
-- run_workflow: decorator to create workflow-based pytest fixtures
+This module provides utilities for testing applications that interact with
+Calimero nodes, including cluster management and workflow execution.
 """
 
 from __future__ import annotations
@@ -13,83 +10,107 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict, Union
+from typing import Dict, List, Optional, TypedDict, Union, Any
 
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import get_node_rpc_url, console
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 
 
+# ============================================================================
+# Type definitions
+# ============================================================================
+
+
 class ClusterEnv(TypedDict):
+    """Environment for a cluster of Calimero nodes."""
+
     nodes: List[str]
     endpoints: Dict[str, str]
     manager: CalimeroManager
 
 
 class WorkflowEnv(TypedDict):
+    """Environment for a workflow execution."""
+
     nodes: List[str]
     endpoints: Dict[str, str]
     manager: CalimeroManager
     workflow_result: bool
+    dynamic_values: Optional[Dict[str, Any]]
+
+
+# ============================================================================
+# Context managers for testing
+# ============================================================================
 
 
 @contextmanager
 def cluster(
     count: int = 1,
     *,
-    prefix: str = "test-node",
+    prefix: str = "test",
     image: Optional[str] = None,
     chain_id: str = "testnet-1",
     base_port: Optional[int] = None,
     base_rpc_port: Optional[int] = None,
     stop_all: bool = True,
+    wait_for_ready: bool = True,
 ) -> ClusterEnv:
-    """Start a temporary Calimero cluster for tests and tear it down automatically.
+    """Run a cluster of Calimero nodes as pretest setup and tear down automatically.
 
     Args:
         count: Number of nodes to start.
-        prefix: Node name prefix (nodes are named `<prefix>-<i>`).
-        image: Docker image to use.
-        chain_id: Chain ID to use for nodes.
+        prefix: Node name prefix.
+        image: Docker image to use for nodes.
+        chain_id: Blockchain chain ID.
         base_port: Optional base P2P port to start from (auto-detect if None).
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.
+        wait_for_ready: Whether to wait for nodes to be ready.
 
     Yields:
-        ClusterEnv with node names, endpoints map and the underlying manager.
+        ClusterEnv with node names, endpoints map, and manager.
     """
     manager = CalimeroManager()
-    node_names: List[str] = [f"{prefix}-{i+1}" for i in range(count)]
-
-    # Start nodes
-    ok = manager.run_multiple_nodes(
-        count=count,
-        base_port=base_port,
-        base_rpc_port=base_rpc_port,
-        chain_id=chain_id,
-        prefix=prefix,
-        image=image,
-    )
-    if not ok:
-        # Best-effort cleanup if any started
-        if stop_all:
-            for node in node_names:
-                try:
-                    manager.stop_node(node)
-                except Exception:
-                    pass
-        raise RuntimeError("Failed to start Merobox cluster")
 
     try:
-        endpoints: Dict[str, str] = {
+        # Use the efficient run_multiple_nodes method instead of manual loop
+        success = manager.run_multiple_nodes(
+            count=count,
+            prefix=prefix,
+            image=image,
+            chain_id=chain_id,
+            base_port=base_port,
+            base_rpc_port=base_rpc_port,
+        )
+
+        if not success:
+            raise RuntimeError(f"Failed to start Merobox cluster with {count} nodes")
+
+        # Get the node names that were actually started
+        node_names = [f"{prefix}-{i+1}" for i in range(count)]
+
+        # Wait for nodes to be ready if requested
+        if wait_for_ready:
+            console.print("[blue]Waiting for nodes to be ready...[/blue]")
+            import time
+
+            time.sleep(5)  # Basic wait for services to start
+
+        endpoints: Dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in node_names
         }
+
         yield ClusterEnv(nodes=node_names, endpoints=endpoints, manager=manager)
+
     finally:
         if stop_all:
-            for node in node_names:
+            # Stop all nodes that were created
+            for i in range(count):
+                node_name = f"{prefix}-{i+1}"
                 try:
-                    manager.stop_node(node)
+                    manager.stop_node(node_name)
                 except Exception:
                     pass
 
@@ -112,14 +133,14 @@ def workflow(
         workflow_path: Path to the workflow YAML file.
         prefix: Node name prefix for any nodes created by the workflow.
         image: Docker image to use for nodes.
-        chain_id: Chain ID to use for nodes.
+        chain_id: Blockchain chain ID.
         base_port: Optional base P2P port to start from (auto-detect if None).
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.
         wait_for_ready: Whether to wait for nodes to be ready after workflow execution.
 
     Yields:
-        WorkflowEnv with node names, endpoints map, manager, and workflow execution result.
+        WorkflowEnv with node names, endpoints map, manager, workflow execution result, and captured dynamic values.
     """
     workflow_path = Path(workflow_path)
     if not workflow_path.exists():
@@ -167,118 +188,40 @@ def workflow(
 
             time.sleep(5)  # Basic wait for services to start
 
-        endpoints: Dict[str, str] = {
+        endpoints: Dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in running_nodes
         }
 
-        yield WorkflowEnv(
+        # Create enhanced WorkflowEnv with dynamic values
+        workflow_env = WorkflowEnv(
             nodes=running_nodes,
             endpoints=endpoints,
             manager=manager,
             workflow_result=workflow_result,
+            dynamic_values=None,
         )
+
+        # Add dynamic values to the environment if available
+        if hasattr(executor, "dynamic_values") and executor.dynamic_values:
+            workflow_env["dynamic_values"] = executor.dynamic_values
+            console.print(
+                f"[blue]📋 Captured {len(executor.dynamic_values)} dynamic values from workflow[/blue]"
+            )
+
+        yield workflow_env
 
     finally:
         if stop_all:
             # Stop all nodes that were created
-            all_nodes = manager.get_running_nodes()
-            for node in all_nodes:
+            for node in running_nodes:
                 try:
                     manager.stop_node(node)
                 except Exception:
                     pass
 
 
-def pytest_cluster(
-    *,
-    count: int = 1,
-    prefix: str = "test-node",
-    image: Optional[str] = None,
-    chain_id: str = "testnet-1",
-    base_port: Optional[int] = None,
-    base_rpc_port: Optional[int] = None,
-    scope: str = "function",
-):
-    """Factory to create a pytest fixture backed by the cluster context manager.
-
-    Usage in your conftest.py:
-
-        from merobox.testing import pytest_cluster
-        merobox_cluster = pytest_cluster(count=2, scope="session")
-
-    And in tests:
-
-        def test_something(merobox_cluster):
-            nodes = merobox_cluster["nodes"]
-            endpoints = merobox_cluster["endpoints"]
-            # ... test logic ...
-    """
-    import pytest
-
-    @pytest.fixture(scope=scope)
-    def _cluster():
-        with cluster(
-            count=count,
-            prefix=prefix,
-            image=image,
-            chain_id=chain_id,
-            base_port=base_port,
-            base_rpc_port=base_rpc_port,
-        ) as env:
-            yield env
-
-    return _cluster
-
-
-def pytest_workflow(
-    *,
-    workflow_path: Union[str, Path],
-    prefix: str = "test-node",
-    image: Optional[str] = None,
-    chain_id: str = "testnet-1",
-    base_port: Optional[int] = None,
-    base_rpc_port: Optional[int] = None,
-    scope: str = "function",
-    wait_for_ready: bool = True,
-):
-    """Factory to create a pytest fixture backed by the workflow context manager.
-
-    Usage in your conftest.py:
-
-        from merobox.testing import pytest_workflow
-        merobox_workflow = pytest_workflow(
-            workflow_path="workflow-examples/workflow-example.yml",
-            scope="session"
-        )
-
-    And in tests:
-
-        def test_something(merobox_workflow):
-            nodes = merobox_workflow["nodes"]
-            endpoints = merobox_workflow["endpoints"]
-            workflow_result = merobox_workflow["workflow_result"]
-            # ... test logic ...
-    """
-    import pytest
-
-    @pytest.fixture(scope=scope)
-    def _workflow():
-        with workflow(
-            workflow_path=workflow_path,
-            prefix=prefix,
-            image=image,
-            chain_id=chain_id,
-            base_port=base_port,
-            base_rpc_port=base_rpc_port,
-            wait_for_ready=wait_for_ready,
-        ) as env:
-            yield env
-
-    return _workflow
-
-
 # ============================================================================
-# Cleaner, more Pythonic API
+# Pytest fixture decorators
 # ============================================================================
 
 
@@ -368,6 +311,11 @@ def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **
                         self.endpoints = env["endpoints"]
                         self.manager = env["manager"]
                         self.success = env["workflow_result"]
+                        # Expose dynamic values if available
+                        self.dynamic_values = env.get("dynamic_values", {})
+                        self.workflow_result = env.get(
+                            "dynamic_values", {}
+                        )  # Alias for backward compatibility
 
                     def __getitem__(self, key):
                         # Backward compatibility
@@ -376,6 +324,7 @@ def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **
                             "endpoints": self.endpoints,
                             "manager": self.manager,
                             "workflow_result": self.success,
+                            "dynamic_values": self.dynamic_values,
                         }[key]
 
                     def node(self, index_or_name):
@@ -388,6 +337,14 @@ def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **
                         """Get endpoint for a specific node"""
                         node_name = self.node(index_or_name)
                         return self.endpoints[node_name]
+
+                    def get_captured_value(self, key, default=None):
+                        """Get a captured dynamic value from the workflow execution"""
+                        return self.dynamic_values.get(key, default)
+
+                    def list_captured_values(self):
+                        """List all captured dynamic values from the workflow execution"""
+                        return list(self.dynamic_values.keys())
 
                 yield WorkflowEnvironment(env)
 
