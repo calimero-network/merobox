@@ -80,15 +80,15 @@ jobs:
         sudo docker --version
     
     - name: Install example project dependencies
-      working-directory: ./example-project
       run: |
+        cd example-project
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
     
     - name: Run merobox integration tests
-      working-directory: ./example-project
       run: |
+        cd example-project
         echo "🧪 Running merobox integration test suite..."
         
         echo "🧪 Running merobox integration tests..."
