@@ -1,5 +1,6 @@
 # Local development dependencies
 -e ../
+-e .
 
 # Standard dependencies
 requests>=2.31.0
