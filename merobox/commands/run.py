@@ -30,7 +30,12 @@ console = Console()
     is_flag=True,
     help="Force pull the Docker image even if it exists locally",
 )
-def run(count, base_port, base_rpc_port, chain_id, prefix, data_dir, image, force_pull):
+@click.option(
+    "--auth-service",
+    is_flag=True,
+    help="Enable authentication service with Traefik proxy",
+)
+def run(count, base_port, base_rpc_port, chain_id, prefix, data_dir, image, force_pull, auth_service):
     """Run Calimero node(s) in Docker containers."""
     calimero_manager = CalimeroManager()
 
@@ -52,12 +57,12 @@ def run(count, base_port, base_rpc_port, chain_id, prefix, data_dir, image, forc
         # Single node with custom data directory
         node_name = f"{prefix}-1"
         success = calimero_manager.run_node(
-            node_name, base_port, base_rpc_port, chain_id, data_dir, image
+            node_name, base_port, base_rpc_port, chain_id, data_dir, image, auth_service
         )
         sys.exit(0 if success else 1)
     else:
         # Multiple nodes or single node with default settings
         success = calimero_manager.run_multiple_nodes(
-            count, base_port, base_rpc_port, chain_id, prefix, image
+            count, base_port, base_rpc_port, chain_id, prefix, image, auth_service
         )
         sys.exit(0 if success else 1)

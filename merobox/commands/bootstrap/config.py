@@ -43,6 +43,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "stop_all_nodes": True,  # Stop all existing nodes before starting
         "wait_timeout": 60,  # Wait up to 60 seconds for nodes to be ready
         "force_pull_image": False,  # Force pull Docker images even if they exist locally
+        "auth_service": False,  # Enable authentication service with Traefik proxy
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",

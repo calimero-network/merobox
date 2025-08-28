@@ -15,13 +15,14 @@ from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.utils import console
 
 
-async def run_workflow(config_file: str, verbose: bool = False) -> bool:
+async def run_workflow(config_file: str, verbose: bool = False, auth_service: bool = False) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
 
     Args:
         config_file: Path to the workflow configuration file
         verbose: Whether to enable verbose output
+        auth_service: Whether to enable authentication service integration
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -35,7 +36,7 @@ async def run_workflow(config_file: str, verbose: bool = False) -> bool:
 
         manager = CalimeroManager()
 
-        executor = WorkflowExecutor(config, manager)
+        executor = WorkflowExecutor(config, manager, auth_service)
 
         # Execute workflow
         success = await executor.execute_workflow()
@@ -58,15 +59,16 @@ async def run_workflow(config_file: str, verbose: bool = False) -> bool:
         return False
 
 
-def run_workflow_sync(config_file: str, verbose: bool = False) -> bool:
+def run_workflow_sync(config_file: str, verbose: bool = False, auth_service: bool = False) -> bool:
     """
     Synchronous wrapper for workflow execution.
 
     Args:
         config_file: Path to the workflow configuration file
         verbose: Whether to enable verbose output
+        auth_service: Whether to enable authentication service integration
 
     Returns:
         True if workflow completed successfully, False otherwise
     """
-    return asyncio.run(run_workflow(config_file, verbose))
+    return asyncio.run(run_workflow(config_file, verbose, auth_service))
