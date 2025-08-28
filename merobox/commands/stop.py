@@ -9,8 +9,12 @@ from merobox.commands.manager import CalimeroManager
 
 @click.command()
 @click.argument("node_name", required=False)
-@click.option("--all", is_flag=True, help="Stop all running nodes and auth service stack")
-@click.option("--auth-service", is_flag=True, help="Stop auth service stack (Traefik + Auth)")
+@click.option(
+    "--all", is_flag=True, help="Stop all running nodes and auth service stack"
+)
+@click.option(
+    "--auth-service", is_flag=True, help="Stop auth service stack (Traefik + Auth)"
+)
 def stop(node_name, all, auth_service):
     """Stop Calimero node(s)."""
     calimero_manager = CalimeroManager()
@@ -22,7 +26,7 @@ def stop(node_name, all, auth_service):
     elif all:
         # Stop all nodes
         nodes_success = calimero_manager.stop_all_nodes()
-        
+
         # Also stop auth service stack when stopping all nodes (if it's running)
         auth_success = True  # Default to success if no auth services to stop
         try:
@@ -34,9 +38,10 @@ def stop(node_name, all, auth_service):
         except:
             # No auth service containers found, which is fine
             from rich.console import Console
+
             console = Console()
             console.print("[cyan]• No auth service stack to stop[/cyan]")
-        
+
         # Exit with success only if both operations succeeded
         sys.exit(0 if (nodes_success and auth_success) else 1)
     elif node_name:

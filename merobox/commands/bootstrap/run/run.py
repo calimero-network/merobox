@@ -15,7 +15,9 @@ from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.utils import console
 
 
-async def run_workflow(config_file: str, verbose: bool = False, auth_service: bool = False) -> bool:
+async def run_workflow(
+    config_file: str, verbose: bool = False, auth_service: bool = False
+) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
 
@@ -59,7 +61,9 @@ async def run_workflow(config_file: str, verbose: bool = False, auth_service: bo
         return False
 
 
-def run_workflow_sync(config_file: str, verbose: bool = False, auth_service: bool = False) -> bool:
+def run_workflow_sync(
+    config_file: str, verbose: bool = False, auth_service: bool = False
+) -> bool:
     """
     Synchronous wrapper for workflow execution.
 

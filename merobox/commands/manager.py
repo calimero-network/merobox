@@ -202,49 +202,46 @@ class CalimeroManager:
 
             # Add auth service configuration if enabled
             if auth_service:
-                console.print(f"[cyan]Configuring {node_name} for auth service integration...[/cyan]")
-                
+                console.print(
+                    f"[cyan]Configuring {node_name} for auth service integration...[/cyan]"
+                )
+
                 # Ensure auth service stack is running
                 if not self._start_auth_service_stack():
-                    console.print("[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]")
-                
+                    console.print(
+                        "[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
+                    )
+
                 # Add Traefik labels for auth service integration
                 auth_labels = {
                     "traefik.enable": "true",
-                    
                     # API routes (protected when auth is available)
                     f"traefik.http.routers.{node_name}-api.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && (PathPrefix(`/jsonrpc`) || PathPrefix(`/admin-api/`))",
                     f"traefik.http.routers.{node_name}-api.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-api.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-api.middlewares": f"cors,auth-{node_name}",
-                    
                     # WebSocket (protected when auth is available)
                     f"traefik.http.routers.{node_name}-ws.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/ws`)",
                     f"traefik.http.routers.{node_name}-ws.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-ws.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-ws.middlewares": f"cors,auth-{node_name}",
-                    
                     # Admin dashboard (publicly accessible)
                     f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
                     f"traefik.http.routers.{node_name}-dashboard.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-dashboard.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-dashboard.middlewares": "cors",
-                    
                     # Auth service route for this node's subdomain (both /auth/ and /admin/)
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && (PathPrefix(`/auth/`) || PathPrefix(`/admin/`))",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.entrypoints": "web",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.service": "auth-service",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.middlewares": "cors,auth-headers",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.priority": "200",
-                    
                     # Forward Auth middleware
                     f"traefik.http.middlewares.auth-{node_name}.forwardauth.address": "http://auth:3001/auth/validate",
                     f"traefik.http.middlewares.auth-{node_name}.forwardauth.trustForwardHeader": "true",
                     f"traefik.http.middlewares.auth-{node_name}.forwardauth.authResponseHeaders": "X-Auth-User,X-Auth-Permissions",
-                    
                     # Define the service
                     f"traefik.http.services.{node_name}-core.loadbalancer.server.port": "2528",
-                    
                     # Shared middlewares (from docker-compose)
                     "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
                     "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
@@ -253,10 +250,10 @@ class CalimeroManager:
                     "traefik.http.middlewares.cors.headers.addvaryheader": "true",
                     "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
                 }
-                
+
                 # Add auth labels to container config
                 container_config["labels"].update(auth_labels)
-                
+
                 # Try to ensure the auth service networks exist and connect to them
                 self._ensure_auth_networks()
 
@@ -316,7 +313,7 @@ class CalimeroManager:
             # Set primary network for auth service
             if auth_service:
                 run_config["network"] = "calimero_web"
-            
+
             container = self.client.containers.run(**run_config)
             self.nodes[node_name] = container
 
@@ -326,10 +323,16 @@ class CalimeroManager:
                     # Connect to internal network for secure backend communication
                     internal_network = self.client.networks.get("calimero_internal")
                     internal_network.connect(container)
-                    console.print(f"[cyan]✓ {node_name} connected to internal network (secure backend)[/cyan]")
-                    console.print(f"[cyan]✓ {node_name} connected to web network (Traefik routing)[/cyan]")
+                    console.print(
+                        f"[cyan]✓ {node_name} connected to internal network (secure backend)[/cyan]"
+                    )
+                    console.print(
+                        f"[cyan]✓ {node_name} connected to web network (Traefik routing)[/cyan]"
+                    )
                 except Exception as e:
-                    console.print(f"[yellow]⚠️  Warning: Could not connect {node_name} to auth networks: {str(e)}[/yellow]")
+                    console.print(
+                        f"[yellow]⚠️  Warning: Could not connect {node_name} to auth networks: {str(e)}[/yellow]"
+                    )
 
             # Wait a moment and check if container is still running
             time.sleep(3)
@@ -363,12 +366,16 @@ class CalimeroManager:
             console.print(f"  - RPC/Admin Port: {rpc_port}")
             console.print(f"  - Chain ID: {chain_id}")
             console.print(f"  - Data Directory: {data_dir}")
-            console.print(f"  - Non Auth Node URL: [link]http://localhost:{rpc_port}[/link]")
-            
+            console.print(
+                f"  - Non Auth Node URL: [link]http://localhost:{rpc_port}[/link]"
+            )
+
             if auth_service:
                 # Generate the hostname for nip.io URLs
-                hostname = node_name.replace('calimero-', '').replace('-', '')
-                console.print(f"  - Auth Node URL: [link]http://{hostname}.127.0.0.1.nip.io[/link]")
+                hostname = node_name.replace("calimero-", "").replace("-", "")
+                console.print(
+                    f"  - Auth Node URL: [link]http://{hostname}.127.0.0.1.nip.io[/link]"
+                )
             return True
 
         except Exception as e:
@@ -406,69 +413,79 @@ class CalimeroManager:
         try:
             networks_to_create = [
                 {"name": "calimero_web", "driver": "bridge"},
-                {"name": "calimero_internal", "driver": "bridge", "internal": True}
+                {"name": "calimero_internal", "driver": "bridge", "internal": True},
             ]
-            
+
             for network_spec in networks_to_create:
                 network_name = network_spec["name"]
                 try:
                     # Check if network already exists
                     self.client.networks.get(network_name)
-                    console.print(f"[cyan]✓ Network {network_name} already exists[/cyan]")
+                    console.print(
+                        f"[cyan]✓ Network {network_name} already exists[/cyan]"
+                    )
                 except docker.errors.NotFound:
                     # Create the network
                     console.print(f"[yellow]Creating network: {network_name}[/yellow]")
                     network_config = {
                         "name": network_name,
-                        "driver": network_spec["driver"]
+                        "driver": network_spec["driver"],
                     }
                     if network_spec.get("internal"):
                         network_config["internal"] = True
-                    
+
                     self.client.networks.create(**network_config)
                     console.print(f"[green]✓ Created network: {network_name}[/green]")
-                    
+
         except Exception as e:
-            console.print(f"[yellow]⚠️  Warning: Could not ensure auth networks: {str(e)}[/yellow]")
+            console.print(
+                f"[yellow]⚠️  Warning: Could not ensure auth networks: {str(e)}[/yellow]"
+            )
 
     def _start_auth_service_stack(self):
         """Start the Traefik proxy and auth service containers."""
         try:
-            console.print("[yellow]Starting auth service stack (Traefik + Auth)...[/yellow]")
-            
+            console.print(
+                "[yellow]Starting auth service stack (Traefik + Auth)...[/yellow]"
+            )
+
             # Check if auth service and traefik are already running
             auth_running = self._is_container_running("auth")
             traefik_running = self._is_container_running("proxy")
-            
+
             if auth_running and traefik_running:
                 console.print("[green]✓ Auth service stack is already running[/green]")
                 return True
-            
+
             # Ensure networks exist first
             self._ensure_auth_networks()
-            
+
             # Start Traefik proxy first
             if not traefik_running:
                 if not self._start_traefik_container():
                     return False
-            
+
             # Start Auth service
             if not auth_running:
                 if not self._start_auth_container():
                     return False
-            
+
             # Wait a bit for services to be ready
             console.print("[yellow]Waiting for services to be ready...[/yellow]")
             time.sleep(5)
-            
+
             # Verify services are running
-            if self._is_container_running("auth") and self._is_container_running("proxy"):
+            if self._is_container_running("auth") and self._is_container_running(
+                "proxy"
+            ):
                 console.print("[green]✓ Auth service stack is healthy[/green]")
                 return True
             else:
-                console.print("[yellow]⚠️  Auth service stack started but may not be fully ready[/yellow]")
+                console.print(
+                    "[yellow]⚠️  Auth service stack started but may not be fully ready[/yellow]"
+                )
                 return True
-                    
+
         except Exception as e:
             console.print(f"[red]✗ Error starting auth service stack: {str(e)}[/red]")
             return False
@@ -477,18 +494,18 @@ class CalimeroManager:
         """Start the Traefik proxy container."""
         try:
             console.print("[yellow]Starting Traefik proxy...[/yellow]")
-            
+
             # Remove existing container if it exists
             try:
                 existing = self.client.containers.get("proxy")
                 existing.remove(force=True)
             except docker.errors.NotFound:
                 pass
-            
+
             # Pull Traefik image
             if not self._ensure_image_pulled("traefik:v2.10"):
                 return False
-            
+
             # Create and start Traefik container
             traefik_config = {
                 "name": "proxy",
@@ -504,24 +521,29 @@ class CalimeroManager:
                     "--providers.docker.network=calimero_web",
                     "--serversTransport.forwardingTimeouts.dialTimeout=30s",
                     "--serversTransport.forwardingTimeouts.responseHeaderTimeout=30s",
-                    "--serversTransport.forwardingTimeouts.idleConnTimeout=30s"
+                    "--serversTransport.forwardingTimeouts.idleConnTimeout=30s",
                 ],
                 "ports": {"80/tcp": 80, "8080/tcp": 8080},
-                "volumes": {"/var/run/docker.sock": {"bind": "/var/run/docker.sock", "mode": "ro"}},
+                "volumes": {
+                    "/var/run/docker.sock": {
+                        "bind": "/var/run/docker.sock",
+                        "mode": "ro",
+                    }
+                },
                 "network": "calimero_web",
                 "restart_policy": {"Name": "unless-stopped"},
                 "labels": {
                     "traefik.enable": "true",
                     "traefik.http.routers.proxy-dashboard.rule": "Host(`proxy.127.0.0.1.nip.io`)",
                     "traefik.http.routers.proxy-dashboard.entrypoints": "web",
-                    "traefik.http.routers.proxy-dashboard.service": "api@internal"
-                }
+                    "traefik.http.routers.proxy-dashboard.service": "api@internal",
+                },
             }
-            
+
             container = self.client.containers.run(**traefik_config)
             console.print("[green]✓ Traefik proxy started[/green]")
             return True
-            
+
         except Exception as e:
             console.print(f"[red]✗ Failed to start Traefik proxy: {str(e)}[/red]")
             return False
@@ -530,25 +552,27 @@ class CalimeroManager:
         """Start the Auth service container."""
         try:
             console.print("[yellow]Starting Auth service...[/yellow]")
-            
+
             # Remove existing container if it exists
             try:
                 existing = self.client.containers.get("auth")
                 existing.remove(force=True)
             except docker.errors.NotFound:
                 pass
-            
+
             # Pull Auth service image
             auth_image = "ghcr.io/calimero-network/mero-auth:edge"
             if not self._ensure_image_pulled(auth_image):
-                console.print("[yellow]⚠️  Warning: Could not pull auth image, trying with local image[/yellow]")
-            
+                console.print(
+                    "[yellow]⚠️  Warning: Could not pull auth image, trying with local image[/yellow]"
+                )
+
             # Create volume for auth data if it doesn't exist
             try:
                 self.client.volumes.get("calimero_auth_data")
             except docker.errors.NotFound:
                 self.client.volumes.create("calimero_auth_data")
-            
+
             # Create and start Auth service container
             auth_config = {
                 "name": "auth",
@@ -577,22 +601,26 @@ class CalimeroManager:
                     "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": "*",
                     "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
                     "traefik.http.middlewares.cors.headers.addvaryheader": "true",
-                    "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error"
-                }
+                    "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                },
             }
-            
+
             container = self.client.containers.run(**auth_config)
-            
+
             # Connect to the internal network as well
             try:
                 internal_network = self.client.networks.get("calimero_internal")
                 internal_network.connect(container)
-                console.print("[cyan]✓ Auth service connected to internal network[/cyan]")
+                console.print(
+                    "[cyan]✓ Auth service connected to internal network[/cyan]"
+                )
             except Exception as e:
-                console.print(f"[yellow]⚠️  Warning: Could not connect auth to internal network: {str(e)}[/yellow]")
+                console.print(
+                    f"[yellow]⚠️  Warning: Could not connect auth to internal network: {str(e)}[/yellow]"
+                )
             console.print("[green]✓ Auth service started[/green]")
             return True
-            
+
         except Exception as e:
             console.print(f"[red]✗ Failed to start Auth service: {str(e)}[/red]")
             return False
@@ -611,7 +639,7 @@ class CalimeroManager:
         """Stop the Traefik proxy and auth service containers."""
         try:
             console.print("[yellow]Stopping auth service stack...[/yellow]")
-            
+
             success = True
             # Stop auth service
             try:
@@ -622,9 +650,11 @@ class CalimeroManager:
             except docker.errors.NotFound:
                 console.print("[cyan]• Auth service was not running[/cyan]")
             except Exception as e:
-                console.print(f"[yellow]⚠️  Warning: Could not stop auth service: {str(e)}[/yellow]")
+                console.print(
+                    f"[yellow]⚠️  Warning: Could not stop auth service: {str(e)}[/yellow]"
+                )
                 success = False
-            
+
             # Stop Traefik proxy
             try:
                 proxy_container = self.client.containers.get("proxy")
@@ -634,18 +664,21 @@ class CalimeroManager:
             except docker.errors.NotFound:
                 console.print("[cyan]• Traefik proxy was not running[/cyan]")
             except Exception as e:
-                console.print(f"[yellow]⚠️  Warning: Could not stop Traefik proxy: {str(e)}[/yellow]")
+                console.print(
+                    f"[yellow]⚠️  Warning: Could not stop Traefik proxy: {str(e)}[/yellow]"
+                )
                 success = False
-            
+
             if success:
-                console.print("[green]✓ Auth service stack stopped successfully[/green]")
-            
+                console.print(
+                    "[green]✓ Auth service stack stopped successfully[/green]"
+                )
+
             return success
-            
+
         except Exception as e:
             console.print(f"[red]✗ Error stopping auth service stack: {str(e)}[/red]")
             return False
-
 
     def run_multiple_nodes(
         self,
@@ -678,7 +711,14 @@ class CalimeroManager:
             port = p2p_ports[i]
             rpc_port = rpc_ports[i]
 
-            if self.run_node(node_name, port, rpc_port, chain_id, image=image, auth_service=auth_service):
+            if self.run_node(
+                node_name,
+                port,
+                rpc_port,
+                chain_id,
+                image=image,
+                auth_service=auth_service,
+            ):
                 success_count += 1
             else:
                 console.print(

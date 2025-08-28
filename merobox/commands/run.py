@@ -35,7 +35,17 @@ console = Console()
     is_flag=True,
     help="Enable authentication service with Traefik proxy",
 )
-def run(count, base_port, base_rpc_port, chain_id, prefix, data_dir, image, force_pull, auth_service):
+def run(
+    count,
+    base_port,
+    base_rpc_port,
+    chain_id,
+    prefix,
+    data_dir,
+    image,
+    force_pull,
+    auth_service,
+):
     """Run Calimero node(s) in Docker containers."""
     calimero_manager = CalimeroManager()
 

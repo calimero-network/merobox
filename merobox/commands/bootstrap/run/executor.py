@@ -31,7 +31,12 @@ from merobox.commands.bootstrap.steps import (
 class WorkflowExecutor:
     """Executes Calimero workflows based on YAML configuration."""
 
-    def __init__(self, config: Dict[str, Any], manager: CalimeroManager, auth_service: bool = False):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        manager: CalimeroManager,
+        auth_service: bool = False,
+    ):
         self.config = config
         self.manager = manager
         # Auth service can be enabled by CLI flag or workflow config (CLI takes precedence)
@@ -202,7 +207,13 @@ class WorkflowExecutor:
                     f"Starting {count} nodes with prefix '{prefix}' (restart mode)..."
                 )
                 if not self.manager.run_multiple_nodes(
-                    count, base_port, base_rpc_port, chain_id, prefix, image, self.auth_service
+                    count,
+                    base_port,
+                    base_rpc_port,
+                    chain_id,
+                    prefix,
+                    image,
+                    self.auth_service,
                 ):
                     return False
             else:
@@ -363,7 +374,13 @@ class WorkflowExecutor:
                         # Node doesn't exist, create it
                         console.print(f"Starting node '{node_config}'...")
                         if not self.manager.run_node(
-                            node_config, base_port, base_rpc_port, chain_id, None, image, self.auth_service
+                            node_config,
+                            base_port,
+                            base_rpc_port,
+                            chain_id,
+                            None,
+                            image,
+                            self.auth_service,
                         ):
                             return False
 

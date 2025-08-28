@@ -37,7 +37,11 @@ def bootstrap():
 @bootstrap.command()
 @click.argument("config_file", type=click.Path(exists=True), required=True)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
-@click.option("--auth-service", is_flag=True, help="Enable authentication service with Traefik proxy")
+@click.option(
+    "--auth-service",
+    is_flag=True,
+    help="Enable authentication service with Traefik proxy",
+)
 def run(config_file, verbose, auth_service):
     """
     Execute a Calimero workflow from a YAML configuration file.
