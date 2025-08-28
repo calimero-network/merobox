@@ -1,0 +1,32 @@
+name: "Auth Service Example"
+description: "Single node workflow with authentication service enabled - demonstrates auth integration"
+
+# Enable auth service for this workflow
+auth_service: true
+
+# Node configuration
+nodes:
+  count: 1
+  base_port: 2428
+  base_rpc_port: 2528
+  chain_id: "testnet-1"
+  prefix: "calimero-node"
+  image: "ghcr.io/calimero-network/merod:edge"
+
+# Workflow steps
+steps:
+  - name: "Wait for node startup"
+    type: "wait"
+    seconds: 5
+    message: "Waiting for node to fully start with auth service..."
+
+# Expected URLs after running this workflow:
+# - Node: http://node1.127.0.0.1.nip.io
+# - Auth Login: http://node1.127.0.0.1.nip.io/auth/login  
+# - Admin Dashboard: http://node1.127.0.0.1.nip.io/admin-dashboard
+#
+# To run this workflow:
+# merobox bootstrap run workflow-examples/workflow-auth-example.yml
+#
+# Or enable auth service via CLI flag:
+# merobox bootstrap run --auth-service workflow-examples/workflow-example.yml
