@@ -6,6 +6,7 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 
 - [🚀 Quick Start](#-quick-start)
 - [✨ Features](#-features)
+- [🔐 Auth Service Integration](#-auth-service-integration)
 - [📖 Workflow Guide](#-workflow-guide)
 - [🔧 API Reference](#-api-reference)
 - [🛠️ Development Guide](#️-development-guide)
@@ -36,6 +37,9 @@ pip install -e .
 # Start Calimero nodes
 merobox run --count 2
 
+# Start nodes with authentication service
+merobox run --auth-service
+
 # Check node status
 merobox list
 merobox health
@@ -43,18 +47,94 @@ merobox health
 # Execute a workflow
 merobox bootstrap run workflow.yml
 
-# Stop all nodes
+# Stop all nodes and auth services
 merobox stop --all
 ```
 
 ## ✨ Features
 
 - **Node Management**: Start, stop, and monitor Calimero nodes in Docker
+- **Auth Service Integration**: Traefik proxy and authentication service with nip.io DNS
 - **Workflow Orchestration**: Execute complex multi-step workflows with YAML
 - **Context Management**: Create and manage blockchain contexts
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
 - **Dynamic Variables**: Advanced placeholder resolution with embedded support
+
+---
+
+## 🔐 Auth Service Integration
+
+Merobox supports integrated authentication services with Traefik proxy and nip.io DNS resolution, enabling secure access to your Calimero nodes through web URLs.
+
+### Quick Start with Auth Service
+
+```bash
+# Start a single node with auth service
+merobox run --auth-service
+
+# Start multiple nodes with auth service
+merobox run --count 2 --auth-service
+
+# Stop everything (nodes + auth services)
+merobox stop --all
+```
+
+### What Gets Created
+
+When you enable `--auth-service`, merobox automatically creates:
+
+1. **Traefik Proxy** (`proxy` container) - Routes traffic and applies middleware
+2. **Auth Service** (`auth` container) - Handles authentication and authorization
+3. **Docker Networks**:
+   - `calimero_web` - External communication (Traefik ↔ Internet)
+   - `calimero_internal` - Secure backend communication (Auth ↔ Nodes)
+
+### URL Access
+
+**With Auth Service:**
+- Node URLs: `http://node1.127.0.0.1.nip.io`, `http://node2.127.0.0.1.nip.io`, etc.
+- Auth Login: `http://node1.127.0.0.1.nip.io/auth/login`
+- Admin Dashboard: `http://node1.127.0.0.1.nip.io/admin-dashboard`
+
+**Without Auth Service:**
+- Admin Dashboard: `http://localhost:2528/admin-dashboard`
+- Admin API: `http://localhost:2528/admin-api/`
+
+### Workflow Integration
+
+Enable auth service in workflows by adding `auth_service: true`:
+
+```yaml
+name: "My Auth Workflow"
+description: "Workflow with authentication enabled"
+
+# Enable auth service
+auth_service: true
+
+nodes:
+  count: 1
+  base_port: 2428
+  base_rpc_port: 2528
+  chain_id: "testnet-1"
+
+steps:
+  - name: "Wait for startup"
+    type: "wait"
+    seconds: 5
+```
+
+### Architecture
+
+```
+Internet → Traefik (port 80) → Node Containers (calimero_web network)
+                              ↓
+                           Auth Service (calimero_internal network)
+```
+
+- **Public routes**: `/admin-dashboard` (no auth required)
+- **Protected routes**: `/admin-api/`, `/jsonrpc`, `/ws` (auth required)
+- **Auth routes**: `/auth/login`, `/admin/` (handled by auth service)
 
 ---
 
@@ -266,6 +346,7 @@ merobox run [OPTIONS]
 - `--restart`: Restart existing nodes
 - `--image TEXT`: Custom Docker image to use
 - `--force-pull`: Force pull Docker image even if it exists locally
+- `--auth-service`: Enable authentication service with Traefik proxy
 - `--help`: Show help message
 
 #### `merobox stop`
@@ -276,7 +357,8 @@ merobox stop [OPTIONS]
 ```
 
 **Options:**
-- `--all`: Stop all running nodes
+- `--all`: Stop all running nodes and auth service stack
+- `--auth-service`: Stop auth service stack only (Traefik + Auth)
 - `--prefix TEXT`: Stop nodes with specific prefix
 - `--help`: Show help message
 
@@ -323,7 +405,9 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 - `validate <config_file>`: Validate workflow configuration
 - `create-sample`: Create a sample workflow file
 
-**Options:**
+**Run Command Options:**
+- `--auth-service`: Enable authentication service with Traefik proxy
+- `--verbose, -v`: Enable verbose output
 - `--help`: Show help message
 
 #### `merobox install`
@@ -417,6 +501,7 @@ stop_all_nodes: true  # Optional: stop nodes after completion
 
 **Configuration Options:**
 - `force_pull_image`: When set to `true`, forces Docker to pull fresh images from registries, even if they exist locally. Useful for ensuring latest versions or during development.
+- `auth_service`: When set to `true`, enables authentication service integration with Traefik proxy. Nodes will be configured with authentication middleware and proper routing.
 
 ### Docker Image Management
 
@@ -451,6 +536,65 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 - `CALIMERO_IMAGE`: Docker image for Calimero nodes
 - `DOCKER_HOST`: Docker daemon connection string
 - `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
+
+### Auth Service Integration
+
+Merobox supports integration with Calimero's authentication service using Traefik as a reverse proxy. When enabled, nodes are automatically configured with:
+
+#### **Authentication Features**
+- **Protected API Endpoints**: JSON-RPC and admin API routes require authentication
+- **Public Admin Dashboard**: Admin dashboard remains publicly accessible
+- **WebSocket Protection**: WebSocket connections are also authenticated
+- **Automatic Routing**: Traefik handles routing to node-specific subdomains
+
+#### **Network Configuration**
+- **Docker Networks**: Automatically creates `calimero_web` and `calimero_internal` networks
+- **Traefik Labels**: Adds proper routing labels for each node
+- **CORS Support**: Configured CORS middleware for web access
+
+#### **Usage Examples**
+
+**CLI Usage:**
+```bash
+# Start nodes with auth service
+merobox run --count 2 --auth-service
+
+# Run workflow with auth service
+merobox bootstrap run workflow.yml --auth-service
+
+# Stop auth service stack
+merobox stop --auth-service
+```
+
+**Workflow Configuration:**
+```yaml
+name: "Authenticated Workflow"
+auth_service: true  # Enable auth service for this workflow
+nodes:
+  count: 2
+  prefix: "calimero-node"
+steps:
+  # ... your workflow steps
+```
+
+**Access Patterns:**
+- Node 1 API: `http://calimero-node-1.127.0.0.1.nip.io/jsonrpc` (protected)
+- Node 1 Dashboard: `http://calimero-node-1.127.0.0.1.nip.io/admin-dashboard` (public)
+- Auth Service: `http://localhost/auth/` (authentication endpoints)
+
+#### **Automatic Service Management**
+When auth service is enabled, Merobox automatically:
+1. **Starts Traefik Proxy**: Automatically pulls and starts `traefik:v2.10` container
+2. **Starts Auth Service**: Automatically pulls and starts `ghcr.io/calimero-network/calimero-auth:latest` container
+3. **Creates Docker Networks**: Sets up `calimero_web` and `calimero_internal` networks
+4. **Configures Node Labels**: Adds proper Traefik routing labels to node containers
+5. **Sets up Authentication**: Configures forward authentication middleware
+6. **Enables CORS**: Configures CORS for web access
+
+**Service Management:**
+- **Start**: Services are started automatically when `--auth-service` flag is used
+- **Stop**: Use `merobox stop --auth-service` to stop Traefik and Auth service
+- **Status Check**: Services are checked and reused if already running
 
 ---
 
@@ -770,6 +914,39 @@ Error: API request failed
 2. Verify node is ready: `merobox list`
 3. Check network connectivity
 4. Verify API endpoints
+
+#### Auth Service Issues
+
+**Issue**: Cannot access node via nip.io URL
+```bash
+ERR_CONNECTION_TIMED_OUT at http://node1.127.0.0.1.nip.io
+```
+
+**Solutions**:
+1. Check if auth services are running: `docker ps | grep -E "(proxy|auth)"`
+2. Verify DNS resolution: `nslookup node1.127.0.0.1.nip.io`
+3. Check Traefik dashboard: `http://localhost:8080/dashboard/`
+4. Restart auth services: `merobox stop --auth-service && merobox run --auth-service`
+
+**Issue**: 404 errors on auth URLs
+```bash
+404 Not Found at http://node1.127.0.0.1.nip.io/auth/login
+```
+
+**Solutions**:
+1. Verify auth container is running: `docker logs auth`
+2. Check Traefik routing: `curl http://localhost:8080/api/http/routers`
+3. Restart the node: `merobox stop node-name && merobox run --auth-service`
+
+**Issue**: Network connection problems
+```bash
+Warning: Could not connect to auth networks
+```
+
+**Solutions**:
+1. Check Docker networks: `docker network ls | grep calimero`
+2. Recreate networks: `merobox stop --all && merobox run --auth-service`
+3. Check Docker daemon: `docker system info`
 
 #### Docker Issues
 

@@ -37,7 +37,12 @@ def bootstrap():
 @bootstrap.command()
 @click.argument("config_file", type=click.Path(exists=True), required=True)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
-def run(config_file, verbose):
+@click.option(
+    "--auth-service",
+    is_flag=True,
+    help="Enable authentication service with Traefik proxy",
+)
+def run(config_file, verbose, auth_service):
     """
     Execute a Calimero workflow from a YAML configuration file.
 
@@ -48,7 +53,7 @@ def run(config_file, verbose):
     4. Handle dynamic variable resolution
     5. Export results and captured values
     """
-    success = run_workflow_sync(config_file, verbose)
+    success = run_workflow_sync(config_file, verbose, auth_service)
     if not success:
         sys.exit(1)
 
