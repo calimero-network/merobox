@@ -43,7 +43,9 @@ class WorkflowExecutor:
         # Auth service can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.auth_service = auth_service or config.get("auth_service", False)
         # Auth image can be set by CLI flag or workflow config (CLI takes precedence)
-        self.auth_image = auth_image if auth_image is not None else config.get("auth_image", None)
+        self.auth_image = (
+            auth_image if auth_image is not None else config.get("auth_image", None)
+        )
         self.workflow_results = {}
         self.dynamic_values = {}  # Store dynamic values for later use
 

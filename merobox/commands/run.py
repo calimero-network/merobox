@@ -72,12 +72,26 @@ def run(
         # Single node with custom data directory
         node_name = f"{prefix}-1"
         success = calimero_manager.run_node(
-            node_name, base_port, base_rpc_port, chain_id, data_dir, image, auth_service, auth_image
+            node_name,
+            base_port,
+            base_rpc_port,
+            chain_id,
+            data_dir,
+            image,
+            auth_service,
+            auth_image,
         )
         sys.exit(0 if success else 1)
     else:
         # Multiple nodes or single node with default settings
         success = calimero_manager.run_multiple_nodes(
-            count, base_port, base_rpc_port, chain_id, prefix, image, auth_service, auth_image
+            count,
+            base_port,
+            base_rpc_port,
+            chain_id,
+            prefix,
+            image,
+            auth_service,
+            auth_image,
         )
         sys.exit(0 if success else 1)
