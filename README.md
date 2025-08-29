@@ -347,6 +347,7 @@ merobox run [OPTIONS]
 - `--image TEXT`: Custom Docker image to use
 - `--force-pull`: Force pull Docker image even if it exists locally
 - `--auth-service`: Enable authentication service with Traefik proxy
+- `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
 - `--help`: Show help message
 
 #### `merobox stop`
@@ -407,6 +408,7 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 
 **Run Command Options:**
 - `--auth-service`: Enable authentication service with Traefik proxy
+- `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
 - `--verbose, -v`: Enable verbose output
 - `--help`: Show help message
 
@@ -559,8 +561,14 @@ Merobox supports integration with Calimero's authentication service using Traefi
 # Start nodes with auth service
 merobox run --count 2 --auth-service
 
+# Start nodes with custom auth image
+merobox run --count 2 --auth-service --auth-image ghcr.io/calimero-network/mero-auth:latest
+
 # Run workflow with auth service
 merobox bootstrap run workflow.yml --auth-service
+
+# Run workflow with custom auth image
+merobox bootstrap run workflow.yml --auth-service --auth-image ghcr.io/calimero-network/mero-auth:latest
 
 # Stop auth service stack
 merobox stop --auth-service
@@ -570,6 +578,7 @@ merobox stop --auth-service
 ```yaml
 name: "Authenticated Workflow"
 auth_service: true  # Enable auth service for this workflow
+auth_image: "ghcr.io/calimero-network/mero-auth:edge"  # Custom auth image
 nodes:
   count: 2
   prefix: "calimero-node"

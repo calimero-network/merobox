@@ -36,11 +36,16 @@ class WorkflowExecutor:
         config: Dict[str, Any],
         manager: CalimeroManager,
         auth_service: bool = False,
+        auth_image: str = None,
     ):
         self.config = config
         self.manager = manager
         # Auth service can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.auth_service = auth_service or config.get("auth_service", False)
+        # Auth image can be set by CLI flag or workflow config (CLI takes precedence)
+        self.auth_image = (
+            auth_image if auth_image is not None else config.get("auth_image", None)
+        )
         self.workflow_results = {}
         self.dynamic_values = {}  # Store dynamic values for later use
 
@@ -214,6 +219,7 @@ class WorkflowExecutor:
                     prefix,
                     image,
                     self.auth_service,
+                    self.auth_image,
                 ):
                     return False
             else:
@@ -246,6 +252,7 @@ class WorkflowExecutor:
                                 None,
                                 image,
                                 self.auth_service,
+                                self.auth_image,
                             ):
                                 return False
                     except docker.errors.NotFound:
@@ -260,6 +267,7 @@ class WorkflowExecutor:
                             None,
                             image,
                             self.auth_service,
+                            self.auth_image,
                         ):
                             return False
 
@@ -305,6 +313,7 @@ class WorkflowExecutor:
                                     data_dir,
                                     node_image,
                                     self.auth_service,
+                                    self.auth_image,
                                 ):
                                     return False
                             else:
@@ -333,6 +342,7 @@ class WorkflowExecutor:
                             data_dir,
                             node_image,
                             self.auth_service,
+                            self.auth_image,
                         ):
                             return False
                 else:
@@ -381,6 +391,7 @@ class WorkflowExecutor:
                             None,
                             image,
                             self.auth_service,
+                            self.auth_image,
                         ):
                             return False
 

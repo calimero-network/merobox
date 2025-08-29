@@ -42,7 +42,11 @@ def bootstrap():
     is_flag=True,
     help="Enable authentication service with Traefik proxy",
 )
-def run(config_file, verbose, auth_service):
+@click.option(
+    "--auth-image",
+    help="Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)",
+)
+def run(config_file, verbose, auth_service, auth_image):
     """
     Execute a Calimero workflow from a YAML configuration file.
 
@@ -53,7 +57,7 @@ def run(config_file, verbose, auth_service):
     4. Handle dynamic variable resolution
     5. Export results and captured values
     """
-    success = run_workflow_sync(config_file, verbose, auth_service)
+    success = run_workflow_sync(config_file, verbose, auth_service, auth_image)
     if not success:
         sys.exit(1)
 
