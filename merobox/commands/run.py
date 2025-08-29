@@ -35,6 +35,10 @@ console = Console()
     is_flag=True,
     help="Enable authentication service with Traefik proxy",
 )
+@click.option(
+    "--auth-image",
+    help="Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)",
+)
 def run(
     count,
     base_port,
@@ -45,6 +49,7 @@ def run(
     image,
     force_pull,
     auth_service,
+    auth_image,
 ):
     """Run Calimero node(s) in Docker containers."""
     calimero_manager = CalimeroManager()
@@ -67,12 +72,12 @@ def run(
         # Single node with custom data directory
         node_name = f"{prefix}-1"
         success = calimero_manager.run_node(
-            node_name, base_port, base_rpc_port, chain_id, data_dir, image, auth_service
+            node_name, base_port, base_rpc_port, chain_id, data_dir, image, auth_service, auth_image
         )
         sys.exit(0 if success else 1)
     else:
         # Multiple nodes or single node with default settings
         success = calimero_manager.run_multiple_nodes(
-            count, base_port, base_rpc_port, chain_id, prefix, image, auth_service
+            count, base_port, base_rpc_port, chain_id, prefix, image, auth_service, auth_image
         )
         sys.exit(0 if success else 1)

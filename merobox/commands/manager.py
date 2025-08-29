@@ -100,6 +100,7 @@ class CalimeroManager:
         data_dir: str = None,
         image: str = None,
         auth_service: bool = False,
+        auth_image: str = None,
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -207,7 +208,7 @@ class CalimeroManager:
                 )
 
                 # Ensure auth service stack is running
-                if not self._start_auth_service_stack():
+                if not self._start_auth_service_stack(auth_image):
                     console.print(
                         "[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
                     )
@@ -442,7 +443,7 @@ class CalimeroManager:
                 f"[yellow]⚠️  Warning: Could not ensure auth networks: {str(e)}[/yellow]"
             )
 
-    def _start_auth_service_stack(self):
+    def _start_auth_service_stack(self, auth_image: str = None):
         """Start the Traefik proxy and auth service containers."""
         try:
             console.print(
@@ -467,7 +468,7 @@ class CalimeroManager:
 
             # Start Auth service
             if not auth_running:
-                if not self._start_auth_container():
+                if not self._start_auth_container(auth_image):
                     return False
 
             # Wait a bit for services to be ready
@@ -548,7 +549,7 @@ class CalimeroManager:
             console.print(f"[red]✗ Failed to start Traefik proxy: {str(e)}[/red]")
             return False
 
-    def _start_auth_container(self):
+    def _start_auth_container(self, auth_image: str = None):
         """Start the Auth service container."""
         try:
             console.print("[yellow]Starting Auth service...[/yellow]")
@@ -561,8 +562,8 @@ class CalimeroManager:
                 pass
 
             # Pull Auth service image
-            auth_image = "ghcr.io/calimero-network/mero-auth:edge"
-            if not self._ensure_image_pulled(auth_image):
+            auth_image_to_use = auth_image or "ghcr.io/calimero-network/mero-auth:edge"
+            if not self._ensure_image_pulled(auth_image_to_use):
                 console.print(
                     "[yellow]⚠️  Warning: Could not pull auth image, trying with local image[/yellow]"
                 )
@@ -576,7 +577,7 @@ class CalimeroManager:
             # Create and start Auth service container
             auth_config = {
                 "name": "auth",
-                "image": auth_image,
+                "image": auth_image_to_use,
                 "detach": True,
                 "user": "root",
                 "volumes": {"calimero_auth_data": {"bind": "/data", "mode": "rw"}},
@@ -689,6 +690,7 @@ class CalimeroManager:
         prefix: str = "calimero-node",
         image: str = None,
         auth_service: bool = False,
+        auth_image: str = None,
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -718,6 +720,7 @@ class CalimeroManager:
                 chain_id,
                 image=image,
                 auth_service=auth_service,
+                auth_image=auth_image,
             ):
                 success_count += 1
             else:

@@ -1,0 +1,16 @@
+name: "Auth Image Example Workflow"
+description: "Example workflow demonstrating custom auth image configuration"
+auth_service: true
+auth_image: "ghcr.io/calimero-network/mero-auth:edge"  # Custom auth image
+nodes:
+  count: 1
+  base_port: 2428
+  base_rpc_port: 2528
+  chain_id: "testnet-1"
+  prefix: "calimero-node"
+  image: "ghcr.io/calimero-network/merod:edge"
+steps:
+  - name: "Wait for node startup"
+    type: "wait"
+    seconds: 5
+    message: "Waiting for node to fully start..."
