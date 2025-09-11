@@ -12,7 +12,7 @@ Examples:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -36,7 +36,7 @@ class AssertStep(BaseStep):
           right: 1
     """
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         # Statement syntax only
         return ["statements"]
 
@@ -53,7 +53,7 @@ class AssertStep(BaseStep):
                 raise ValueError(f"Statement #{idx+1} missing 'statement'")
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         # Statement-only mode
         statements = self.config.get("statements", [])
@@ -67,7 +67,9 @@ class AssertStep(BaseStep):
                 console.print(f"[red]✗ Invalid statement at #{idx}[/red]")
                 all_ok = False
                 continue
-            passed, detail = self._eval_statement(stmt, workflow_results, dynamic_values)
+            passed, detail = self._eval_statement(
+                stmt, workflow_results, dynamic_values
+            )
             description = message or f"Assertion #{idx}: {stmt}"
             if passed:
                 console.print(f"[green]✓ {description}[/green]")
@@ -107,8 +109,8 @@ class AssertStep(BaseStep):
     def _eval_statement(
         self,
         statement: str,
-        workflow_results: Dict[str, Any],
-        dynamic_values: Dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> tuple[bool, str]:
         """Evaluate a single statement string.
 
@@ -121,7 +123,7 @@ class AssertStep(BaseStep):
         expr = statement.strip()
 
         # Function-like predicates first
-        def _arg_list(body: str) -> List[str]:
+        def _arg_list(body: str) -> list[str]:
             parts = [p.strip() for p in body.split(",")]
             return parts
 
@@ -149,7 +151,9 @@ class AssertStep(BaseStep):
             if len(args) != 2:
                 return False, "(invalid regex arg count)"
             a = self._resolve_dynamic_value(args[0], workflow_results, dynamic_values)
-            pattern = self._resolve_dynamic_value(args[1], workflow_results, dynamic_values)
+            pattern = self._resolve_dynamic_value(
+                args[1], workflow_results, dynamic_values
+            )
             ok = re.search(str(pattern), str(a)) is not None
             return (ok, f"(left={a!r}, pattern={pattern!r})")
 
@@ -162,7 +166,7 @@ class AssertStep(BaseStep):
         if expr.lower().startswith("is_empty(") and expr.endswith(")"):
             body = expr[len("is_empty(") : -1].strip()
             a = self._resolve_dynamic_value(body, workflow_results, dynamic_values)
-            
+
             # Handle string literals that represent empty values
             if a == "''" or a == '""':
                 ok = True
@@ -178,7 +182,7 @@ class AssertStep(BaseStep):
         def _is_call(name: str) -> bool:
             return expr.lower().startswith(name + "(") and expr.endswith(")")
 
-        def _call_args(body: str) -> List[str]:
+        def _call_args(body: str) -> list[str]:
             return [p.strip() for p in body.split(",", 1)] if "," in body else [body]
 
         for func, negate in (
@@ -193,9 +197,13 @@ class AssertStep(BaseStep):
                 if len(args) != 2:
                     return False, "(invalid equality arg count)"
                 a_raw, b_raw = args[0], args[1]
-                a_val = self._resolve_dynamic_value(a_raw, workflow_results, dynamic_values)
-                b_val = self._resolve_dynamic_value(b_raw, workflow_results, dynamic_values)
-                passed = (a_val == b_val)
+                a_val = self._resolve_dynamic_value(
+                    a_raw, workflow_results, dynamic_values
+                )
+                b_val = self._resolve_dynamic_value(
+                    b_raw, workflow_results, dynamic_values
+                )
+                passed = a_val == b_val
                 if negate:
                     passed = not passed
                 return passed, f"(left={a_val!r}, right={b_val!r})"
@@ -209,8 +217,12 @@ class AssertStep(BaseStep):
             op = m.group(1)
             left_str = expr[: m.start()].strip()
             right_str = expr[m.end() :].strip()
-            left_val = self._resolve_dynamic_value(left_str, workflow_results, dynamic_values)
-            right_val = self._resolve_dynamic_value(right_str, workflow_results, dynamic_values)
+            left_val = self._resolve_dynamic_value(
+                left_str, workflow_results, dynamic_values
+            )
+            right_val = self._resolve_dynamic_value(
+                right_str, workflow_results, dynamic_values
+            )
 
             # Try numeric comparison when feasible
             def _to_num(x):
@@ -237,5 +249,3 @@ class AssertStep(BaseStep):
             return (passed, f"(left={left_val!r}, right={right_val!r})")
 
         return False, "(unrecognized statement)"
-
-

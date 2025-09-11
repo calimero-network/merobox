@@ -15,7 +15,7 @@ Supports two configs (statement-style preferred):
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -51,7 +51,7 @@ class JsonAssertStep(BaseStep):
       mode: subset
     """
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         # Statement syntax only
         return ["statements"]
 
@@ -68,7 +68,7 @@ class JsonAssertStep(BaseStep):
                 raise ValueError(f"Statement #{idx+1} missing 'statement'")
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         # Statement-only mode
         statements = self.config.get("statements", [])
@@ -82,13 +82,15 @@ class JsonAssertStep(BaseStep):
                 console.print(f"[red]✗ Invalid JSON assertion at #{idx}[/red]")
                 all_ok = False
                 continue
-            passed, desc, l, r = self._eval_statement(stmt, workflow_results, dynamic_values)
+            passed, desc, left_val, right_val = self._eval_statement(
+                stmt, workflow_results, dynamic_values
+            )
             description = message or desc
             if passed:
                 console.print(f"[green]✓ {description} passed[/green]")
             else:
                 console.print(
-                    f"[red]✗ {description} failed[/red]\n  left={l!r}\n  right={r!r}"
+                    f"[red]✗ {description} failed[/red]\n  left={left_val!r}\n  right={right_val!r}"
                 )
                 all_ok = False
         return all_ok
@@ -114,8 +116,8 @@ class JsonAssertStep(BaseStep):
     def _eval_statement(
         self,
         statement: str,
-        workflow_results: Dict[str, Any],
-        dynamic_values: Dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> tuple[bool, str, Any, Any]:
         """Evaluate a single JSON assertion statement.
 
@@ -129,7 +131,7 @@ class JsonAssertStep(BaseStep):
         def _call_like(name: str) -> bool:
             return expr.lower().startswith(name + "(") and expr.endswith(")")
 
-        def _args(body: str) -> List[str]:
+        def _args(body: str) -> list[str]:
             return [p.strip() for p in body.split(",", 1)] if "," in body else [body]
 
         for func, desc, mode in (
@@ -145,21 +147,27 @@ class JsonAssertStep(BaseStep):
                     return False, desc, None, None
                 left_raw, right_raw = parts[0], parts[1]
                 left_val = (
-                    self._resolve_dynamic_value(left_raw, workflow_results, dynamic_values)
+                    self._resolve_dynamic_value(
+                        left_raw, workflow_results, dynamic_values
+                    )
                     if isinstance(left_raw, str)
                     else left_raw
                 )
                 right_val = (
-                    self._resolve_dynamic_value(right_raw, workflow_results, dynamic_values)
+                    self._resolve_dynamic_value(
+                        right_raw, workflow_results, dynamic_values
+                    )
                     if isinstance(right_raw, str)
                     else right_raw
                 )
-                l = _normalize_json(left_val)
-                r = _normalize_json(right_val)
-                passed = (l == r) if mode == "equal" else self._is_subset(l, r)
-                return passed, desc, l, r
+                left_norm = _normalize_json(left_val)
+                right_norm = _normalize_json(right_val)
+                passed = (
+                    (left_norm == right_norm)
+                    if mode == "equal"
+                    else self._is_subset(left_norm, right_norm)
+                )
+                return passed, desc, left_val, right_val
 
         # Fallback: try simple equality if pattern not matched
         return False, "Unrecognized JSON assertion", None, None
-
-

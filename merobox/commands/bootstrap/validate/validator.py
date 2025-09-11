@@ -5,6 +5,7 @@ This module provides comprehensive validation for workflow configurations
 without requiring full workflow execution.
 """
 
+from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.identity import (
@@ -13,16 +14,10 @@ from merobox.commands.bootstrap.steps.identity import (
 )
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
+from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
-import importlib
-
-_assert_module = importlib.import_module(
-    "merobox.commands.bootstrap.steps.assert"
-)
-AssertStep = getattr(_assert_module, "AssertStep")
-from merobox.commands.bootstrap.steps.json_assert import JsonAssertStep
 
 
 def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
