@@ -533,6 +533,14 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import ScriptStep
 
             return ScriptStep(step_config)
+        elif step_type == "assert":
+            from merobox.commands.bootstrap.steps import AssertStep
+
+            return AssertStep(step_config)
+        elif step_type == "json_assert":
+            from merobox.commands.bootstrap.steps import JsonAssertStep
+
+            return JsonAssertStep(step_config)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

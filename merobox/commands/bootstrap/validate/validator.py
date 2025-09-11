@@ -16,6 +16,13 @@ from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
+import importlib
+
+_assert_module = importlib.import_module(
+    "merobox.commands.bootstrap.steps.assert"
+)
+AssertStep = getattr(_assert_module, "AssertStep")
+from merobox.commands.bootstrap.steps.json_assert import JsonAssertStep
 
 
 def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
@@ -110,6 +117,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = WaitStep
         elif step_type == "script":
             step_class = ScriptStep
+        elif step_type == "assert":
+            step_class = AssertStep
+        elif step_type == "json_assert":
+            step_class = JsonAssertStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors
