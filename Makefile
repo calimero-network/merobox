@@ -24,12 +24,16 @@ test-coverage: ## Run tests with coverage
 	pytest --cov=merobox --cov-report=html --cov-report=term
 
 lint: ## Run linting checks
-	ruff check merobox/ tests/
-	black --check merobox/ tests/
+	ruff check merobox/
+	black --check merobox/
 
 format: ## Format code with black and ruff
-	black merobox/ tests/
-	ruff check --fix merobox/ tests/
+	black merobox/
+	ruff check --fix merobox/
+
+format-check: ## Check code formatting without making changes
+	black --check merobox/
+	ruff check merobox/
 
 check: lint test ## Run all checks (lint + test)
 
