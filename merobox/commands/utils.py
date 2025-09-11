@@ -20,6 +20,8 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from merobox.commands.manager import CalimeroManager
+from merobox.commands.constants import DEFAULT_RPC_PORT
+import json
 
 console = Console()
 
@@ -41,10 +43,10 @@ def get_node_rpc_url(node_name: str, manager: CalimeroManager) -> str:
                             return f"http://localhost:{host_port}"
 
         # Fallback to default
-        return "http://localhost:2528"
+        return f"http://localhost:{DEFAULT_RPC_PORT}"
 
     except Exception:
-        return "http://localhost:2528"
+        return f"http://localhost:{DEFAULT_RPC_PORT}"
 
 
 def check_node_running(node: str, manager: CalimeroManager) -> None:
@@ -139,3 +141,18 @@ def format_file_size(size_bytes: int) -> str:
 def safe_get(dictionary: Dict[str, Any], key: str, default: Any = None) -> Any:
     """Safely get a value from a dictionary with a default fallback."""
     return dictionary.get(key, default) if isinstance(dictionary, dict) else default
+
+
+def ensure_json_string(value: Any) -> str:
+    """Ensure a value is a JSON string, converting if necessary."""
+    if isinstance(value, str):
+        # Try to parse to validate it's valid JSON
+        try:
+            json.loads(value)
+            return value
+        except json.JSONDecodeError:
+            # If it's not valid JSON, treat it as a plain string and encode it
+            return json.dumps(value)
+    else:
+        # Convert non-string values to JSON string
+        return json.dumps(value)

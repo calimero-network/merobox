@@ -58,7 +58,10 @@ jobs:
       run: |
         merobox --version
         merobox --help
-        merobox bootstrap run workflow-examples/workflow-example.yml --verbose
+        for f in workflow-examples/*.yml; do \
+          echo "Running workflow: $f"; \
+          merobox bootstrap run "$f" --verbose; \
+        done
 
   test-merobox-integration:
     runs-on: ubuntu-latest

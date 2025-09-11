@@ -5,8 +5,12 @@ Create context step executor.
 import asyncio
 from typing import Dict, Any, List
 from merobox.commands.utils import get_node_rpc_url, console
-from merobox.commands.context import create_context_via_admin_api
+from calimero_client_py import create_connection, create_client
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import DEFAULT_PROTOCOL
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.result import ok, fail
+from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
 
 
 class CreateContextStep(BaseStep):
@@ -80,17 +84,15 @@ class CreateContextStep(BaseStep):
             )
 
         initialization_params = None
+        params_json: str | None = None
         if "params" in self.config:
             try:
                 import json
 
                 params_json = self.config["params"]
-                params_dict = json.loads(params_json)
-                params_bytes = json.dumps(params_dict).encode("utf-8")
-                initialization_params = list(params_bytes)
-                console.print(
-                    f"[blue]Using initialization params as bytes: {initialization_params[:50]}...[/blue]"
-                )
+                # Validate JSON
+                json.loads(params_json)
+                console.print(f"[blue]Using initialization params JSON[/blue]")
             except json.JSONDecodeError as e:
                 console.print(f"[red]Failed to parse params JSON: {str(e)}[/red]")
                 return False
@@ -107,10 +109,20 @@ class CreateContextStep(BaseStep):
             )
             return False
 
-        # Execute context creation
-        result = await create_context_via_admin_api(
-            rpc_url, application_id, initialization_params
-        )
+        # Execute context creation using calimero-client-py
+        try:
+            client = get_client_for_rpc_url(rpc_url)
+
+            protocol = self.config.get("protocol", DEFAULT_PROTOCOL)
+            api_result = client.create_context(
+                application_id=application_id,
+                protocol=protocol,
+                params=params_json,
+            )
+
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("create_context failed", error=e)
 
         # Log detailed API response
         console.print(f"[cyan]🔍 Context Creation API Response for {node_name}:[/cyan]")

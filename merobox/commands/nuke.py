@@ -6,6 +6,7 @@ import click
 import os
 import sys
 import time
+import shutil
 from typing import Dict, Any, Optional
 from pathlib import Path
 from rich.console import Console

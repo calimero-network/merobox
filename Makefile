@@ -1,59 +1,53 @@
-.PHONY: help build clean install format format-check lint test check publish test-publish release
+.PHONY: help install test test-unit test-integration lint format check pre-commit clean
 
 help: ## Show this help message
 	@echo "Available commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: clean ## Build the package
-	python -m build
+install: ## Install dependencies
+	pip install -r requirements.txt
 
-clean: ## Clean build artifacts
-	rm -rf build/ dist/ *.egg-info/
-	find . -name "*.pyc" -delete
-	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+install-dev: ## Install development dependencies
+	pip install -r requirements.txt
+	pre-commit install
 
-install: ## Install package in development mode
-	pip install -e .
+test: ## Run all tests
+	pytest
 
-format: ## Format code with Black
-	black merobox/ workflow-examples/ --exclude=venv
+test-unit: ## Run unit tests only
+	pytest tests/unit/ -v
 
-format-check: ## Check if code is formatted correctly with Black
-	black --check merobox/ workflow-examples/ --exclude=venv
+test-integration: ## Run integration tests only
+	pytest tests/integration/ -v
 
-lint: format-check ## Run all linting checks
+test-coverage: ## Run tests with coverage
+	pytest --cov=merobox --cov-report=html --cov-report=term
 
-test: ## Run tests (placeholder)
-	@echo "No tests configured yet"
+lint: ## Run linting checks
+	ruff check merobox/ tests/
+	black --check merobox/ tests/
 
-check: build ## Check the built package
-	twine check dist/*
+format: ## Format code with black and ruff
+	black merobox/ tests/
+	ruff check --fix merobox/ tests/
 
-test-publish: check ## Test publish to TestPyPI
-	@if [ "$$CI" = "true" ] || [ "$$GITHUB_ACTIONS" = "true" ]; then \
-		echo "🧪 Publishing to TestPyPI (CI mode)"; \
-		twine upload --repository testpypi dist/*; \
-		echo "✅ Package published to TestPyPI!"; \
-	else \
-		echo "🧪 Publishing to TestPyPI"; \
-		twine upload --repository testpypi dist/*; \
-		echo "✅ Package published to TestPyPI!"; \
-	fi
+check: lint test ## Run all checks (lint + test)
 
-publish: check ## Publish to PyPI (requires confirmation)
-	@if [ "$$CI" = "true" ] || [ "$$GITHUB_ACTIONS" = "true" ]; then \
-		echo "🚀 Publishing to PyPI (CI mode)"; \
-		twine upload dist/*; \
-		echo "✅ Package published to PyPI!"; \
-	else \
-		echo "⚠️  Are you sure you want to publish to PyPI?"; \
-		read -p "Type 'yes' to confirm: " confirm; \
-		if [ "$$confirm" = "yes" ]; then \
-			twine upload dist/*; \
-			echo "✅ Package published to PyPI!"; \
-		else \
-			echo "❌ Publishing cancelled"; \
-		fi; \
-	fi
+pre-commit: ## Run pre-commit on all files
+	pre-commit run --all-files
 
-release: publish ## Full release process (build, check, publish)
+clean: ## Clean up generated files
+	find . -type f -name "*.pyc" -delete
+	find . -type d -name "__pycache__" -delete
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf build/
+	rm -rf dist/
+	rm -rf .coverage
+	rm -rf htmlcov/
+	rm -rf .pytest_cache/
+	rm -rf .ruff_cache/
+
+ci: ## Run CI checks (format, lint, test)
+	$(MAKE) format
+	$(MAKE) lint
+	$(MAKE) test

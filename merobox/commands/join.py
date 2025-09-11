@@ -10,32 +10,30 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console
+from merobox.commands.utils import get_node_rpc_url, console, run_async_function
+from calimero_client_py import create_connection, create_client
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import ADMIN_API_CONTEXTS_JOIN
+from merobox.commands.result import ok, fail
+from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
 
 
+@with_retry(config=NETWORK_RETRY_CONFIG)
 async def join_context_via_admin_api(
     rpc_url: str, context_id: str, invitee_id: str, invitation_data: str
 ) -> dict:
-    """Join a context using an invitation via the admin API."""
+    """Join a context using calimero-client-py."""
     try:
-        # Import the admin client
-        from calimero import AdminClient
+        client = get_client_for_rpc_url(rpc_url)
 
-        # Create admin client and join context
-        admin_client = AdminClient(rpc_url)
-        result = await admin_client.join_context(
-            context_id, invitee_id, invitation_data
+        result = client.join_context(
+            context_id=context_id,
+            invitee_id=invitee_id,
+            invitation_payload=invitation_data,
         )
-
-        # Add endpoint and payload format info for compatibility
-        if result["success"]:
-            result["endpoint"] = f"{rpc_url}/admin-api/contexts/join"
-            result["payload_format"] = 0  # Standard format
-
-        return result
-
+        return ok(result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_JOIN}", payload_format=0)
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return fail("join_context failed", error=e)
 
 
 @click.group()
@@ -64,8 +62,8 @@ def context(node, context_id, invitee_id, invitation, verbose):
         f"[blue]Joining context {context_id} on node {node} as {invitee_id} via {admin_url}[/blue]"
     )
 
-    result = asyncio.run(
-        join_context_via_admin_api(admin_url, context_id, invitee_id, invitation)
+    result = run_async_function(
+        join_context_via_admin_api, admin_url, context_id, invitee_id, invitation
     )
 
     # Show which endpoint was used if successful

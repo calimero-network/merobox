@@ -14,7 +14,6 @@ from merobox.commands import (
     health,
     install,
     nuke,
-    context,
     identity,
     bootstrap,
     call,
@@ -40,7 +39,6 @@ cli.add_command(logs)
 cli.add_command(health)
 cli.add_command(install)
 cli.add_command(nuke)
-cli.add_command(context)
 cli.add_command(identity)
 cli.add_command(join)
 cli.add_command(call)
