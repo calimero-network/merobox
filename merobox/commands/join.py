@@ -71,8 +71,6 @@ def context(node, context_id, invitee_id, invitation, verbose):
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
 
     if result["success"]:
-        response_data = result.get("data", {})
-
         console.print("\n[green]✓ Successfully joined context![/green]")
 
         # Create table

@@ -40,7 +40,7 @@ class CalimeroManager:
 
             # Remove local image if it exists
             try:
-                local_image = self.client.images.get(image)
+                self.client.images.get(image)
                 console.print(f"[cyan]Removing local image: {image}[/cyan]")
                 self.client.images.remove(image, force=True)
             except docker.errors.ImageNotFound:
@@ -295,7 +295,7 @@ class CalimeroManager:
                 # Clean up init container
                 try:
                     init_container.remove()
-                except:
+                except Exception:
                     pass
 
             # Now start the actual node
@@ -541,7 +541,7 @@ class CalimeroManager:
                 },
             }
 
-            container = self.client.containers.run(**traefik_config)
+            self.client.containers.run(**traefik_config)
             console.print("[green]✓ Traefik proxy started[/green]")
             return True
 
@@ -854,14 +854,14 @@ class CalimeroManager:
                     port_mappings = container.attrs["NetworkSettings"]["Ports"]
                     port_list = []
 
-                    for container_port, host_bindings in port_mappings.items():
+                    for _container_port, host_bindings in port_mappings.items():
                         if host_bindings:
                             for binding in host_bindings:
                                 if "HostPort" in binding:
                                     port_list.append(int(binding["HostPort"]))
 
                     # Remove duplicates and sort ports
-                    port_list = sorted(list(set(port_list)))
+                    port_list = sorted(set(port_list))
 
                     # Assign P2P and RPC ports
                     if len(port_list) >= 2:

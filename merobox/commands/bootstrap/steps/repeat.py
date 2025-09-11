@@ -90,7 +90,6 @@ class RepeatStep(BaseStep):
     ) -> bool:
         repeat_count = self.config.get("count", 1)
         nested_steps = self.config.get("steps", [])
-        step_name = self.config.get("name", "Repeat Step")
 
         # Validate export configuration
         if not self._validate_export_config():

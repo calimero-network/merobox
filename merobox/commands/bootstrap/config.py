@@ -27,12 +27,14 @@ def load_workflow_config(
 
         return config
 
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Workflow configuration file not found: {config_path}")
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Workflow configuration file not found: {config_path}"
+        ) from e
     except yaml.YAMLError as e:
-        raise ValueError(f"Invalid YAML format: {str(e)}")
+        raise ValueError(f"Invalid YAML format: {str(e)}") from e
     except Exception as e:
-        raise ValueError(f"Failed to load configuration: {str(e)}")
+        raise ValueError(f"Failed to load configuration: {str(e)}") from e
 
 
 def create_sample_workflow_config(output_path: str = "workflow-example.yml"):

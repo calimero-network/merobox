@@ -81,7 +81,6 @@ class CreateContextStep(BaseStep):
                 "[yellow]⚠️  Context step export configuration validation failed[/yellow]"
             )
 
-        initialization_params = None
         params_json: str | None = None
         if "params" in self.config:
             try:

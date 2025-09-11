@@ -182,7 +182,7 @@ class ScriptStep(BaseStep):
             # Read the script content
             try:
                 with open(self.script_path) as file:
-                    script_content = file.read()
+                    file.read()  # Read file to validate it exists
             except Exception as e:
                 console.print(f"[red]Failed to read script file: {str(e)}[/red]")
                 return False
@@ -247,11 +247,11 @@ class ScriptStep(BaseStep):
                         logs = container.logs().decode("utf-8")
                         if logs.strip():
                             console.print(f"[red]Container logs: {logs}[/red]")
-                    except:
+                    except Exception:
                         pass
                     try:
                         container.remove()
-                    except:
+                    except Exception:
                         pass
                     return False
 
@@ -411,7 +411,7 @@ class ScriptStep(BaseStep):
                         # Clean up script from container
                         try:
                             container.exec_run(["rm", f"/tmp/{script_name}"])
-                        except:
+                        except Exception:
                             pass
 
                     finally:

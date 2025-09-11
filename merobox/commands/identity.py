@@ -247,8 +247,6 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
 
     if result["success"]:
-        response_data = result.get("data", {})
-
         console.print("\n[green]✓ Identity invited successfully![/green]")
 
         # Create table

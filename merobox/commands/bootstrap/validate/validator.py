@@ -117,7 +117,7 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
         # Create a temporary step instance to trigger validation
         # This will catch any validation errors without executing
         try:
-            temp_step = step_class(step)
+            step_class(step)
         except Exception as e:
             errors.append(f"Step '{step_name}' validation failed: {str(e)}")
 

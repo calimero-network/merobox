@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 import click
 from calimero_client_py import create_client, create_connection
 from rich.console import Console
+from rich.panel import Panel
 
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.result import fail, ok
