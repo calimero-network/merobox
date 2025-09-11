@@ -1,0 +1,113 @@
+description: Example workflow showcasing assert and json_assert steps
+name: Assert and JSON Assert Example
+
+# Keep it light: single node to speed up CI
+nodes:
+  chain_id: testnet-1
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  base_port: 9002
+  base_rpc_port: 9102
+
+steps:
+  - name: Install Application
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Context
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  - name: Set Key-Value
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    executor_public_key: '{{member_public_key}}'
+    method: set
+    args:
+      key: assert_key
+      value: assert_value
+    outputs:
+      set_result: result
+
+  - name: Wait for Set
+    type: wait
+    seconds: 2
+
+  - name: Get Key-Value
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    executor_public_key: '{{member_public_key}}'
+    method: get
+    args:
+      key: assert_key
+    outputs:
+      get_result: result
+
+  - name: Assert basic variable checks
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+      - "is_set({{member_public_key}})"
+      - "is_set({{set_result}})"
+      - "is_empty('')"  # Empty string should be considered empty
+      - "is_empty([])"  # Empty list should be considered empty
+      - "{{context_id}} != ''"
+
+  - name: Assert string operations
+    type: assert
+    statements:
+      - "contains({{get_result}}, 'assert_value')"
+      - "not_contains({{member_public_key}}, 'invalid')"
+      - "regex({{member_public_key}}, ^[1-9A-HJ-NP-Za-km-z]+$)"
+
+  - name: Assert numeric comparisons
+    type: assert
+    statements:
+      - "1 == 1"
+      - "1 >= 0"
+      - "0 < 1"
+      - "1 <= 1"
+      - "2 > 1"
+
+  - name: Assert equality helpers
+    type: assert
+    statements:
+      - "equal('x', 'x')"
+      - "equals('x', 'x')"
+      - "not_equal('x', 'y')"
+      - "not_equals('x', 'y')"
+
+  - name: Assert JSON equality
+    type: json_assert
+    statements:
+      - 'json_equal({{get_result}}, {"output": "assert_value"})'
+      - 'equal({{get_result}}, {"output": "assert_value"})'
+
+  - name: Assert JSON subset
+    type: json_assert
+    statements:
+      - 'json_subset({{get_result}}, {"output": "assert_value"})'
+      - 'subset({{get_result}}, {"output": "assert_value"})'
+
+  - name: Assert complex JSON operations
+    type: json_assert
+    statements:
+      - 'json_subset({{get_result}}, {"output": "assert_value"})'
+
+# Keep nodes running for subsequent workflows in CI
+stop_all_nodes: false
+restart: false
+wait_timeout: 60
+
+

@@ -316,6 +316,47 @@ outputs:
 
 See `workflow-examples/workflow-example.yml` for a complete example.
 
+### Assertion Steps
+
+#### Assert (type: `assert`)
+Statement-based assertions against exported variables and literals.
+
+Supported forms:
+- `is_set(A)` / `is_empty(A)`
+- `contains(A, B)` / `not_contains(A, B)`
+- `regex(A, PATTERN)`
+- Comparisons: `A == B`, `A != B`, `A >= B`, `A > B`, `A <= B`, `A < B`
+- Equality helpers: `equal(A, B)`, `equals(A, B)`, `not_equal(A, B)`, `not_equals(A, B)`
+
+Placeholders like `{{var}}` are resolved before evaluation.
+
+Example:
+```yaml
+- name: Assert exported variables
+  type: assert
+  statements:
+    - "is_set({{context_id}})"
+    - "{{count}} >= 1"
+    - "contains({{get_result}}, 'hello')"
+    - "regex({{value}}, '^abc')"
+    - "equal({{a}}, {{b}})"
+```
+
+#### JSON Assert (type: `json_assert`)
+Compare JSON-like values (Python dict/list or JSON strings).
+
+Supported forms:
+- `json_equal(A, B)` / `equal(A, B)`
+- `json_subset(A, B)` / `subset(A, B)` (B must be subset of A)
+
+Example:
+```yaml
+- name: Assert JSON equality of get_result
+  type: json_assert
+  statements:
+    - "json_equal({{get_result}}, {'output': 'assert_value'})"
+```
+
 ---
 
 ## 🔧 API Reference
