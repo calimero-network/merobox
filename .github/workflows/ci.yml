@@ -61,6 +61,8 @@ jobs:
         for f in workflow-examples/*.yml; do \
           echo "Running workflow: $f"; \
           merobox bootstrap run "$f" --verbose; \
+          echo "Nuking merobox data between workflows..."; \
+          merobox nuke -f || true; \
         done
 
   test-merobox-integration:
@@ -106,4 +108,6 @@ jobs:
         python -m pytest tests/test_merobox_integration.py -v --tb=short
         
         echo "✅ All merobox integration tests completed successfully!"
+        echo "🧹 Nuking merobox data after integration tests..."
+        cd .. && merobox nuke -f || true
     
