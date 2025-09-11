@@ -43,7 +43,7 @@ setup(
         "docker>=6.0.0",
         "rich>=13.0.0",
         "PyYAML>=6.0.0",
-        "calimero-client-py==0.1.4",
+        "calimero-client-py==0.2.3",
     ],
     extras_require={
         "dev": [
