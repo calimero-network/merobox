@@ -2,29 +2,23 @@
 Install command - Install applications on Calimero nodes using admin API.
 """
 
-import click
 import os
-import asyncio
 import sys
-from typing import Dict, Any, Optional
-from pathlib import Path
-from rich.console import Console
-from rich.table import Table
-from rich import box
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
-)
 from urllib.parse import urlparse
-from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console, check_node_running, run_async_function
+
+import click
+
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.result import ok, fail
 from merobox.commands.constants import DEFAULT_METADATA
-from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.result import fail, ok
+from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.utils import (
+    check_node_running,
+    console,
+    get_node_rpc_url,
+    run_async_function,
+)
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
@@ -42,15 +36,15 @@ async def install_application_via_admin_api(
         metadata_bytes = metadata or DEFAULT_METADATA
 
         if is_dev and path:
-            console.print(f"[blue]Installing development application from path: {path}[/blue]")
+            console.print(
+                f"[blue]Installing development application from path: {path}[/blue]"
+            )
             result = await client.install_dev_application(
                 path=path, metadata=metadata_bytes
             )
         else:
-            result = await client.install_application(
-                url=url, metadata=metadata_bytes
-            )
-        
+            result = await client.install_application(url=url, metadata=metadata_bytes)
+
         return ok(data=result)
     except Exception as e:
         return fail(error=e)
@@ -140,16 +134,16 @@ def install(node, url, path, dev, metadata, timeout, verbose):
     )
 
     if result["success"]:
-        console.print(f"\n[green]✓ Application installed successfully![/green]")
+        console.print("\n[green]✓ Application installed successfully![/green]")
 
         if dev and "container_path" in result:
             console.print(f"[blue]Container path: {result['container_path']}[/blue]")
 
         if verbose:
-            console.print(f"\n[bold]Installation response:[/bold]")
+            console.print("\n[bold]Installation response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to install application[/red]")
+        console.print("\n[red]✗ Failed to install application[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)

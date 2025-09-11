@@ -3,22 +3,21 @@ Retry and timeout utilities for network calls.
 """
 
 import asyncio
-import time
-from typing import Any, Callable, Optional, Type, Union
 from functools import wraps
+from typing import Any, Callable, Optional
+
 from merobox.commands.constants import (
-    DEFAULT_RETRY_ATTEMPTS,
-    DEFAULT_RETRY_DELAY,
-    DEFAULT_RETRY_BACKOFF,
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_READ_TIMEOUT,
+    DEFAULT_RETRY_ATTEMPTS,
+    DEFAULT_RETRY_BACKOFF,
+    DEFAULT_RETRY_DELAY,
 )
-from merobox.commands.result import fail
 
 
 class RetryConfig:
     """Configuration for retry behavior."""
-    
+
     def __init__(
         self,
         max_attempts: int = DEFAULT_RETRY_ATTEMPTS,
@@ -45,7 +44,7 @@ def with_retry(
 ):
     """
     Decorator to add retry logic to async functions.
-    
+
     Args:
         config: RetryConfig instance (takes precedence over individual params)
         exceptions: Tuple of exception types to retry on
@@ -53,6 +52,7 @@ def with_retry(
         delay: Initial delay between retries in seconds
         backoff: Exponential backoff multiplier
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -63,70 +63,68 @@ def with_retry(
                 backoff=backoff or DEFAULT_RETRY_BACKOFF,
                 exceptions=exceptions or (Exception,),
             )
-            
+
             last_exception = None
             current_delay = retry_config.delay
-            
+
             for attempt in range(retry_config.max_attempts):
                 try:
                     return await func(*args, **kwargs)
                 except retry_config.exceptions as e:
                     last_exception = e
-                    
+
                     # Don't retry on the last attempt
                     if attempt == retry_config.max_attempts - 1:
                         break
-                    
+
                     # Wait before retrying
                     await asyncio.sleep(current_delay)
                     current_delay *= retry_config.backoff
-            
+
             # If we get here, all retries failed
             raise last_exception
-        
+
         return wrapper
+
     return decorator
 
 
 async def retry_async_call(
-    func: Callable,
-    *args,
-    config: Optional[RetryConfig] = None,
-    **kwargs
+    func: Callable, *args, config: Optional[RetryConfig] = None, **kwargs
 ) -> Any:
     """
     Retry an async function call with the given configuration.
-    
+
     Args:
         func: The async function to call
         *args: Positional arguments for the function
         config: RetryConfig instance
         **kwargs: Keyword arguments for the function
-        
+
     Returns:
         The result of the function call
-        
+
     Raises:
         The last exception if all retries fail
     """
     retry_config = config or RetryConfig()
     last_exception = None
     current_delay = retry_config.delay
-    
+
     for attempt in range(retry_config.max_attempts):
         try:
             return await func(*args, **kwargs)
         except retry_config.exceptions as e:
             last_exception = e
-            
+
             # Don't retry on the last attempt
             if attempt == retry_config.max_attempts - 1:
                 break
-            
+
             # Wait before retrying
             await asyncio.sleep(current_delay)
             current_delay *= retry_config.backoff
-    
+
     # If we get here, all retries failed
     raise last_exception
 

@@ -2,10 +2,10 @@
 Configuration management for bootstrap workflows.
 """
 
-import os
+from typing import Any, Dict
+
 import yaml
-from typing import Dict, Any, Optional
-from pathlib import Path
+
 from merobox.commands.utils import console
 
 
@@ -14,7 +14,7 @@ def load_workflow_config(
 ) -> Dict[str, Any]:
     """Load workflow configuration from YAML file."""
     try:
-        with open(config_path, "r") as file:
+        with open(config_path) as file:
             config = yaml.safe_load(file)
 
         # Skip basic validation if this is just for validation purposes

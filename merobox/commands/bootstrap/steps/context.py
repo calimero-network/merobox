@@ -2,15 +2,13 @@
 Create context step executor.
 """
 
-import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import get_node_rpc_url, console
-from calimero_client_py import create_connection, create_client
+from typing import Any, Dict, List
+
+from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import DEFAULT_PROTOCOL
-from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.result import ok, fail
-from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
+from merobox.commands.result import fail, ok
+from merobox.commands.utils import console, get_node_rpc_url
 
 
 class CreateContextStep(BaseStep):
@@ -80,7 +78,7 @@ class CreateContextStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  Context step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Context step export configuration validation failed[/yellow]"
             )
 
         initialization_params = None
@@ -92,7 +90,7 @@ class CreateContextStep(BaseStep):
                 params_json = self.config["params"]
                 # Validate JSON
                 json.loads(params_json)
-                console.print(f"[blue]Using initialization params JSON[/blue]")
+                console.print("[blue]Using initialization params JSON[/blue]")
             except json.JSONDecodeError as e:
                 console.print(f"[red]Failed to parse params JSON: {str(e)}[/red]")
                 return False

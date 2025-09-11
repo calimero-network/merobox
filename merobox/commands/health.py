@@ -2,28 +2,21 @@
 Health command - Check Calimero node health using admin API.
 """
 
-import click
 import asyncio
-import aiohttp
 import sys
-from typing import Dict, Any, Optional
-from rich.console import Console
-from rich.table import Table
+
+import aiohttp
+import click
 from rich import box
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
-)
+from rich.table import Table
+
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import (
-    get_node_rpc_url,
-    console,
-    run_async_function,
-    extract_nested_data,
     check_node_running,
+    console,
+    extract_nested_data,
+    get_node_rpc_url,
+    run_async_function,
 )
 
 
@@ -191,7 +184,7 @@ def display_health_results(health_results, verbose):
     console.print(table)
 
     if verbose:
-        console.print(f"\n[bold]Detailed Results:[/bold]")
+        console.print("\n[bold]Detailed Results:[/bold]")
         for node_name, result in health_results:
             console.print(f"\n[cyan]{node_name}:[/cyan]")
             console.print(f"  {result}")

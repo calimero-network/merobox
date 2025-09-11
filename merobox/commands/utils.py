@@ -2,26 +2,17 @@
 Shared utilities for Calimero CLI commands.
 """
 
-import os
-import sys
-import time
 import asyncio
-import subprocess
-from typing import Dict, Any, Optional, List
-from pathlib import Path
+import json
+import sys
+from typing import Any, Dict, List
+
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
-)
-from merobox.commands.manager import CalimeroManager
+
 from merobox.commands.constants import DEFAULT_RPC_PORT
-import json
+from merobox.commands.manager import CalimeroManager
 
 console = Console()
 
@@ -117,7 +108,7 @@ def validate_port(port_str: str, port_name: str) -> int:
     try:
         port = int(port_str)
         if port < 1 or port > 65535:
-            raise ValueError(f"Port must be between 1 and 65535")
+            raise ValueError("Port must be between 1 and 65535")
         return port
     except ValueError as e:
         console.print(f"[red]Error: Invalid {port_name} '{port_str}'. {str(e)}[/red]")

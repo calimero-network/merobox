@@ -2,20 +2,21 @@
 Identity command - List and generate identities for Calimero contexts using JSON-RPC client.
 """
 
-import click
-import asyncio
 import sys
-from typing import Dict, Any, Optional
-from rich.console import Console
-from rich.table import Table
+
+import click
 from rich import box
-from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console, run_async_function
-from calimero_client_py import create_connection, create_client
+from rich.table import Table
+
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.result import ok, fail
-from merobox.commands.constants import ADMIN_API_IDENTITY_CONTEXT, ADMIN_API_CONTEXTS_INVITE
-from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
+from merobox.commands.constants import (
+    ADMIN_API_CONTEXTS_INVITE,
+    ADMIN_API_IDENTITY_CONTEXT,
+)
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.result import fail, ok
+from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 
 def extract_identities_from_response(response_data: dict) -> list:
@@ -82,8 +83,12 @@ async def invite_identity_via_admin_api(
     try:
         client = get_client_for_rpc_url(rpc_url)
         # Some clients may not need inviter id; keeping parameter for compatibility
-        result = client.invite_to_context(context_id=context_id, inviter_id=inviter_id, invitee_id=invitee_id)
-        return ok(result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_INVITE}", payload_format=0)
+        result = client.invite_to_context(
+            context_id=context_id, inviter_id=inviter_id, invitee_id=invitee_id
+        )
+        return ok(
+            result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_INVITE}", payload_format=0
+        )
     except Exception as e:
         return fail("invite_to_context failed", error=e)
 
@@ -122,7 +127,7 @@ def list_identities(node, context_id, verbose):
                 f"\n[yellow]No identities found for context {context_id} on node {node}[/yellow]"
             )
             if verbose:
-                console.print(f"\n[bold]Response structure:[/bold]")
+                console.print("\n[bold]Response structure:[/bold]")
                 console.print(f"{result}")
             return
 
@@ -133,11 +138,11 @@ def list_identities(node, context_id, verbose):
         console.print(table)
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to list identities[/red]")
+        console.print("\n[red]✗ Failed to list identities[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -173,7 +178,7 @@ def generate(node, verbose=False):
         )
 
         if identity_data:
-            console.print(f"\n[green]✓ Identity generated successfully![/green]")
+            console.print("\n[green]✓ Identity generated successfully![/green]")
 
             # Create table
             table = Table(title="New Identity Details", box=box.ROUNDED)
@@ -187,15 +192,15 @@ def generate(node, verbose=False):
 
             console.print(table)
         else:
-            console.print(f"\n[green]✓ Identity generated successfully![/green]")
+            console.print("\n[green]✓ Identity generated successfully![/green]")
             console.print(f"[yellow]Response: {response_data}[/yellow]")
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to generate identity[/red]")
+        console.print("\n[red]✗ Failed to generate identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -230,7 +235,11 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
 
     result = run_async_function(
         invite_identity_via_admin_api,
-        admin_url, context_id, inviter_id, invitee_id, capability
+        admin_url,
+        context_id,
+        inviter_id,
+        invitee_id,
+        capability,
     )
 
     # Show which endpoint was used if successful
@@ -240,7 +249,7 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
     if result["success"]:
         response_data = result.get("data", {})
 
-        console.print(f"\n[green]✓ Identity invited successfully![/green]")
+        console.print("\n[green]✓ Identity invited successfully![/green]")
 
         # Create table
         table = Table(title="Identity Invitation Details", box=box.ROUNDED)
@@ -254,31 +263,31 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         console.print(table)
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to invite identity[/red]")
+        console.print("\n[red]✗ Failed to invite identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         # Show detailed error information if available
         if "errors" in result:
-            console.print(f"\n[yellow]Detailed errors:[/yellow]")
+            console.print("\n[yellow]Detailed errors:[/yellow]")
             for error in result["errors"]:
                 console.print(f"[red]  {error}[/red]")
 
         if "tried_payloads" in result:
-            console.print(f"\n[yellow]Tried payload formats:[/yellow]")
+            console.print("\n[yellow]Tried payload formats:[/yellow]")
             for i, payload in enumerate(result["tried_payloads"]):
                 console.print(f"[dim]  Format {i}: {payload}[/dim]")
 
         # Provide helpful information for common errors
         if "unable to grant privileges to non-member" in result.get("error", ""):
             console.print(
-                f"\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]"
+                "\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]"
             )
             console.print(
-                f"[yellow]The identity should be automatically added as a member when invited.[/yellow]"
+                "[yellow]The identity should be automatically added as a member when invited.[/yellow]"
             )
 
         sys.exit(1)

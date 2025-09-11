@@ -5,15 +5,17 @@ This module provides comprehensive validation for workflow configurations
 without requiring full workflow execution.
 """
 
-from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
-from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
-from merobox.commands.bootstrap.steps.identity import InviteIdentityStep
-from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
+from merobox.commands.bootstrap.steps.identity import (
+    CreateIdentityStep,
+    InviteIdentityStep,
+)
+from merobox.commands.bootstrap.steps.install import InstallApplicationStep
+from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
-from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
+from merobox.commands.bootstrap.steps.wait import WaitStep
 
 
 def validate_workflow_config(config: dict, verbose: bool = False) -> dict:

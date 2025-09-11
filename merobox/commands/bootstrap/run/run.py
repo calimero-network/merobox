@@ -9,9 +9,9 @@ This module handles the execution of Calimero workflows including:
 """
 
 import asyncio
-import sys
-from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+
 from merobox.commands.bootstrap.config import load_workflow_config
+from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.utils import console
 
 

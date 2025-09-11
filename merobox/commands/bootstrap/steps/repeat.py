@@ -2,20 +2,20 @@
 Repeat step executor for executing nested steps multiple times.
 """
 
-import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import console
+from typing import Any, Dict, List
+
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
+from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.identity import (
     CreateIdentityStep,
     InviteIdentityStep,
 )
+from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
-from merobox.commands.bootstrap.steps.execute import ExecuteStep
-from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
+from merobox.commands.bootstrap.steps.wait import WaitStep
+from merobox.commands.utils import console
 
 
 class RepeatStep(BaseStep):
@@ -95,7 +95,7 @@ class RepeatStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  Repeat step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Repeat step export configuration validation failed[/yellow]"
             )
 
         if not nested_steps:

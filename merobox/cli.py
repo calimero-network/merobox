@@ -7,19 +7,18 @@ A Python CLI tool for managing Calimero nodes in Docker containers.
 import click
 
 from merobox.commands import (
-    run,
-    stop,
-    list,
-    logs,
-    health,
-    install,
-    nuke,
-    identity,
     bootstrap,
     call,
+    health,
+    identity,
+    install,
     join,
+    list,
+    logs,
+    nuke,
+    run,
+    stop,
 )
-
 
 from . import __version__
 

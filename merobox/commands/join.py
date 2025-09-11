@@ -2,20 +2,18 @@
 Join command - Join Calimero contexts using invitations via admin API.
 """
 
-import click
-import asyncio
 import sys
-from typing import Dict, Any, Optional
-from rich.console import Console
-from rich.table import Table
+
+import click
 from rich import box
-from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console, run_async_function
-from calimero_client_py import create_connection, create_client
+from rich.table import Table
+
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import ADMIN_API_CONTEXTS_JOIN
-from merobox.commands.result import ok, fail
-from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.result import fail, ok
+from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
@@ -31,7 +29,9 @@ async def join_context_via_admin_api(
             invitee_id=invitee_id,
             invitation_payload=invitation_data,
         )
-        return ok(result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_JOIN}", payload_format=0)
+        return ok(
+            result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_JOIN}", payload_format=0
+        )
     except Exception as e:
         return fail("join_context failed", error=e)
 
@@ -73,7 +73,7 @@ def context(node, context_id, invitee_id, invitation, verbose):
     if result["success"]:
         response_data = result.get("data", {})
 
-        console.print(f"\n[green]✓ Successfully joined context![/green]")
+        console.print("\n[green]✓ Successfully joined context![/green]")
 
         # Create table
         table = Table(title="Context Join Details", box=box.ROUNDED)
@@ -88,21 +88,21 @@ def context(node, context_id, invitee_id, invitation, verbose):
         console.print(table)
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to join context[/red]")
+        console.print("\n[red]✗ Failed to join context[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         # Show detailed error information if available
         if "errors" in result:
-            console.print(f"\n[yellow]Detailed errors:[/yellow]")
+            console.print("\n[yellow]Detailed errors:[/yellow]")
             for error in result["errors"]:
                 console.print(f"[red]  {error}[/red]")
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
         sys.exit(1)

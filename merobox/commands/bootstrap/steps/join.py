@@ -2,11 +2,11 @@
 Join context step executor.
 """
 
-import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import get_node_rpc_url, console
-from merobox.commands.join import join_context_via_admin_api
+from typing import Any, Dict, List
+
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.join import join_context_via_admin_api
+from merobox.commands.utils import console, get_node_rpc_url
 
 
 class JoinContextStep(BaseStep):
@@ -83,11 +83,11 @@ class JoinContextStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  Join step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Join step export configuration validation failed[/yellow]"
             )
 
         # Debug: Show resolved values
-        console.print(f"[blue]Debug: Resolved values for join step:[/blue]")
+        console.print("[blue]Debug: Resolved values for join step:[/blue]")
         console.print(f"  context_id: {context_id}")
         console.print(f"  invitee_id: {invitee_id}")
         console.print(
@@ -111,7 +111,7 @@ class JoinContextStep(BaseStep):
             return False
 
         # Execute join
-        console.print(f"[blue]About to call join function...[/blue]")
+        console.print("[blue]About to call join function...[/blue]")
         result = await join_context_via_admin_api(
             rpc_url, context_id, invitee_id, invitation
         )

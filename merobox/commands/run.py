@@ -2,11 +2,13 @@
 Run command - Start Calimero node(s) in Docker containers.
 """
 
-import click
 import sys
+
+import click
+from rich.console import Console
+
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import validate_port
-from rich.console import Console
 
 console = Console()
 

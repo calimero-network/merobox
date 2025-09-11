@@ -2,14 +2,14 @@
 Identity management step executors.
 """
 
-import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import get_node_rpc_url, console
+from typing import Any, Dict, List
+
+from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.identity import (
     generate_identity_via_admin_api,
     invite_identity_via_admin_api,
 )
-from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.utils import console, get_node_rpc_url
 
 
 class CreateIdentityStep(BaseStep):
@@ -59,7 +59,7 @@ class CreateIdentityStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  CreateIdentity step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  CreateIdentity step export configuration validation failed[/yellow]"
             )
 
         # Get node RPC URL
@@ -194,7 +194,7 @@ class InviteIdentityStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  InviteIdentity step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  InviteIdentity step export configuration validation failed[/yellow]"
             )
 
         # Get node RPC URL

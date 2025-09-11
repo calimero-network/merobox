@@ -2,14 +2,14 @@
 Calimero Manager - Core functionality for managing Calimero nodes in Docker containers.
 """
 
-import docker
-import time
 import os
 import sys
+import time
+from typing import List
 
+import docker
 from rich.console import Console
 from rich.table import Table
-from typing import Dict, List, Optional, Any
 
 console = Console()
 
@@ -132,7 +132,7 @@ class CalimeroManager:
                             console.print(
                                 f"[yellow]⚠️  Could not stop container {container_name}: {str(stop_error)}[/yellow]"
                             )
-                            console.print(f"[yellow]Trying to force remove...[/yellow]")
+                            console.print("[yellow]Trying to force remove...[/yellow]")
                             try:
                                 # Try to force remove the container
                                 existing_container.remove(force=True)
@@ -144,7 +144,7 @@ class CalimeroManager:
                                     f"[red]✗ Could not remove container {container_name}: {str(force_error)}[/red]"
                                 )
                                 console.print(
-                                    f"[yellow]Container may need manual cleanup. Continuing with deployment...[/yellow]"
+                                    "[yellow]Container may need manual cleanup. Continuing with deployment...[/yellow]"
                                 )
                                 # Continue anyway - the new container will have a different name
                     else:
@@ -344,19 +344,19 @@ class CalimeroManager:
                 logs = container.logs().decode("utf-8")
                 container.remove()
                 console.print(f"[red]✗ Node {node_name} failed to start[/red]")
-                console.print(f"[yellow]Container logs:[/yellow]")
+                console.print("[yellow]Container logs:[/yellow]")
                 console.print(logs)
 
                 # Check for common issues
                 if "GLIBC" in logs:
-                    console.print(f"\n[red]GLIBC Compatibility Issue Detected[/red]")
+                    console.print("\n[red]GLIBC Compatibility Issue Detected[/red]")
                     console.print(
-                        f"[yellow]The Calimero binary requires newer GLIBC versions.[/yellow]"
+                        "[yellow]The Calimero binary requires newer GLIBC versions.[/yellow]"
                     )
-                    console.print(f"[yellow]Try one of these solutions:[/yellow]")
-                    console.print(f"  1. Use a different base image (--image option)")
-                    console.print(f"  2. Build from source")
-                    console.print(f"  3. Use a compatible Docker base image")
+                    console.print("[yellow]Try one of these solutions:[/yellow]")
+                    console.print("  1. Use a different base image (--image option)")
+                    console.print("  2. Build from source")
+                    console.print("  3. Use a compatible Docker base image")
 
                 return False
 
@@ -917,7 +917,7 @@ class CalimeroManager:
 
             # Check if admin server is listening on localhost
             result = container.exec_run(
-                f"sh -c 'timeout 3 bash -c \"</dev/tcp/127.0.0.1/2528\"' 2>&1 || echo 'Connection failed'"
+                "sh -c 'timeout 3 bash -c \"</dev/tcp/127.0.0.1/2528\"' 2>&1 || echo 'Connection failed'"
             )
 
             if "Connection failed" in result.output.decode():

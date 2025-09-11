@@ -2,8 +2,10 @@
 Stop command - Stop Calimero node(s).
 """
 
-import click
 import sys
+
+import click
+
 from merobox.commands.manager import CalimeroManager
 
 

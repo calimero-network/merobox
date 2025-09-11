@@ -2,17 +2,14 @@
 Script execution step for bootstrap workflow.
 """
 
-import os
-import asyncio
-import subprocess
-import tempfile
-import time
 import io
+import os
 import tarfile
-from typing import Dict, Any, List, Optional
-from pathlib import Path
-from merobox.commands.utils import console
+import time
+from typing import Any, Dict, List
+
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.utils import console
 
 
 class ScriptStep(BaseStep):
@@ -106,7 +103,7 @@ class ScriptStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  Script step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Script step export configuration validation failed[/yellow]"
             )
 
         console.print(f"\n[bold blue]📜 {self.description}[/bold blue]")
@@ -184,7 +181,7 @@ class ScriptStep(BaseStep):
 
             # Read the script content
             try:
-                with open(self.script_path, "r") as file:
+                with open(self.script_path) as file:
                     script_content = file.read()
             except Exception as e:
                 console.print(f"[red]Failed to read script file: {str(e)}[/red]")
@@ -243,7 +240,7 @@ class ScriptStep(BaseStep):
 
                 if container.status != "running":
                     console.print(
-                        f"[red]Failed to start temporary container for script[/red]"
+                        "[red]Failed to start temporary container for script[/red]"
                     )
                     console.print(f"[red]Container status: {container.status}[/red]")
                     try:
@@ -314,7 +311,7 @@ class ScriptStep(BaseStep):
 
             # Read the script content
             try:
-                with open(self.script_path, "r") as file:
+                with open(self.script_path) as file:
                     script_content = file.read()
             except Exception as e:
                 console.print(f"[red]Failed to read script file: {str(e)}[/red]")

@@ -2,25 +2,21 @@
 Nuke command - Delete all Calimero node data folders for complete reset.
 """
 
-import click
 import os
-import sys
-import time
 import shutil
-from typing import Dict, Any, Optional
 from pathlib import Path
-from rich.console import Console
-from rich.table import Table
+
+import click
 from rich import box
 from rich.progress import (
     Progress,
     SpinnerColumn,
     TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
 )
+from rich.table import Table
+
 from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import format_file_size, console
+from merobox.commands.utils import console, format_file_size
 
 
 def find_calimero_data_dirs() -> list:
@@ -177,7 +173,7 @@ def nuke(dry_run, force, verbose):
 
         progress.update(task, description="Deletion completed")
 
-    console.print(f"\n[bold]Deletion Results:[/bold]")
+    console.print("\n[bold]Deletion Results:[/bold]")
 
     results_table = Table(title="Deletion Results", box=box.ROUNDED)
     results_table.add_column("Directory", style="cyan")
@@ -217,13 +213,13 @@ def nuke(dry_run, force, verbose):
         console.print(
             f"[green]Total space freed: {format_file_size(total_deleted_size)}[/green]"
         )
-        console.print(f"\n[blue]To start fresh, run:[/blue]")
-        console.print(f"[blue]  python3 merobox_cli.py run[/blue]")
+        console.print("\n[blue]To start fresh, run:[/blue]")
+        console.print("[blue]  python3 merobox_cli.py run[/blue]")
     else:
-        console.print(f"\n[yellow]No data directories were deleted.[/yellow]")
+        console.print("\n[yellow]No data directories were deleted.[/yellow]")
 
     if verbose:
-        console.print(f"\n[bold]Verbose Details:[/bold]")
+        console.print("\n[bold]Verbose Details:[/bold]")
         for result in results:
             console.print(f"  {result['path']}: {result['status']}")
 

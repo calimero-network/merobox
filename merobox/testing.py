@@ -10,12 +10,11 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict, Union, Any
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
-from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
-
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import console, get_node_rpc_url
 
 # ============================================================================
 # Type definitions

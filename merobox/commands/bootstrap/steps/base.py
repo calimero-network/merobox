@@ -2,7 +2,8 @@
 Base step class for all workflow steps.
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple
+
 from merobox.commands.utils import console
 
 
@@ -236,10 +237,10 @@ class BaseStep:
             self._export_custom_outputs(response_data, node_name, dynamic_values)
         else:
             console.print(
-                f"[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
+                "[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
             )
             console.print(
-                f"[yellow]   To export variables, add an 'outputs' section to your step configuration.[/yellow]"
+                "[yellow]   To export variables, add an 'outputs' section to your step configuration.[/yellow]"
             )
 
     def _validate_export_config(self) -> bool:

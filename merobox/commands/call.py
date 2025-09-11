@@ -2,20 +2,20 @@
 Call command - Execute function calls using JSON-RPC client.
 """
 
+from typing import Any, Dict, Optional
+
 import click
-import asyncio
-import sys
-from typing import Dict, Any, Optional
+from calimero_client_py import create_client, create_connection
 from rich.console import Console
-from rich.table import Table
-from rich import box
-from merobox.commands.utils import get_node_rpc_url, ensure_json_string, run_async_function
-from calimero_client_py import create_connection, create_client
-from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import JSONRPC_ENDPOINT, JSONRPC_METHOD_EXECUTE
+
 from merobox.commands.manager import CalimeroManager
-from merobox.commands.result import ok, fail
-from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
+from merobox.commands.result import fail, ok
+from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.utils import (
+    ensure_json_string,
+    get_node_rpc_url,
+    run_async_function,
+)
 
 console = Console()
 

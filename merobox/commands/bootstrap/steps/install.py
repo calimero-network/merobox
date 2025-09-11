@@ -2,16 +2,13 @@
 Install application step executor.
 """
 
-import os
-import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import get_node_rpc_url, console
-from calimero_client_py import create_connection, create_client
-from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_METADATA, CONTAINER_DATA_DIR_PATTERNS
+from typing import Any, Dict, List
+
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.result import ok, fail
-from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
+from merobox.commands.result import fail, ok
+from merobox.commands.utils import console, get_node_rpc_url
 
 
 class InstallApplicationStep(BaseStep):
@@ -82,7 +79,7 @@ class InstallApplicationStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  Install step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Install step export configuration validation failed[/yellow]"
             )
 
         if not application_path and not application_url:
@@ -108,36 +105,51 @@ class InstallApplicationStep(BaseStep):
             if is_dev and application_path:
                 # Try local path first
                 try:
-                    api_result = client.install_dev_application(path=application_path, metadata=DEFAULT_METADATA)
-                except Exception as e:
+                    api_result = client.install_dev_application(
+                        path=application_path, metadata=DEFAULT_METADATA
+                    )
+                except Exception:
                     # Fallback: copy into node data dir and use container path
-                    import os, shutil
+                    import os
+                    import shutil
+
                     container_data_dir = None
                     for pattern in CONTAINER_DATA_DIR_PATTERNS:
                         if "{prefix}-{node_num}-{chain_id}" in pattern:
-                            parts = node_name.split('-')
+                            parts = node_name.split("-")
                             if len(parts) >= 3:
                                 container_data_dir = pattern.format(
-                                    prefix=parts[0], node_num=parts[1], chain_id=parts[2]
+                                    prefix=parts[0],
+                                    node_num=parts[1],
+                                    chain_id=parts[2],
                                 )
                         elif "{node_name}" in pattern:
                             container_data_dir = pattern.format(node_name=node_name)
-                        
+
                         if container_data_dir and os.path.exists(container_data_dir):
                             break
-                    
+
                     if not container_data_dir or not os.path.exists(container_data_dir):
-                        return {"success": False, "error": f"Container data directory not found for {node_name}"}
-                    
+                        return {
+                            "success": False,
+                            "error": f"Container data directory not found for {node_name}",
+                        }
+
                     filename = os.path.basename(application_path)
                     os.makedirs(container_data_dir, exist_ok=True)
                     container_file_path = os.path.join(container_data_dir, filename)
                     shutil.copy2(application_path, container_file_path)
-                    console.print(f"[blue]Copied file to container data directory: {container_file_path}[/blue]")
+                    console.print(
+                        f"[blue]Copied file to container data directory: {container_file_path}[/blue]"
+                    )
                     container_path = f"/app/data/{filename}"
-                    api_result = client.install_dev_application(path=container_path, metadata=DEFAULT_METADATA)
+                    api_result = client.install_dev_application(
+                        path=container_path, metadata=DEFAULT_METADATA
+                    )
             else:
-                api_result = client.install_application(url=application_url, metadata=DEFAULT_METADATA)
+                api_result = client.install_application(
+                    url=application_url, metadata=DEFAULT_METADATA
+                )
 
             result = ok(api_result)
         except Exception as e:
