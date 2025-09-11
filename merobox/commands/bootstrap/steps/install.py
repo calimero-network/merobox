@@ -2,12 +2,13 @@
 Install application step executor.
 """
 
-import os
-import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import get_node_rpc_url, console
-from merobox.commands.install import install_application_via_admin_api
+from typing import Any, Dict, List
+
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
+from merobox.commands.result import fail, ok
+from merobox.commands.utils import console, get_node_rpc_url
 
 
 class InstallApplicationStep(BaseStep):
@@ -78,7 +79,7 @@ class InstallApplicationStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  Install step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Install step export configuration validation failed[/yellow]"
             )
 
         if not application_path and not application_url:
@@ -97,15 +98,62 @@ class InstallApplicationStep(BaseStep):
             )
             return False
 
-        # Execute installation
-        if is_dev and application_path:
-            result = await install_application_via_admin_api(
-                rpc_url, path=application_path, is_dev=True, node_name=node_name
-            )
-        else:
-            result = await install_application_via_admin_api(
-                rpc_url, url=application_url
-            )
+        # Execute installation using calimero-client-py
+        try:
+            client = get_client_for_rpc_url(rpc_url)
+
+            if is_dev and application_path:
+                # Try local path first
+                try:
+                    api_result = client.install_dev_application(
+                        path=application_path, metadata=DEFAULT_METADATA
+                    )
+                except Exception:
+                    # Fallback: copy into node data dir and use container path
+                    import os
+                    import shutil
+
+                    container_data_dir = None
+                    for pattern in CONTAINER_DATA_DIR_PATTERNS:
+                        if "{prefix}-{node_num}-{chain_id}" in pattern:
+                            parts = node_name.split("-")
+                            if len(parts) >= 3:
+                                container_data_dir = pattern.format(
+                                    prefix=parts[0],
+                                    node_num=parts[1],
+                                    chain_id=parts[2],
+                                )
+                        elif "{node_name}" in pattern:
+                            container_data_dir = pattern.format(node_name=node_name)
+
+                        if container_data_dir and os.path.exists(container_data_dir):
+                            break
+
+                    if not container_data_dir or not os.path.exists(container_data_dir):
+                        return {
+                            "success": False,
+                            "error": f"Container data directory not found for {node_name}",
+                        }
+
+                    filename = os.path.basename(application_path)
+                    os.makedirs(container_data_dir, exist_ok=True)
+                    container_file_path = os.path.join(container_data_dir, filename)
+                    shutil.copy2(application_path, container_file_path)
+                    console.print(
+                        f"[blue]Copied file to container data directory: {container_file_path}[/blue]"
+                    )
+                    container_path = f"/app/data/{filename}"
+                    api_result = client.install_dev_application(
+                        path=container_path, metadata=DEFAULT_METADATA
+                    )
+            else:
+                api_result = client.install_application(
+                    url=application_url, metadata=DEFAULT_METADATA
+                )
+
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("install_application failed", error=e)
 
         # Log detailed API response
         console.print(f"[cyan]🔍 Install API Response for {node_name}:[/cyan]")

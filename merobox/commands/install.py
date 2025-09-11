@@ -2,26 +2,26 @@
 Install command - Install applications on Calimero nodes using admin API.
 """
 
-import click
 import os
-import asyncio
 import sys
-from typing import Dict, Any, Optional
-from pathlib import Path
-from rich.console import Console
-from rich.table import Table
-from rich import box
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
-)
+from urllib.parse import urlparse
+
+import click
+
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import DEFAULT_METADATA
 from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console
+from merobox.commands.result import fail, ok
+from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.utils import (
+    check_node_running,
+    console,
+    get_node_rpc_url,
+    run_async_function,
+)
 
 
+@with_retry(config=NETWORK_RETRY_CONFIG)
 async def install_application_via_admin_api(
     rpc_url: str,
     url: str = None,
@@ -30,66 +30,24 @@ async def install_application_via_admin_api(
     is_dev: bool = False,
     node_name: str = None,
 ) -> dict:
-    """Install an application using the admin API."""
+    """Install an application using calimero-client-py."""
     try:
-        # Import the admin client
-        from calimero import AdminClient
-
-        # Create admin client
-        admin_client = AdminClient(rpc_url)
+        client = get_client_for_rpc_url(rpc_url)
+        metadata_bytes = metadata or DEFAULT_METADATA
 
         if is_dev and path:
-            # For dev installation, use the dedicated install-dev-application endpoint
             console.print(
                 f"[blue]Installing development application from path: {path}[/blue]"
             )
-
-            # Copy the file to the container's data directory so the server can access it
-            import shutil
-
-            container_data_dir = f"data/{node_name.split('-')[0]}-{node_name.split('-')[1]}-{node_name.split('-')[2]}"
-            if not os.path.exists(container_data_dir):
-                # Try alternative naming pattern
-                container_data_dir = f"data/{node_name}"
-
-            if not os.path.exists(container_data_dir):
-                return {
-                    "success": False,
-                    "error": f"Container data directory not found: {container_data_dir}",
-                }
-
-            # Copy file to container data directory
-            filename = os.path.basename(path)
-            container_file_path = os.path.join(container_data_dir, filename)
-            shutil.copy2(path, container_file_path)
-            console.print(
-                f"[blue]Copied file to container data directory: {container_file_path}[/blue]"
+            result = await client.install_dev_application(
+                path=path, metadata=metadata_bytes
             )
-
-            # Use the container path that the server can access
-            container_path = f"/app/data/{filename}"
-
-            # Install using admin client
-            result = await admin_client.install_dev_application(
-                container_path, metadata or b""
-            )
-
-            if result["success"]:
-                result["path"] = path
-                result["container_path"] = container_path
-
-            return result
         else:
-            # Install application from URL
-            result = await admin_client.install_application(url, None, metadata or b"")
+            result = await client.install_application(url=url, metadata=metadata_bytes)
 
-            if result["success"]:
-                result["url"] = url
-
-            return result
-
+        return ok(data=result)
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return fail(error=e)
 
 
 def validate_installation_source(
@@ -176,16 +134,16 @@ def install(node, url, path, dev, metadata, timeout, verbose):
     )
 
     if result["success"]:
-        console.print(f"\n[green]✓ Application installed successfully![/green]")
+        console.print("\n[green]✓ Application installed successfully![/green]")
 
         if dev and "container_path" in result:
             console.print(f"[blue]Container path: {result['container_path']}[/blue]")
 
         if verbose:
-            console.print(f"\n[bold]Installation response:[/bold]")
+            console.print("\n[bold]Installation response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to install application[/red]")
+        console.print("\n[red]✗ Failed to install application[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)

@@ -2,19 +2,26 @@
 Call command - Execute function calls using JSON-RPC client.
 """
 
+from typing import Any, Dict, Optional
+
 import click
-import asyncio
-import sys
-from typing import Dict, Any, Optional
+from calimero_client_py import create_client, create_connection
 from rich.console import Console
-from rich.table import Table
-from rich import box
-from merobox.commands.utils import get_node_rpc_url
+from rich.panel import Panel
+
 from merobox.commands.manager import CalimeroManager
+from merobox.commands.result import fail, ok
+from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.utils import (
+    ensure_json_string,
+    get_node_rpc_url,
+    run_async_function,
+)
 
 console = Console()
 
 
+@with_retry(config=NETWORK_RETRY_CONFIG)
 async def call_function(
     rpc_url: str,
     context_id: str,
@@ -34,58 +41,19 @@ async def call_function(
         The execution result.
     """
     try:
-        # Import the admin client
-        from calimero import AdminClient
+        connection = create_connection(rpc_url)
+        client = create_client(connection)
 
-        # Create admin client using the admin API URL
-        client = AdminClient(rpc_url)
-
-        # Try to use JSON-RPC endpoint on the admin port
-        # The endpoint might be /jsonrpc instead of /jsonrpc/dev
-        import aiohttp
-
-        url = f"{rpc_url}/jsonrpc"
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "execute",
-            "params": {
-                "contextId": context_id,
-                "method": function_name,
-                "argsJson": args or {},
-                "timeout": 1000,
-            },
-        }
-
-        # Add executorPublicKey if provided
-        if executor_public_key:
-            payload["params"]["executorPublicKey"] = executor_public_key
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as response:
-                if response.status == 200:
-                    result_data = await response.json()
-                    return {"success": True, "data": result_data}
-                else:
-                    error_text = await response.text()
-                    return {
-                        "success": False,
-                        "error": f"HTTP {response.status}: {error_text}",
-                    }
-
-        return result
-
+        encoded_args = ensure_json_string(args or {})
+        result = client.execute_function(
+            context_id=context_id,
+            method=function_name,
+            args=encoded_args,
+            executor_public_key=executor_public_key or "",
+        )
+        return ok(result)
     except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-def run_async_function(func, *args, **kwargs):
-    """Helper function to run async functions in sync context."""
-    try:
-        return asyncio.run(func(*args, **kwargs))
-    except Exception as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
-        return None
+        return fail("execute_function failed", error=e)
 
 
 @click.command()

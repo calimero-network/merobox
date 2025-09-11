@@ -3,9 +3,10 @@ Wait step executor.
 """
 
 import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import console
+from typing import Any, Dict, List
+
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.utils import console
 
 
 class WaitStep(BaseStep):

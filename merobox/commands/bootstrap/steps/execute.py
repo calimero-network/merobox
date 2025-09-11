@@ -2,11 +2,11 @@
 Execute step executor for contract calls.
 """
 
-import asyncio
-from typing import Dict, Any, List
-from merobox.commands.utils import get_node_rpc_url, console
-from merobox.commands.call import call_function
+from typing import Any, Dict, List
+
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.call import call_function
+from merobox.commands.utils import console, get_node_rpc_url
 
 
 class ExecuteStep(BaseStep):
@@ -89,7 +89,7 @@ class ExecuteStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                f"[yellow]⚠️  Execute step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Execute step export configuration validation failed[/yellow]"
             )
 
         # Get executor public key from config or extract from context
@@ -134,7 +134,7 @@ class ExecuteStep(BaseStep):
                     )
 
         # Debug: Show resolved values
-        console.print(f"[blue]Debug: Resolved values for execute step:[/blue]")
+        console.print("[blue]Debug: Resolved values for execute step:[/blue]")
         console.print(f"  context_id: {context_id}")
         console.print(f"  exec_type: {exec_type}")
         console.print(f"  method: {method}")

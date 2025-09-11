@@ -10,14 +10,16 @@ The bootstrap command is designed as a Click command group to provide
 a clean, organized interface for workflow management.
 """
 
-import click
 import sys
+
+import click
+
+from merobox.commands.bootstrap.config import (
+    create_sample_workflow_config,
+    load_workflow_config,
+)
 from merobox.commands.bootstrap.run import run_workflow_sync
 from merobox.commands.bootstrap.validate import validate_workflow_config
-from merobox.commands.bootstrap.config import (
-    load_workflow_config,
-    create_sample_workflow_config,
-)
 from merobox.commands.utils import console
 
 
@@ -86,10 +88,10 @@ def validate(config_file, verbose):
 
         if validation_result["valid"]:
             console.print(
-                f"\n[bold green]✅ Workflow configuration is valid![/bold green]"
+                "\n[bold green]✅ Workflow configuration is valid![/bold green]"
             )
             if verbose:
-                console.print(f"\n[bold]Configuration Summary:[/bold]")
+                console.print("\n[bold]Configuration Summary:[/bold]")
                 console.print(f"  Name: {config.get('name', 'Unnamed')}")
                 console.print(f"  Steps: {len(config.get('steps', []))}")
                 nodes_config = config.get("nodes", {})
@@ -97,11 +99,11 @@ def validate(config_file, verbose):
                     console.print(f"  Nodes: {nodes_config.get('count', 'N/A')}")
                     console.print(f"  Chain ID: {nodes_config.get('chain_id', 'N/A')}")
                 else:
-                    console.print(f"  Nodes: N/A")
-                    console.print(f"  Chain ID: N/A")
+                    console.print("  Nodes: N/A")
+                    console.print("  Chain ID: N/A")
         else:
             console.print(
-                f"\n[bold red]❌ Workflow configuration validation failed![/bold red]"
+                "\n[bold red]❌ Workflow configuration validation failed![/bold red]"
             )
             for error in validation_result["errors"]:
                 console.print(f"  [red]• {error}[/red]")

@@ -2,8 +2,10 @@
 Stop command - Stop Calimero node(s).
 """
 
-import click
 import sys
+
+import click
+
 from merobox.commands.manager import CalimeroManager
 
 
@@ -31,11 +33,11 @@ def stop(node_name, all, auth_service):
         auth_success = True  # Default to success if no auth services to stop
         try:
             # Check if auth service containers exist before trying to stop them
-            auth_container = calimero_manager.client.containers.get("auth")
-            proxy_container = calimero_manager.client.containers.get("proxy")
+            calimero_manager.client.containers.get("auth")
+            calimero_manager.client.containers.get("proxy")
             # If we get here, at least one auth service container exists
             auth_success = calimero_manager.stop_auth_service_stack()
-        except:
+        except Exception:
             # No auth service containers found, which is fine
             from rich.console import Console
 

@@ -4,28 +4,19 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 
 import asyncio
 import time
+from typing import Any, Dict
+
 import docker
-from typing import Dict, List, Any, Optional
-from rich.console import Console
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
     TextColumn,
-    BarColumn,
     TimeElapsedColumn,
 )
+
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import console
-from merobox.commands.bootstrap.steps import (
-    InstallApplicationStep,
-    CreateContextStep,
-    CreateIdentityStep,
-    InviteIdentityStep,
-    JoinContextStep,
-    ExecuteStep,
-    WaitStep,
-    RepeatStep,
-)
 
 
 class WorkflowExecutor:

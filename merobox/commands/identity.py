@@ -2,15 +2,21 @@
 Identity command - List and generate identities for Calimero contexts using JSON-RPC client.
 """
 
-import click
-import asyncio
 import sys
-from typing import Dict, Any, Optional
-from rich.console import Console
-from rich.table import Table
+
+import click
 from rich import box
+from rich.table import Table
+
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import (
+    ADMIN_API_CONTEXTS_INVITE,
+    ADMIN_API_IDENTITY_CONTEXT,
+)
 from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console
+from merobox.commands.result import fail, ok
+from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 
 def extract_identities_from_response(response_data: dict) -> list:
@@ -43,42 +49,29 @@ def create_identity_table(identities_data: list, context_id: str) -> Table:
     return table
 
 
+@with_retry(config=NETWORK_RETRY_CONFIG)
 async def list_identities_via_admin_api(rpc_url: str, context_id: str) -> dict:
-    """List identities for a specific context using the admin API."""
+    """List identities using calimero-client-py."""
     try:
-        # Import the admin client
-        from calimero import AdminClient
-
-        # Create admin client and list identities
-        admin_client = AdminClient(rpc_url)
-        result = await admin_client.list_identities(context_id)
-
-        return result
-
+        client = get_client_for_rpc_url(rpc_url)
+        result = client.list_identities(context_id)
+        return ok(result)
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return fail("list_identities failed", error=e)
 
 
+@with_retry(config=NETWORK_RETRY_CONFIG)
 async def generate_identity_via_admin_api(rpc_url: str) -> dict:
-    """Generate a new identity using the admin API."""
+    """Generate identity using calimero-client-py."""
     try:
-        # Import the admin client
-        from calimero import AdminClient
-
-        # Create admin client and generate identity
-        admin_client = AdminClient(rpc_url)
-        result = await admin_client.generate_identity()
-
-        # Add endpoint info for compatibility
-        if result["success"]:
-            result["endpoint"] = f"{rpc_url}/admin-api/identity/context"
-
-        return result
-
+        client = get_client_for_rpc_url(rpc_url)
+        result = client.generate_context_identity()
+        return ok(result, endpoint=f"{rpc_url}{ADMIN_API_IDENTITY_CONTEXT}")
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return fail("generate_context_identity failed", error=e)
 
 
+@with_retry(config=NETWORK_RETRY_CONFIG)
 async def invite_identity_via_admin_api(
     rpc_url: str,
     context_id: str,
@@ -86,26 +79,18 @@ async def invite_identity_via_admin_api(
     invitee_id: str,
     capability: str = None,
 ) -> dict:
-    """Invite an identity to a context using the admin API."""
+    """Invite identity using calimero-client-py."""
     try:
-        # Import the admin client
-        from calimero import AdminClient
-
-        # Create admin client and invite identity
-        admin_client = AdminClient(rpc_url)
-        result = await admin_client.invite_to_context(
-            context_id, inviter_id, invitee_id
+        client = get_client_for_rpc_url(rpc_url)
+        # Some clients may not need inviter id; keeping parameter for compatibility
+        result = client.invite_to_context(
+            context_id=context_id, inviter_id=inviter_id, invitee_id=invitee_id
         )
-
-        # Add endpoint and payload format info for compatibility
-        if result["success"]:
-            result["endpoint"] = f"{rpc_url}/admin-api/contexts/invite"
-            result["payload_format"] = 0  # Standard format
-
-        return result
-
+        return ok(
+            result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_INVITE}", payload_format=0
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return fail("invite_to_context failed", error=e)
 
 
 @click.group()
@@ -131,7 +116,7 @@ def list_identities(node, context_id, verbose):
         f"[blue]Listing identities for context {context_id} on node {node} via {admin_url}[/blue]"
     )
 
-    result = asyncio.run(list_identities_via_admin_api(admin_url, context_id))
+    result = run_async_function(list_identities_via_admin_api, admin_url, context_id)
 
     if result["success"]:
         response_data = result.get("data", {})
@@ -142,7 +127,7 @@ def list_identities(node, context_id, verbose):
                 f"\n[yellow]No identities found for context {context_id} on node {node}[/yellow]"
             )
             if verbose:
-                console.print(f"\n[bold]Response structure:[/bold]")
+                console.print("\n[bold]Response structure:[/bold]")
                 console.print(f"{result}")
             return
 
@@ -153,11 +138,11 @@ def list_identities(node, context_id, verbose):
         console.print(table)
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to list identities[/red]")
+        console.print("\n[red]✗ Failed to list identities[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -178,7 +163,7 @@ def generate(node, verbose=False):
         f"[blue]Generating new identity on node {node} via {admin_url}[/blue]"
     )
 
-    result = asyncio.run(generate_identity_via_admin_api(admin_url))
+    result = run_async_function(generate_identity_via_admin_api, admin_url)
 
     # Show which endpoint was used if successful
     if result["success"] and "endpoint" in result:
@@ -193,7 +178,7 @@ def generate(node, verbose=False):
         )
 
         if identity_data:
-            console.print(f"\n[green]✓ Identity generated successfully![/green]")
+            console.print("\n[green]✓ Identity generated successfully![/green]")
 
             # Create table
             table = Table(title="New Identity Details", box=box.ROUNDED)
@@ -207,15 +192,15 @@ def generate(node, verbose=False):
 
             console.print(table)
         else:
-            console.print(f"\n[green]✓ Identity generated successfully![/green]")
+            console.print("\n[green]✓ Identity generated successfully![/green]")
             console.print(f"[yellow]Response: {response_data}[/yellow]")
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to generate identity[/red]")
+        console.print("\n[red]✗ Failed to generate identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -248,10 +233,13 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         f"[blue]Inviting identity {invitee_id} to context {context_id} on node {node} via {admin_url}[/blue]"
     )
 
-    result = asyncio.run(
-        invite_identity_via_admin_api(
-            admin_url, context_id, inviter_id, invitee_id, capability
-        )
+    result = run_async_function(
+        invite_identity_via_admin_api,
+        admin_url,
+        context_id,
+        inviter_id,
+        invitee_id,
+        capability,
     )
 
     # Show which endpoint was used if successful
@@ -259,9 +247,7 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
 
     if result["success"]:
-        response_data = result.get("data", {})
-
-        console.print(f"\n[green]✓ Identity invited successfully![/green]")
+        console.print("\n[green]✓ Identity invited successfully![/green]")
 
         # Create table
         table = Table(title="Identity Invitation Details", box=box.ROUNDED)
@@ -275,31 +261,31 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         console.print(table)
 
         if verbose:
-            console.print(f"\n[bold]Full response:[/bold]")
+            console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     else:
-        console.print(f"\n[red]✗ Failed to invite identity[/red]")
+        console.print("\n[red]✗ Failed to invite identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         # Show detailed error information if available
         if "errors" in result:
-            console.print(f"\n[yellow]Detailed errors:[/yellow]")
+            console.print("\n[yellow]Detailed errors:[/yellow]")
             for error in result["errors"]:
                 console.print(f"[red]  {error}[/red]")
 
         if "tried_payloads" in result:
-            console.print(f"\n[yellow]Tried payload formats:[/yellow]")
+            console.print("\n[yellow]Tried payload formats:[/yellow]")
             for i, payload in enumerate(result["tried_payloads"]):
                 console.print(f"[dim]  Format {i}: {payload}[/dim]")
 
         # Provide helpful information for common errors
         if "unable to grant privileges to non-member" in result.get("error", ""):
             console.print(
-                f"\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]"
+                "\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]"
             )
             console.print(
-                f"[yellow]The identity should be automatically added as a member when invited.[/yellow]"
+                "[yellow]The identity should be automatically added as a member when invited.[/yellow]"
             )
 
         sys.exit(1)

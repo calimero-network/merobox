@@ -10,12 +10,11 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict, Union, Any
+from typing import Any, TypedDict
 
-from merobox.commands.manager import CalimeroManager
-from merobox.commands.utils import get_node_rpc_url, console
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
-
+from merobox.commands.manager import CalimeroManager
+from merobox.commands.utils import console, get_node_rpc_url
 
 # ============================================================================
 # Type definitions
@@ -25,19 +24,19 @@ from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 class ClusterEnv(TypedDict):
     """Environment for a cluster of Calimero nodes."""
 
-    nodes: List[str]
-    endpoints: Dict[str, str]
+    nodes: list[str]
+    endpoints: dict[str, str]
     manager: CalimeroManager
 
 
 class WorkflowEnv(TypedDict):
     """Environment for a workflow execution."""
 
-    nodes: List[str]
-    endpoints: Dict[str, str]
+    nodes: list[str]
+    endpoints: dict[str, str]
     manager: CalimeroManager
     workflow_result: bool
-    dynamic_values: Optional[Dict[str, Any]]
+    dynamic_values: dict[str, Any] | None
 
 
 # ============================================================================
@@ -50,10 +49,10 @@ def cluster(
     count: int = 1,
     *,
     prefix: str = "test",
-    image: Optional[str] = None,
+    image: str | None = None,
     chain_id: str = "testnet-1",
-    base_port: Optional[int] = None,
-    base_rpc_port: Optional[int] = None,
+    base_port: int | None = None,
+    base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
 ) -> ClusterEnv:
@@ -98,7 +97,7 @@ def cluster(
 
             time.sleep(5)  # Basic wait for services to start
 
-        endpoints: Dict[str, Any] = {
+        endpoints: dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in node_names
         }
 
@@ -117,13 +116,13 @@ def cluster(
 
 @contextmanager
 def workflow(
-    workflow_path: Union[str, Path],
+    workflow_path: str | Path,
     *,
     prefix: str = "test-node",
-    image: Optional[str] = None,
+    image: str | None = None,
     chain_id: str = "testnet-1",
-    base_port: Optional[int] = None,
-    base_rpc_port: Optional[int] = None,
+    base_port: int | None = None,
+    base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
 ) -> WorkflowEnv:
@@ -191,7 +190,7 @@ def workflow(
 
             time.sleep(5)  # Basic wait for services to start
 
-        endpoints: Dict[str, Any] = {
+        endpoints: dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in running_nodes
         }
 
@@ -286,7 +285,7 @@ def nodes(count: int = 1, *, prefix: str = "test", scope: str = "function", **kw
     return decorator
 
 
-def run_workflow(workflow_path: Union[str, Path], *, scope: str = "function", **kwargs):
+def run_workflow(workflow_path: str | Path, *, scope: str = "function", **kwargs):
     """
     Decorator to create a clean pytest fixture that runs a workflow.
 

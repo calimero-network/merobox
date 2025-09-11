@@ -3,7 +3,7 @@ Logs command - Show logs from a specific node.
 """
 
 import click
-import sys
+
 from merobox.commands.manager import CalimeroManager
 
 

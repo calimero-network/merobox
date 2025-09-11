@@ -2,23 +2,16 @@
 Shared utilities for Calimero CLI commands.
 """
 
-import os
-import sys
-import time
 import asyncio
-import subprocess
-from typing import Dict, Any, Optional, List
-from pathlib import Path
+import json
+import sys
+from typing import Any, Dict, List
+
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
-)
+
+from merobox.commands.constants import DEFAULT_RPC_PORT
 from merobox.commands.manager import CalimeroManager
 
 console = Console()
@@ -41,10 +34,10 @@ def get_node_rpc_url(node_name: str, manager: CalimeroManager) -> str:
                             return f"http://localhost:{host_port}"
 
         # Fallback to default
-        return "http://localhost:2528"
+        return f"http://localhost:{DEFAULT_RPC_PORT}"
 
     except Exception:
-        return "http://localhost:2528"
+        return f"http://localhost:{DEFAULT_RPC_PORT}"
 
 
 def check_node_running(node: str, manager: CalimeroManager) -> None:
@@ -115,7 +108,7 @@ def validate_port(port_str: str, port_name: str) -> int:
     try:
         port = int(port_str)
         if port < 1 or port > 65535:
-            raise ValueError(f"Port must be between 1 and 65535")
+            raise ValueError("Port must be between 1 and 65535")
         return port
     except ValueError as e:
         console.print(f"[red]Error: Invalid {port_name} '{port_str}'. {str(e)}[/red]")
@@ -139,3 +132,18 @@ def format_file_size(size_bytes: int) -> str:
 def safe_get(dictionary: Dict[str, Any], key: str, default: Any = None) -> Any:
     """Safely get a value from a dictionary with a default fallback."""
     return dictionary.get(key, default) if isinstance(dictionary, dict) else default
+
+
+def ensure_json_string(value: Any) -> str:
+    """Ensure a value is a JSON string, converting if necessary."""
+    if isinstance(value, str):
+        # Try to parse to validate it's valid JSON
+        try:
+            json.loads(value)
+            return value
+        except json.JSONDecodeError:
+            # If it's not valid JSON, treat it as a plain string and encode it
+            return json.dumps(value)
+    else:
+        # Convert non-string values to JSON string
+        return json.dumps(value)
