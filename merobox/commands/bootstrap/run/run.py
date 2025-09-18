@@ -20,6 +20,8 @@ async def run_workflow(
     verbose: bool = False,
     auth_service: bool = False,
     auth_image: str = None,
+    auth_use_cached: bool = False,
+    webui_use_cached: bool = False,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -41,7 +43,9 @@ async def run_workflow(
 
         manager = CalimeroManager()
 
-        executor = WorkflowExecutor(config, manager, auth_service, auth_image)
+        executor = WorkflowExecutor(
+            config, manager, auth_service, auth_image, auth_use_cached, webui_use_cached
+        )
 
         # Execute workflow
         success = await executor.execute_workflow()
@@ -69,6 +73,8 @@ def run_workflow_sync(
     verbose: bool = False,
     auth_service: bool = False,
     auth_image: str = None,
+    auth_use_cached: bool = False,
+    webui_use_cached: bool = False,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -81,4 +87,13 @@ def run_workflow_sync(
     Returns:
         True if workflow completed successfully, False otherwise
     """
-    return asyncio.run(run_workflow(config_file, verbose, auth_service, auth_image))
+    return asyncio.run(
+        run_workflow(
+            config_file,
+            verbose,
+            auth_service,
+            auth_image,
+            auth_use_cached,
+            webui_use_cached,
+        )
+    )

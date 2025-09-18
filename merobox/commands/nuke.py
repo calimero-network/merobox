@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 import click
+import docker
 from rich import box
 from rich.progress import (
     Progress,
@@ -114,6 +115,9 @@ def nuke(dry_run, force, verbose):
     console.print(table)
 
     total_size = 0
+    auth_volume_size = 0
+
+    # Calculate node data directories size
     for data_dir in data_dirs:
         if os.path.exists(data_dir):
             dir_size = sum(
@@ -121,11 +125,70 @@ def nuke(dry_run, force, verbose):
             )
             total_size += dir_size
 
+    # Calculate auth volume size if it exists using Docker
+    manager = CalimeroManager()
+    auth_volume_size = 0
+    try:
+        auth_volume = manager.client.volumes.get("calimero_auth_data")
+        # Use Docker to calculate the volume size
+        try:
+            result = manager.client.containers.run(
+                "alpine:latest",
+                command="sh -c 'du -sb /data 2>/dev/null | cut -f1 || echo 0'",
+                volumes={"calimero_auth_data": {"bind": "/data", "mode": "ro"}},
+                remove=True,
+                detach=False,
+            )
+            auth_volume_size = int(result.decode().strip())
+            total_size += auth_volume_size
+            if auth_volume_size > 0:
+                console.print(
+                    f"[cyan]Auth volume data size: {format_file_size(auth_volume_size)}[/cyan]"
+                )
+        except Exception as e:
+            console.print(
+                f"[yellow]Could not calculate auth volume size: {str(e)}[/yellow]"
+            )
+    except docker.errors.NotFound:
+        pass
+
     total_size_formatted = format_file_size(total_size)
     console.print(f"[red]Total data size: {total_size_formatted}[/red]")
 
     if dry_run:
         console.print("\n[yellow]DRY RUN MODE - No files will be deleted[/yellow]")
+
+        # Check what auth services would be cleaned up (manager already created above)
+        auth_cleanup_items = []
+
+        try:
+            auth_container = manager.client.containers.get("auth")
+            auth_cleanup_items.append("Auth service container")
+        except Exception:
+            pass
+
+        try:
+            proxy_container = manager.client.containers.get("proxy")
+            auth_cleanup_items.append("Traefik proxy container")
+        except Exception:
+            pass
+
+        try:
+            auth_volume = manager.client.volumes.get("calimero_auth_data")
+            if auth_volume_size > 0:
+                auth_cleanup_items.append(
+                    f"Auth data volume ({format_file_size(auth_volume_size)})"
+                )
+            else:
+                auth_cleanup_items.append("Auth data volume")
+        except Exception:
+            pass
+
+        if auth_cleanup_items:
+            console.print(
+                f"[yellow]Would also clean up: {', '.join(auth_cleanup_items)}[/yellow]"
+            )
+
         console.print("[yellow]Use --force to actually delete the data[/yellow]")
         return
 
@@ -159,6 +222,38 @@ def nuke(dry_run, force, verbose):
 
     if running_nodes:
         console.print(f"[yellow]Stopped {len(running_nodes)} running node(s)[/yellow]")
+
+    # Stop and remove auth service stack if it exists
+    try:
+        auth_container = manager.client.containers.get("auth")
+        console.print("[yellow]Stopping auth service...[/yellow]")
+        auth_container.stop(timeout=30)
+        auth_container.remove()
+        console.print("[green]✓ Auth service stopped and removed[/green]")
+    except Exception:
+        pass
+
+    try:
+        proxy_container = manager.client.containers.get("proxy")
+        console.print("[yellow]Stopping Traefik proxy...[/yellow]")
+        proxy_container.stop(timeout=30)
+        proxy_container.remove()
+        console.print("[green]✓ Traefik proxy stopped and removed[/green]")
+    except Exception:
+        pass
+
+    # Remove auth data volume if it exists
+    try:
+        auth_volume = manager.client.volumes.get("calimero_auth_data")
+        console.print("[yellow]Removing auth data volume...[/yellow]")
+        auth_volume.remove()
+        console.print("[green]✓ Auth data volume removed[/green]")
+    except docker.errors.NotFound:
+        pass
+    except Exception as e:
+        console.print(
+            f"[yellow]⚠️  Warning: Could not remove auth data volume: {e}[/yellow]"
+        )
 
     console.print(f"\n[red]Deleting {len(data_dirs)} data directory(ies)...[/red]")
 

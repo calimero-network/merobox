@@ -579,6 +579,8 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 - `CALIMERO_IMAGE`: Docker image for Calimero nodes
 - `DOCKER_HOST`: Docker daemon connection string
 - `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
+- `CALIMERO_AUTH_FRONTEND_FETCH`: Set to `0` to use cached auth frontend (default is `1` for fresh fetch)
+- `CALIMERO_WEBUI_FETCH`: Set to `0` to use cached WebUI frontend (default is `1` for fresh fetch)
 
 ### Auth Service Integration
 
@@ -595,6 +597,44 @@ Merobox supports integration with Calimero's authentication service using Traefi
 - **Traefik Labels**: Adds proper routing labels for each node
 - **CORS Support**: Configured CORS middleware for web access
 
+#### **Auth Frontend Management**
+
+Merobox provides flexible options for managing auth service frontend updates:
+
+- **Fresh Frontend (Default)**: By default, auth service fetches fresh frontend resources (`CALIMERO_AUTH_FRONTEND_FETCH=1`)
+- **Cached Mode**: Use `--auth-use-cached` flag or set `CALIMERO_AUTH_FRONTEND_FETCH=0` to use cached auth frontend
+- **Custom Images**: Specify custom auth images with `--auth-image` flag or `auth_image` in workflow config
+- **Workflow Config**: Set `auth_use_cached: true` in workflow YAML to use cached auth frontend
+
+**Environment Variable Usage:**
+```bash
+# Use cached auth frontend for all auth service operations
+export CALIMERO_AUTH_FRONTEND_FETCH=0
+merobox run --auth-service
+
+# Or set for single command
+CALIMERO_AUTH_FRONTEND_FETCH=0 merobox run --auth-service
+```
+
+#### **Node WebUI Frontend Management**
+
+Merobox provides flexible options for managing node WebUI frontend updates:
+
+- **Fresh Frontend (Default)**: By default, nodes fetch fresh WebUI frontend resources (`CALIMERO_WEBUI_FETCH=1`)
+- **Cached Mode**: Use `--webui-use-cached` flag or set `CALIMERO_WEBUI_FETCH=0` to use cached WebUI frontend
+- **Custom Images**: Specify custom node images with `--image` flag or `image` in workflow config
+- **Workflow Config**: Set `webui_use_cached: true` in workflow YAML to use cached WebUI frontend
+
+**Environment Variable Usage:**
+```bash
+# Use cached WebUI frontend for all node operations
+export CALIMERO_WEBUI_FETCH=0
+merobox run --count 2
+
+# Or set for single command
+CALIMERO_WEBUI_FETCH=0 merobox run --count 2
+```
+
 #### **Usage Examples**
 
 **CLI Usage:**
@@ -605,11 +645,29 @@ merobox run --count 2 --auth-service
 # Start nodes with custom auth image
 merobox run --count 2 --auth-service --auth-image ghcr.io/calimero-network/mero-auth:latest
 
+# Use cached auth frontend (instead of default fresh fetch)
+merobox run --count 2 --auth-service --auth-use-cached
+
+# Use cached WebUI frontend for nodes (instead of default fresh fetch)
+merobox run --count 2 --webui-use-cached
+
+# Use cached mode for both auth and WebUI
+merobox run --count 2 --auth-service --auth-use-cached --webui-use-cached
+
 # Run workflow with auth service
 merobox bootstrap run workflow.yml --auth-service
 
 # Run workflow with custom auth image
 merobox bootstrap run workflow.yml --auth-service --auth-image ghcr.io/calimero-network/mero-auth:latest
+
+# Run workflow with cached auth frontend
+merobox bootstrap run workflow.yml --auth-service --auth-use-cached
+
+# Run workflow with cached WebUI frontend
+merobox bootstrap run workflow.yml --webui-use-cached
+
+# Run workflow with both auth and WebUI in cached mode
+merobox bootstrap run workflow.yml --auth-service --auth-use-cached --webui-use-cached
 
 # Stop auth service stack
 merobox stop --auth-service
@@ -617,9 +675,16 @@ merobox stop --auth-service
 
 **Workflow Configuration:**
 ```yaml
-name: "Authenticated Workflow"
+name: "Frontend Management Workflow"
+# Auth service configuration (fresh frontend is default, use cached if needed)
 auth_service: true  # Enable auth service for this workflow
 auth_image: "ghcr.io/calimero-network/mero-auth:edge"  # Custom auth image
+auth_use_cached: true  # Use cached auth frontend instead of fresh (optional)
+
+# Node configuration (fresh WebUI is default, use cached if needed)
+image: "ghcr.io/calimero-network/merod:edge"  # Custom node image
+webui_use_cached: true  # Use cached WebUI frontend instead of fresh (optional)
+
 nodes:
   count: 2
   prefix: "calimero-node"
