@@ -44,6 +44,7 @@ setup(
         "rich>=13.0.0",
         "PyYAML>=6.0.0",
         "calimero-client-py==0.2.3",
+        "aiohttp>=3.8.0",
     ],
     extras_require={
         "dev": [
