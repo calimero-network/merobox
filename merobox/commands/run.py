@@ -41,6 +41,16 @@ console = Console()
     "--auth-image",
     help="Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)",
 )
+@click.option(
+    "--auth-use-cached",
+    is_flag=True,
+    help="Use cached auth frontend instead of fetching fresh (disables CALIMERO_AUTH_FRONTEND_FETCH)",
+)
+@click.option(
+    "--webui-use-cached",
+    is_flag=True,
+    help="Use cached WebUI frontend instead of fetching fresh (disables CALIMERO_WEBUI_FETCH)",
+)
 def run(
     count,
     base_port,
@@ -52,6 +62,8 @@ def run(
     force_pull,
     auth_service,
     auth_image,
+    auth_use_cached,
+    webui_use_cached,
 ):
     """Run Calimero node(s) in Docker containers."""
     calimero_manager = CalimeroManager()
@@ -82,6 +94,8 @@ def run(
             image,
             auth_service,
             auth_image,
+            auth_use_cached,
+            webui_use_cached,
         )
         sys.exit(0 if success else 1)
     else:
@@ -95,5 +109,7 @@ def run(
             image,
             auth_service,
             auth_image,
+            auth_use_cached,
+            webui_use_cached,
         )
         sys.exit(0 if success else 1)

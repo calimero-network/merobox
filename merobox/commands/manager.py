@@ -101,6 +101,8 @@ class CalimeroManager:
         image: str = None,
         auth_service: bool = False,
         auth_image: str = None,
+        auth_use_cached: bool = False,
+        webui_use_cached: bool = False,
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -176,17 +178,44 @@ class CalimeroManager:
             os.chmod(node_data_dir, 0o777)
 
             # Prepare container configuration
+            # Prepare environment variables for node
+            node_env = {
+                "CALIMERO_HOME": "/app/data",
+                "NODE_NAME": node_name,
+                "RUST_LOG": "info",
+            }
+
+            # By default, fetch fresh WebUI unless explicitly disabled
+            env_webui_fetch = os.getenv("CALIMERO_WEBUI_FETCH", "1")
+            should_use_cached = webui_use_cached or env_webui_fetch == "0"
+
+            if not should_use_cached:
+                node_env["CALIMERO_WEBUI_FETCH"] = "1"
+                if env_webui_fetch == "1" and not webui_use_cached:
+                    console.print(
+                        f"[cyan]Using default fresh WebUI fetch for node {node_name}[/cyan]"
+                    )
+                else:
+                    console.print(
+                        f"[cyan]Setting CALIMERO_WEBUI_FETCH=1 for node {node_name}[/cyan]"
+                    )
+            else:
+                if webui_use_cached:
+                    console.print(
+                        f"[cyan]Using cached WebUI frontend for node {node_name} (--webui-use-cached flag)[/cyan]"
+                    )
+                else:
+                    console.print(
+                        f"[cyan]Environment variable CALIMERO_WEBUI_FETCH=0 detected, using cached WebUI for node {node_name}[/cyan]"
+                    )
+
             container_config = {
                 "name": container_name,
                 "image": image_to_use,
                 "detach": True,
                 "user": "root",  # Override the default user in the image
                 "privileged": True,  # Run in privileged mode to avoid permission issues
-                "environment": {
-                    "CALIMERO_HOME": "/app/data",
-                    "NODE_NAME": node_name,
-                    "RUST_LOG": "info",
-                },
+                "environment": node_env,
                 "ports": {
                     "2428/tcp": port,  # Map external P2P port to internal P2P port (0.0.0.0:2428)
                     "2528/tcp": rpc_port,  # Map external RPC port to internal admin server port (127.0.0.1:2528)
@@ -208,7 +237,7 @@ class CalimeroManager:
                 )
 
                 # Ensure auth service stack is running
-                if not self._start_auth_service_stack(auth_image):
+                if not self._start_auth_service_stack(auth_image, auth_use_cached):
                     console.print(
                         "[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
                     )
@@ -443,7 +472,9 @@ class CalimeroManager:
                 f"[yellow]⚠️  Warning: Could not ensure auth networks: {str(e)}[/yellow]"
             )
 
-    def _start_auth_service_stack(self, auth_image: str = None):
+    def _start_auth_service_stack(
+        self, auth_image: str = None, auth_use_cached: bool = False
+    ):
         """Start the Traefik proxy and auth service containers."""
         try:
             console.print(
@@ -468,7 +499,7 @@ class CalimeroManager:
 
             # Start Auth service
             if not auth_running:
-                if not self._start_auth_container(auth_image):
+                if not self._start_auth_container(auth_image, auth_use_cached):
                     return False
 
             # Wait a bit for services to be ready
@@ -549,7 +580,9 @@ class CalimeroManager:
             console.print(f"[red]✗ Failed to start Traefik proxy: {str(e)}[/red]")
             return False
 
-    def _start_auth_container(self, auth_image: str = None):
+    def _start_auth_container(
+        self, auth_image: str = None, auth_use_cached: bool = False
+    ):
         """Start the Auth service container."""
         try:
             console.print("[yellow]Starting Auth service...[/yellow]")
@@ -563,6 +596,8 @@ class CalimeroManager:
 
             # Pull Auth service image
             auth_image_to_use = auth_image or "ghcr.io/calimero-network/mero-auth:edge"
+
+            # Ensure auth image is available
             if not self._ensure_image_pulled(auth_image_to_use):
                 console.print(
                     "[yellow]⚠️  Warning: Could not pull auth image, trying with local image[/yellow]"
@@ -575,13 +610,40 @@ class CalimeroManager:
                 self.client.volumes.create("calimero_auth_data")
 
             # Create and start Auth service container
+            # Prepare environment variables for auth service
+            auth_env = ["RUST_LOG=debug"]
+
+            # By default, fetch fresh auth frontend unless explicitly disabled
+            env_auth_fetch = os.getenv("CALIMERO_AUTH_FRONTEND_FETCH", "1")
+            should_use_cached = auth_use_cached or env_auth_fetch == "0"
+
+            if not should_use_cached:
+                auth_env.append("CALIMERO_AUTH_FRONTEND_FETCH=1")
+                if env_auth_fetch == "1" and not auth_use_cached:
+                    console.print(
+                        "[cyan]Using default fresh auth frontend fetch for auth service[/cyan]"
+                    )
+                else:
+                    console.print(
+                        "[cyan]Setting CALIMERO_AUTH_FRONTEND_FETCH=1 for auth service[/cyan]"
+                    )
+            else:
+                if auth_use_cached:
+                    console.print(
+                        "[cyan]Using cached auth frontend (--auth-use-cached flag)[/cyan]"
+                    )
+                else:
+                    console.print(
+                        "[cyan]Environment variable CALIMERO_AUTH_FRONTEND_FETCH=0 detected, using cached auth frontend[/cyan]"
+                    )
+
             auth_config = {
                 "name": "auth",
                 "image": auth_image_to_use,
                 "detach": True,
                 "user": "root",
                 "volumes": {"calimero_auth_data": {"bind": "/data", "mode": "rw"}},
-                "environment": ["RUST_LOG=debug"],
+                "environment": auth_env,
                 "network": "calimero_web",  # Connect to web network first
                 "restart_policy": {"Name": "unless-stopped"},
                 "labels": {
@@ -691,6 +753,8 @@ class CalimeroManager:
         image: str = None,
         auth_service: bool = False,
         auth_image: str = None,
+        auth_use_cached: bool = False,
+        webui_use_cached: bool = False,
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -721,6 +785,8 @@ class CalimeroManager:
                 image=image,
                 auth_service=auth_service,
                 auth_image=auth_image,
+                auth_use_cached=auth_use_cached,
+                webui_use_cached=webui_use_cached,
             ):
                 success_count += 1
             else:
@@ -823,74 +889,159 @@ class CalimeroManager:
             return []
 
     def list_nodes(self) -> None:
-        """List all running Calimero nodes."""
+        """List all running Calimero nodes and infrastructure."""
         try:
-            containers = self.client.containers.list(
+            # Get Calimero nodes
+            node_containers = self.client.containers.list(
                 filters={"label": "calimero.node=true"}
             )
 
-            if not containers:
+            # Get auth service and proxy containers
+            auth_containers = []
+            try:
+                auth_container = self.client.containers.get("auth")
+                auth_containers.append(auth_container)
+            except docker.errors.NotFound:
+                pass
+
+            try:
+                proxy_container = self.client.containers.get("proxy")
+                auth_containers.append(proxy_container)
+            except docker.errors.NotFound:
+                pass
+
+            # Check if anything is running
+            if not node_containers and not auth_containers:
                 console.print(
-                    "[yellow]No Calimero nodes are currently running[/yellow]"
+                    "[yellow]No Calimero nodes or services are currently running[/yellow]"
                 )
                 return
 
-            table = Table(title="Running Calimero Nodes")
-            table.add_column("Name", style="cyan")
-            table.add_column("Status", style="green")
-            table.add_column("Image", style="blue")
-            table.add_column("P2P Port", style="yellow")
-            table.add_column("RPC/Admin Port", style="yellow")
-            table.add_column("Chain ID", style="magenta")
-            table.add_column("Created", style="white")
+            # Display nodes table if nodes exist
+            if node_containers:
+                table = Table(title="Running Calimero Nodes")
+                table.add_column("Name", style="cyan")
+                table.add_column("Status", style="green")
+                table.add_column("Image", style="blue")
+                table.add_column("P2P Port", style="yellow")
+                table.add_column("RPC/Admin Port", style="yellow")
+                table.add_column("Chain ID", style="magenta")
+                table.add_column("Created", style="white")
 
-            for container in containers:
-                # Extract ports from container attributes
-                p2p_port = "N/A"
-                rpc_port = "N/A"
+                for container in node_containers:
+                    # Extract ports from container attributes
+                    p2p_port = "N/A"
+                    rpc_port = "N/A"
 
-                # Get port mappings from container attributes
-                if container.attrs.get("NetworkSettings", {}).get("Ports"):
-                    port_mappings = container.attrs["NetworkSettings"]["Ports"]
-                    port_list = []
+                    # Get port mappings from container attributes
+                    if container.attrs.get("NetworkSettings", {}).get("Ports"):
+                        port_mappings = container.attrs["NetworkSettings"]["Ports"]
+                        port_list = []
 
-                    for _container_port, host_bindings in port_mappings.items():
-                        if host_bindings:
-                            for binding in host_bindings:
-                                if "HostPort" in binding:
-                                    port_list.append(int(binding["HostPort"]))
+                        for _container_port, host_bindings in port_mappings.items():
+                            if host_bindings:
+                                for binding in host_bindings:
+                                    if "HostPort" in binding:
+                                        port_list.append(int(binding["HostPort"]))
 
-                    # Remove duplicates and sort ports
-                    port_list = sorted(set(port_list))
+                        # Remove duplicates and sort ports
+                        port_list = sorted(set(port_list))
 
-                    # Assign P2P and RPC ports
-                    if len(port_list) >= 2:
-                        p2p_port = str(port_list[0])
-                        rpc_port = str(port_list[1])
-                    elif len(port_list) == 1:
-                        p2p_port = str(port_list[0])
+                        # Assign P2P and RPC ports
+                        if len(port_list) >= 2:
+                            p2p_port = str(port_list[0])
+                            rpc_port = str(port_list[1])
+                        elif len(port_list) == 1:
+                            p2p_port = str(port_list[0])
 
-                # Extract chain ID from labels
-                chain_id = container.labels.get("chain.id", "N/A")
+                    # Extract chain ID from labels
+                    chain_id = container.labels.get("chain.id", "N/A")
 
-                table.add_row(
-                    container.name,
-                    container.status,
-                    (
-                        container.image.tags[0]
-                        if container.image.tags
-                        else container.image.id[:12]
-                    ),
-                    p2p_port,
-                    rpc_port,
-                    chain_id,
-                    container.attrs["Created"][:19].replace("T", " "),
+                    table.add_row(
+                        container.name,
+                        container.status,
+                        (
+                            container.image.tags[0]
+                            if container.image.tags
+                            else container.image.id[:12]
+                        ),
+                        p2p_port,
+                        rpc_port,
+                        chain_id,
+                        container.attrs["Created"][:19].replace("T", " "),
+                    )
+
+                console.print(table)
+
+            # Display auth services table if auth containers exist
+            if auth_containers:
+                auth_table = Table(title="Running Auth Infrastructure")
+                auth_table.add_column("Service", style="cyan")
+                auth_table.add_column("Status", style="green")
+                auth_table.add_column("Image", style="blue")
+                auth_table.add_column("Ports", style="yellow")
+                auth_table.add_column("Networks", style="magenta")
+                auth_table.add_column("Created", style="white")
+
+                for container in auth_containers:
+                    # Extract port mappings
+                    ports = []
+                    if container.attrs.get("NetworkSettings", {}).get("Ports"):
+                        port_mappings = container.attrs["NetworkSettings"]["Ports"]
+                        for container_port, host_bindings in port_mappings.items():
+                            if host_bindings:
+                                for binding in host_bindings:
+                                    if "HostPort" in binding:
+                                        ports.append(
+                                            f"{binding['HostPort']}:{container_port}"
+                                        )
+                            else:
+                                ports.append(container_port)
+
+                    ports_str = ", ".join(ports) if ports else "N/A"
+
+                    # Extract networks
+                    networks = []
+                    if container.attrs.get("NetworkSettings", {}).get("Networks"):
+                        networks = list(
+                            container.attrs["NetworkSettings"]["Networks"].keys()
+                        )
+
+                    networks_str = ", ".join(networks) if networks else "N/A"
+
+                    # Service type based on container name
+                    service_type = (
+                        "Auth Service" if container.name == "auth" else "Traefik Proxy"
+                    )
+
+                    auth_table.add_row(
+                        service_type,
+                        container.status,
+                        (
+                            container.image.tags[0]
+                            if container.image.tags
+                            else container.image.id[:12]
+                        ),
+                        ports_str,
+                        networks_str,
+                        container.attrs["Created"][:19].replace("T", " "),
+                    )
+
+                if node_containers:
+                    console.print()  # Add spacing between tables
+                console.print(auth_table)
+
+            # Show auth volume information
+            try:
+                auth_volume = self.client.volumes.get("calimero_auth_data")
+                console.print(
+                    f"\n[cyan]Auth Data Volume:[/cyan] calimero_auth_data (created: {auth_volume.attrs.get('CreatedAt', 'N/A')[:19]})"
                 )
-
-            console.print(table)
+            except docker.errors.NotFound:
+                pass
 
         except Exception as e:
-            console.print(f"[red]Failed to list nodes: {str(e)}[/red]")
+            console.print(f"[red]Failed to list infrastructure: {str(e)}[/red]")
 
     def get_node_logs(self, node_name: str, tail: int = 100) -> None:
         """Get logs from a specific node."""

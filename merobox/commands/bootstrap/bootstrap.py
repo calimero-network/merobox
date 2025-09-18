@@ -48,7 +48,19 @@ def bootstrap():
     "--auth-image",
     help="Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)",
 )
-def run(config_file, verbose, auth_service, auth_image):
+@click.option(
+    "--auth-use-cached",
+    is_flag=True,
+    help="Use cached auth frontend instead of fetching fresh (disables CALIMERO_AUTH_FRONTEND_FETCH)",
+)
+@click.option(
+    "--webui-use-cached",
+    is_flag=True,
+    help="Use cached WebUI frontend instead of fetching fresh (disables CALIMERO_WEBUI_FETCH)",
+)
+def run(
+    config_file, verbose, auth_service, auth_image, auth_use_cached, webui_use_cached
+):
     """
     Execute a Calimero workflow from a YAML configuration file.
 
@@ -59,7 +71,14 @@ def run(config_file, verbose, auth_service, auth_image):
     4. Handle dynamic variable resolution
     5. Export results and captured values
     """
-    success = run_workflow_sync(config_file, verbose, auth_service, auth_image)
+    success = run_workflow_sync(
+        config_file,
+        verbose,
+        auth_service,
+        auth_image,
+        auth_use_cached,
+        webui_use_cached,
+    )
     if not success:
         sys.exit(1)
 

@@ -28,6 +28,8 @@ class WorkflowExecutor:
         manager: CalimeroManager,
         auth_service: bool = False,
         auth_image: str = None,
+        auth_use_cached: bool = False,
+        webui_use_cached: bool = False,
     ):
         self.config = config
         self.manager = manager
@@ -36,6 +38,12 @@ class WorkflowExecutor:
         # Auth image can be set by CLI flag or workflow config (CLI takes precedence)
         self.auth_image = (
             auth_image if auth_image is not None else config.get("auth_image", None)
+        )
+        # Auth use cached can be enabled by CLI flag or workflow config (CLI takes precedence)
+        self.auth_use_cached = auth_use_cached or config.get("auth_use_cached", False)
+        # WebUI use cached can be enabled by CLI flag or workflow config (CLI takes precedence)
+        self.webui_use_cached = webui_use_cached or config.get(
+            "webui_use_cached", False
         )
         self.workflow_results = {}
         self.dynamic_values = {}  # Store dynamic values for later use
@@ -211,6 +219,8 @@ class WorkflowExecutor:
                     image,
                     self.auth_service,
                     self.auth_image,
+                    self.auth_use_cached,
+                    self.webui_use_cached,
                 ):
                     return False
             else:
@@ -244,6 +254,8 @@ class WorkflowExecutor:
                                 image,
                                 self.auth_service,
                                 self.auth_image,
+                                self.auth_use_cached,
+                                self.webui_use_cached,
                             ):
                                 return False
                     except docker.errors.NotFound:
@@ -259,6 +271,8 @@ class WorkflowExecutor:
                             image,
                             self.auth_service,
                             self.auth_image,
+                            self.auth_use_cached,
+                            self.webui_use_cached,
                         ):
                             return False
 
@@ -305,6 +319,8 @@ class WorkflowExecutor:
                                     node_image,
                                     self.auth_service,
                                     self.auth_image,
+                                    self.auth_use_cached,
+                                    self.webui_use_cached,
                                 ):
                                     return False
                             else:
@@ -334,6 +350,8 @@ class WorkflowExecutor:
                             node_image,
                             self.auth_service,
                             self.auth_image,
+                            self.auth_use_cached,
+                            self.webui_use_cached,
                         ):
                             return False
                 else:
@@ -360,6 +378,9 @@ class WorkflowExecutor:
                                     None,
                                     image,
                                     self.auth_service,
+                                    self.auth_image,
+                                    self.auth_use_cached,
+                                    self.webui_use_cached,
                                 ):
                                     return False
                             else:
@@ -383,6 +404,8 @@ class WorkflowExecutor:
                             image,
                             self.auth_service,
                             self.auth_image,
+                            self.auth_use_cached,
+                            self.webui_use_cached,
                         ):
                             return False
 

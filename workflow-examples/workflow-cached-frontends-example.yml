@@ -1,0 +1,40 @@
+name: "Cached Frontends Example"
+description: "Demonstrates using cached frontends for both auth service and node WebUI"
+
+# Auth service configuration (fresh frontend is default)
+auth_service: true
+auth_image: "ghcr.io/calimero-network/mero-auth:edge"
+auth_use_cached: true  # Use cached auth frontend instead of fresh fetch
+
+# Node configuration (fresh WebUI is default)
+image: "ghcr.io/calimero-network/merod:edge"
+webui_use_cached: true  # Use cached WebUI frontend instead of fresh fetch
+
+nodes:
+  count: 2
+  base_port: 2428
+  base_rpc_port: 2528
+  chain_id: "testnet-1"
+  prefix: "calimero-node"
+
+steps:
+  - name: "Wait for startup"
+    type: "wait"
+    seconds: 5
+    
+  - name: "Create Identity on Node 1"
+    type: "create_identity"
+    node: "calimero-node-1"
+    outputs:
+      public_key: "publicKey"
+
+stop_all_nodes: true
+
+# To run this workflow:
+# merobox bootstrap run workflow-examples/workflow-cached-frontends-example.yml
+#
+# Or enable cached frontends via CLI flags:
+# merobox bootstrap run --auth-use-cached --webui-use-cached workflow-examples/workflow-auth-example.yml
+#
+# Or via environment variables:
+# CALIMERO_AUTH_FRONTEND_FETCH=0 CALIMERO_WEBUI_FETCH=0 merobox bootstrap run workflow-examples/workflow-auth-example.yml
