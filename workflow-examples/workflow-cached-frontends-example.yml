@@ -23,10 +23,10 @@ steps:
     seconds: 5
     
   - name: "Create Identity on Node 1"
-    type: "identity"
+    type: "create_identity"
     node: "calimero-node-1"
     outputs:
-      public_key: "public_key_1"
+      public_key: "publicKey"
 
 stop_all_nodes: true
 
