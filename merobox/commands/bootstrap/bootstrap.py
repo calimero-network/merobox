@@ -40,6 +40,10 @@ def bootstrap():
 @click.argument("config_file", type=click.Path(exists=True), required=True)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option(
+    "--image",
+    help="Custom Docker image to use for Calimero nodes (overrides workflow config)",
+)
+@click.option(
     "--auth-service",
     is_flag=True,
     help="Enable authentication service with Traefik proxy",
@@ -59,7 +63,13 @@ def bootstrap():
     help="Use cached WebUI frontend instead of fetching fresh (disables CALIMERO_WEBUI_FETCH)",
 )
 def run(
-    config_file, verbose, auth_service, auth_image, auth_use_cached, webui_use_cached
+    config_file,
+    verbose,
+    image,
+    auth_service,
+    auth_image,
+    auth_use_cached,
+    webui_use_cached,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -74,6 +84,7 @@ def run(
     success = run_workflow_sync(
         config_file,
         verbose,
+        image,
         auth_service,
         auth_image,
         auth_use_cached,
