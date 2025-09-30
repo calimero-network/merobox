@@ -26,11 +26,11 @@ class WorkflowExecutor:
         self,
         config: Dict[str, Any],
         manager: CalimeroManager,
+        image: Optional[str] = None,
         auth_service: bool = False,
         auth_image: str = None,
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
-        image_override: Optional[str] = None,
     ):
         self.config = config
         self.manager = manager
@@ -49,7 +49,7 @@ class WorkflowExecutor:
         self.workflow_results = {}
         self.dynamic_values = {}  # Store dynamic values for later use
         # Node image can be overridden by CLI flag; otherwise from config; else default in manager
-        self.image_override = image_override
+        self.image = image
 
     async def execute_workflow(self) -> bool:
         """Execute the complete workflow."""
@@ -202,7 +202,7 @@ class WorkflowExecutor:
         base_port = nodes_config.get("base_port", 2428)
         base_rpc_port = nodes_config.get("base_rpc_port", 2528)
         chain_id = nodes_config.get("chain_id", "testnet-1")
-        image = self.image_override if self.image_override is not None else nodes_config.get("image")
+        image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
 
         # Handle multiple nodes
@@ -340,7 +340,7 @@ class WorkflowExecutor:
                         port = node_config.get("port", base_port)
                         rpc_port = node_config.get("rpc_port", base_rpc_port)
                         node_chain_id = node_config.get("chain_id", chain_id)
-                        node_image = self.image_override if self.image_override is not None else node_config.get("image", image)
+                        node_image = self.image if self.image is not None else node_config.get("image", image)
                         data_dir = node_config.get("data_dir")
 
                         console.print(f"Starting node '{node_name}'...")

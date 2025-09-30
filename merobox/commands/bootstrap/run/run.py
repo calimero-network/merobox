@@ -48,11 +48,11 @@ async def run_workflow(
         executor = WorkflowExecutor(
             config,
             manager,
+            image,
             auth_service,
             auth_image,
             auth_use_cached,
             webui_use_cached,
-            image_override=image,
         )
 
         # Execute workflow
