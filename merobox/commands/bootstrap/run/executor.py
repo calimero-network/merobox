@@ -340,7 +340,11 @@ class WorkflowExecutor:
                         port = node_config.get("port", base_port)
                         rpc_port = node_config.get("rpc_port", base_rpc_port)
                         node_chain_id = node_config.get("chain_id", chain_id)
-                        node_image = self.image if self.image is not None else node_config.get("image", image)
+                        node_image = (
+                            self.image
+                            if self.image is not None
+                            else node_config.get("image", image)
+                        )
                         data_dir = node_config.get("data_dir")
 
                         console.print(f"Starting node '{node_name}'...")
