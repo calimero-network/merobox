@@ -9,6 +9,7 @@ This module handles the execution of Calimero workflows including:
 """
 
 import asyncio
+from typing import Optional
 
 from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
@@ -18,6 +19,7 @@ from merobox.commands.utils import console
 async def run_workflow(
     config_file: str,
     verbose: bool = False,
+    image: Optional[str] = None,
     auth_service: bool = False,
     auth_image: str = None,
     auth_use_cached: bool = False,
@@ -44,7 +46,13 @@ async def run_workflow(
         manager = CalimeroManager()
 
         executor = WorkflowExecutor(
-            config, manager, auth_service, auth_image, auth_use_cached, webui_use_cached
+            config,
+            manager,
+            auth_service,
+            auth_image,
+            auth_use_cached,
+            webui_use_cached,
+            image_override=image,
         )
 
         # Execute workflow
@@ -71,6 +79,7 @@ async def run_workflow(
 def run_workflow_sync(
     config_file: str,
     verbose: bool = False,
+    image: Optional[str] = None,
     auth_service: bool = False,
     auth_image: str = None,
     auth_use_cached: bool = False,
@@ -91,9 +100,10 @@ def run_workflow_sync(
         run_workflow(
             config_file,
             verbose,
-            auth_service,
-            auth_image,
-            auth_use_cached,
-            webui_use_cached,
+            image=image,
+            auth_service=auth_service,
+            auth_image=auth_image,
+            auth_use_cached=auth_use_cached,
+            webui_use_cached=webui_use_cached,
         )
     )
