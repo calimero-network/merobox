@@ -21,6 +21,7 @@ from merobox.commands import (
     stop,
 )
 
+
 @click.group()
 @click.version_option(version=__version__)
 def cli():
