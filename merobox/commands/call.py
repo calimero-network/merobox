@@ -2,7 +2,7 @@
 Call command - Execute function calls using JSON-RPC client.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import click
 from calimero_client_py import create_client, create_connection
@@ -26,7 +26,7 @@ async def call_function(
     rpc_url: str,
     context_id: str,
     function_name: str,
-    args: Optional[Dict[str, Any]] = None,
+    args: Optional[dict[str, Any]] = None,
     executor_public_key: Optional[str] = None,
 ) -> dict:
     """Execute a function call using the admin API.

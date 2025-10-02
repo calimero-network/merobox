@@ -2,7 +2,7 @@
 Install application step executor.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
@@ -14,7 +14,7 @@ from merobox.commands.utils import console, get_node_rpc_url
 class InstallApplicationStep(BaseStep):
     """Execute an install application step."""
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
 
@@ -69,7 +69,7 @@ class InstallApplicationStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
         application_path = self.config.get("path")

@@ -2,7 +2,7 @@
 Execute step executor for contract calls.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.call import call_function
@@ -12,7 +12,7 @@ from merobox.commands.utils import console, get_node_rpc_url
 class ExecuteStep(BaseStep):
     """Execute a contract execution step."""
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
 
@@ -69,7 +69,7 @@ class ExecuteStep(BaseStep):
         return []
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(
@@ -201,8 +201,8 @@ class ExecuteStep(BaseStep):
     def _resolve_args_dynamic_values(
         self,
         args: Any,
-        workflow_results: Dict[str, Any],
-        dynamic_values: Dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> Any:
         """Recursively resolve dynamic values in args dictionary or other data structures."""
         if isinstance(args, dict):

@@ -6,6 +6,7 @@ A Python CLI tool for managing Calimero nodes in Docker containers.
 
 import click
 
+from merobox import __version__
 from merobox.commands import (
     bootstrap,
     call,
@@ -21,7 +22,6 @@ from merobox.commands import (
 )
 
 from merobox import __version__
-
 
 @click.group()
 @click.version_option(version=__version__)

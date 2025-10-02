@@ -6,7 +6,7 @@ import io
 import os
 import tarfile
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -15,7 +15,7 @@ from merobox.commands.utils import console
 class ScriptStep(BaseStep):
     """Execute a script on Docker images or running nodes."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.script_path = config.get("script")
         self.target = config.get("target", "image")  # 'image' or 'nodes'
@@ -23,7 +23,7 @@ class ScriptStep(BaseStep):
             "description", f"Execute script: {self.script_path}"
         )
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
 
@@ -89,7 +89,7 @@ class ScriptStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         """Execute the script step."""
         if not self.script_path:
@@ -122,7 +122,7 @@ class ScriptStep(BaseStep):
         exit_code: int,
         output: str,
         execution_time: float,
-        dynamic_values: Dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> None:
         """Export script execution results to dynamic values."""
         script_results = {
@@ -171,7 +171,7 @@ class ScriptStep(BaseStep):
                 console.print(f"  {var_name}={var_value}")
 
     async def _execute_on_image(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         """Execute script on a Docker image before starting nodes."""
         try:
@@ -301,7 +301,7 @@ class ScriptStep(BaseStep):
             return False
 
     async def _execute_on_nodes(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         """Execute script on all running Calimero nodes."""
         try:

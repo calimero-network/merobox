@@ -5,7 +5,7 @@ Shared utilities for Calimero CLI commands.
 import asyncio
 import json
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -52,7 +52,7 @@ def check_node_running(node: str, manager: CalimeroManager) -> None:
         sys.exit(1)
 
 
-def run_async_function(func, *args) -> Dict[str, Any]:
+def run_async_function(func, *args) -> dict[str, Any]:
     """Helper to run async functions in sync context."""
     try:
         loop = asyncio.new_event_loop()
@@ -65,7 +65,7 @@ def run_async_function(func, *args) -> Dict[str, Any]:
 
 
 def create_generic_table(
-    title: str, columns: List[tuple], data: List[Dict[str, Any]]
+    title: str, columns: list[tuple], data: list[dict[str, Any]]
 ) -> Table:
     """Create a generic table with specified columns and data."""
     table = Table(title=title, box=box.ROUNDED)
@@ -82,7 +82,7 @@ def create_generic_table(
     return table
 
 
-def extract_nested_data(response_data: Dict[str, Any], *keys) -> Any:
+def extract_nested_data(response_data: dict[str, Any], *keys) -> Any:
     """Extract data from nested dictionary using multiple possible key paths."""
     if not isinstance(response_data, dict):
         return None
@@ -129,7 +129,7 @@ def format_file_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} {size_names[i]}"
 
 
-def safe_get(dictionary: Dict[str, Any], key: str, default: Any = None) -> Any:
+def safe_get(dictionary: dict[str, Any], key: str, default: Any = None) -> Any:
     """Safely get a value from a dictionary with a default fallback."""
     return dictionary.get(key, default) if isinstance(dictionary, dict) else default
 

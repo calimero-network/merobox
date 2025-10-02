@@ -3,7 +3,7 @@ Wait step executor.
 """
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -12,7 +12,7 @@ from merobox.commands.utils import console
 class WaitStep(BaseStep):
     """Execute a wait step."""
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
 
@@ -40,7 +40,7 @@ class WaitStep(BaseStep):
             )
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         wait_seconds = self.config.get("seconds", 5)
         console.print(f"Waiting {wait_seconds} seconds...")

@@ -5,7 +5,6 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 import os
 import sys
 import time
-from typing import List
 
 import docker
 from rich.console import Console
@@ -412,7 +411,7 @@ class CalimeroManager:
             console.print(f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
             return False
 
-    def _find_available_ports(self, count: int, start_port: int = 2428) -> List[int]:
+    def _find_available_ports(self, count: int, start_port: int = 2428) -> list[int]:
         """Find available ports starting from start_port."""
         import socket
 
@@ -878,7 +877,7 @@ class CalimeroManager:
             console.print(f"[red]Failed to stop all nodes: {str(e)}[/red]")
             return False
 
-    def get_running_nodes(self) -> List[str]:
+    def get_running_nodes(self) -> list[str]:
         """Return a list of names for running Calimero node containers."""
         try:
             containers = self.client.containers.list(
