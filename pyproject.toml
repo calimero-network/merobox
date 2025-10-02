@@ -1,6 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "toml"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "merobox"
+version = "0.1.23"
+description = "A Python CLI tool for managing Calimero nodes in Docker containers"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Calimero Ltd.", email = "engineering@calimero.network"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "click>=8.0.0",
+    "docker>=6.0.0",
+    "rich>=13.0.0",
+    "PyYAML>=6.0.0",
+    "calimero-client-py==0.2.3",
+    "aiohttp>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=25.0.0",
+    "ruff>=0.1.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "pre-commit>=3.0.0",
+    "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+merobox = "merobox.cli:main"
+
 [tool.black]
 line-length = 88
-target-version = ['py38', 'py39', 'py310', 'py311']
+target-version = ['py39', 'py310', 'py311']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -17,7 +63,7 @@ extend-exclude = '''
 '''
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py39"
 line-length = 88
 select = [
     "E",  # pycodestyle errors
@@ -52,4 +98,9 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.16.0",
 ]
