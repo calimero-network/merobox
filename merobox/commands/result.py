@@ -3,12 +3,12 @@ Result utilities for consistent success/error shapes across commands and steps.
 """
 
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
-def ok(data: Optional[Any] = None, **extras: Any) -> Dict[str, Any]:
+def ok(data: Optional[Any] = None, **extras: Any) -> dict[str, Any]:
     """Standard success result shape."""
-    result: Dict[str, Any] = {"success": True}
+    result: dict[str, Any] = {"success": True}
     if data is not None:
         result["data"] = data
     if extras:
@@ -18,9 +18,9 @@ def ok(data: Optional[Any] = None, **extras: Any) -> Dict[str, Any]:
 
 def fail(
     message: str, *, error: Optional[Exception] = None, **extras: Any
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Standard failure result shape with optional exception details."""
-    result: Dict[str, Any] = {"success": False, "error": message}
+    result: dict[str, Any] = {"success": False, "error": message}
     if error is not None:
         result["exception"] = format_error(error)
     if extras:
@@ -28,7 +28,7 @@ def fail(
     return result
 
 
-def format_error(error: Exception) -> Dict[str, Any]:
+def format_error(error: Exception) -> dict[str, Any]:
     """Format an exception with type, message, and traceback string."""
     return {
         "type": type(error).__name__,

@@ -4,7 +4,7 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 
 import asyncio
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import docker
 from rich.progress import (
@@ -24,7 +24,7 @@ class WorkflowExecutor:
 
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         manager: CalimeroManager,
         image: Optional[str] = None,
         auth_service: bool = False,
@@ -525,7 +525,7 @@ class WorkflowExecutor:
 
         return True
 
-    def _create_step_executor(self, step_type: str, step_config: Dict[str, Any]):
+    def _create_step_executor(self, step_type: str, step_config: dict[str, Any]):
         """Create a step executor based on the step type."""
         if step_type == "install_application":
             from merobox.commands.bootstrap.steps import InstallApplicationStep

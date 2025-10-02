@@ -2,7 +2,7 @@
 Repeat step executor for executing nested steps multiple times.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
@@ -21,7 +21,7 @@ from merobox.commands.utils import console
 class RepeatStep(BaseStep):
     """Execute nested steps multiple times."""
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
 
@@ -86,7 +86,7 @@ class RepeatStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         repeat_count = self.config.get("count", 1)
         nested_steps = self.config.get("steps", [])
@@ -180,7 +180,7 @@ class RepeatStep(BaseStep):
         return True
 
     def _export_iteration_variables(
-        self, iteration: int, dynamic_values: Dict[str, Any]
+        self, iteration: int, dynamic_values: dict[str, Any]
     ) -> None:
         """Export iteration variables based on custom outputs configuration."""
         outputs_config = self.config.get("outputs", {})
@@ -222,7 +222,7 @@ class RepeatStep(BaseStep):
                             f"[yellow]Warning: Source field {source_field} not found in dynamic values[/yellow]"
                         )
 
-    def _create_nested_step_executor(self, step_type: str, step_config: Dict[str, Any]):
+    def _create_nested_step_executor(self, step_type: str, step_config: dict[str, Any]):
         """Create a nested step executor based on the step type."""
         if step_type == "install_application":
             return InstallApplicationStep(step_config)

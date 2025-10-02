@@ -2,7 +2,7 @@
 Base step class for all workflow steps.
 """
 
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from merobox.commands.utils import console
 
@@ -10,7 +10,7 @@ from merobox.commands.utils import console
 class BaseStep:
     """Base class for all workflow steps."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         # Define which variables this step can export and their mapping
         self.exportable_variables = self._get_exportable_variables()
@@ -19,7 +19,7 @@ class BaseStep:
         # Validate field types
         self._validate_field_types()
 
-    def _get_exportable_variables(self) -> List[Tuple[str, str, str]]:
+    def _get_exportable_variables(self) -> list[tuple[str, str, str]]:
         """
         Define which variables this step can export.
         Returns a list of tuples: (source_field, target_key, description)
@@ -28,7 +28,7 @@ class BaseStep:
         """
         return []
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
         Override this method in subclasses to specify required fields.
@@ -69,7 +69,7 @@ class BaseStep:
 
     def _export_variable(
         self,
-        dynamic_values: Dict[str, Any],
+        dynamic_values: dict[str, Any],
         source_field: str,
         target_key: str,
         value: Any,
@@ -98,9 +98,9 @@ class BaseStep:
 
     def _export_variables_from_response(
         self,
-        response_data: Dict[str, Any],
+        response_data: dict[str, Any],
         node_name: str,
-        dynamic_values: Dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> None:
         """
         Export variables automatically based on exportable_variables configuration.
@@ -142,9 +142,9 @@ class BaseStep:
 
     def _export_custom_outputs(
         self,
-        response_data: Dict[str, Any],
+        response_data: dict[str, Any],
         node_name: str,
-        dynamic_values: Dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> None:
         """
         Export variables based on custom outputs configuration specified by the user.
@@ -220,9 +220,9 @@ class BaseStep:
 
     def _export_variables(
         self,
-        response_data: Dict[str, Any],
+        response_data: dict[str, Any],
         node_name: str,
-        dynamic_values: Dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> None:
         """
         Main export method that handles only custom outputs (explicit exports).
@@ -299,7 +299,7 @@ class BaseStep:
         return True
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         """Execute the step. Must be implemented by subclasses."""
         raise NotImplementedError
@@ -329,8 +329,8 @@ class BaseStep:
     def _resolve_dynamic_value(
         self,
         value: str,
-        workflow_results: Dict[str, Any],
-        dynamic_values: Dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> str:
         """Resolve dynamic values using placeholders and captured results."""
         if not isinstance(value, str):
@@ -560,8 +560,8 @@ class BaseStep:
     def _resolve_single_placeholder(
         self,
         placeholder: str,
-        workflow_results: Dict[str, Any],
-        dynamic_values: Dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> str:
         """Resolve a single placeholder without the {{}} wrapper."""
         # First, check if this is a simple custom output variable name

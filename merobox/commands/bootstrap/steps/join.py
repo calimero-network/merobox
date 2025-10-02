@@ -2,7 +2,7 @@
 Join context step executor.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.join import join_context_via_admin_api
@@ -12,7 +12,7 @@ from merobox.commands.utils import console, get_node_rpc_url
 class JoinContextStep(BaseStep):
     """Execute a join context step."""
 
-    def _get_required_fields(self) -> List[str]:
+    def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
 
@@ -67,7 +67,7 @@ class JoinContextStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: Dict[str, Any], dynamic_values: Dict[str, Any]
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(
