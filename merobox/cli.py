@@ -20,7 +20,7 @@ from merobox.commands import (
     stop,
 )
 
-from . import __version__
+from merobox import __version__
 
 
 @click.group()
@@ -43,5 +43,11 @@ cli.add_command(join)
 cli.add_command(call)
 cli.add_command(bootstrap)
 
-if __name__ == "__main__":
+
+def main():
+    """Main entry point for the merobox CLI."""
     cli()
+
+
+if __name__ == "__main__":
+    main()
