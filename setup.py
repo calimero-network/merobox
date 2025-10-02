@@ -4,17 +4,20 @@ Setup script for merobox package.
 """
 
 from setuptools import setup, find_packages
+import toml
 
 # Read the README file
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-# Import version from merobox package
-from merobox import __version__
+# Read version from pyproject.toml
+with open("pyproject.toml", "r", encoding="utf-8") as fh:
+    pyproject = toml.load(fh)
+    version = pyproject["project"]["version"]
 
 setup(
     name="merobox",
-    version=__version__,
+    version=version,
     author="Merobox Team",
     author_email="team@merobox.com",
     description="A Python CLI tool for managing Calimero nodes in Docker containers",
@@ -28,7 +31,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
@@ -37,7 +39,7 @@ setup(
         "Topic :: System :: Systems Administration",
         "Topic :: Utilities",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     install_requires=[
         "click>=8.0.0",
         "docker>=6.0.0",
@@ -59,7 +61,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "merobox=merobox.cli:cli",
+            "merobox=merobox.cli:main",
         ],
     },
     include_package_data=True,
