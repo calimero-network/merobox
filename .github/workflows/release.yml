@@ -67,17 +67,34 @@ jobs:
         run: |
           ./dist/merobox --version
 
-      - name: Generate checksum
+      - name: Name artifact uniquely
+        shell: bash
         run: |
-          sha256sum dist/merobox > dist/merobox-${{ matrix.target }}.sha256
+          set -euo pipefail
+          ext=""
+          [[ "${{ matrix.os }}" == "macos-latest" ]] && ext=""
+          [[ "${{ matrix.os }}" == "ubuntu-latest" ]] && ext=""
+          NAME="merobox-${{ github.ref_name }}-${{ matrix.target }}${ext}"
+          mv "dist/merobox${ext}" "dist/${NAME}"
+
+      - name: Generate checksum (portable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="dist/merobox-${{ github.ref_name }}-${{ matrix.target }}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${FILE}" > "${FILE}.sha256"
+          else
+            shasum -a 256 "${FILE}" | awk '{print $1 "  " FILENAME}' FILENAME="${FILE##dist/}" > "${FILE}.sha256"
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: merobox-${{ matrix.target }}
           path: |
-            dist/merobox*
-            dist/*.sha256
+            dist/merobox-${{ github.ref_name }}-${{ matrix.target }}
+            dist/merobox-${{ github.ref_name }}-${{ matrix.target }}.sha256
           retention-days: 30
 
   release:
@@ -98,39 +115,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download all artifacts to release-assets
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release-assets
+          pattern: merobox-*
+          merge-multiple: true
 
-      - name: Prepare release assets
-        run: |
-          mkdir -p release-assets
-          for dir in artifacts/*/; do
-            target=$(basename "$dir")
-            cp "$dir"/* release-assets/
-          done
-          
-          # Rename files to include version
-          VERSION=${GITHUB_REF#refs/tags/v}
-          for file in release-assets/*; do
-            if [[ "$file" == *".sha256" ]]; then
-              continue
-            fi
-            newname="merobox-v${VERSION}-$(basename "$file" | sed 's/merobox-//')"
-            mv "$file" "release-assets/$newname"
-          done
-          
-          # Update checksum files with new names
-          for checksum in release-assets/*.sha256; do
-            if [[ -f "$checksum" ]]; then
-              oldname=$(basename "$(cat "$checksum" | cut -d' ' -f2)")
-              newname=$(basename "$checksum" .sha256)
-              sed -i "s|$oldname|$newname|g" "$checksum"
-            fi
-          done
-
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
