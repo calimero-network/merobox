@@ -21,6 +21,7 @@ from merobox.commands import (
     stop,
 )
 
+
 @click.group()
 @click.version_option(version=__version__)
 def cli():
@@ -40,6 +41,7 @@ cli.add_command(identity)
 cli.add_command(join)
 cli.add_command(call)
 cli.add_command(bootstrap)
+
 
 def main():
     """Main entry point for the merobox CLI."""
