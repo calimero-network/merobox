@@ -2,8 +2,6 @@
 Client helpers - Centralized creation of Calimero client instances.
 """
 
-from typing import Tuple
-
 from calimero_client_py import create_client, create_connection
 
 from merobox.commands.manager import CalimeroManager
@@ -17,7 +15,7 @@ def get_client_for_rpc_url(rpc_url: str):
     return client
 
 
-def get_client_for_node(node_name: str) -> Tuple[object, str]:
+def get_client_for_node(node_name: str) -> tuple[object, str]:
     """Create a Calimero client for a node name and return (client, rpc_url)."""
     manager = CalimeroManager()
     rpc_url = get_node_rpc_url(node_name, manager)
