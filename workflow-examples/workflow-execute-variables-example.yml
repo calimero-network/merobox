@@ -53,7 +53,12 @@ steps:
     args:
       key: example_key
     outputs:
-      read_value: result  # export the returned 'result' field
+      # If the call returns a JSON string in 'result', parse and access nested field
+      # Example structure: { "result": "{\"value\":\"example_value\"}" }
+      read_value:
+        field: result
+        json: true          # parse JSON if the field is a JSON string
+        path: value         # extract nested path from the parsed object
 
   # 5) Use the exported variable in a script step (or any later step)
   - name: Echo Exported Value

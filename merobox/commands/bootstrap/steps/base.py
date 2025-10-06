@@ -165,6 +165,34 @@ class BaseStep:
             else response_data
         )
 
+        def _try_parse_json(value: Any) -> Any:
+            """If value is a JSON string, parse and return the object; otherwise return as-is."""
+            if isinstance(value, str):
+                s = value.strip()
+                if (s.startswith("{") and s.endswith("}")) or (
+                    s.startswith("[") and s.endswith("]")
+                ):
+                    try:
+                        import json
+
+                        return json.loads(s)
+                    except Exception:
+                        return value
+            return value
+
+        def _extract_path(obj: Any, path: str) -> Any:
+            """Extract a dotted path from a dict-like object. If intermediate is JSON string, parse it."""
+            if not isinstance(path, str) or not path:
+                return None
+            current = obj
+            for segment in path.split("."):
+                current = _try_parse_json(current)
+                if isinstance(current, dict) and segment in current:
+                    current = current[segment]
+                else:
+                    return None
+            return current
+
         console.print(
             f"[cyan]🔧 Processing custom outputs configuration for {node_name}:[/cyan]"
         )
@@ -172,41 +200,61 @@ class BaseStep:
         for exported_variable, assigned_var in outputs_config.items():
             # Handle different types of assigned_var
             if isinstance(assigned_var, str):
-                # Simple string assignment
-                if assigned_var in actual_data:
-                    value = actual_data[assigned_var]
-                    target_key = exported_variable
-                    dynamic_values[target_key] = value
-                    console.print(
-                        f"[blue]📝 Custom export: {assigned_var} → {target_key}: {value}[/blue]"
+                # Support dotted paths (e.g., "result.value").
+                value = (
+                    _extract_path(actual_data, assigned_var)
+                    if "." in assigned_var
+                    else (
+                        actual_data.get(assigned_var)
+                        if isinstance(actual_data, dict)
+                        else None
                     )
-                else:
+                )
+                if value is None and isinstance(actual_data, dict):
                     console.print(
                         f"[yellow]⚠️  Custom export failed: field '{assigned_var}' not found in response[/yellow]"
                     )
                     console.print(
                         f"[yellow]   Available fields: {list(actual_data.keys()) if isinstance(actual_data, dict) else 'N/A'}[/yellow]"
                     )
+                else:
+                    target_key = exported_variable
+                    dynamic_values[target_key] = value
+                    console.print(
+                        f"[blue]📝 Custom export: {assigned_var} → {target_key}: {value}[/blue]"
+                    )
 
             elif isinstance(assigned_var, dict):
                 # Complex assignment with node name replacement
                 if "field" in assigned_var:
                     field_name = assigned_var["field"]
-                    if field_name in actual_data:
-                        value = actual_data[field_name]
-                        # Handle node name replacement in the target key
-                        target_key = assigned_var.get("target", exported_variable)
-                        target_key = target_key.replace("{node_name}", node_name)
-                        dynamic_values[target_key] = value
+                    # Base value by field name (top-level)
+                    base_value = (
+                        actual_data.get(field_name)
+                        if isinstance(actual_data, dict)
+                        else None
+                    )
+                    # Optional parse JSON: json: true
+                    if assigned_var.get("json"):
+                        base_value = _try_parse_json(base_value)
+                    # Optional nested path within the base value: path: a.b.c
+                    if isinstance(assigned_var.get("path"), str):
+                        base_value = _extract_path(base_value, assigned_var["path"])
+
+                    if base_value is None and isinstance(actual_data, dict):
                         console.print(
-                            f"[blue]📝 Custom export: {field_name} → {target_key}: {value}[/blue]"
-                        )
-                    else:
-                        console.print(
-                            f"[yellow]⚠️  Custom export failed: field '{field_name}' not found in response[/yellow]"
+                            f"[yellow]⚠️  Custom export failed: field '{field_name}' not found in response or path unresolved[/yellow]"
                         )
                         console.print(
                             f"[yellow]   Available fields: {list(actual_data.keys()) if isinstance(actual_data, dict) else 'N/A'}[/yellow]"
+                        )
+                    else:
+                        # Handle node name replacement in the target key
+                        target_key = assigned_var.get("target", exported_variable)
+                        target_key = target_key.replace("{node_name}", node_name)
+                        dynamic_values[target_key] = base_value
+                        console.print(
+                            f"[blue]📝 Custom export: {field_name}{'.' + assigned_var.get('path') if assigned_var.get('path') else ''} → {target_key}: {base_value}[/blue]"
                         )
                 else:
                     console.print(

@@ -343,7 +343,14 @@ Example (from `workflow-execute-variables-example.yml`):
 
 Notes:
 - The `outputs` keys (e.g., `read_value`) become variables you can interpolate later as `{{read_value}}`.
-- The right-hand side (e.g., `result`) is the top-level field name in the call response payload.
+- You can target nested fields and JSON strings using the dict form:
+  ```yaml
+  outputs:
+    my_value:
+      field: result   # top-level field name to read from
+      json: true      # parse JSON if the field is a JSON string
+      path: value     # dotted path inside the parsed JSON
+  ```
 - For more advanced mappings (including per-node variable names), see `workflow-custom-outputs-example.yml`.
 
 ### Assertion Steps
