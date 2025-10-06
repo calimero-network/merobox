@@ -316,6 +316,36 @@ outputs:
 
 See `workflow-examples/workflow-example.yml` for a complete example.
 
+### Export variables from execute (call) steps
+
+Call-like steps (type: `call`) return a JSON payload. You can export fields from that payload to named variables via the `outputs` mapping, and then reference those variables in subsequent steps using `{{variable_name}}`.
+
+Example (from `workflow-execute-variables-example.yml`):
+
+```yaml
+  - name: Execute Get
+    type: call
+    node: calimero-node-2
+    context_id: '{{ctx_id}}'
+    executor_public_key: '{{member_key}}'
+    method: get
+    args:
+      key: example_key
+    outputs:
+      read_value: result  # export the 'result' field to variable 'read_value'
+
+  - name: Echo Exported Value
+    type: script
+    target: local
+    inline: |
+      echo "Exported value is: {{read_value}}"
+```
+
+Notes:
+- The `outputs` keys (e.g., `read_value`) become variables you can interpolate later as `{{read_value}}`.
+- The right-hand side (e.g., `result`) is the top-level field name in the call response payload.
+- For more advanced mappings (including per-node variable names), see `workflow-custom-outputs-example.yml`.
+
 ### Assertion Steps
 
 #### Assert (type: `assert`)

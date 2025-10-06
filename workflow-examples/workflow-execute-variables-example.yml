@@ -1,0 +1,70 @@
+description: Demonstrates exporting variables from an execute (call) step and reusing them
+name: Execute Variables Example Workflow
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # 1) Install example app
+  - name: Install KV Store App
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # 2) Create a context and export context id + member key
+  - name: Create Context
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      ctx_id: contextId
+      member_key: memberPublicKey
+      ctx_id_node_1:
+        field: contextId
+        target: context_id_{node_name}
+
+  # 3) Execute a contract function and export its top-level result
+  #    The 'call' step maps the top-level field 'result' to a variable
+  - name: Execute Set
+    type: call
+    node: calimero-node-1
+    context_id: '{{ctx_id}}'
+    executor_public_key: '{{member_key}}'
+    method: set
+    args:
+      key: example_key
+      value: example_value
+    outputs:
+      set_result: result   # export the returned 'result' field
+
+  # 4) View the value and export it as a variable for reuse
+  - name: Execute Get
+    type: call
+    node: calimero-node-2
+    context_id: '{{ctx_id}}'
+    executor_public_key: '{{member_key}}'
+    method: get
+    args:
+      key: example_key
+    outputs:
+      read_value: result  # export the returned 'result' field
+
+  # 5) Use the exported variable in a script step (or any later step)
+  - name: Echo Exported Value
+    type: script
+    target: local
+    inline: |
+      echo "Exported value is: {{read_value}}"
+
+# Optional workflow-level configuration
+stop_all_nodes: true
+restart: false
+wait_timeout: 60
+
+
