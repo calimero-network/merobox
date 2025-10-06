@@ -4,6 +4,7 @@ Script execution step for bootstrap workflow.
 
 import io
 import os
+import subprocess
 import tarfile
 import time
 from typing import Any
@@ -49,9 +50,13 @@ class ScriptStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'target' must be a string")
 
         # Validate target value is valid if provided
-        if "target" in self.config and self.config["target"] not in ["image", "nodes"]:
+        if "target" in self.config and self.config["target"] not in [
+            "image",
+            "nodes",
+            "local",
+        ]:
             raise ValueError(
-                f"Step '{step_name}': 'target' must be either 'image' or 'nodes'"
+                f"Step '{step_name}': 'target' must be one of 'image', 'nodes', or 'local'"
             )
 
         # Validate description is a string if provided
@@ -112,8 +117,79 @@ class ScriptStep(BaseStep):
             return await self._execute_on_image(workflow_results, dynamic_values)
         elif self.target == "nodes":
             return await self._execute_on_nodes(workflow_results, dynamic_values)
+        elif self.target == "local":
+            return await self._execute_local(workflow_results, dynamic_values)
         else:
             console.print(f"[red]❌ Unknown target type: {self.target}[/red]")
+            return False
+
+    async def _execute_local(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        """Execute script locally on the host machine."""
+        try:
+            console.print(
+                f"[yellow]Executing script locally: {self.script_path}[/yellow]"
+            )
+
+            if not os.path.exists(self.script_path):
+                console.print(
+                    f"[red]❌ Script file not found: {self.script_path}[/red]"
+                )
+                return False
+
+            # Ensure script is readable
+            try:
+                with open(self.script_path) as file:
+                    file.read(1)
+            except Exception as e:
+                console.print(f"[red]Failed to read script file: {str(e)}[/red]")
+                return False
+
+            # Run the script using /bin/sh
+            start_time = time.time()
+            try:
+                completed = subprocess.run(
+                    ["/bin/sh", self.script_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    check=False,
+                )
+            except Exception as e:
+                console.print(f"[red]Failed to execute local script: {str(e)}[/red]")
+                return False
+
+            execution_time = time.time() - start_time
+            output = completed.stdout or ""
+
+            if output.strip():
+                console.print("[cyan]Local script output:[/cyan]")
+                console.print(output)
+
+            if completed.returncode != 0:
+                console.print(
+                    f"[red]Local script failed with exit code: {completed.returncode}[/red]"
+                )
+                # Still export results for diagnostics
+                self._export_script_results(
+                    "local",
+                    completed.returncode,
+                    output,
+                    execution_time,
+                    dynamic_values,
+                )
+                return False
+
+            # Export results
+            self._export_script_results(
+                "local", completed.returncode, output, execution_time, dynamic_values
+            )
+            console.print("[green]✓ Local script executed successfully[/green]")
+            return True
+
+        except Exception as e:
+            console.print(f"[red]Failed to execute local script: {str(e)}[/red]")
             return False
 
     def _export_script_results(
