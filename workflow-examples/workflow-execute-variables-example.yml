@@ -63,9 +63,8 @@ steps:
   # 5) Use the exported variable in a script step (or any later step)
   - name: Echo Exported Value
     type: script
-    target: local
-    inline: |
-      echo "Exported value is: {{read_value}}"
+    target: nodes
+    script: ./workflow-examples/scripts/echo-exported-value.sh
 
 # Optional workflow-level configuration
 stop_all_nodes: true
