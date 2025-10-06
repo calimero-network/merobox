@@ -46,7 +46,7 @@ steps:
   # 4) View the value and export it as a variable for reuse
   - name: Execute Get
     type: call
-    node: calimero-node-2
+    node: calimero-node-1
     context_id: '{{ctx_id}}'
     executor_public_key: '{{member_key}}'
     method: get
