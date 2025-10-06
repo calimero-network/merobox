@@ -23,12 +23,15 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 
 ```bash
 # From PyPI
-pip install merobox
+pipx install merobox
 
 # From source
 git clone https://github.com/calimero-network/merobox.git
 cd merobox
-pip install -e .
+pipx install -e .
+
+# From Homebrew
+brew install merobox
 ```
 
 ### Basic Usage
