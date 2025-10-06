@@ -54,21 +54,21 @@ steps:
       key: example_key
     outputs:
       # If the call returns a JSON string in 'result', parse and access nested field
-      # Example structure: { "result": "{\"value\":\"example_value\"}" }
+      # Example structure: { "result": "{\"output\":\"example_value\"}" }
       read_value:
         field: result
         json: true          # parse JSON if the field is a JSON string
-        path: value         # extract nested path from the parsed object
+        path: output        # extract nested path from the parsed object
 
   # 5) Use the exported variable in a script step (or any later step)
   - name: Echo Exported Value
     type: script
-    target: nodes
+    target: local
     script: ./workflow-examples/scripts/echo-exported-value.sh
+    args: 
+      - "{{read_value}}"
 
 # Optional workflow-level configuration
 stop_all_nodes: true
 restart: false
 wait_timeout: 60
-
-
