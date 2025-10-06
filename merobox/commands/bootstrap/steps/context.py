@@ -75,6 +75,16 @@ class CreateContextStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
 
+        # Debug: show resolution context
+        try:
+            console.print("[blue]Debug: CreateContext resolved values:[/blue]")
+            console.print(f"  node: {node_name}")
+            console.print(f"  application_id (resolved): {application_id}")
+            console.print(f"  dynamic_values keys: {list(dynamic_values.keys())}")
+            console.print(f"  workflow_results keys: {list(workflow_results.keys())}")
+        except Exception:
+            pass
+
         # Validate export configuration
         if not self._validate_export_config():
             console.print(

@@ -23,12 +23,15 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 
 ```bash
 # From PyPI
-pip install merobox
+pipx install merobox
 
 # From source
 git clone https://github.com/calimero-network/merobox.git
 cd merobox
-pip install -e .
+pipx install -e .
+
+# From Homebrew
+brew install merobox
 ```
 
 ### Basic Usage
@@ -315,6 +318,69 @@ outputs:
 ### Example Workflow
 
 See `workflow-examples/workflow-example.yml` for a complete example.
+
+### Export variables from execute (call) steps
+
+Call-like steps (type: `call`) return a JSON payload. You can export fields from that payload to named variables via the `outputs` mapping, and then reference those variables in subsequent steps using `{{variable_name}}`.
+
+Example (from `workflow-execute-variables-example.yml`):
+
+```yaml
+  - name: Execute Get
+    type: call
+    node: calimero-node-2
+    context_id: '{{ctx_id}}'
+    executor_public_key: '{{member_key}}'
+    method: get
+    args:
+      key: example_key
+    outputs:
+      read_value: result  # export the 'result' field to variable 'read_value'
+
+  - name: Echo Exported Value
+    type: script
+    target: local
+    inline: |
+      echo "Exported value is: {{read_value}}"
+```
+
+Notes:
+- The `outputs` keys (e.g., `read_value`) become variables you can interpolate later as `{{read_value}}`.
+- You can target nested fields and JSON strings using the dict form:
+  ```yaml
+  outputs:
+    my_value:
+      field: result   # top-level field name to read from
+      json: true      # parse JSON if the field is a JSON string
+      path: value     # dotted path inside the parsed JSON
+  ```
+- For more advanced mappings (including per-node variable names), see `workflow-custom-outputs-example.yml`.
+
+### Running scripts in workflows (image, nodes, local) and passing args
+
+The `script` step can execute a script in three ways:
+
+- `target: image` runs the script inside a temporary container created from the node image (before nodes are started)
+- `target: nodes` copies and runs the script inside each running Calimero node container
+- `target: local` runs the script on your host machine via `/bin/sh`
+
+You can also pass arguments and reference exported variables using placeholders. Arguments are resolved before execution.
+
+Example:
+
+```yaml
+- name: Echo Exported Value
+  type: script
+  target: local            # or "nodes" / "image"
+  script: ./workflow-examples/scripts/echo-exported-value.sh
+  args:
+    - "{{read_value}}"    # placeholder resolved from previous step outputs
+```
+
+Notes:
+- The `script` field must be only the path to the script; pass parameters via the `args:` list.
+- Placeholders in `args` are resolved using previously exported variables and workflow results.
+- For container targets, the script is copied into the container and executed with `/bin/sh`.
 
 ### Assertion Steps
 
