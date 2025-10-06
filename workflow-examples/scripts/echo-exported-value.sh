@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-set -euo pipefail
+set -eu
 
 echo "[script] Running echo-exported-value.sh"
 
