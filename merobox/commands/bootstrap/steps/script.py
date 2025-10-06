@@ -23,6 +23,8 @@ class ScriptStep(BaseStep):
         self.description = config.get(
             "description", f"Execute script: {self.script_path}"
         )
+        # Optional script arguments (list of strings)
+        self.script_args = config.get("args", [])
 
     def _get_required_fields(self) -> list[str]:
         """
@@ -64,6 +66,16 @@ class ScriptStep(BaseStep):
             self.config["description"], str
         ):
             raise ValueError(f"Step '{step_name}': 'description' must be a string")
+
+        # Validate args is a list of strings if provided
+        if "args" in self.config:
+            args_val = self.config["args"]
+            if not isinstance(args_val, list) or not all(
+                isinstance(a, str) for a in args_val
+            ):
+                raise ValueError(
+                    f"Step '{step_name}': 'args' must be a list of strings"
+                )
 
     def _get_exportable_variables(self):
         """
@@ -150,7 +162,7 @@ class ScriptStep(BaseStep):
             start_time = time.time()
             try:
                 completed = subprocess.run(
-                    ["/bin/sh", self.script_path],
+                    ["/bin/sh", self.script_path, *self.script_args],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -341,7 +353,8 @@ class ScriptStep(BaseStep):
                     )
 
                 start_time = time.time()
-                result = container.exec_run(["/bin/sh", "/tmp/script.sh"])
+                cmd = ["/bin/sh", "/tmp/script.sh", *self.script_args]
+                result = container.exec_run(cmd)
                 execution_time = time.time() - start_time
 
                 output = result.output.decode("utf-8", errors="replace")
@@ -452,7 +465,8 @@ class ScriptStep(BaseStep):
 
                         # Execute the script
                         start_time = time.time()
-                        result = container.exec_run(["/bin/sh", f"/tmp/{script_name}"])
+                        cmd = ["/bin/sh", f"/tmp/{script_name}", *self.script_args]
+                        result = container.exec_run(cmd)
                         execution_time = time.time() - start_time
 
                         # Display script output
