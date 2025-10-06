@@ -353,6 +353,32 @@ Notes:
   ```
 - For more advanced mappings (including per-node variable names), see `workflow-custom-outputs-example.yml`.
 
+### Running scripts in workflows (image, nodes, local) and passing args
+
+The `script` step can execute a script in three ways:
+
+- `target: image` runs the script inside a temporary container created from the node image (before nodes are started)
+- `target: nodes` copies and runs the script inside each running Calimero node container
+- `target: local` runs the script on your host machine via `/bin/sh`
+
+You can also pass arguments and reference exported variables using placeholders. Arguments are resolved before execution.
+
+Example:
+
+```yaml
+- name: Echo Exported Value
+  type: script
+  target: local            # or "nodes" / "image"
+  script: ./workflow-examples/scripts/echo-exported-value.sh
+  args:
+    - "{{read_value}}"    # placeholder resolved from previous step outputs
+```
+
+Notes:
+- The `script` field must be only the path to the script; pass parameters via the `args:` list.
+- Placeholders in `args` are resolved using previously exported variables and workflow results.
+- For container targets, the script is copied into the container and executed with `/bin/sh`.
+
 ### Assertion Steps
 
 #### Assert (type: `assert`)
