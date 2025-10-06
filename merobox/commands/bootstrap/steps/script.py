@@ -26,6 +26,18 @@ class ScriptStep(BaseStep):
         # Optional script arguments (list of strings)
         self.script_args = config.get("args", [])
 
+    def _resolve_script_args(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> list[str]:
+        """Resolve placeholders in script arguments using BaseStep resolver."""
+        resolved: list[str] = []
+        for arg in self.script_args:
+            if isinstance(arg, str):
+                resolved.append(
+                    self._resolve_dynamic_value(arg, workflow_results, dynamic_values)
+                )
+        return resolved
+
     def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
@@ -125,18 +137,30 @@ class ScriptStep(BaseStep):
 
         console.print(f"\n[bold blue]📜 {self.description}[/bold blue]")
 
+        # Resolve script args now so all execution targets use the same values
+        resolved_args = self._resolve_script_args(workflow_results, dynamic_values)
+
         if self.target == "image":
-            return await self._execute_on_image(workflow_results, dynamic_values)
+            return await self._execute_on_image(
+                workflow_results, dynamic_values, resolved_args
+            )
         elif self.target == "nodes":
-            return await self._execute_on_nodes(workflow_results, dynamic_values)
+            return await self._execute_on_nodes(
+                workflow_results, dynamic_values, resolved_args
+            )
         elif self.target == "local":
-            return await self._execute_local(workflow_results, dynamic_values)
+            return await self._execute_local(
+                workflow_results, dynamic_values, resolved_args
+            )
         else:
             console.print(f"[red]❌ Unknown target type: {self.target}[/red]")
             return False
 
     async def _execute_local(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        resolved_args: list[str],
     ) -> bool:
         """Execute script locally on the host machine."""
         try:
@@ -162,7 +186,7 @@ class ScriptStep(BaseStep):
             start_time = time.time()
             try:
                 completed = subprocess.run(
-                    ["/bin/sh", self.script_path, *self.script_args],
+                    ["/bin/sh", self.script_path, *resolved_args],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -259,7 +283,10 @@ class ScriptStep(BaseStep):
                 console.print(f"  {var_name}={var_value}")
 
     async def _execute_on_image(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        resolved_args: list[str],
     ) -> bool:
         """Execute script on a Docker image before starting nodes."""
         try:
@@ -353,7 +380,7 @@ class ScriptStep(BaseStep):
                     )
 
                 start_time = time.time()
-                cmd = ["/bin/sh", "/tmp/script.sh", *self.script_args]
+                cmd = ["/bin/sh", "/tmp/script.sh", *resolved_args]
                 result = container.exec_run(cmd)
                 execution_time = time.time() - start_time
 
@@ -390,7 +417,10 @@ class ScriptStep(BaseStep):
             return False
 
     async def _execute_on_nodes(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        resolved_args: list[str],
     ) -> bool:
         """Execute script on all running Calimero nodes."""
         try:
@@ -465,7 +495,7 @@ class ScriptStep(BaseStep):
 
                         # Execute the script
                         start_time = time.time()
-                        cmd = ["/bin/sh", f"/tmp/{script_name}", *self.script_args]
+                        cmd = ["/bin/sh", f"/tmp/{script_name}", *resolved_args]
                         result = container.exec_run(cmd)
                         execution_time = time.time() - start_time
 
