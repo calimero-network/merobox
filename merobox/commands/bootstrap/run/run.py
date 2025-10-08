@@ -49,7 +49,10 @@ async def run_workflow(
         # Debug: show incoming log level from CLI/defaults
         try:
             from merobox.commands.utils import console as _console
-            _console.print(f"[cyan]run_workflow: incoming log_level='{log_level}'[/cyan]")
+
+            _console.print(
+                f"[cyan]run_workflow: incoming log_level='{log_level}'[/cyan]"
+            )
         except Exception:
             pass
 

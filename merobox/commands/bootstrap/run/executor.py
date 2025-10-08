@@ -49,9 +49,13 @@ class WorkflowExecutor:
         )
         # Log level can be set by CLI flag or workflow config (CLI takes precedence)
         # If CLI provided a value (including complex RUST_LOG patterns), use it; otherwise fall back to config
-        self.log_level = log_level if log_level is not None else config.get("log_level", "debug")
+        self.log_level = (
+            log_level if log_level is not None else config.get("log_level", "debug")
+        )
         try:
-            console.print(f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}'[/cyan]")
+            console.print(
+                f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}'[/cyan]"
+            )
         except Exception:
             pass
         self.workflow_results = {}
