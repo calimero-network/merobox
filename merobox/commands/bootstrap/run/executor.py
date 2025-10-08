@@ -268,6 +268,7 @@ class WorkflowExecutor:
                                 self.auth_image,
                                 self.auth_use_cached,
                                 self.webui_use_cached,
+                                self.log_level,
                             ):
                                 return False
                     except docker.errors.NotFound:
@@ -285,6 +286,7 @@ class WorkflowExecutor:
                             self.auth_image,
                             self.auth_use_cached,
                             self.webui_use_cached,
+                            self.log_level,
                         ):
                             return False
 
