@@ -455,7 +455,7 @@ merobox run [OPTIONS]
 - `--force-pull`: Force pull Docker image even if it exists locally
 - `--auth-service`: Enable authentication service with Traefik proxy
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
-- `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug, options: error, warn, info, debug, trace)
+- `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
 - `--help`: Show help message
 
 #### `merobox stop`
@@ -517,7 +517,7 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 **Run Command Options:**
 - `--auth-service`: Enable authentication service with Traefik proxy
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
-- `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug, options: error, warn, info, debug, trace)
+- `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
 - `--verbose, -v`: Enable verbose output
 - `--help`: Show help message
 
@@ -662,14 +662,18 @@ merobox run --log-level warn
 merobox run --log-level error
 merobox run --log-level trace
 
+# Use complex RUST_LOG patterns for specific module debugging
+merobox run --log-level "info,calimero_context::handlers::execute=debug,calimero_node::handlers::network_event=debug"
+merobox run --log-level "warn,calimero_server::ws=trace"
+
 # Bootstrap workflows with custom log level
-merobox bootstrap run workflow.yml --log-level info
+merobox bootstrap run workflow.yml --log-level "info,calimero_context::handlers::execute=debug"
 ```
 
 #### **Workflow Configuration**
 ```yaml
 name: "My Workflow"
-log_level: "info"  # Set log level for all nodes in this workflow
+log_level: "info,calimero_context::handlers::execute=debug"  # Set log level for all nodes in this workflow
 nodes:
   count: 2
   # ... other node configuration
@@ -681,6 +685,26 @@ nodes:
 - `info`: Informational, warning, and error messages
 - `debug`: Debug, info, warning, and error messages (default)
 - `trace`: All messages including trace-level details (most verbose)
+
+#### **Complex RUST_LOG Patterns**
+RUST_LOG supports sophisticated logging configuration with module-specific levels:
+
+```bash
+# Set global level to info, but enable debug for specific modules
+merobox run --log-level "info,calimero_context::handlers::execute=debug,calimero_node::handlers::network_event=debug"
+
+# Set global level to warn, but enable trace for WebSocket handling
+merobox run --log-level "warn,calimero_server::ws=trace"
+
+# Multiple module-specific levels
+merobox run --log-level "info,calimero_context::handlers::execute=debug,calimero_node::handlers::network_event=debug,calimero_server::ws=debug"
+```
+
+**Pattern Syntax:**
+- `global_level` - Sets the default log level
+- `module::path=level` - Sets specific level for a module path
+- Multiple patterns separated by commas
+- Use quotes to prevent shell interpretation of special characters
 
 #### **Usage Examples**
 ```bash

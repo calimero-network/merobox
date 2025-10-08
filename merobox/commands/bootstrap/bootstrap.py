@@ -65,7 +65,7 @@ def bootstrap():
 @click.option(
     "--log-level",
     default="debug",
-    help="Set the RUST_LOG level for Calimero nodes (default: debug, options: error, warn, info, debug, trace)",
+    help="Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'",
 )
 def run(
     config_file,
