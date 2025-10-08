@@ -47,6 +47,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "force_pull_image": False,  # Force pull Docker images even if they exist locally
         "auth_service": False,  # Enable authentication service with Traefik proxy
         "auth_image": "ghcr.io/calimero-network/mero-auth:edge",  # Custom Docker image for the auth service
+        "log_level": "debug",  # Set the RUST_LOG level for Calimero nodes (error, warn, info, debug, trace)
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",

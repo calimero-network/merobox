@@ -31,6 +31,7 @@ class WorkflowExecutor:
         auth_image: str = None,
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
+        log_level: str = "debug",
     ):
         self.config = config
         self.manager = manager
@@ -46,6 +47,8 @@ class WorkflowExecutor:
         self.webui_use_cached = webui_use_cached or config.get(
             "webui_use_cached", False
         )
+        # Log level can be set by CLI flag or workflow config (CLI takes precedence)
+        self.log_level = log_level if log_level != "debug" else config.get("log_level", "debug")
         self.workflow_results = {}
         self.dynamic_values = {}  # Store dynamic values for later use
         # Node image can be overridden by CLI flag; otherwise from config; else default in manager
@@ -224,6 +227,7 @@ class WorkflowExecutor:
                     self.auth_image,
                     self.auth_use_cached,
                     self.webui_use_cached,
+                    self.log_level,
                 ):
                     return False
             else:

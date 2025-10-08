@@ -24,6 +24,7 @@ async def run_workflow(
     auth_image: str = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
+    log_level: str = "debug",
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -53,6 +54,7 @@ async def run_workflow(
             auth_image,
             auth_use_cached,
             webui_use_cached,
+            log_level,
         )
 
         # Execute workflow
@@ -84,6 +86,7 @@ def run_workflow_sync(
     auth_image: str = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
+    log_level: str = "debug",
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -105,5 +108,6 @@ def run_workflow_sync(
             auth_image=auth_image,
             auth_use_cached=auth_use_cached,
             webui_use_cached=webui_use_cached,
+            log_level=log_level,
         )
     )

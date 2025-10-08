@@ -62,6 +62,11 @@ def bootstrap():
     is_flag=True,
     help="Use cached WebUI frontend instead of fetching fresh (disables CALIMERO_WEBUI_FETCH)",
 )
+@click.option(
+    "--log-level",
+    default="debug",
+    help="Set the RUST_LOG level for Calimero nodes (default: debug, options: error, warn, info, debug, trace)",
+)
 def run(
     config_file,
     verbose,
@@ -70,6 +75,7 @@ def run(
     auth_image,
     auth_use_cached,
     webui_use_cached,
+    log_level,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -89,6 +95,7 @@ def run(
         auth_image,
         auth_use_cached,
         webui_use_cached,
+        log_level,
     )
     if not success:
         sys.exit(1)
