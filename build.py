@@ -40,7 +40,7 @@ def build_executable():
     
     # Build with PyInstaller
     cmd = [
-        "pyinstaller",
+        "python3", "-m", "pyinstaller",
         "--onefile",
         "--name", "merobox",
         "--specpath", ".",

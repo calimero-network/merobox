@@ -102,6 +102,7 @@ class CalimeroManager:
         auth_image: str = None,
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
+        log_level: str = "debug",
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -181,8 +182,18 @@ class CalimeroManager:
             node_env = {
                 "CALIMERO_HOME": "/app/data",
                 "NODE_NAME": node_name,
-                "RUST_LOG": "info",
+                "RUST_LOG": log_level,
             }
+
+            # Debug: Print the RUST_LOG value being set
+            console.print(
+                f"[cyan]Setting RUST_LOG for node {node_name}: {log_level}[/cyan]"
+            )
+
+            # Also print all environment variables being set for debugging
+            console.print(f"[yellow]Environment variables for {node_name}:[/yellow]")
+            for key, value in node_env.items():
+                console.print(f"  {key}={value}")
 
             # By default, fetch fresh WebUI unless explicitly disabled
             env_webui_fetch = os.getenv("CALIMERO_WEBUI_FETCH", "1")
@@ -754,6 +765,7 @@ class CalimeroManager:
         auth_image: str = None,
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
+        log_level: str = "debug",
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -786,6 +798,7 @@ class CalimeroManager:
                 auth_image=auth_image,
                 auth_use_cached=auth_use_cached,
                 webui_use_cached=webui_use_cached,
+                log_level=log_level,
             ):
                 success_count += 1
             else:
