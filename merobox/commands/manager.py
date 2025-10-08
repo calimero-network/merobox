@@ -184,6 +184,14 @@ class CalimeroManager:
                 "NODE_NAME": node_name,
                 "RUST_LOG": log_level,
             }
+            
+            # Debug: Print the RUST_LOG value being set
+            console.print(f"[cyan]Setting RUST_LOG for node {node_name}: {log_level}[/cyan]")
+            
+            # Also print all environment variables being set for debugging
+            console.print(f"[yellow]Environment variables for {node_name}:[/yellow]")
+            for key, value in node_env.items():
+                console.print(f"  {key}={value}")
 
             # By default, fetch fresh WebUI unless explicitly disabled
             env_webui_fetch = os.getenv("CALIMERO_WEBUI_FETCH", "1")
