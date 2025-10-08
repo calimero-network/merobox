@@ -181,7 +181,7 @@ class CalimeroManager:
             node_env = {
                 "CALIMERO_HOME": "/app/data",
                 "NODE_NAME": node_name,
-                "RUST_LOG": "info",
+                "RUST_LOG": "debug",
             }
 
             # By default, fetch fresh WebUI unless explicitly disabled
