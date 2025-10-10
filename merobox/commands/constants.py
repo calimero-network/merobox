@@ -54,7 +54,9 @@ STEP_INVITE_IDENTITY = "invite_identity"
 STEP_JOIN_CONTEXT = "join_context"
 STEP_CALL = "call"
 STEP_WAIT = "wait"
-STEP_REPEAT = "repeat"
+STEP_GET_PROPOSAL = "get_proposal"
+STEP_LIST_PROPOSALS = "list_proposals"
+STEP_GET_PROPOSAL_APPROVERS = "get_proposal_approvers"
 
 # Protocol types
 PROTOCOL_NEAR = "near"

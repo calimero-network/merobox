@@ -15,6 +15,11 @@ from merobox.commands.bootstrap.steps.identity import (
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+from merobox.commands.bootstrap.steps.proposals import (
+    GetProposalApproversStep,
+    GetProposalStep,
+    ListProposalsStep,
+)
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
@@ -106,16 +111,22 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = JoinContextStep
         elif step_type == "call":
             step_class = ExecuteStep
-        elif step_type == "repeat":
-            step_class = RepeatStep
         elif step_type == "wait":
             step_class = WaitStep
+        elif step_type == "repeat":
+            step_class = RepeatStep
         elif step_type == "script":
             step_class = ScriptStep
         elif step_type == "assert":
             step_class = AssertStep
         elif step_type == "json_assert":
             step_class = JsonAssertStep
+        elif step_type == "get_proposal":
+            step_class = GetProposalStep
+        elif step_type == "list_proposals":
+            step_class = ListProposalsStep
+        elif step_type == "get_proposal_approvers":
+            step_class = GetProposalApproversStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors
