@@ -118,9 +118,21 @@ class JoinContextStep(BaseStep):
         console.print(f"[blue]Join function returned: {result}[/blue]")
 
         # Log detailed API response
+        import json as json_lib
+
         console.print(f"[cyan]🔍 Join API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
-        console.print(f"  Data: {result.get('data')}")
+
+        data = result.get("data")
+        if isinstance(data, dict):
+            try:
+                formatted_data = json_lib.dumps(data, indent=2)
+                console.print(f"  Data:\n{formatted_data}")
+            except Exception:
+                console.print(f"  Data: {data}")
+        else:
+            console.print(f"  Data: {data}")
+
         console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
         console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
         if not result.get("success"):
