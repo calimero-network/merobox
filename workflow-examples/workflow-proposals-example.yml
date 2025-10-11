@@ -1,5 +1,5 @@
 name: "Proposals API - Simple E2E Test"
-description: "Test the 3 supported proposals API methods: get_proposal, list_proposals, get_proposal_approvers"
+description: "Test the proposals API methods: get_proposal, list_proposals, get_proposal_approvers"
 
 force_pull_image: false
 
@@ -19,7 +19,7 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: prop-test-1
-    path: workflow-examples/res/blockchain.wasm
+    url: "https://github.com/calimero-network/demo-blockchain-integrations/raw/refs/heads/master/logic/res/blockchain.wasm"
     dev: true
     outputs:
       app_id: applicationId
