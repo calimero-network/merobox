@@ -71,6 +71,20 @@ class WorkflowExecutor:
         )
 
         try:
+            # Check if we should nuke on start
+            nuke_on_start = self.config.get("nuke_on_start", False)
+            if nuke_on_start:
+                console.print(
+                    "\n[bold red]💥 Nuking all data before workflow ...[/bold red]"
+                )
+                if not self._nuke_data():
+                    console.print(
+                        "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
+                    )
+                else:
+                    console.print("[green]✓ Nuke on start completed[/green]")
+                time.sleep(2)  # Give time for cleanup
+
             # Check if we should force pull images
             force_pull_images = self.config.get("force_pull_image", False)
             if force_pull_images:
@@ -83,6 +97,7 @@ class WorkflowExecutor:
             # Check if we should restart nodes at the beginning
             restart_nodes = self.config.get("restart", False)
             stop_all_nodes = self.config.get("stop_all_nodes", False)
+            nuke_on_end = self.config.get("nuke_on_end", False)
 
             # Step 1: Restart nodes if requested (at beginning)
             if restart_nodes:
@@ -146,6 +161,18 @@ class WorkflowExecutor:
                     "[cyan]Nodes will continue running for future workflows[/cyan]"
                 )
 
+            # Step 6: Nuke on end if requested
+            if nuke_on_end:
+                console.print(
+                    "\n[bold red]💥 Nuking all data after workflow ...[/bold red]"
+                )
+                if not self._nuke_data():
+                    console.print(
+                        "[yellow]⚠️  Warning: Nuke operation encountered issues[/yellow]"
+                    )
+                else:
+                    console.print("[green]✓ Nuke on end completed[/green]")
+
             console.print(
                 f"\n[bold green]🎉 Workflow '{workflow_name}' completed successfully![/bold green]"
             )
@@ -160,6 +187,34 @@ class WorkflowExecutor:
 
         except Exception as e:
             console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
+            return False
+
+    def _nuke_data(self, prefix: str = None) -> bool:
+        """
+        Execute nuke operation to clean all data.
+
+        Args:
+            prefix: Optional prefix to filter which nodes to nuke
+
+        Returns:
+            bool: True if nuke succeeded, False otherwise
+        """
+        try:
+            from merobox.commands.nuke import execute_nuke
+
+            # If no prefix specified, derive from workflow nodes config
+            if prefix is None:
+                nodes_config = self.config.get("nodes", {})
+                prefix = nodes_config.get("prefix", None)
+
+            return execute_nuke(
+                manager=self.manager,
+                prefix=prefix,
+                verbose=False,
+                silent=False,
+            )
+        except Exception as e:
+            console.print(f"[red]Nuke operation failed: {str(e)}[/red]")
             return False
 
     async def _force_pull_workflow_images(self) -> None:
