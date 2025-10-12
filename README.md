@@ -579,13 +579,17 @@ merobox join [OPTIONS] NODE_NAME CONTEXT_ID INVITEE_ID INVITATION
 - `--help`: Show help message
 
 #### `merobox nuke`
-Remove all node data and containers.
+Remove all node data and containers .
 
 ```bash
 merobox nuke [OPTIONS]
 ```
 
 **Options:**
+- `--dry-run`: Show what would be deleted without actually deleting
+- `--force, -f`: Force deletion without confirmation prompt
+- `--verbose, -v`: Show verbose output
+- `--prefix TEXT`: Filter nodes by prefix (e.g., 'calimero-node-' or 'test-node-')
 - `--help`: Show help message
 
 ### Configuration Files
@@ -595,22 +599,32 @@ Workflows are defined in YAML files with the following structure:
 
 ```yaml
 name: "Workflow Name"
-# Force pull Docker images even if they exist locally
-force_pull_image: false
+
+# Data cleanup options
+nuke_on_start: false  # Nuke all data before starting workflow
+nuke_on_end: false    # Nuke all data after completing workflow
+
+# Image management
+force_pull_image: false  # Force pull Docker images even if they exist locally
+
+# Node lifecycle
+restart: false        # Restart nodes at beginning
+stop_all_nodes: true  # Stop nodes after completion
 
 nodes:
-  - "node-name-1"
-  - "node-name-2"
+  count: 2
+  prefix: "node-name"
+  # ... node configuration
 
 steps:
   - name: "Step Name"
     type: "step_type"
     # ... step-specific configuration
-
-stop_all_nodes: true  # Optional: stop nodes after completion
 ```
 
 **Configuration Options:**
+- `nuke_on_start`: When `true`, performs complete data cleanup (containers + data) before workflow starts. Ensures clean slate. 
+- `nuke_on_end`: When `true`, performs complete data cleanup after workflow completes. Useful for CI/CD and testing.
 - `force_pull_image`: When set to `true`, forces Docker to pull fresh images from registries, even if they exist locally. Useful for ensuring latest versions or during development.
 - `auth_service`: When set to `true`, enables authentication service integration with Traefik proxy. Nodes will be configured with authentication middleware and proper routing.
 
