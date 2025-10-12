@@ -641,6 +641,20 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 
             return JsonAssertStep(step_config)
+        elif step_type == "get_proposal":
+            from merobox.commands.bootstrap.steps.proposals import GetProposalStep
+
+            return GetProposalStep(step_config)
+        elif step_type == "list_proposals":
+            from merobox.commands.bootstrap.steps.proposals import ListProposalsStep
+
+            return ListProposalsStep(step_config)
+        elif step_type == "get_proposal_approvers":
+            from merobox.commands.bootstrap.steps.proposals import (
+                GetProposalApproversStep,
+            )
+
+            return GetProposalApproversStep(step_config)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None
