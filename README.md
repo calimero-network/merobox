@@ -96,11 +96,13 @@ When you enable `--auth-service`, merobox automatically creates:
 ### URL Access
 
 **With Auth Service:**
+
 - Node URLs: `http://node1.127.0.0.1.nip.io`, `http://node2.127.0.0.1.nip.io`, etc.
 - Auth Login: `http://node1.127.0.0.1.nip.io/auth/login`
 - Admin Dashboard: `http://node1.127.0.0.1.nip.io/admin-dashboard`
 
 **Without Auth Service:**
+
 - Admin Dashboard: `http://localhost:2528/admin-dashboard`
 - Admin API: `http://localhost:2528/admin-api/`
 
@@ -167,21 +169,23 @@ steps:
 ### Step Types
 
 #### Install Step
+
 Installs WASM applications on Calimero nodes.
 
 ```yaml
 - name: "Install App"
   type: "install"
   node: "calimero-node-1"
-  path: "./application.wasm"  # Local path
+  path: "./application.wasm" # Local path
   # OR
-  url: "https://example.com/app.wasm"  # Remote URL
-  dev: true  # Development mode
+  url: "https://example.com/app.wasm" # Remote URL
+  dev: true # Development mode
   outputs:
     applicationId: "app_id"
 ```
 
 #### Context Step
+
 Creates blockchain contexts for applications.
 
 ```yaml
@@ -197,6 +201,7 @@ Creates blockchain contexts for applications.
 ```
 
 #### Identity Step
+
 Generates cryptographic identities.
 
 ```yaml
@@ -208,6 +213,7 @@ Generates cryptographic identities.
 ```
 
 #### Invite Step
+
 Invites identities to join contexts.
 
 ```yaml
@@ -221,6 +227,7 @@ Invites identities to join contexts.
 ```
 
 #### Join Step
+
 Joins contexts using invitations.
 
 ```yaml
@@ -233,6 +240,7 @@ Joins contexts using invitations.
 ```
 
 #### Execute Step
+
 Executes smart contract functions.
 
 ```yaml
@@ -250,6 +258,7 @@ Executes smart contract functions.
 ```
 
 #### Wait Step
+
 Adds delays between steps.
 
 ```yaml
@@ -259,6 +268,7 @@ Adds delays between steps.
 ```
 
 #### Repeat Step
+
 Executes steps multiple times.
 
 ```yaml
@@ -289,11 +299,13 @@ Executes steps multiple times.
 Workflows support dynamic variable substitution using `{{variable_name}}` syntax.
 
 #### Variable Sources
+
 - **Step Outputs**: Variables exported by previous steps
 - **Workflow Context**: Global workflow variables
 - **Environment**: System environment variables
 
 #### Embedded Variables
+
 Variables can be embedded within strings:
 
 ```yaml
@@ -302,6 +314,7 @@ args:
 ```
 
 #### Variable Resolution
+
 - Variables are resolved at execution time
 - Missing variables cause workflow failures
 - Use `outputs` sections to export variables for later use
@@ -312,7 +325,7 @@ Each step can export variables for use in subsequent steps:
 
 ```yaml
 outputs:
-  variableName: "export_name"  # Maps API response field to export name
+  variableName: "export_name" # Maps API response field to export name
 ```
 
 ### Example Workflow
@@ -326,34 +339,56 @@ Call-like steps (type: `call`) return a JSON payload. You can export fields from
 Example (from `workflow-execute-variables-example.yml`):
 
 ```yaml
-  - name: Execute Get
-    type: call
-    node: calimero-node-2
-    context_id: '{{ctx_id}}'
-    executor_public_key: '{{member_key}}'
-    method: get
-    args:
-      key: example_key
-    outputs:
-      read_value: result  # export the 'result' field to variable 'read_value'
+- name: Execute Get
+  type: call
+  node: calimero-node-2
+  context_id: "{{ctx_id}}"
+  executor_public_key: "{{member_key}}"
+  method: get
+  args:
+    key: example_key
+  outputs:
+    # Simple field access
+    read_value: result
 
-  - name: Echo Exported Value
-    type: script
-    target: local
-    inline: |
-      echo "Exported value is: {{read_value}}"
+    # Nested field access with automatic JSON parsing
+    # If result contains { "output": "value" }, this extracts "value"
+    nested_value: result.output
+
+    # Deep nesting also works: result.data.user.name.first
+    deeply_nested: result.data.user.name
+
+- name: Echo Exported Value
+  type: script
+  target: local
+  inline: |
+    echo "Exported value is: {{read_value}}"
+    echo "Nested value is: {{nested_value}}"
 ```
 
+**Syntax options:**
+
+1. **Simple dotted path (recommended)**: Use dot notation to access nested fields. The system automatically parses JSON strings at each level.
+
+   ```yaml
+   outputs:
+     my_value: result.output # Simple nested access
+     deep_value: result.data.user.name # Deep nesting
+     array_item: items.0.id # Array indexing
+   ```
+
+2. **Dict-based syntax (legacy, still supported)**: For backward compatibility, you can use the explicit dict form:
+   ```yaml
+   outputs:
+     my_value:
+       field: result # top-level field name to read from
+       json: true # parse JSON if the field is a JSON string
+       path: output # dotted path inside the parsed JSON
+   ```
+
 Notes:
+
 - The `outputs` keys (e.g., `read_value`) become variables you can interpolate later as `{{read_value}}`.
-- You can target nested fields and JSON strings using the dict form:
-  ```yaml
-  outputs:
-    my_value:
-      field: result   # top-level field name to read from
-      json: true      # parse JSON if the field is a JSON string
-      path: value     # dotted path inside the parsed JSON
-  ```
 - For more advanced mappings (including per-node variable names), see `workflow-custom-outputs-example.yml`.
 
 ### Running scripts in workflows (image, nodes, local) and passing args
@@ -371,13 +406,14 @@ Example:
 ```yaml
 - name: Echo Exported Value
   type: script
-  target: local            # or "nodes" / "image"
+  target: local # or "nodes" / "image"
   script: ./workflow-examples/scripts/echo-exported-value.sh
   args:
-    - "{{read_value}}"    # placeholder resolved from previous step outputs
+    - "{{read_value}}" # placeholder resolved from previous step outputs
 ```
 
 Notes:
+
 - The `script` field must be only the path to the script; pass parameters via the `args:` list.
 - Placeholders in `args` are resolved using previously exported variables and workflow results.
 - For container targets, the script is copied into the container and executed with `/bin/sh`.
@@ -385,9 +421,11 @@ Notes:
 ### Assertion Steps
 
 #### Assert (type: `assert`)
+
 Statement-based assertions against exported variables and literals.
 
 Supported forms:
+
 - `is_set(A)` / `is_empty(A)`
 - `contains(A, B)` / `not_contains(A, B)`
 - `regex(A, PATTERN)`
@@ -397,6 +435,7 @@ Supported forms:
 Placeholders like `{{var}}` are resolved before evaluation.
 
 Example:
+
 ```yaml
 - name: Assert exported variables
   type: assert
@@ -409,13 +448,16 @@ Example:
 ```
 
 #### JSON Assert (type: `json_assert`)
+
 Compare JSON-like values (Python dict/list or JSON strings).
 
 Supported forms:
+
 - `json_equal(A, B)` / `equal(A, B)`
 - `json_subset(A, B)` / `subset(A, B)` (B must be subset of A)
 
 Example:
+
 ```yaml
 - name: Assert JSON equality of get_result
   type: json_assert
@@ -441,6 +483,7 @@ merobox [OPTIONS] COMMAND [ARGS]...
 ### Core Commands
 
 #### `merobox run`
+
 Start Calimero nodes.
 
 ```bash
@@ -448,6 +491,7 @@ merobox run [OPTIONS]
 ```
 
 **Options:**
+
 - `--count INTEGER`: Number of nodes to start (default: 1)
 - `--prefix TEXT`: Node name prefix (default: "calimero-node")
 - `--restart`: Restart existing nodes
@@ -459,6 +503,7 @@ merobox run [OPTIONS]
 - `--help`: Show help message
 
 #### `merobox stop`
+
 Stop Calimero nodes.
 
 ```bash
@@ -466,12 +511,14 @@ merobox stop [OPTIONS]
 ```
 
 **Options:**
+
 - `--all`: Stop all running nodes and auth service stack
 - `--auth-service`: Stop auth service stack only (Traefik + Auth)
 - `--prefix TEXT`: Stop nodes with specific prefix
 - `--help`: Show help message
 
 #### `merobox list`
+
 List running Calimero nodes.
 
 ```bash
@@ -479,9 +526,11 @@ merobox list [OPTIONS]
 ```
 
 **Options:**
+
 - `--help`: Show help message
 
 #### `merobox health`
+
 Check health status of nodes.
 
 ```bash
@@ -489,9 +538,11 @@ merobox health [OPTIONS]
 ```
 
 **Options:**
+
 - `--help`: Show help message
 
 #### `merobox logs`
+
 View node logs.
 
 ```bash
@@ -499,10 +550,12 @@ merobox logs [OPTIONS] NODE_NAME
 ```
 
 **Options:**
+
 - `--follow`: Follow log output
 - `--help`: Show help message
 
 #### `merobox bootstrap`
+
 Execute workflows and validate configurations.
 
 ```bash
@@ -510,11 +563,13 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Subcommands:**
+
 - `run <config_file>`: Execute a workflow
 - `validate <config_file>`: Validate workflow configuration
 - `create-sample`: Create a sample workflow file
 
 **Run Command Options:**
+
 - `--auth-service`: Enable authentication service with Traefik proxy
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
 - `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
@@ -522,6 +577,7 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 - `--help`: Show help message
 
 #### `merobox install`
+
 Install applications on nodes.
 
 ```bash
@@ -529,10 +585,12 @@ merobox install [OPTIONS] NODE_NAME PATH_OR_URL
 ```
 
 **Options:**
+
 - `--dev`: Development mode installation
 - `--help`: Show help message
 
 #### `merobox context`
+
 Manage blockchain contexts.
 
 ```bash
@@ -540,11 +598,13 @@ merobox context [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Subcommands:**
+
 - `create`: Create a new context
 - `list`: List contexts
 - `show`: Show context details
 
 #### `merobox identity`
+
 Manage cryptographic identities.
 
 ```bash
@@ -552,11 +612,13 @@ merobox identity [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Subcommands:**
+
 - `generate`: Generate new identity
 - `list`: List identities
 - `show`: Show identity details
 
 #### `merobox call`
+
 Execute smart contract functions.
 
 ```bash
@@ -564,11 +626,13 @@ merobox call [OPTIONS] NODE_NAME CONTEXT_ID METHOD [ARGS]...
 ```
 
 **Options:**
+
 - `--executor-key TEXT`: Executor public key
 - `--exec-type TEXT`: Execution type
 - `--help`: Show help message
 
 #### `merobox join`
+
 Join blockchain contexts.
 
 ```bash
@@ -576,6 +640,7 @@ merobox join [OPTIONS] NODE_NAME CONTEXT_ID INVITEE_ID INVITATION
 ```
 
 **Options:**
+
 - `--help`: Show help message
 
 #### `merobox nuke`
@@ -595,6 +660,7 @@ merobox nuke [OPTIONS]
 ### Configuration Files
 
 #### Workflow Configuration
+
 Workflows are defined in YAML files with the following structure:
 
 ```yaml
@@ -633,12 +699,15 @@ steps:
 Merobox provides automatic Docker image management to ensure your workflows always have the required images:
 
 #### **Automatic Image Pulling**
+
 - **Remote Detection**: Automatically detects when images are from remote registries
 - **Smart Pulling**: Only pulls images that aren't available locally
 - **Progress Display**: Shows real-time pull progress and status
 
 #### **Force Pull Options**
+
 1. **CLI Flag**: Use `--force-pull` with the `run` command for individual operations
+
    ```bash
    merobox run --image ghcr.io/calimero-network/merod:edge --force-pull
    ```
@@ -646,18 +715,20 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 2. **Workflow Configuration**: Set `force_pull_image: true` in your workflow YAML
    ```yaml
    name: "My Workflow"
-   force_pull_image: true  # Will force pull all images
+   force_pull_image: true # Will force pull all images
    nodes:
      image: ghcr.io/calimero-network/merod:edge
    ```
 
 #### **Use Cases**
+
 - **Development**: Always get latest images during development
 - **Testing**: Ensure consistent image versions across environments
 - **CI/CD**: Force fresh pulls in automated workflows
 - **Production**: Update images without manual intervention
 
 #### Environment Variables
+
 - `CALIMERO_IMAGE`: Docker image for Calimero nodes
 - `DOCKER_HOST`: Docker daemon connection string
 - `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -669,6 +740,7 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 Merobox provides flexible logging configuration for Calimero nodes through both CLI flags and workflow variables.
 
 #### **CLI Usage**
+
 ```bash
 # Use different log levels
 merobox run --log-level info
@@ -685,15 +757,17 @@ merobox bootstrap run workflow.yml --log-level "info,calimero_context::handlers:
 ```
 
 #### **Workflow Configuration**
+
 ```yaml
 name: "My Workflow"
-log_level: "info,calimero_context::handlers::execute=debug"  # Set log level for all nodes in this workflow
+log_level: "info,calimero_context::handlers::execute=debug" # Set log level for all nodes in this workflow
 nodes:
   count: 2
   # ... other node configuration
 ```
 
 #### **Available Log Levels**
+
 - `error`: Only error messages (least verbose)
 - `warn`: Warning and error messages
 - `info`: Informational, warning, and error messages
@@ -701,6 +775,7 @@ nodes:
 - `trace`: All messages including trace-level details (most verbose)
 
 #### **Complex RUST_LOG Patterns**
+
 RUST_LOG supports sophisticated logging configuration with module-specific levels:
 
 ```bash
@@ -715,12 +790,14 @@ merobox run --log-level "info,calimero_context::handlers::execute=debug,calimero
 ```
 
 **Pattern Syntax:**
+
 - `global_level` - Sets the default log level
 - `module::path=level` - Sets specific level for a module path
 - Multiple patterns separated by commas
 - Use quotes to prevent shell interpretation of special characters
 
 #### **Usage Examples**
+
 ```bash
 # Production setup with minimal logging
 merobox run --count 3 --log-level warn
@@ -737,12 +814,14 @@ merobox bootstrap run production-workflow.yml --log-level info
 Merobox supports integration with Calimero's authentication service using Traefik as a reverse proxy. When enabled, nodes are automatically configured with:
 
 #### **Authentication Features**
+
 - **Protected API Endpoints**: JSON-RPC and admin API routes require authentication
 - **Public Admin Dashboard**: Admin dashboard remains publicly accessible
 - **WebSocket Protection**: WebSocket connections are also authenticated
 - **Automatic Routing**: Traefik handles routing to node-specific subdomains
 
 #### **Network Configuration**
+
 - **Docker Networks**: Automatically creates `calimero_web` and `calimero_internal` networks
 - **Traefik Labels**: Adds proper routing labels for each node
 - **CORS Support**: Configured CORS middleware for web access
@@ -757,6 +836,7 @@ Merobox provides flexible options for managing auth service frontend updates:
 - **Workflow Config**: Set `auth_use_cached: true` in workflow YAML to use cached auth frontend
 
 **Environment Variable Usage:**
+
 ```bash
 # Use cached auth frontend for all auth service operations
 export CALIMERO_AUTH_FRONTEND_FETCH=0
@@ -776,6 +856,7 @@ Merobox provides flexible options for managing node WebUI frontend updates:
 - **Workflow Config**: Set `webui_use_cached: true` in workflow YAML to use cached WebUI frontend
 
 **Environment Variable Usage:**
+
 ```bash
 # Use cached WebUI frontend for all node operations
 export CALIMERO_WEBUI_FETCH=0
@@ -788,6 +869,7 @@ CALIMERO_WEBUI_FETCH=0 merobox run --count 2
 #### **Usage Examples**
 
 **CLI Usage:**
+
 ```bash
 # Start nodes with auth service
 merobox run --count 2 --auth-service
@@ -824,16 +906,17 @@ merobox stop --auth-service
 ```
 
 **Workflow Configuration:**
+
 ```yaml
 name: "Frontend Management Workflow"
 # Auth service configuration (fresh frontend is default, use cached if needed)
-auth_service: true  # Enable auth service for this workflow
-auth_image: "ghcr.io/calimero-network/mero-auth:edge"  # Custom auth image
-auth_use_cached: true  # Use cached auth frontend instead of fresh (optional)
+auth_service: true # Enable auth service for this workflow
+auth_image: "ghcr.io/calimero-network/mero-auth:edge" # Custom auth image
+auth_use_cached: true # Use cached auth frontend instead of fresh (optional)
 
 # Node configuration (fresh WebUI is default, use cached if needed)
-image: "ghcr.io/calimero-network/merod:edge"  # Custom node image
-webui_use_cached: true  # Use cached WebUI frontend instead of fresh (optional)
+image: "ghcr.io/calimero-network/merod:edge" # Custom node image
+webui_use_cached: true # Use cached WebUI frontend instead of fresh (optional)
 
 nodes:
   count: 2
@@ -843,12 +926,15 @@ steps:
 ```
 
 **Access Patterns:**
+
 - Node 1 API: `http://calimero-node-1.127.0.0.1.nip.io/jsonrpc` (protected)
 - Node 1 Dashboard: `http://calimero-node-1.127.0.0.1.nip.io/admin-dashboard` (public)
 - Auth Service: `http://localhost/auth/` (authentication endpoints)
 
 #### **Automatic Service Management**
+
 When auth service is enabled, Merobox automatically:
+
 1. **Starts Traefik Proxy**: Automatically pulls and starts `traefik:v2.10` container
 2. **Starts Auth Service**: Automatically pulls and starts `ghcr.io/calimero-network/calimero-auth:latest` container
 3. **Creates Docker Networks**: Sets up `calimero_web` and `calimero_internal` networks
@@ -857,6 +943,7 @@ When auth service is enabled, Merobox automatically:
 6. **Enables CORS**: Configures CORS for web access
 
 **Service Management:**
+
 - **Start**: Services are started automatically when `--auth-service` flag is used
 - **Stop**: Use `merobox stop --auth-service` to stop Traefik and Auth service
 - **Status Check**: Services are checked and reused if already running
@@ -872,6 +959,7 @@ Merobox can be used as a lightweight test harness for your Python projects. Use 
 #### Basic Cluster Management
 
 **Context manager:**
+
 ```python
 from merobox.testing import cluster
 
@@ -882,6 +970,7 @@ with cluster(count=2, prefix="ci", image="ghcr.io/calimero-network/merod:edge") 
 ```
 
 **Pytest fixture:**
+
 ```python
 # conftest.py
 from merobox.testing import pytest_cluster
@@ -899,6 +988,7 @@ def test_something(merobox_cluster):
 For more complex test scenarios, you can run entire Merobox workflows as pretest setup:
 
 **Context manager:**
+
 ```python
 from merobox.testing import workflow
 
@@ -907,12 +997,13 @@ with workflow("workflow-examples/workflow-example.yml", prefix="pretest") as env
     # env["nodes"] -> List of nodes created by the workflow
     # env["endpoints"] -> RPC endpoints for each node
     # env["manager"] -> CalimeroManager instance
-    
+
     # Your test logic here
     # The workflow environment is automatically cleaned up on exit
 ```
 
 **Pytest fixture:**
+
 ```python
 # conftest.py
 from merobox.testing import pytest_workflow
@@ -927,13 +1018,14 @@ merobox_workflow = pytest_workflow(
 def test_with_workflow_setup(merobox_workflow):
     workflow_result = merobox_workflow["workflow_result"]
     assert workflow_result is True
-    
+
     nodes = merobox_workflow["nodes"]
     endpoints = merobox_workflow["endpoints"]
     # ... your test logic
 ```
 
 **Options for workflow testing:**
+
 - `workflow_path`: Path to the workflow YAML file
 - `prefix`: Node name prefix filter
 - `image`: Custom Docker image
@@ -946,11 +1038,13 @@ See `testing-examples/` for runnable examples including workflow pretest setup.
 ### Environment Setup
 
 #### Prerequisites
+
 - Python 3.8+
 - Docker 20.10+
 - Git
 
 #### Local Development
+
 ```bash
 # Clone repository
 git clone https://github.com/calimero-network/merobox.git
@@ -968,6 +1062,7 @@ pip install -e .
 ```
 
 #### Development Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -1027,6 +1122,7 @@ merobox/
 ### Building and Testing
 
 #### Build Commands
+
 ```bash
 # Show all available commands
 make help
@@ -1048,6 +1144,7 @@ make format-check
 ```
 
 #### Testing
+
 ```bash
 # Run tests (when implemented)
 make test
@@ -1057,6 +1154,7 @@ python -m pytest tests/test_specific.py
 ```
 
 #### Code Quality
+
 ```bash
 # Format code with Black
 make format
@@ -1090,12 +1188,14 @@ make lint
 ### Release Process
 
 #### Version Management
+
 - Update version in `merobox/__init__.py`
 - Update version in `merobox/cli.py`
 - Update version in `setup.py`
 - Add entry to `CHANGELOG.md`
 
 #### Publishing
+
 ```bash
 # Build and check
 make check
@@ -1108,6 +1208,7 @@ make publish
 ```
 
 #### Release Checklist
+
 - [ ] All tests pass
 - [ ] Documentation updated
 - [ ] Version bumped
@@ -1125,22 +1226,26 @@ make publish
 #### Node Startup Problems
 
 **Issue**: Nodes fail to start
+
 ```bash
 Error: Failed to start Calimero node
 ```
 
 **Solutions**:
+
 1. Check Docker is running: `docker ps`
 2. Verify port availability: `netstat -tulpn | grep :2528`
 3. Check Docker permissions: `docker run hello-world`
 4. Clean up existing containers: `merobox nuke`
 
 **Issue**: Port conflicts
+
 ```bash
 Error: Port 2528 already in use
 ```
 
 **Solutions**:
+
 1. Stop conflicting services: `lsof -ti:2528 | xargs kill`
 2. Use different ports: `merobox run --count 1`
 3. Clean up: `merobox stop --all`
@@ -1148,33 +1253,39 @@ Error: Port 2528 already in use
 #### Workflow Execution Issues
 
 **Issue**: Dynamic variable resolution fails
+
 ```bash
 Error: Variable '{{missing_var}}' not found
 ```
 
 **Solutions**:
+
 1. Check variable names in workflow
 2. Verify previous steps export variables
 3. Use `merobox bootstrap validate` to check configuration
 4. Check variable naming consistency
 
 **Issue**: Step validation fails
+
 ```bash
 Error: Required field 'node' missing
 ```
 
 **Solutions**:
+
 1. Validate workflow: `merobox bootstrap validate workflow.yml`
 2. Check step configuration
 3. Verify required fields are present
 4. Check field types and values
 
 **Issue**: API calls fail
+
 ```bash
 Error: API request failed
 ```
 
 **Solutions**:
+
 1. Check node health: `merobox health`
 2. Verify node is ready: `merobox list`
 3. Check network connectivity
@@ -1183,32 +1294,38 @@ Error: API request failed
 #### Auth Service Issues
 
 **Issue**: Cannot access node via nip.io URL
+
 ```bash
 ERR_CONNECTION_TIMED_OUT at http://node1.127.0.0.1.nip.io
 ```
 
 **Solutions**:
+
 1. Check if auth services are running: `docker ps | grep -E "(proxy|auth)"`
 2. Verify DNS resolution: `nslookup node1.127.0.0.1.nip.io`
 3. Check Traefik dashboard: `http://localhost:8080/dashboard/`
 4. Restart auth services: `merobox stop --auth-service && merobox run --auth-service`
 
 **Issue**: 404 errors on auth URLs
+
 ```bash
 404 Not Found at http://node1.127.0.0.1.nip.io/auth/login
 ```
 
 **Solutions**:
+
 1. Verify auth container is running: `docker logs auth`
 2. Check Traefik routing: `curl http://localhost:8080/api/http/routers`
 3. Restart the node: `merobox stop node-name && merobox run --auth-service`
 
 **Issue**: Network connection problems
+
 ```bash
 Warning: Could not connect to auth networks
 ```
 
 **Solutions**:
+
 1. Check Docker networks: `docker network ls | grep calimero`
 2. Recreate networks: `merobox stop --all && merobox run --auth-service`
 3. Check Docker daemon: `docker system info`
@@ -1216,22 +1333,26 @@ Warning: Could not connect to auth networks
 #### Docker Issues
 
 **Issue**: Container creation fails
+
 ```bash
 Error: Failed to create container
 ```
 
 **Solutions**:
+
 1. Check Docker daemon: `docker info`
 2. Verify image exists: `docker images calimero/calimero`
 3. Check disk space: `df -h`
 4. Restart Docker: `sudo systemctl restart docker`
 
 **Issue**: Container networking problems
+
 ```bash
 Error: Network connection failed
 ```
 
 **Solutions**:
+
 1. Check Docker network: `docker network ls`
 2. Verify container networking: `docker inspect <container>`
 3. Check firewall settings
@@ -1240,22 +1361,26 @@ Error: Network connection failed
 #### Performance Issues
 
 **Issue**: Slow workflow execution
+
 ```bash
 Workflow taking longer than expected
 ```
 
 **Solutions**:
+
 1. Check node resources: `docker stats`
 2. Monitor system resources: `htop`, `iotop`
 3. Optimize workflow steps
 4. Use appropriate wait times
 
 **Issue**: High memory usage
+
 ```bash
 Container using excessive memory
 ```
 
 **Solutions**:
+
 1. Check memory limits: `docker stats`
 2. Monitor memory usage: `free -h`
 3. Restart nodes if needed
@@ -1264,28 +1389,33 @@ Container using excessive memory
 ### Debugging
 
 #### Enable Debug Logging
+
 ```bash
 export LOG_LEVEL=DEBUG
 merobox bootstrap run workflow.yml
 ```
 
 #### Verbose Output
+
 ```bash
 merobox bootstrap run --verbose workflow.yml
 ```
 
 #### Check Node Logs
+
 ```bash
 merobox logs <node_name> --follow
 ```
 
 #### Inspect Containers
+
 ```bash
 docker exec -it <container_name> /bin/sh
 docker inspect <container_name>
 ```
 
 #### Network Diagnostics
+
 ```bash
 # Check container networking
 docker network inspect bridge

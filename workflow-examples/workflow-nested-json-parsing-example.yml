@@ -1,0 +1,157 @@
+description: Test workflow demonstrating deep JSON nesting with automatic parsing
+name: Deep Nesting Test
+
+nodes:
+  chain_id: testnet-1
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: test-node
+
+steps:
+  - name: Install KV Store
+    type: install_application
+    node: test-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Context
+    type: create_context
+    node: test-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      ctx_id: contextId
+      member_key: memberPublicKey
+
+  # Test 1: Simple nested access
+  - name: Test Simple Nesting
+    type: call
+    node: test-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: set
+    args:
+      key: simple
+      value: test_value
+    outputs:
+      simple_result: result
+      simple_output: result.output
+
+  # Test 2: JSON string with nested data
+  - name: Store Complex JSON
+    type: call
+    node: test-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: set
+    args:
+      key: complex
+      value: '{"level1":{"level2":{"level3":{"level4":"deep_value"}}}}'
+    outputs:
+      store_complex: result
+
+  - name: Retrieve and Parse Complex JSON
+    type: call
+    node: test-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: get
+    args:
+      key: complex
+    outputs:
+      # These should all work with automatic JSON parsing:
+      full_data: result.output
+      level1: result.output.level1
+      level2: result.output.level1.level2
+      level3: result.output.level1.level2.level3
+      deep_value: result.output.level1.level2.level3.level4
+
+  # Test 3: Array access
+  - name: Store Array Data
+    type: call
+    node: test-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: set
+    args:
+      key: array_data
+      value: '{"items":[{"id":"1","name":"First"},{"id":"2","name":"Second"},{"id":"3","name":"Third"}]}'
+    outputs:
+      array_result: result
+
+  - name: Retrieve and Parse Array
+    type: call
+    node: test-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: get
+    args:
+      key: array_data
+    outputs:
+      # Array access with automatic parsing
+      all_items: result.output.items
+      first_item: result.output.items.0
+      first_id: result.output.items.0.id
+      first_name: result.output.items.0.name
+      second_id: result.output.items.1.id
+      third_name: result.output.items.2.name
+
+  # Test 4: Mixed complex structure
+  - name: Store Mixed Structure
+    type: call
+    node: test-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: set
+    args:
+      key: mixed
+      value: '{"users":[{"name":"Alice","roles":["admin","user"],"settings":{"theme":"dark","notifications":{"email":true,"sms":false}}}]}'
+    outputs:
+      mixed_result: result
+
+  - name: Retrieve Mixed Structure
+    type: call
+    node: test-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: get
+    args:
+      key: mixed
+    outputs:
+      # Complex mixed access
+      user_name: result.output.users.0.name
+      user_theme: result.output.users.0.settings.theme
+      email_notif: result.output.users.0.settings.notifications.email
+      sms_notif: result.output.users.0.settings.notifications.sms
+
+  # Verify all values
+  - name: Verify Deep Value
+    type: json_assert
+    statements:
+      - statement: "equal('{{deep_value}}', 'deep_value')"
+        message: "Deep nested value extracted correctly"
+
+  - name: Verify Array Values
+    type: json_assert
+    statements:
+      - statement: "equal('{{first_id}}', '1')"
+        message: "First item ID is correct"
+      - statement: "equal('{{first_name}}', 'First')"
+        message: "First item name is correct"
+      - statement: "equal('{{third_name}}', 'Third')"
+        message: "Third item name is correct"
+
+  - name: Verify Mixed Values
+    type: json_assert
+    statements:
+      - statement: "equal('{{user_name}}', 'Alice')"
+        message: "User name extracted correctly"
+      - statement: "equal('{{user_theme}}', 'dark')"
+        message: "User theme extracted correctly"
+      # Note: Booleans are successfully extracted and can be used in workflow steps
+      # They appear as Python True/False values
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 60
