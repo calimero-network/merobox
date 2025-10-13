@@ -42,12 +42,18 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
     sample_config = {
         "name": "Sample Calimero Workflow",
         "description": "A sample workflow that demonstrates the bootstrap functionality with dynamic value capture",
+        # Nuke all data before starting workflow (complete cleanup)
+        "nuke_on_start": False,
+        # Nuke all data after completing workflow (complete cleanup)
+        "nuke_on_end": False,
         "stop_all_nodes": True,  # Stop all existing nodes before starting
         "wait_timeout": 60,  # Wait up to 60 seconds for nodes to be ready
         "force_pull_image": False,  # Force pull Docker images even if they exist locally
         "auth_service": False,  # Enable authentication service with Traefik proxy
-        "auth_image": "ghcr.io/calimero-network/mero-auth:edge",  # Custom Docker image for the auth service
-        "log_level": "debug",  # Set the RUST_LOG level for Calimero nodes (error, warn, info, debug, trace)
+        # Custom Docker image for the auth service
+        "auth_image": "ghcr.io/calimero-network/mero-auth:edge",
+        # Set the RUST_LOG level for Calimero nodes (error, warn, info, debug, trace)
+        "log_level": "debug",
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",

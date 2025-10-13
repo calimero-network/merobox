@@ -17,6 +17,7 @@ from merobox.commands import (
     list,
     logs,
     nuke,
+    proposals,
     run,
     stop,
 )
@@ -40,6 +41,7 @@ cli.add_command(nuke)
 cli.add_command(identity)
 cli.add_command(join)
 cli.add_command(call)
+cli.add_command(proposals)
 cli.add_command(bootstrap)
 
 
