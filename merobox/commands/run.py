@@ -9,8 +9,8 @@ import sys
 import click
 from rich.console import Console
 
-from merobox.commands.manager import CalimeroManager
 from merobox.commands.binary_manager import BinaryManager
+from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import validate_port
 
 console = Console()

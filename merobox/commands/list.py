@@ -6,8 +6,8 @@ Supports Docker containers by default, and native binary mode with --no-docker.
 
 import click
 
-from merobox.commands.manager import CalimeroManager
 from merobox.commands.binary_manager import BinaryManager
+from merobox.commands.manager import CalimeroManager
 
 
 @click.command()
@@ -26,7 +26,9 @@ def list(no_docker):
 
         console = Console()
         if not nodes:
-            console.print("[yellow]No Calimero nodes are currently running (binary mode)[/yellow]")
+            console.print(
+                "[yellow]No Calimero nodes are currently running (binary mode)[/yellow]"
+            )
             return
 
         table = Table(title="Running Calimero Nodes (Binary Mode)")

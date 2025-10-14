@@ -6,8 +6,8 @@ Supports Docker containers by default, and native binary mode with --no-docker.
 
 import click
 
-from merobox.commands.manager import CalimeroManager
 from merobox.commands.binary_manager import BinaryManager
+from merobox.commands.manager import CalimeroManager
 
 
 @click.command()

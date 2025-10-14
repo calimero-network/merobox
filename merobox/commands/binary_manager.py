@@ -176,7 +176,9 @@ class BinaryManager:
             # First-time init if needed (config.toml not present)
             config_file = node_data_dir / "config.toml"
             if not config_file.exists():
-                console.print(f"[yellow]Initializing node {node_name} (first run)...[/yellow]")
+                console.print(
+                    f"[yellow]Initializing node {node_name} (first run)...[/yellow]"
+                )
                 init_cmd = [
                     self.binary_path,
                     "--home",
@@ -236,7 +238,9 @@ class BinaryManager:
                     self._remove_pid_file(node_name)
                     return True
                 except Exception as e:
-                    console.print(f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
+                    console.print(
+                        f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]"
+                    )
                     return False
             else:
                 # Start detached with logs to file
@@ -247,7 +251,7 @@ class BinaryManager:
                         stdin=subprocess.DEVNULL,
                         stdout=log_f,
                         stderr=subprocess.STDOUT,
-                        start_new_session=True,  
+                        start_new_session=True,
                     )
 
                 # Save process info
@@ -272,7 +276,10 @@ class BinaryManager:
                 # Quick bind check for admin port
                 try:
                     import socket
-                    with socket.create_connection(("127.0.0.1", int(rpc_port)), timeout=1.5):
+
+                    with socket.create_connection(
+                        ("127.0.0.1", int(rpc_port)), timeout=1.5
+                    ):
                         console.print(
                             f"[green]✓ Admin server reachable at http://localhost:{rpc_port}/admin-dashboard[/green]"
                         )
@@ -363,7 +370,12 @@ class BinaryManager:
                         "status": "running",
                         "mode": "binary",
                         "rpc_port": rpc_port,
-                        "admin_url": f"http://localhost:{rpc_port}/admin-dashboard" if isinstance(rpc_port, int) or (isinstance(rpc_port, str) and rpc_port.isdigit()) else "",
+                        "admin_url": (
+                            f"http://localhost:{rpc_port}/admin-dashboard"
+                            if isinstance(rpc_port, int)
+                            or (isinstance(rpc_port, str) and rpc_port.isdigit())
+                            else ""
+                        ),
                     }
                 )
 
@@ -377,6 +389,7 @@ class BinaryManager:
             if not config_path.exists():
                 return None
             import re
+
             with open(config_path) as f:
                 content = f.read()
             # Try a few common patterns
@@ -433,7 +446,9 @@ class BinaryManager:
             # Wait briefly if log file doesn't exist yet
             timeout_seconds = 10
             start_time = time.time()
-            while not log_file.exists() and (time.time() - start_time) < timeout_seconds:
+            while (
+                not log_file.exists() and (time.time() - start_time) < timeout_seconds
+            ):
                 time.sleep(0.25)
 
             if not log_file.exists():
@@ -442,7 +457,7 @@ class BinaryManager:
                 )
                 return False
 
-            with open(log_file, "r") as f:
+            with open(log_file) as f:
                 # Seek to show last `tail` lines first
                 if tail is not None and tail > 0:
                     try:
