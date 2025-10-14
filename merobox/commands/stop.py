@@ -1,5 +1,7 @@
 """
 Stop command - Stop Calimero node(s).
+
+Supports Docker containers by default, and native binary mode with --no-docker.
 """
 
 import sys
@@ -7,6 +9,7 @@ import sys
 import click
 
 from merobox.commands.manager import CalimeroManager
+from merobox.commands.binary_manager import BinaryManager
 
 
 @click.command()
@@ -17,11 +20,16 @@ from merobox.commands.manager import CalimeroManager
 @click.option(
     "--auth-service", is_flag=True, help="Stop auth service stack (Traefik + Auth)"
 )
-def stop(node_name, all, auth_service):
+@click.option(
+    "--no-docker",
+    is_flag=True,
+    help="Stop nodes in binary mode (managed as native processes)",
+)
+def stop(node_name, all, auth_service, no_docker):
     """Stop Calimero node(s)."""
-    calimero_manager = CalimeroManager()
+    calimero_manager = BinaryManager() if no_docker else CalimeroManager()
 
-    if auth_service:
+    if auth_service and not no_docker:
         # Stop auth service stack
         success = calimero_manager.stop_auth_service_stack()
         sys.exit(0 if success else 1)
@@ -29,23 +37,27 @@ def stop(node_name, all, auth_service):
         # Stop all nodes
         nodes_success = calimero_manager.stop_all_nodes()
 
-        # Also stop auth service stack when stopping all nodes (if it's running)
-        auth_success = True  # Default to success if no auth services to stop
-        try:
-            # Check if auth service containers exist before trying to stop them
-            calimero_manager.client.containers.get("auth")
-            calimero_manager.client.containers.get("proxy")
-            # If we get here, at least one auth service container exists
-            auth_success = calimero_manager.stop_auth_service_stack()
-        except Exception:
-            # No auth service containers found, which is fine
-            from rich.console import Console
+        if no_docker:
+            # Binary mode has no auth stack
+            sys.exit(0 if nodes_success else 1)
+        else:
+            # Also stop auth service stack when stopping all nodes (if it's running)
+            auth_success = True  # Default to success if no auth services to stop
+            try:
+                # Check if auth service containers exist before trying to stop them
+                calimero_manager.client.containers.get("auth")
+                calimero_manager.client.containers.get("proxy")
+                # If we get here, at least one auth service container exists
+                auth_success = calimero_manager.stop_auth_service_stack()
+            except Exception:
+                # No auth service containers found, which is fine
+                from rich.console import Console
 
-            console = Console()
-            console.print("[cyan]• No auth service stack to stop[/cyan]")
+                console = Console()
+                console.print("[cyan]• No auth service stack to stop[/cyan]")
 
-        # Exit with success only if both operations succeeded
-        sys.exit(0 if (nodes_success and auth_success) else 1)
+            # Exit with success only if both operations succeeded
+            sys.exit(0 if (nodes_success and auth_success) else 1)
     elif node_name:
         # Stop specific node
         success = calimero_manager.stop_node(node_name)
