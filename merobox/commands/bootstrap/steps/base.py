@@ -2,7 +2,10 @@
 Base step class for all workflow steps.
 """
 
-from typing import Any
+import ast
+import json
+import re
+from typing import Any, Optional
 
 from merobox.commands.utils import console
 
@@ -68,6 +71,133 @@ class BaseStep:
         Override this method in subclasses to add type validation.
         """
         pass
+
+    def _try_parse_json(self, value: Any) -> Any:
+        """Parse JSON string to Python object with fallback strategies.
+
+        Returns parsed object or original value if parsing fails.
+        """
+        if not isinstance(value, str):
+            return value
+
+        s = value.strip()
+        if not s:
+            return value
+
+        # Attempt standard JSON parsing
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+
+        # Handle double-encoded JSON
+        if (s.startswith('"') and s.endswith('"')) or (
+            s.startswith("'") and s.endswith("'")
+        ):
+            try:
+                inner = json.loads(s)
+                if isinstance(inner, str):
+                    try:
+                        return json.loads(inner)
+                    except Exception:
+                        try:
+                            return ast.literal_eval(inner)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        # Handle Python-style literals
+        try:
+            parsed = ast.literal_eval(s)
+            if isinstance(parsed, (dict, list, str, int, float, bool, type(None))):
+                return parsed
+        except Exception:
+            pass
+
+        # Clean trailing commas
+        if "{" in s or "[" in s:
+            try:
+                cleaned = re.sub(r",(\s*[}\]])", r"\1", s)
+                return json.loads(cleaned)
+            except Exception:
+                pass
+
+        # Extract JSON substring from noisy input
+        if "{" in s or "[" in s:
+            try:
+                candidate = self._find_json_substring(s)
+                if candidate:
+                    return json.loads(candidate)
+            except Exception:
+                pass
+
+        return value
+
+    def _find_json_substring(self, text: str) -> Optional[str]:
+        """Extract first complete JSON object or array from text."""
+        for match in re.finditer(r"[\{\[]", text):
+            pos = match.start()
+            opening = match.group()
+            closing = "}" if opening == "{" else "]"
+            stack = [opening]
+
+            for i in range(pos + 1, len(text)):
+                if text[i] == opening:
+                    stack.append(opening)
+                elif text[i] == closing:
+                    stack.pop()
+                    if not stack:
+                        return text[pos : i + 1]
+        return None
+
+    def _extract_path(self, obj: Any, path: str) -> Any:
+        """Extract dotted path from object with JSON parsing and array index support.
+
+        This method traverses a dotted path through nested objects, parsing
+        JSON strings encountered along the way. It supports:
+        - Nested dict access: "result.data.value"
+        - Array indexing: "items.0.id"
+        - Deep nesting: "result.nested.deeply.nested.field"
+
+        Examples:
+            "field.nested" -> obj["field"]["nested"]
+            "items.0.id" -> obj["items"][0]["id"]
+            "result.data" where result="{\"data\":\"value\"}" -> "value"
+            "result.user.name.first" -> obj["result"]["user"]["name"]["first"]
+
+        Args:
+            obj: The object to extract from (dict, list, or JSON string)
+            path: Dot-separated path to the desired field
+
+        Returns:
+            The value at the specified path, or None if not found
+        """
+        if not isinstance(path, str) or not path:
+            return None
+
+        current = obj
+        segments = path.split(".")
+
+        for segment in segments:
+            current = self._try_parse_json(current)
+
+            # Handle array index
+            if isinstance(current, list) and segment.isdigit():
+                idx = int(segment)
+                if 0 <= idx < len(current):
+                    current = current[idx]
+                    continue
+                return None
+
+            # Handle dict key
+            if isinstance(current, dict) and segment in current:
+                current = current[segment]
+                continue
+
+            return None
+
+        return self._try_parse_json(current) if isinstance(current, str) else current
 
     def _export_variable(
         self,
@@ -167,44 +297,12 @@ class BaseStep:
             else response_data
         )
 
-        def _try_parse_json(value: Any) -> Any:
-            """If value is a JSON string, parse and return the object; otherwise return as-is."""
-            if isinstance(value, str):
-                s = value.strip()
-                if (s.startswith("{") and s.endswith("}")) or (
-                    s.startswith("[") and s.endswith("]")
-                ):
-                    try:
-                        import json
-
-                        return json.loads(s)
-                    except Exception:
-                        return value
-            return value
-
-        def _extract_path(obj: Any, path: str) -> Any:
-            """Extract a dotted path from a dict-like object. If intermediate is JSON string, parse it."""
-            if not isinstance(path, str) or not path:
-                return None
-            current = obj
-            for segment in path.split("."):
-                current = _try_parse_json(current)
-                if isinstance(current, dict) and segment in current:
-                    current = current[segment]
-                else:
-                    return None
-            return current
-
-        console.print(
-            f"[cyan]🔧 Processing custom outputs configuration for {node_name}:[/cyan]"
-        )
+        console.print(f"[cyan]� Exporting variables from {node_name} response:[/cyan]")
 
         for exported_variable, assigned_var in outputs_config.items():
-            # Handle different types of assigned_var
             if isinstance(assigned_var, str):
-                # Support dotted paths (e.g., "result.value").
                 value = (
-                    _extract_path(actual_data, assigned_var)
+                    self._extract_path(actual_data, assigned_var)
                     if "." in assigned_var
                     else (
                         actual_data.get(assigned_var)
@@ -212,18 +310,31 @@ class BaseStep:
                         else None
                     )
                 )
+
+                if (
+                    value is not None
+                    and isinstance(value, str)
+                    and "." not in assigned_var
+                ):
+                    value = self._try_parse_json(value)
+
                 if value is None and isinstance(actual_data, dict):
                     console.print(
-                        f"[yellow]⚠️  Custom export failed: field '{assigned_var}' not found in response[/yellow]"
+                        f"[yellow]⚠️  Export failed: '{assigned_var}' not found[/yellow]"
                     )
                     console.print(
-                        f"[yellow]   Available fields: {list(actual_data.keys()) if isinstance(actual_data, dict) else 'N/A'}[/yellow]"
+                        f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
                     )
                 else:
                     target_key = exported_variable
                     dynamic_values[target_key] = value
+
+                    display_value = str(value)
+                    if len(display_value) > 100:
+                        display_value = display_value[:97] + "..."
+
                     console.print(
-                        f"[blue]📝 Custom export: {assigned_var} → {target_key}: {value}[/blue]"
+                        f"[green]   ✓[/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}"
                     )
 
             elif isinstance(assigned_var, dict):
@@ -238,25 +349,32 @@ class BaseStep:
                     )
                     # Optional parse JSON: json: true
                     if assigned_var.get("json"):
-                        base_value = _try_parse_json(base_value)
+                        base_value = self._try_parse_json(base_value)
                     # Optional nested path within the base value: path: a.b.c
                     if isinstance(assigned_var.get("path"), str):
-                        base_value = _extract_path(base_value, assigned_var["path"])
+                        base_value = self._extract_path(
+                            base_value, assigned_var["path"]
+                        )
 
                     if base_value is None and isinstance(actual_data, dict):
                         console.print(
-                            f"[yellow]⚠️  Custom export failed: field '{field_name}' not found in response or path unresolved[/yellow]"
+                            f"[yellow]⚠️  Export failed: '{field_name}' not found or path unresolved[/yellow]"
                         )
                         console.print(
-                            f"[yellow]   Available fields: {list(actual_data.keys()) if isinstance(actual_data, dict) else 'N/A'}[/yellow]"
+                            f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
                         )
                     else:
-                        # Handle node name replacement in the target key
                         target_key = assigned_var.get("target", exported_variable)
                         target_key = target_key.replace("{node_name}", node_name)
                         dynamic_values[target_key] = base_value
+
+                        # Format the value for display (truncate if too long)
+                        display_value = str(base_value)
+                        if len(display_value) > 100:
+                            display_value = display_value[:97] + "..."
+
                         console.print(
-                            f"[blue]📝 Custom export: {field_name}{'.' + assigned_var.get('path') if assigned_var.get('path') else ''} → {target_key}: {base_value}[/blue]"
+                            f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}"
                         )
                 else:
                     console.print(

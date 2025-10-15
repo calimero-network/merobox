@@ -1,5 +1,28 @@
 """
 Nuke command - Delete all Calimero node data folders for complete reset.
+
+This module provides both CLI and programmatic interfaces for complete data cleanup:
+
+1. CLI Command (`merobox nuke`):
+   - Interactive deletion with confirmation prompt
+   - Supports dry-run, force, verbose, and prefix filtering
+   - Shows detailed statistics about what will be deleted
+
+2. Programmatic Interface (`execute_nuke()`):
+   - Used by workflow executor for `nuke_on_start` and `nuke_on_end`
+   - Silent mode for automation
+   - Prefix-based filtering for workflow isolation
+
+Workflow Integration:
+   - `nuke_on_start: true` - Clean slate before workflow execution
+   - `nuke_on_end: true` - Complete cleanup after workflow completion
+
+What Gets Nuked:
+   - Node data directories (matching prefix pattern)
+   - Running Docker containers (nodes, auth, proxy)
+   - Docker volumes (auth_data)
+
+See NUKE_DOCUMENTATION.md for comprehensive usage guide.
 """
 
 import os
@@ -9,19 +32,20 @@ from pathlib import Path
 import click
 import docker
 from rich import box
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-)
 from rich.table import Table
 
 from merobox.commands.manager import CalimeroManager
 from merobox.commands.utils import console, format_file_size
 
 
-def find_calimero_data_dirs() -> list:
-    """Find all Calimero node data directories."""
+def find_calimero_data_dirs(prefix: str = None) -> list:
+    """
+    Find all Calimero node data directories.
+
+    Args:
+        prefix: Optional prefix to filter data directories (e.g., "prop-test-")
+                If None, finds all directories starting with "calimero-node-" or any known prefix
+    """
     data_dirs = []
     data_path = Path("data")
 
@@ -29,8 +53,19 @@ def find_calimero_data_dirs() -> list:
         return data_dirs
 
     for item in data_path.iterdir():
-        if item.is_dir() and item.name.startswith("calimero-node-"):
-            data_dirs.append(str(item))
+        if item.is_dir():
+            if prefix:
+                # Filter by specific prefix
+                if item.name.startswith(prefix):
+                    data_dirs.append(str(item))
+            else:
+                # Default: find all Calimero-related directories
+                if (
+                    item.name.startswith("calimero-node-")
+                    or item.name.startswith("prop-")
+                    or item.name.startswith("proposal-")
+                ):
+                    data_dirs.append(str(item))
 
     return data_dirs
 
@@ -82,6 +117,134 @@ def nuke_all_data_dirs(data_dirs: list, dry_run: bool = False) -> dict:
     return results
 
 
+def execute_nuke(
+    manager: CalimeroManager,
+    prefix: str = None,
+    verbose: bool = False,
+    silent: bool = False,
+) -> bool:
+    """
+    Execute the nuke operation programmatically (for use in workflows).
+
+    Args:
+        manager: CalimeroManager instance
+        prefix: Optional prefix to filter which nodes to nuke
+        verbose: Enable verbose output
+        silent: Suppress most output (for workflow automation)
+
+    Returns:
+        bool: True if nuke succeeded, False otherwise
+    """
+    try:
+        data_dirs = find_calimero_data_dirs(prefix)
+
+        if not data_dirs:
+            if not silent:
+                console.print(
+                    "[yellow]No Calimero node data directories found.[/yellow]"
+                )
+            return True
+
+        if not silent:
+            console.print(
+                f"[red]Found {len(data_dirs)} Calimero node data directory(ies)[/red]"
+            )
+
+        # Stop running nodes
+        running_nodes = []
+        for data_dir in data_dirs:
+            node_name = os.path.basename(data_dir)
+            try:
+                container = manager.client.containers.get(node_name)
+                if container.status == "running":
+                    running_nodes.append(node_name)
+                    if not silent:
+                        console.print(f"[yellow]Stopping node {node_name}...[/yellow]")
+                    container.stop(timeout=30)
+            except Exception:
+                pass
+
+        if running_nodes and not silent:
+            console.print(
+                f"[yellow]Stopped {len(running_nodes)} running node(s)[/yellow]"
+            )
+
+        # Stop and remove auth service stack if it exists
+        try:
+            auth_container = manager.client.containers.get("auth")
+            if not silent:
+                console.print("[yellow]Stopping auth service...[/yellow]")
+            auth_container.stop(timeout=30)
+            auth_container.remove()
+            if not silent:
+                console.print("[green]✓ Auth service stopped and removed[/green]")
+        except Exception:
+            pass
+
+        try:
+            proxy_container = manager.client.containers.get("proxy")
+            if not silent:
+                console.print("[yellow]Stopping Traefik proxy...[/yellow]")
+            proxy_container.stop(timeout=30)
+            proxy_container.remove()
+            if not silent:
+                console.print("[green]✓ Traefik proxy stopped and removed[/green]")
+        except Exception:
+            pass
+
+        # Remove auth data volume if it exists
+        try:
+            auth_volume = manager.client.volumes.get("calimero_auth_data")
+            if not silent:
+                console.print("[yellow]Removing auth data volume...[/yellow]")
+            auth_volume.remove()
+            if not silent:
+                console.print("[green]✓ Auth data volume removed[/green]")
+        except docker.errors.NotFound:
+            pass
+        except Exception as e:
+            if not silent:
+                console.print(
+                    f"[yellow]⚠️  Warning: Could not remove auth data volume: {e}[/yellow]"
+                )
+
+        # Delete data directories
+        if not silent:
+            console.print(
+                f"\n[red]Deleting {len(data_dirs)} data directory(ies)...[/red]"
+            )
+
+        results = nuke_all_data_dirs(data_dirs, dry_run=False)
+
+        deleted_count = sum(1 for r in results if r["status"] == "deleted")
+        total_deleted_size = sum(
+            r["size_bytes"] for r in results if r["status"] == "deleted"
+        )
+
+        if not silent:
+            if deleted_count > 0:
+                console.print(
+                    f"[green]✓ Successfully deleted {deleted_count} data directory(ies)[/green]"
+                )
+                console.print(
+                    f"[green]Total space freed: {format_file_size(total_deleted_size)}[/green]"
+                )
+            else:
+                console.print("[yellow]No data directories were deleted.[/yellow]")
+
+        if verbose and not silent:
+            console.print("\n[bold]Verbose Details:[/bold]")
+            for result in results:
+                console.print(f"  {result['path']}: {result['status']}")
+
+        return True
+
+    except Exception as e:
+        if not silent:
+            console.print(f"[red]❌ Nuke operation failed: {str(e)}[/red]")
+        return False
+
+
 @click.command()
 @click.option(
     "--dry-run",
@@ -92,10 +255,16 @@ def nuke_all_data_dirs(data_dirs: list, dry_run: bool = False) -> dict:
     "--force", "-f", is_flag=True, help="Force deletion without confirmation prompt"
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def nuke(dry_run, force, verbose):
+@click.option(
+    "--prefix",
+    type=str,
+    default=None,
+    help="Filter nodes by prefix (e.g., 'calimero-node-' or 'prop-test-')",
+)
+def nuke(dry_run, force, verbose, prefix):
     """Delete all Calimero node data folders for complete reset."""
 
-    data_dirs = find_calimero_data_dirs()
+    data_dirs = find_calimero_data_dirs(prefix)
 
     if not data_dirs:
         console.print("[yellow]No Calimero node data directories found.[/yellow]")
@@ -129,7 +298,7 @@ def nuke(dry_run, force, verbose):
     manager = CalimeroManager()
     auth_volume_size = 0
     try:
-        auth_volume = manager.client.volumes.get("calimero_auth_data")
+        manager.client.volumes.get("calimero_auth_data")
         # Use Docker to calculate the volume size
         try:
             result = manager.client.containers.run(
@@ -158,23 +327,23 @@ def nuke(dry_run, force, verbose):
     if dry_run:
         console.print("\n[yellow]DRY RUN MODE - No files will be deleted[/yellow]")
 
-        # Check what auth services would be cleaned up (manager already created above)
+        # Check what auth services would be cleaned up
         auth_cleanup_items = []
 
         try:
-            auth_container = manager.client.containers.get("auth")
+            manager.client.containers.get("auth")
             auth_cleanup_items.append("Auth service container")
         except Exception:
             pass
 
         try:
-            proxy_container = manager.client.containers.get("proxy")
+            manager.client.containers.get("proxy")
             auth_cleanup_items.append("Traefik proxy container")
         except Exception:
             pass
 
         try:
-            auth_volume = manager.client.volumes.get("calimero_auth_data")
+            manager.client.volumes.get("calimero_auth_data")
             if auth_volume_size > 0:
                 auth_cleanup_items.append(
                     f"Auth data volume ({format_file_size(auth_volume_size)})"
@@ -203,120 +372,12 @@ def nuke(dry_run, force, verbose):
             console.print("[yellow]Operation cancelled.[/yellow]")
             return
 
-    manager = CalimeroManager()
-    running_nodes = []
-
-    try:
-        for data_dir in data_dirs:
-            node_name = os.path.basename(data_dir)
-            try:
-                container = manager.client.containers.get(node_name)
-                if container.status == "running":
-                    running_nodes.append(node_name)
-                    console.print(f"[yellow]Stopping node {node_name}...[/yellow]")
-                    container.stop(timeout=30)
-            except Exception:
-                pass
-    except Exception as e:
-        console.print(f"[yellow]Warning: Could not stop nodes: {e}[/yellow]")
-
-    if running_nodes:
-        console.print(f"[yellow]Stopped {len(running_nodes)} running node(s)[/yellow]")
-
-    # Stop and remove auth service stack if it exists
-    try:
-        auth_container = manager.client.containers.get("auth")
-        console.print("[yellow]Stopping auth service...[/yellow]")
-        auth_container.stop(timeout=30)
-        auth_container.remove()
-        console.print("[green]✓ Auth service stopped and removed[/green]")
-    except Exception:
-        pass
-
-    try:
-        proxy_container = manager.client.containers.get("proxy")
-        console.print("[yellow]Stopping Traefik proxy...[/yellow]")
-        proxy_container.stop(timeout=30)
-        proxy_container.remove()
-        console.print("[green]✓ Traefik proxy stopped and removed[/green]")
-    except Exception:
-        pass
-
-    # Remove auth data volume if it exists
-    try:
-        auth_volume = manager.client.volumes.get("calimero_auth_data")
-        console.print("[yellow]Removing auth data volume...[/yellow]")
-        auth_volume.remove()
-        console.print("[green]✓ Auth data volume removed[/green]")
-    except docker.errors.NotFound:
-        pass
-    except Exception as e:
-        console.print(
-            f"[yellow]⚠️  Warning: Could not remove auth data volume: {e}[/yellow]"
-        )
-
-    console.print(f"\n[red]Deleting {len(data_dirs)} data directory(ies)...[/red]")
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Deleting data directories...", total=len(data_dirs))
-
-        results = nuke_all_data_dirs(data_dirs, dry_run=False)
-
-        progress.update(task, description="Deletion completed")
-
-    console.print("\n[bold]Deletion Results:[/bold]")
-
-    results_table = Table(title="Deletion Results", box=box.ROUNDED)
-    results_table.add_column("Directory", style="cyan")
-    results_table.add_column("Status", style="green")
-    results_table.add_column("Size", style="yellow")
-    results_table.add_column("Details", style="white")
-
-    deleted_count = 0
-    total_deleted_size = 0
-
-    for result in results:
-        status_style = "green" if result["status"] == "deleted" else "red"
-        status_text = result["status"].upper()
-
-        if result["status"] == "deleted":
-            deleted_count += 1
-            total_deleted_size += result["size_bytes"]
-            details = f"Deleted {format_file_size(result['size_bytes'])}"
-        elif result["status"] == "error":
-            details = f"Error: {result.get('error', 'Unknown')}"
-        else:
-            details = "Not found"
-
-        results_table.add_row(
-            result["path"],
-            f"[{status_style}]{status_text}[/{status_style}]",
-            format_file_size(result["size_bytes"]),
-            details,
-        )
-
-    console.print(results_table)
-
-    if deleted_count > 0:
-        console.print(
-            f"\n[green]✓ Successfully deleted {deleted_count} data directory(ies)[/green]"
-        )
-        console.print(
-            f"[green]Total space freed: {format_file_size(total_deleted_size)}[/green]"
-        )
+    # Use the new execute_nuke function
+    if execute_nuke(manager, prefix=prefix, verbose=verbose, silent=False):
         console.print("\n[blue]To start fresh, run:[/blue]")
-        console.print("[blue]  python3 merobox_cli.py run[/blue]")
+        console.print("[blue]  merobox run[/blue]")
     else:
-        console.print("\n[yellow]No data directories were deleted.[/yellow]")
-
-    if verbose:
-        console.print("\n[bold]Verbose Details:[/bold]")
-        for result in results:
-            console.print(f"  {result['path']}: {result['status']}")
+        console.print("\n[red]❌ Nuke operation failed[/red]")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,180 @@
+name: "Proposals API - Simple E2E Test"
+description: "Test the proposals API methods: get_proposal, list_proposals, get_proposal_approvers"
+
+force_pull_image: false
+
+nodes:
+  count: 2
+  prefix: prop-test
+  chain_id: testnet-1
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 2432
+  base_rpc_port: 2532
+
+steps:
+  # ============================================================================
+  # Phase 1: Setup - Install blockchain app and create multi-node context
+  # ============================================================================
+
+  - name: Install Application on Node 1
+    type: install_application
+    node: prop-test-1
+    url: "https://github.com/calimero-network/demo-blockchain-integrations/raw/refs/heads/master/logic/res/blockchain.wasm"
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: "Create Context"
+    type: create_context
+    node: prop-test-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+      inviter_key: memberPublicKey
+
+  - name: "Create Invitee Identity"
+    type: create_identity
+    node: prop-test-2
+    outputs:
+      invitee_key: publicKey
+
+  - name: "Wait for Identity"
+    type: wait
+    seconds: 3
+
+  - name: "Invite Second Node"
+    type: invite_identity
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    grantee_id: "{{invitee_key}}"
+    granter_id: "{{inviter_key}}"
+    capability: member
+    outputs:
+      invitation: invitation
+
+  - name: "Join Context"
+    type: join_context
+    node: prop-test-2
+    context_id: "{{context_id}}"
+    invitee_id: "{{invitee_key}}"
+    invitation: "{{invitation}}"
+
+  - name: "Wait for Consensus"
+    type: wait
+    seconds: 5
+
+  # ============================================================================
+  # Phase 2: Create Multiple Proposals (Using SetContextValue - no proxy needed)
+  # ============================================================================
+
+  - name: "Create Proposal 1 - SetContextValue"
+    type: call
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{inviter_key}}"
+    method: create_new_proposal
+    args:
+      request:
+        action_type: "SetContextValue"
+        params:
+          key: "test_key_1"
+          value: "test_value_1"
+    outputs:
+      prop1_id:
+        field: result
+        path: output
+
+  - name: "Wait After Proposal 1"
+    type: wait
+    seconds: 2
+
+  - name: "Create Proposal 2 - SetContextValue"
+    type: call
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{inviter_key}}"
+    method: create_new_proposal
+    args:
+      request:
+        action_type: "SetContextValue"
+        params:
+          key: "test_key_2"
+          value: "test_value_2"
+    outputs:
+      prop2_id:
+        field: result
+        path: output
+
+  - name: "Wait After Proposal 2"
+    type: wait
+    seconds: 2
+
+  - name: "Create Proposal 3 - SetNumApprovals"
+    type: call
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{inviter_key}}"
+    method: create_new_proposal
+    args:
+      request:
+        action_type: "SetNumApprovals"
+        params:
+          num_approvals: 2
+    outputs:
+      prop3_id:
+        field: result
+        path: output
+
+  - name: "Wait for All Proposals"
+    type: wait
+    seconds: 5
+
+  # ============================================================================
+  # Phase 3: Test the 3 Supported Proposals API Methods
+  # ============================================================================
+
+  - name: "Test 1: List All Proposals"
+    type: list_proposals
+    node: prop-test-1
+    context_id: "{{context_id}}"
+
+  - name: "Test 2: Get Specific Proposal (Proposal 1)"
+    type: get_proposal
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop1_id}}"
+
+  - name: "Test 3: Get Proposal Approvers (Proposal 1)"
+    type: get_proposal_approvers
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop1_id}}"
+
+  # ============================================================================
+  # Phase 4: Cross-Node Testing
+  # ============================================================================
+
+  - name: "Test 4: List Proposals from Node 2"
+    type: list_proposals
+    node: prop-test-2
+    context_id: "{{context_id}}"
+
+  - name: "Test 5: Get Proposal from Node 2"
+    type: get_proposal
+    node: prop-test-2
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop2_id}}"
+
+  - name: "Test 6: Get Approvers from Node 2"
+    type: get_proposal_approvers
+    node: prop-test-2
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop2_id}}"
+
+  # ============================================================================
+  # Phase 5: Print Summary
+  # ============================================================================
+
+# Configuration
+stop_all_nodes: false
+restart: false

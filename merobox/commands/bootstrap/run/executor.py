@@ -89,6 +89,20 @@ class WorkflowExecutor:
                     console.print("[green]✓ Nuke on start completed[/green]")
                 time.sleep(2)  # Give time for cleanup
 
+            # Check if we should force pull images
+            force_pull_images = self.config.get("force_pull_image", False)
+            if force_pull_images:
+                console.print(
+                    "\n[bold red]💥 Nuking all data before workflow ...[/bold red]"
+                )
+                if not self._nuke_data():
+                    console.print(
+                        "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
+                    )
+                else:
+                    console.print("[green]✓ Nuke on start completed[/green]")
+                time.sleep(2)  # Give time for cleanup
+
             # Check if we should force pull images (only for Docker mode)
             force_pull_images = self.config.get("force_pull_image", False)
             if force_pull_images:
@@ -609,21 +623,21 @@ class WorkflowExecutor:
         elif step_type == "json_assert":
             from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 
-            return JsonAssertStep(step_config, manager=self.manager)
+            return JsonAssertStep(step_config)
         elif step_type == "get_proposal":
             from merobox.commands.bootstrap.steps.proposals import GetProposalStep
 
-            return GetProposalStep(step_config, manager=self.manager)
+            return GetProposalStep(step_config)
         elif step_type == "list_proposals":
             from merobox.commands.bootstrap.steps.proposals import ListProposalsStep
 
-            return ListProposalsStep(step_config, manager=self.manager)
+            return ListProposalsStep(step_config)
         elif step_type == "get_proposal_approvers":
             from merobox.commands.bootstrap.steps.proposals import (
                 GetProposalApproversStep,
             )
 
-            return GetProposalApproversStep(step_config, manager=self.manager)
+            return GetProposalApproversStep(step_config)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

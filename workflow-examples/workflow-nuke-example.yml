@@ -1,0 +1,98 @@
+description: Simple workflow demonstrating nuke_on_start and nuke_on_end for complete isolation
+name: Nuke Example Workflow
+
+# Clean all previous data before starting (fresh state)
+nuke_on_start: true
+
+# Clean all data after completion (no leftovers)
+nuke_on_end: true
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Install application on first node
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Create context
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Create identity on second node
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      public_key: publicKey
+
+  # Wait for identity creation
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Invite second node
+  - name: Invite Node 2 from Node 1
+    type: invite_identity
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    grantee_id: "{{public_key}}"
+    granter_id: "{{member_public_key}}"
+    capability: member
+    outputs:
+      invitation: invitation
+
+  # Join context
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    invitee_id: "{{public_key}}"
+    invitation: "{{invitation}}"
+
+  # Test contract call - set value
+  - name: Set Value in KV Store
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: hello
+      value: world
+    outputs:
+      set_result: result
+
+  # Wait for operation to propagate
+  - name: Wait for Set Operation
+    type: wait
+    seconds: 3
+
+  # Test contract call - get value
+  - name: Get Value from KV Store
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key}}"
+    method: get
+    args:
+      key: hello
+    outputs:
+      get_result: result
+# After completion:
+# - nuke_on_start ensures fresh state (no leftover data affects this run)
+# - nuke_on_end ensures complete cleanup (no data persists after this run)
+# Perfect for CI/CD testing where isolation is critical

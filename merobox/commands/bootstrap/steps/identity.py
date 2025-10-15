@@ -81,11 +81,23 @@ class CreateIdentityStep(BaseStep):
         result = await generate_identity_via_admin_api(rpc_url)
 
         # Log detailed API response
+        import json as json_lib
+
         console.print(
             f"[cyan]🔍 Identity Creation API Response for {node_name}:[/cyan]"
         )
         console.print(f"  Success: {result.get('success')}")
-        console.print(f"  Data: {result.get('data')}")
+
+        data = result.get("data")
+        if isinstance(data, dict):
+            try:
+                formatted_data = json_lib.dumps(data, indent=2)
+                console.print(f"  Data:\n{formatted_data}")
+            except Exception:
+                console.print(f"  Data: {data}")
+        else:
+            console.print(f"  Data: {data}")
+
         if not result.get("success"):
             console.print(f"  Error: {result.get('error')}")
 
@@ -221,10 +233,21 @@ class InviteIdentityStep(BaseStep):
             rpc_url, context_id, inviter_id, invitee_id, capability
         )
 
-        # Log detailed API response
+        import json as json_lib
+
         console.print(f"[cyan]🔍 Invitation API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
-        console.print(f"  Data: {result.get('data')}")
+
+        data = result.get("data")
+        if isinstance(data, dict):
+            try:
+                formatted_data = json_lib.dumps(data, indent=2)
+                console.print(f"  Data:\n{formatted_data}")
+            except Exception:
+                console.print(f"  Data: {data}")
+        else:
+            console.print(f"  Data: {data}")
+
         console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
         console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
         if not result.get("success"):
