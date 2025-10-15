@@ -67,6 +67,11 @@ def bootstrap():
     default="debug",
     help="Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'",
 )
+@click.option(
+    "--no-docker",
+    is_flag=True,
+    help="Run nodes as native binaries (merod) instead of Docker containers",
+)
 def run(
     config_file,
     verbose,
@@ -76,6 +81,7 @@ def run(
     auth_use_cached,
     webui_use_cached,
     log_level,
+    no_docker,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -90,12 +96,13 @@ def run(
     success = run_workflow_sync(
         config_file,
         verbose,
-        image,
-        auth_service,
-        auth_image,
-        auth_use_cached,
-        webui_use_cached,
-        log_level,
+        image=image,
+        auth_service=auth_service,
+        auth_image=auth_image,
+        auth_use_cached=auth_use_cached,
+        webui_use_cached=webui_use_cached,
+        log_level=log_level,
+        no_docker=no_docker,
     )
     if not success:
         sys.exit(1)

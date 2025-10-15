@@ -141,11 +141,14 @@ class ExecuteStep(BaseStep):
         console.print(f"  args: {resolved_args}")
         console.print(f"  executor_public_key: {executor_public_key}")
 
-        # Get node RPC URL
         try:
-            from merobox.commands.manager import CalimeroManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import CalimeroManager
 
-            manager = CalimeroManager()
+                manager = CalimeroManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(

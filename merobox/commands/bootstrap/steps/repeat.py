@@ -225,21 +225,21 @@ class RepeatStep(BaseStep):
     def _create_nested_step_executor(self, step_type: str, step_config: dict[str, Any]):
         """Create a nested step executor based on the step type."""
         if step_type == "install_application":
-            return InstallApplicationStep(step_config)
+            return InstallApplicationStep(step_config, manager=self.manager)
         elif step_type == "create_context":
-            return CreateContextStep(step_config)
+            return CreateContextStep(step_config, manager=self.manager)
         elif step_type == "create_identity":
-            return CreateIdentityStep(step_config)
+            return CreateIdentityStep(step_config, manager=self.manager)
         elif step_type == "invite_identity":
-            return InviteIdentityStep(step_config)
+            return InviteIdentityStep(step_config, manager=self.manager)
         elif step_type == "join_context":
-            return JoinContextStep(step_config)
+            return JoinContextStep(step_config, manager=self.manager)
         elif step_type == "call":
-            return ExecuteStep(step_config)
+            return ExecuteStep(step_config, manager=self.manager)
         elif step_type == "wait":
-            return WaitStep(step_config)
+            return WaitStep(step_config, manager=self.manager)
         elif step_type == "script":
-            return ScriptStep(step_config)
+            return ScriptStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None

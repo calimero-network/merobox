@@ -25,6 +25,7 @@ async def run_workflow(
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",
+    no_docker: bool = False,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -42,9 +43,17 @@ async def run_workflow(
         config = load_workflow_config(config_file)
 
         # Create and execute workflow
-        from merobox.commands.manager import CalimeroManager
+        # Choose manager implementation based on no_docker flag
+        if no_docker:
+            from merobox.commands.binary_manager import BinaryManager
 
-        manager = CalimeroManager()
+            manager = BinaryManager()
+            # When running in binary mode, auth_service is not supported
+            auth_service = False
+        else:
+            from merobox.commands.manager import CalimeroManager
+
+            manager = CalimeroManager()
 
         # Debug: show incoming log level from CLI/defaults
         try:
@@ -97,6 +106,7 @@ def run_workflow_sync(
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",
+    no_docker: bool = False,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -119,5 +129,6 @@ def run_workflow_sync(
             auth_use_cached=auth_use_cached,
             webui_use_cached=webui_use_cached,
             log_level=log_level,
+            no_docker=no_docker,
         )
     )
