@@ -115,11 +115,16 @@ def run(
     # Validate foreground constraints
     if foreground:
         if not no_docker:
-            console.print("[red]--foreground is only supported with --no-docker[/red]")
+            console.print(
+                "[red]--foreground is only supported with --no-docker[/red]")
             sys.exit(1)
         if count != 1:
             console.print("[red]--foreground requires --count 1[/red]")
             sys.exit(1)
+
+    # Ensure foreground binary runs use a less-verbose log level
+    if foreground:
+        log_level = "info"
 
     if count == 1:
         # Single node path (supports optional data_dir and foreground in binary mode)
@@ -142,7 +147,8 @@ def run(
     else:
         # Multiple nodes path (foreground not supported)
         if foreground:
-            console.print("[red]--foreground requires a single node (--count 1)")
+            console.print(
+                "[red]--foreground requires a single node (--count 1)")
             sys.exit(1)
         success = calimero_manager.run_multiple_nodes(
             count,
