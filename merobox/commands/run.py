@@ -128,20 +128,25 @@ def run(
     if count == 1:
         # Single node path (supports optional data_dir and foreground in binary mode)
         node_name = f"{prefix}-1"
-        success = calimero_manager.run_node(
-            node_name,
-            base_port,
-            base_rpc_port,
-            chain_id,
-            data_dir,
-            image if not no_docker else None,
-            auth_service if not no_docker else False,
-            auth_image if not no_docker else None,
-            auth_use_cached if not no_docker else False,
-            webui_use_cached if not no_docker else False,
-            log_level,
-            foreground=foreground if no_docker else False,
-        )
+        # Build kwargs for run_node; only include 'foreground' when using BinaryManager
+        run_kwargs = {
+            "node_name": node_name,
+            "port": base_port,
+            "rpc_port": base_rpc_port,
+            "chain_id": chain_id,
+            "data_dir": data_dir,
+            "image": (image if not no_docker else None),
+            "auth_service": (auth_service if not no_docker else False),
+            "auth_image": (auth_image if not no_docker else None),
+            "auth_use_cached": (auth_use_cached if not no_docker else False),
+            "webui_use_cached": (webui_use_cached if not no_docker else False),
+            "log_level": log_level,
+        }
+
+        if no_docker:
+            run_kwargs["foreground"] = foreground
+
+        success = calimero_manager.run_node(**run_kwargs)
         sys.exit(0 if success else 1)
     else:
         # Multiple nodes path (foreground not supported)

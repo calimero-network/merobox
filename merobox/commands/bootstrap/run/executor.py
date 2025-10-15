@@ -170,31 +170,52 @@ class WorkflowExecutor:
             if isinstance(nodes_config, dict):
                 image = nodes_config.get("image")
                 if image:
-                    console.print(
-                        f"[yellow]Force pulling workflow image: {image}[/yellow]"
-                    )
-                    if not self.manager.force_pull_image(image):
+                    # Skip pulling images in binary (no-docker) mode
+                    if hasattr(self.manager, "binary_path"):
                         console.print(
-                            f"[red]Warning: Failed to force pull image: {image}[/red]"
+                            "[cyan]Skipping image pull in binary (no-docker) mode[/cyan]"
                         )
+                    else:
                         console.print(
-                            "[yellow]Workflow will continue with existing image[/yellow]"
+                            f"[yellow]Force pulling workflow image: {image}[/yellow]"
                         )
+                        try:
+                            if not self.manager.force_pull_image(image):
+                                console.print(
+                                    f"[red]Warning: Failed to force pull image: {image}[/red]"
+                                )
+                                console.print(
+                                    "[yellow]Workflow will continue with existing image[/yellow]"
+                                )
+                        except Exception:
+                            console.print(
+                                f"[red]Warning: force_pull_image failed for image: {image}[/red]"
+                            )
 
                 # Check for images in individual node configurations
                 for node_name, node_config in nodes_config.items():
                     if isinstance(node_config, dict) and "image" in node_config:
                         image = node_config["image"]
-                        console.print(
-                            f"[yellow]Force pulling image for node {node_name}: {image}[/yellow]"
-                        )
-                        if not self.manager.force_pull_image(image):
+                        if hasattr(self.manager, "binary_path"):
                             console.print(
-                                f"[red]Warning: Failed to force pull image for {node_name}: {image}[/red]"
+                                f"[cyan]Skipping image pull for node {node_name} in binary (no-docker) mode[/cyan]"
                             )
+                        else:
                             console.print(
-                                "[yellow]Workflow will continue with existing image[/yellow]"
+                                f"[yellow]Force pulling image for node {node_name}: {image}[/yellow]"
                             )
+                            try:
+                                if not self.manager.force_pull_image(image):
+                                    console.print(
+                                        f"[red]Warning: Failed to force pull image for {node_name}: {image}[/red]"
+                                    )
+                                    console.print(
+                                        "[yellow]Workflow will continue with existing image[/yellow]"
+                                    )
+                            except Exception:
+                                console.print(
+                                    f"[red]Warning: force_pull_image failed for node {node_name}: {image}[/red]"
+                                )
 
         except Exception as e:
             console.print(f"[red]Error during force pull: {str(e)}[/red]")
@@ -210,17 +231,21 @@ class WorkflowExecutor:
             console.print("[red]No nodes configuration found[/red]")
             return False
 
-        # Get base ports from configuration (available for all node types)
-        base_port = nodes_config.get("base_port", 2428)
-        base_rpc_port = nodes_config.get("base_rpc_port", 2528)
+        # Determine base ports; in binary mode allow manager to auto-allocate by leaving None
+        if hasattr(self.manager, "binary_path"):
+            base_port = nodes_config.get("base_port")
+            base_rpc_port = nodes_config.get("base_rpc_port")
+        else:
+            base_port = nodes_config.get("base_port", 2428)
+            base_rpc_port = nodes_config.get("base_rpc_port", 2528)
+
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
 
-        # Handle multiple nodes
+        # If workflow declares a count, delegate to manager to handle bulk creation
         if "count" in nodes_config:
             count = nodes_config["count"]
-
             if restart:
                 console.print(
                     f"Starting {count} nodes with prefix '{prefix}' (restart mode)..."
@@ -243,193 +268,145 @@ class WorkflowExecutor:
                 console.print(
                     f"Checking {count} nodes with prefix '{prefix}' (no restart mode)..."
                 )
-                # Check if nodes are already running
-                running_nodes = 0
                 for i in range(count):
                     node_name = f"{prefix}-{i+1}"
+                    is_running = False
                     try:
-                        existing_container = self.manager.client.containers.get(
-                            node_name
-                        )
-                        if existing_container.status == "running":
-                            console.print(
-                                f"[green]✓ Node '{node_name}' is already running[/green]"
-                            )
-                            running_nodes += 1
-                        else:
-                            console.print(
-                                f"[yellow]Node '{node_name}' exists but not running, starting...[/yellow]"
-                            )
-                            # Start the specific node
-                            if not self.manager.run_node(
-                                node_name,
-                                base_port + i,
-                                base_rpc_port + i,
-                                chain_id,
-                                None,
-                                image,
-                                self.auth_service,
-                                self.auth_image,
-                                self.auth_use_cached,
-                                self.webui_use_cached,
-                                self.log_level,
-                            ):
-                                return False
-                    except docker.errors.NotFound:
+                        if hasattr(self.manager, "is_node_running"):
+                            is_running = self.manager.is_node_running(node_name)
+                        elif hasattr(self.manager, "client"):
+                            try:
+                                container = self.manager.client.containers.get(
+                                    node_name
+                                )
+                                is_running = container.status == "running"
+                            except docker.errors.NotFound:
+                                is_running = False
+                            except Exception:
+                                # Other docker client errors treat as not running
+                                is_running = False
+                    except Exception:
+                        is_running = False
+
+                    if is_running:
                         console.print(
-                            f"[cyan]Node '{node_name}' doesn't exist, creating...[/cyan]"
+                            f"[green]✓ Node '{node_name}' is already running[/green]"
                         )
-                        if not self.manager.run_node(
-                            node_name,
-                            base_port + i,
-                            base_rpc_port + i,
-                            chain_id,
-                            None,
-                            image,
-                            self.auth_service,
-                            self.auth_image,
-                            self.auth_use_cached,
-                            self.webui_use_cached,
-                            self.log_level,
-                        ):
-                            return False
+                        continue
 
-                if running_nodes == count:
-                    console.print(
-                        f"[green]✓ All {count} nodes are already running[/green]"
-                    )
-                elif running_nodes > 0:
-                    console.print(
-                        f"[green]✓ {running_nodes}/{count} nodes were already running, {count - running_nodes} started[/green]"
-                    )
-                else:
-                    console.print(f"[green]✓ All {count} nodes started[/green]")
+                    # Not running -> start (allow manager to allocate ports if base_* is None)
+                    port = base_port + i if base_port is not None else None
+                    rpc_port = base_rpc_port + i if base_rpc_port is not None else None
+                    if not self.manager.run_node(
+                        node_name,
+                        port,
+                        rpc_port,
+                        chain_id,
+                        None,
+                        image,
+                        self.auth_service,
+                        self.auth_image,
+                        self.auth_use_cached,
+                        self.webui_use_cached,
+                        self.log_level,
+                    ):
+                        return False
+
+            console.print("[green]✓ Node management completed[/green]")
+            return True
+
+        # Otherwise handle individually defined nodes (dict or list)
+        if isinstance(nodes_config, dict):
+            items = nodes_config.items()
         else:
-            # Handle individual node configurations
-            for node_name, node_config in nodes_config.items():
-                if isinstance(node_config, dict):
-                    # Check if node already exists and is running
+            # list of node names
+            items = ((n, None) for n in nodes_config)
+
+        for node_name, node_cfg in items:
+            # Resolve per-node settings
+            if isinstance(node_cfg, dict):
+                port = node_cfg.get("port", base_port)
+                rpc_port = node_cfg.get("rpc_port", base_rpc_port)
+                node_chain_id = node_cfg.get("chain_id", chain_id)
+                node_image = (
+                    self.image
+                    if self.image is not None
+                    else node_cfg.get("image", image)
+                )
+                data_dir = node_cfg.get("data_dir")
+            else:
+                port = base_port
+                rpc_port = base_rpc_port
+                node_chain_id = chain_id
+                node_image = image
+                data_dir = None
+
+            # Check if node is running
+            is_running = False
+            try:
+                if hasattr(self.manager, "is_node_running"):
+                    is_running = self.manager.is_node_running(node_name)
+                elif hasattr(self.manager, "client"):
                     try:
-                        existing_container = self.manager.client.containers.get(
-                            node_name
-                        )
-                        if existing_container.status == "running":
-                            if restart:
-                                console.print(
-                                    f"[yellow]Node '{node_name}' is running but restart requested, stopping...[/yellow]"
-                                )
-                                existing_container.stop()
-                                existing_container.remove()
-                                # Start fresh
-                                port = node_config.get("port", base_port)
-                                rpc_port = node_config.get("rpc_port", base_rpc_port)
-                                node_chain_id = node_config.get("chain_id", chain_id)
-                                node_image = node_config.get("image", image)
-                                data_dir = node_config.get("data_dir")
-
-                                console.print(f"Starting node '{node_name}'...")
-                                if not self.manager.run_node(
-                                    node_name,
-                                    port,
-                                    rpc_port,
-                                    node_chain_id,
-                                    data_dir,
-                                    node_image,
-                                    self.auth_service,
-                                    self.auth_image,
-                                    self.auth_use_cached,
-                                    self.webui_use_cached,
-                                ):
-                                    return False
-                            else:
-                                console.print(
-                                    f"[green]✓ Node '{node_name}' is already running[/green]"
-                                )
-                                continue
-                        else:
-                            console.print(
-                                f"[yellow]Node '{node_name}' exists but not running, attempting to start...[/yellow]"
-                            )
+                        container = self.manager.client.containers.get(node_name)
+                        is_running = container.status == "running"
                     except docker.errors.NotFound:
-                        # Node doesn't exist, create it
-                        port = node_config.get("port", base_port)
-                        rpc_port = node_config.get("rpc_port", base_rpc_port)
-                        node_chain_id = node_config.get("chain_id", chain_id)
-                        node_image = (
-                            self.image
-                            if self.image is not None
-                            else node_config.get("image", image)
-                        )
-                        data_dir = node_config.get("data_dir")
+                        is_running = False
+                    except Exception:
+                        is_running = False
+            except Exception:
+                is_running = False
 
-                        console.print(f"Starting node '{node_name}'...")
-                        if not self.manager.run_node(
-                            node_name,
-                            port,
-                            rpc_port,
-                            node_chain_id,
-                            data_dir,
-                            node_image,
-                            self.auth_service,
-                            self.auth_image,
-                            self.auth_use_cached,
-                            self.webui_use_cached,
-                        ):
-                            return False
+            if is_running:
+                if restart:
+                    console.print(
+                        f"[yellow]Node '{node_name}' is running but restart requested, stopping...[/yellow]"
+                    )
+                    try:
+                        if hasattr(self.manager, "stop_node"):
+                            self.manager.stop_node(node_name)
+                        elif hasattr(self.manager, "client"):
+                            container.stop()
+                            container.remove()
+                    except Exception:
+                        pass
+
+                    console.print(f"Starting node '{node_name}'...")
+                    if not self.manager.run_node(
+                        node_name,
+                        port,
+                        rpc_port,
+                        node_chain_id,
+                        data_dir,
+                        node_image,
+                        self.auth_service,
+                        self.auth_image,
+                        self.auth_use_cached,
+                        self.webui_use_cached,
+                        self.log_level,
+                    ):
+                        return False
                 else:
-                    # Simple string configuration (just node name)
-                    # Check if node already exists and is running
-                    try:
-                        existing_container = self.manager.client.containers.get(
-                            node_config
-                        )
-                        if existing_container.status == "running":
-                            if restart:
-                                console.print(
-                                    f"[yellow]Node '{node_config}' is running but restart requested, stopping...[/yellow]"
-                                )
-                                existing_container.stop()
-                                existing_container.remove()
-                                # Start fresh
-                                console.print(f"Starting node '{node_config}'...")
-                                if not self.manager.run_node(
-                                    node_config,
-                                    base_port,
-                                    base_rpc_port,
-                                    chain_id,
-                                    None,
-                                    image,
-                                    self.auth_service,
-                                    self.auth_image,
-                                    self.auth_use_cached,
-                                    self.webui_use_cached,
-                                ):
-                                    return False
-                            else:
-                                console.print(
-                                    f"[green]✓ Node '{node_config}' is already running[/green]"
-                                )
-                                continue
-                        else:
-                            console.print(
-                                f"[yellow]Node '{node_config}' exists but not running, attempting to start...[/yellow]"
-                            )
-                    except docker.errors.NotFound:
-                        # Node doesn't exist, create it
-                        console.print(f"Starting node '{node_config}'...")
-                        if not self.manager.run_node(
-                            node_config,
-                            base_port,
-                            base_rpc_port,
-                            chain_id,
-                            None,
-                            image,
-                            self.auth_service,
-                            self.auth_image,
-                            self.auth_use_cached,
-                            self.webui_use_cached,
-                        ):
-                            return False
+                    console.print(
+                        f"[green]✓ Node '{node_name}' is already running[/green]"
+                    )
+                    continue
+            else:
+                console.print(f"Starting node '{node_name}'...")
+                if not self.manager.run_node(
+                    node_name,
+                    port,
+                    rpc_port,
+                    node_chain_id,
+                    data_dir,
+                    node_image,
+                    self.auth_service,
+                    self.auth_image,
+                    self.auth_use_cached,
+                    self.webui_use_cached,
+                    self.log_level,
+                ):
+                    return False
 
         console.print("[green]✓ Node management completed[/green]")
         return True
@@ -474,10 +451,11 @@ class WorkflowExecutor:
                 for node_name in node_names:
                     if node_name not in ready_nodes:
                         try:
-                            # Check if node is running
-                            container = self.manager.client.containers.get(node_name)
-                            if container.status == "running":
-                                # Try to verify admin binding
+                            is_running = False
+                            if hasattr(self.manager, "is_node_running"):
+                                is_running = self.manager.is_node_running(node_name)
+
+                            if is_running:
                                 if self.manager.verify_admin_binding(node_name):
                                     ready_nodes.add(node_name)
                                     progress.update(task, completed=len(ready_nodes))
@@ -545,47 +523,47 @@ class WorkflowExecutor:
         if step_type == "install_application":
             from merobox.commands.bootstrap.steps import InstallApplicationStep
 
-            return InstallApplicationStep(step_config)
+            return InstallApplicationStep(step_config, manager=self.manager)
         elif step_type == "create_context":
             from merobox.commands.bootstrap.steps import CreateContextStep
 
-            return CreateContextStep(step_config)
+            return CreateContextStep(step_config, manager=self.manager)
         elif step_type == "create_identity":
             from merobox.commands.bootstrap.steps import CreateIdentityStep
 
-            return CreateIdentityStep(step_config)
+            return CreateIdentityStep(step_config, manager=self.manager)
         elif step_type == "invite_identity":
             from merobox.commands.bootstrap.steps import InviteIdentityStep
 
-            return InviteIdentityStep(step_config)
+            return InviteIdentityStep(step_config, manager=self.manager)
         elif step_type == "join_context":
             from merobox.commands.bootstrap.steps import JoinContextStep
 
-            return JoinContextStep(step_config)
+            return JoinContextStep(step_config, manager=self.manager)
         elif step_type == "call":
             from merobox.commands.bootstrap.steps import ExecuteStep
 
-            return ExecuteStep(step_config)
+            return ExecuteStep(step_config, manager=self.manager)
         elif step_type == "wait":
             from merobox.commands.bootstrap.steps import WaitStep
 
-            return WaitStep(step_config)
+            return WaitStep(step_config, manager=self.manager)
         elif step_type == "repeat":
             from merobox.commands.bootstrap.steps import RepeatStep
 
-            return RepeatStep(step_config)
+            return RepeatStep(step_config, manager=self.manager)
         elif step_type == "script":
             from merobox.commands.bootstrap.steps import ScriptStep
 
-            return ScriptStep(step_config)
+            return ScriptStep(step_config, manager=self.manager)
         elif step_type == "assert":
             from merobox.commands.bootstrap.steps.assertion import AssertStep
 
-            return AssertStep(step_config)
+            return AssertStep(step_config, manager=self.manager)
         elif step_type == "json_assert":
             from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 
-            return JsonAssertStep(step_config)
+            return JsonAssertStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None
