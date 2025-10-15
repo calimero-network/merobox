@@ -35,6 +35,11 @@ class WorkflowExecutor:
     ):
         self.config = config
         self.manager = manager
+        # Determine if we're in binary mode
+        self.is_binary_mode = (
+            hasattr(manager, "binary_path") and manager.binary_path is not None
+        )
+
         # Auth service can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.auth_service = auth_service or config.get("auth_service", False)
         # Auth image can be set by CLI flag or workflow config (CLI takes precedence)
@@ -48,13 +53,12 @@ class WorkflowExecutor:
             "webui_use_cached", False
         )
         # Log level can be set by CLI flag or workflow config (CLI takes precedence)
-        # If CLI provided a value (including complex RUST_LOG patterns), use it; otherwise fall back to config
         self.log_level = (
             log_level if log_level is not None else config.get("log_level", "debug")
         )
         try:
             console.print(
-                f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}'[/cyan]"
+                f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}', binary_mode={self.is_binary_mode}[/cyan]"
             )
         except Exception:
             pass
@@ -71,18 +75,38 @@ class WorkflowExecutor:
         )
 
         try:
-            # Check if we should force pull images
+            # Check if we should nuke on start
+            nuke_on_start = self.config.get("nuke_on_start", False)
+            if nuke_on_start:
+                console.print(
+                    "\n[bold red]💥 Nuking all data before workflow ...[/bold red]"
+                )
+                if not self._nuke_data():
+                    console.print(
+                        "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
+                    )
+                else:
+                    console.print("[green]✓ Nuke on start completed[/green]")
+                time.sleep(2)  # Give time for cleanup
+
+            # Check if we should force pull images (only for Docker mode)
             force_pull_images = self.config.get("force_pull_image", False)
             if force_pull_images:
-                console.print(
-                    "\n[bold yellow]🔄 Force pulling workflow images (force_pull_image=true)...[/bold yellow]"
-                )
-                await self._force_pull_workflow_images()
-                console.print("[green]✓ Image force pull completed[/green]")
+                if self.is_binary_mode:
+                    console.print(
+                        "\n[cyan]Skipping image pull in binary (no-docker) mode[/cyan]"
+                    )
+                else:
+                    console.print(
+                        "\n[bold yellow]🔄 Force pulling workflow images (force_pull_image=true)...[/bold yellow]"
+                    )
+                    await self._force_pull_workflow_images()
+                    console.print("[green]✓ Image force pull completed[/green]")
 
             # Check if we should restart nodes at the beginning
             restart_nodes = self.config.get("restart", False)
             stop_all_nodes = self.config.get("stop_all_nodes", False)
+            nuke_on_end = self.config.get("nuke_on_end", False)
 
             # Step 1: Restart nodes if requested (at beginning)
             if restart_nodes:
@@ -146,6 +170,18 @@ class WorkflowExecutor:
                     "[cyan]Nodes will continue running for future workflows[/cyan]"
                 )
 
+            # Step 6: Nuke on end if requested
+            if nuke_on_end:
+                console.print(
+                    "\n[bold red]💥 Nuking all data after workflow ...[/bold red]"
+                )
+                if not self._nuke_data():
+                    console.print(
+                        "[yellow]⚠️  Warning: Nuke operation encountered issues[/yellow]"
+                    )
+                else:
+                    console.print("[green]✓ Nuke on end completed[/green]")
+
             console.print(
                 f"\n[bold green]🎉 Workflow '{workflow_name}' completed successfully![/bold green]"
             )
@@ -162,66 +198,107 @@ class WorkflowExecutor:
             console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
             return False
 
+    def _nuke_data(self, prefix: str = None) -> bool:
+        """
+        Execute nuke operation to clean all data.
+
+        Args:
+            prefix: Optional prefix to filter which nodes to nuke
+
+        Returns:
+            bool: True if nuke succeeded, False otherwise
+        """
+        try:
+            from merobox.commands.nuke import execute_nuke
+
+            # If no prefix specified, derive from workflow nodes config
+            if prefix is None:
+                nodes_config = self.config.get("nodes", {})
+                prefix = nodes_config.get("prefix", None)
+
+            return execute_nuke(
+                manager=self.manager,
+                prefix=prefix,
+                verbose=False,
+                silent=False,
+            )
+        except Exception as e:
+            console.print(f"[red]Nuke operation failed: {str(e)}[/red]")
+            return False
+
     async def _force_pull_workflow_images(self) -> None:
         """Force pull all Docker images specified in the workflow configuration."""
+        # Only applicable in Docker mode
+        if self.is_binary_mode:
+            return
+
         try:
             # Get image from nodes configuration
             nodes_config = self.config.get("nodes", {})
             if isinstance(nodes_config, dict):
                 image = nodes_config.get("image")
                 if image:
-                    # Skip pulling images in binary (no-docker) mode
-                    if hasattr(self.manager, "binary_path"):
-                        console.print(
-                            "[cyan]Skipping image pull in binary (no-docker) mode[/cyan]"
-                        )
-                    else:
-                        console.print(
-                            f"[yellow]Force pulling workflow image: {image}[/yellow]"
-                        )
-                        try:
-                            if not self.manager.force_pull_image(image):
-                                console.print(
-                                    f"[red]Warning: Failed to force pull image: {image}[/red]"
-                                )
-                                console.print(
-                                    "[yellow]Workflow will continue with existing image[/yellow]"
-                                )
-                        except Exception:
+                    console.print(
+                        f"[yellow]Force pulling workflow image: {image}[/yellow]"
+                    )
+                    try:
+                        if not self.manager.force_pull_image(image):
                             console.print(
-                                f"[red]Warning: force_pull_image failed for image: {image}[/red]"
+                                f"[red]Warning: Failed to force pull image: {image}[/red]"
                             )
+                            console.print(
+                                "[yellow]Workflow will continue with existing image[/yellow]"
+                            )
+                    except Exception as e:
+                        console.print(
+                            f"[red]Warning: force_pull_image failed for image: {image} - {e}[/red]"
+                        )
 
                 # Check for images in individual node configurations
                 for node_name, node_config in nodes_config.items():
                     if isinstance(node_config, dict) and "image" in node_config:
                         image = node_config["image"]
-                        if hasattr(self.manager, "binary_path"):
-                            console.print(
-                                f"[cyan]Skipping image pull for node {node_name} in binary (no-docker) mode[/cyan]"
-                            )
-                        else:
-                            console.print(
-                                f"[yellow]Force pulling image for node {node_name}: {image}[/yellow]"
-                            )
-                            try:
-                                if not self.manager.force_pull_image(image):
-                                    console.print(
-                                        f"[red]Warning: Failed to force pull image for {node_name}: {image}[/red]"
-                                    )
-                                    console.print(
-                                        "[yellow]Workflow will continue with existing image[/yellow]"
-                                    )
-                            except Exception:
+                        console.print(
+                            f"[yellow]Force pulling image for node {node_name}: {image}[/yellow]"
+                        )
+                        try:
+                            if not self.manager.force_pull_image(image):
                                 console.print(
-                                    f"[red]Warning: force_pull_image failed for node {node_name}: {image}[/red]"
+                                    f"[red]Warning: Failed to force pull image for {node_name}: {image}[/red]"
                                 )
+                                console.print(
+                                    "[yellow]Workflow will continue with existing image[/yellow]"
+                                )
+                        except Exception as e:
+                            console.print(
+                                f"[red]Warning: force_pull_image failed for node {node_name}: {image} - {e}[/red]"
+                            )
 
         except Exception as e:
             console.print(f"[red]Error during force pull: {str(e)}[/red]")
             console.print(
                 "[yellow]Workflow will continue with existing images[/yellow]"
             )
+
+    def _is_node_running(self, node_name: str) -> bool:
+        """Check if a node is running (works for both binary and Docker mode)."""
+        try:
+            if hasattr(self.manager, "is_node_running"):
+                return self.manager.is_node_running(node_name)
+
+            # Fallback to Docker client (Docker mode only)
+            if not self.is_binary_mode and hasattr(self.manager, "client"):
+                try:
+                    container = self.manager.client.containers.get(node_name)
+                    return container.status == "running"
+                except docker.errors.NotFound:
+                    return False
+                except Exception:
+                    return False
+
+            return False
+        except Exception:
+            return False
 
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
@@ -231,13 +308,8 @@ class WorkflowExecutor:
             console.print("[red]No nodes configuration found[/red]")
             return False
 
-        # Determine base ports; in binary mode allow manager to auto-allocate by leaving None
-        if hasattr(self.manager, "binary_path"):
-            base_port = nodes_config.get("base_port")
-            base_rpc_port = nodes_config.get("base_rpc_port")
-        else:
-            base_port = nodes_config.get("base_port", 2428)
-            base_rpc_port = nodes_config.get("base_rpc_port", 2528)
+        base_port = nodes_config.get("base_port", 2428)
+        base_rpc_port = nodes_config.get("base_rpc_port", 2528)
 
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
@@ -270,23 +342,7 @@ class WorkflowExecutor:
                 )
                 for i in range(count):
                     node_name = f"{prefix}-{i+1}"
-                    is_running = False
-                    try:
-                        if hasattr(self.manager, "is_node_running"):
-                            is_running = self.manager.is_node_running(node_name)
-                        elif hasattr(self.manager, "client"):
-                            try:
-                                container = self.manager.client.containers.get(
-                                    node_name
-                                )
-                                is_running = container.status == "running"
-                            except docker.errors.NotFound:
-                                is_running = False
-                            except Exception:
-                                # Other docker client errors treat as not running
-                                is_running = False
-                    except Exception:
-                        is_running = False
+                    is_running = self._is_node_running(node_name)
 
                     if is_running:
                         console.print(
@@ -342,20 +398,7 @@ class WorkflowExecutor:
                 data_dir = None
 
             # Check if node is running
-            is_running = False
-            try:
-                if hasattr(self.manager, "is_node_running"):
-                    is_running = self.manager.is_node_running(node_name)
-                elif hasattr(self.manager, "client"):
-                    try:
-                        container = self.manager.client.containers.get(node_name)
-                        is_running = container.status == "running"
-                    except docker.errors.NotFound:
-                        is_running = False
-                    except Exception:
-                        is_running = False
-            except Exception:
-                is_running = False
+            is_running = self._is_node_running(node_name)
 
             if is_running:
                 if restart:
@@ -365,11 +408,16 @@ class WorkflowExecutor:
                     try:
                         if hasattr(self.manager, "stop_node"):
                             self.manager.stop_node(node_name)
-                        elif hasattr(self.manager, "client"):
+                        elif not self.is_binary_mode and hasattr(
+                            self.manager, "client"
+                        ):
+                            container = self.manager.client.containers.get(node_name)
                             container.stop()
                             container.remove()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        console.print(
+                            f"[yellow]Warning: Failed to stop node: {e}[/yellow]"
+                        )
 
                     console.print(f"Starting node '{node_name}'...")
                     if not self.manager.run_node(
@@ -451,9 +499,7 @@ class WorkflowExecutor:
                 for node_name in node_names:
                     if node_name not in ready_nodes:
                         try:
-                            is_running = False
-                            if hasattr(self.manager, "is_node_running"):
-                                is_running = self.manager.is_node_running(node_name)
+                            is_running = self._is_node_running(node_name)
 
                             if is_running:
                                 if self.manager.verify_admin_binding(node_name):
@@ -564,6 +610,20 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 
             return JsonAssertStep(step_config, manager=self.manager)
+        elif step_type == "get_proposal":
+            from merobox.commands.bootstrap.steps.proposals import GetProposalStep
+
+            return GetProposalStep(step_config, manager=self.manager)
+        elif step_type == "list_proposals":
+            from merobox.commands.bootstrap.steps.proposals import ListProposalsStep
+
+            return ListProposalsStep(step_config, manager=self.manager)
+        elif step_type == "get_proposal_approvers":
+            from merobox.commands.bootstrap.steps.proposals import (
+                GetProposalApproversStep,
+            )
+
+            return GetProposalApproversStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None
