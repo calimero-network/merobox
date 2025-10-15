@@ -123,7 +123,7 @@ def run(
 
     # Ensure foreground binary runs use a less-verbose log level
     if foreground:
-        log_level = "info"
+        log_level = "warm"
 
     if count == 1:
         # Single node path (supports optional data_dir and foreground in binary mode)
