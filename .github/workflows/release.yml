@@ -4,130 +4,177 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., v1.0.0)'
-        required: true
-        type: string
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  build-binaries:
+    name: Build Binary - ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
-          - os: macos-latest
+          - os: macos
             arch: x64
-            target: darwin-x64
-          - os: macos-latest
+            runner: macos-13
+          - os: macos
             arch: arm64
-            target: darwin-arm64
-          - os: ubuntu-latest
+            runner: macos-14
+          - os: linux
             arch: x64
-            target: linux-x64
-          - os: ubuntu-latest
+            runner: ubuntu-latest
+          - os: linux
             arch: arm64
-            target: linux-arm64
-
+            runner: ubuntu-latest-arm64
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
-      - name: Set up QEMU (for ARM64 builds on x64 runners)
-        if: matrix.arch == 'arm64' && matrix.os == 'ubuntu-latest'
-        uses: docker/setup-qemu-action@v3
-
-      - name: Install system dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
-
-      - name: Install system dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install gcc
-
+          python-version: '3.9'
+      
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-
+      
       - name: Build executable
+        run: python build_binary.py
+      
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Rename binary
         run: |
-          pyinstaller --onefile --name merobox merobox/cli.py
-
-      - name: Test executable
-        run: |
-          ./dist/merobox --version
-
-      - name: Name artifact uniquely
-        shell: bash
-        run: |
-          set -euo pipefail
-          ext=""
-          [[ "${{ matrix.os }}" == "macos-latest" ]] && ext=""
-          [[ "${{ matrix.os }}" == "ubuntu-latest" ]] && ext=""
-          NAME="merobox-${{ github.ref_name }}-${{ matrix.target }}${ext}"
-          mv "dist/merobox${ext}" "dist/${NAME}"
-
-      - name: Generate checksum (portable)
-        shell: bash
-        run: |
-          set -euo pipefail
-          FILE="dist/merobox-${{ github.ref_name }}-${{ matrix.target }}"
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "${FILE}" > "${FILE}.sha256"
-          else
-            shasum -a 256 "${FILE}" | awk '{print $1 "  " FILENAME}' FILENAME="${FILE##dist/}" > "${FILE}.sha256"
-          fi
-
-      - name: Upload artifacts
+          cd dist
+          mv merobox merobox-v${{ steps.version.outputs.VERSION }}-${{ matrix.os }}-${{ matrix.arch }}
+          mv merobox-*.sha256 merobox-v${{ steps.version.outputs.VERSION }}-${{ matrix.os }}-${{ matrix.arch }}.sha256
+      
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: merobox-${{ matrix.target }}
+          name: merobox-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            dist/merobox-${{ github.ref_name }}-${{ matrix.target }}
-            dist/merobox-${{ github.ref_name }}-${{ matrix.target }}.sha256
-          retention-days: 30
+            dist/merobox-*
+          retention-days: 5
 
-  release:
-    needs: build
+  publish-pypi:
+    name: Publish to PyPI
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
-    permissions:
-      contents: write
-
+    needs: build-binaries
+    
     steps:
-      - name: Validate tag format
-        run: |
-          if [[ ! "${{ github.ref }}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ Invalid tag format. Expected: vX.Y.Z (e.g., v1.0.0)"
-            echo "Current tag: ${{ github.ref }}"
-            exit 1
-          fi
-          echo "✅ Tag format is valid: ${{ github.ref }}"
-
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      
+      - name: Build package
+        run: python -m build
+      
+      - name: Check package
+        run: twine check dist/*
+      
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
 
-      - name: Download all artifacts to release-assets
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-binaries, publish-pypi]
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release-assets
-          pattern: merobox-*
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+          path: artifacts
+      
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find artifacts -type f -exec cp {} release-files/ \;
+          ls -la release-files/
+      
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Extracting changelog for version $VERSION"
+          # Extract the section for this version from CHANGELOG.md
+          awk -v version="$VERSION" '
+            /^## \['"$VERSION"'\]/ {flag=1; next}
+            /^## \[/ {flag=0}
+            flag
+          ' CHANGELOG.md > changelog-extract.md
+          
+          if [ -s changelog-extract.md ]; then
+            echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+            cat changelog-extract.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "CHANGELOG=Release $VERSION" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
         with:
-          files: release-assets/*
-          generate_release_notes: true
+          name: Release ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Merobox ${{ steps.version.outputs.VERSION }}
+            
+            ${{ steps.changelog.outputs.CHANGELOG }}
+            
+            ### Installation
+            
+            #### Via pip (recommended)
+            ```bash
+            pip install merobox
+            ```
+            
+            #### Via binary
+            Download the appropriate binary for your platform:
+            - **macOS (Intel)**: `merobox-${{ steps.version.outputs.VERSION }}-macos-x64`
+            - **macOS (Apple Silicon)**: `merobox-${{ steps.version.outputs.VERSION }}-macos-arm64`
+            - **Linux (x64)**: `merobox-${{ steps.version.outputs.VERSION }}-linux-x64`
+            - **Linux (ARM64)**: `merobox-${{ steps.version.outputs.VERSION }}-linux-arm64`
+            
+            Make it executable:
+            ```bash
+            chmod +x merobox-*
+            ./merobox-* --version
+            ```
+            
+            ### Checksums
+            SHA256 checksums are provided for each binary in the `.sha256` files.
+            
+            ### Links
+            - [PyPI Package](https://pypi.org/project/merobox/${{ steps.version.outputs.VERSION }}/)
+            - [Documentation](https://github.com/${{ github.repository }})
+          files: release-files/*
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

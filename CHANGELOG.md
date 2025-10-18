@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.27] - 2025-10-18
+
+### Added
+- **GitHub Actions Workflow**: Automated release workflow for building binaries and publishing to PyPI
+- **Multi-Platform Binaries**: Automated builds for macOS (x64, arm64) and Linux (x64, arm64)
+- **Release Automation**: One-command release process via git tags
+
+### Changed
+- **Release Process**: Streamlined release workflow with GitHub Actions
+- **Documentation**: Added comprehensive release setup guide
+
 ## [0.1.21] - 2024-12-19
 
 ### Changed

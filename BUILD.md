@@ -17,7 +17,7 @@ pip install -r requirements.txt
 pip install pyinstaller
 
 # Build executable
-python build.py
+python build_binary.py
 ```
 
 The build script will:
