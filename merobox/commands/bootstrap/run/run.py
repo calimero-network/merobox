@@ -21,11 +21,12 @@ async def run_workflow(
     verbose: bool = False,
     image: Optional[str] = None,
     auth_service: bool = False,
-    auth_image: str = None,
+    auth_image: Optional[str] = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",
     no_docker: bool = False,
+    binary_path: Optional[str] = None,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -42,12 +43,20 @@ async def run_workflow(
         # Load configuration
         config = load_workflow_config(config_file)
 
+        # Allow workflow YAML to opt into no-docker mode
+        yaml_no_docker = bool(config.get("no_docker", False))
+        yaml_binary_path = config.get("binary_path")
+
+        # CLI flag takes precedence, otherwise fall back to YAML
+        effective_no_docker = no_docker or yaml_no_docker
+        effective_binary_path = binary_path or yaml_binary_path
+
         # Create and execute workflow
-        # Choose manager implementation based on no_docker flag
-        if no_docker:
+        # Choose manager implementation based on effective_no_docker
+        if effective_no_docker:
             from merobox.commands.binary_manager import BinaryManager
 
-            manager = BinaryManager()
+            manager = BinaryManager(binary_path=effective_binary_path)
             # When running in binary mode, auth_service is not supported
             auth_service = False
         else:
@@ -102,11 +111,12 @@ def run_workflow_sync(
     verbose: bool = False,
     image: Optional[str] = None,
     auth_service: bool = False,
-    auth_image: str = None,
+    auth_image: Optional[str] = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",
     no_docker: bool = False,
+    binary_path: Optional[str] = None,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -130,5 +140,6 @@ def run_workflow_sync(
             webui_use_cached=webui_use_cached,
             log_level=log_level,
             no_docker=no_docker,
+            binary_path=binary_path,
         )
     )
