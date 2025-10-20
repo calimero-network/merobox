@@ -13,7 +13,7 @@ from merobox.commands.constants import (
     ADMIN_API_CONTEXTS_INVITE,
     ADMIN_API_IDENTITY_CONTEXT,
 )
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console, get_node_rpc_url, run_async_function
@@ -105,7 +105,7 @@ def identity():
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def list_identities(node, context_id, verbose):
     """List identities for a specific context on a node."""
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     # Check if node is running
     # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
@@ -152,7 +152,7 @@ def list_identities(node, context_id, verbose):
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def generate(node, verbose=False):
     """Generate a new identity using the admin API."""
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     # Check if node is running
     # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
@@ -222,7 +222,7 @@ def generate(node, verbose=False):
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
     """Invite an identity to join a context."""
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     # Check if node is running
     # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing

@@ -145,9 +145,9 @@ class ExecuteStep(BaseStep):
             if self.manager is not None:
                 manager = self.manager
             else:
-                from merobox.commands.manager import CalimeroManager
+                from merobox.commands.manager import DockerManager
 
-                manager = CalimeroManager()
+                manager = DockerManager()
 
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:

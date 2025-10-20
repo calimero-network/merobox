@@ -51,9 +51,9 @@ async def run_workflow(
             # When running in binary mode, auth_service is not supported
             auth_service = False
         else:
-            from merobox.commands.manager import CalimeroManager
+            from merobox.commands.manager import DockerManager
 
-            manager = CalimeroManager()
+            manager = DockerManager()
 
         # Debug: show incoming log level from CLI/defaults
         try:

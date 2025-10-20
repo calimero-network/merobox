@@ -15,7 +15,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console
 
 
@@ -25,7 +25,7 @@ class WorkflowExecutor:
     def __init__(
         self,
         config: dict[str, Any],
-        manager: CalimeroManager,
+        manager: DockerManager,
         image: Optional[str] = None,
         auth_service: bool = False,
         auth_image: str = None,

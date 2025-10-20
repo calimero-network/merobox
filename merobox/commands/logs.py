@@ -7,7 +7,7 @@ Supports Docker containers by default, and native binary mode with --no-docker.
 import click
 
 from merobox.commands.binary_manager import BinaryManager
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 
 
 @click.command()
@@ -38,5 +38,5 @@ def logs(node_name, tail, follow, no_docker):
             console.print(f"\n[bold]Logs for {node_name}:[/bold]")
             console.print(content)
     else:
-        calimero_manager = CalimeroManager()
+        calimero_manager = DockerManager()
         calimero_manager.get_node_logs(node_name, tail)

@@ -9,7 +9,7 @@ import sys
 import click
 
 from merobox.commands.binary_manager import BinaryManager
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 
 
 @click.command()
@@ -27,7 +27,7 @@ from merobox.commands.manager import CalimeroManager
 )
 def stop(node_name, all, auth_service, no_docker):
     """Stop Calimero node(s)."""
-    calimero_manager = BinaryManager() if no_docker else CalimeroManager()
+    calimero_manager = BinaryManager() if no_docker else DockerManager()
 
     if auth_service and not no_docker:
         # Stop auth service stack

@@ -10,7 +10,7 @@ import click
 
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import DEFAULT_METADATA
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import (
@@ -90,7 +90,7 @@ def validate_installation_source(
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def install(node, url, path, dev, metadata, timeout, verbose):
     """Install applications on Calimero nodes."""
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     # Check if node is running
     check_node_running(node, manager)

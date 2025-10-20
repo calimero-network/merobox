@@ -323,9 +323,9 @@ class ScriptStep(BaseStep):
                     if self.manager is not None:
                         manager = self.manager
                     else:
-                        from merobox.commands.manager import CalimeroManager
+                        from merobox.commands.manager import DockerManager
 
-                        manager = CalimeroManager()
+                        manager = DockerManager()
 
                     # Ensure the image is available
                     if not manager._ensure_image_pulled(image):
@@ -456,9 +456,9 @@ class ScriptStep(BaseStep):
             if self.manager is not None:
                 manager = self.manager
             else:
-                from merobox.commands.manager import CalimeroManager
+                from merobox.commands.manager import DockerManager
 
-                manager = CalimeroManager()
+                manager = DockerManager()
 
             containers = manager.client.containers.list(
                 filters={"label": "calimero.node=true"}

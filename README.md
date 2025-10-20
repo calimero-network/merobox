@@ -644,6 +644,7 @@ merobox join [OPTIONS] NODE_NAME CONTEXT_ID INVITEE_ID INVITATION
 - `--help`: Show help message
 
 #### `merobox nuke`
+
 Remove all node data and containers .
 
 ```bash
@@ -651,6 +652,7 @@ merobox nuke [OPTIONS]
 ```
 
 **Options:**
+
 - `--dry-run`: Show what would be deleted without actually deleting
 - `--force, -f`: Force deletion without confirmation prompt
 - `--verbose, -v`: Show verbose output
@@ -667,15 +669,15 @@ Workflows are defined in YAML files with the following structure:
 name: "Workflow Name"
 
 # Data cleanup options
-nuke_on_start: false  # Nuke all data before starting workflow
-nuke_on_end: false    # Nuke all data after completing workflow
+nuke_on_start: false # Nuke all data before starting workflow
+nuke_on_end: false # Nuke all data after completing workflow
 
 # Image management
-force_pull_image: false  # Force pull Docker images even if they exist locally
+force_pull_image: false # Force pull Docker images even if they exist locally
 
 # Node lifecycle
-restart: false        # Restart nodes at beginning
-stop_all_nodes: true  # Stop nodes after completion
+restart: false # Restart nodes at beginning
+stop_all_nodes: true # Stop nodes after completion
 
 nodes:
   count: 2
@@ -689,7 +691,8 @@ steps:
 ```
 
 **Configuration Options:**
-- `nuke_on_start`: When `true`, performs complete data cleanup (containers + data) before workflow starts. Ensures clean slate. 
+
+- `nuke_on_start`: When `true`, performs complete data cleanup (containers + data) before workflow starts. Ensures clean slate.
 - `nuke_on_end`: When `true`, performs complete data cleanup after workflow completes. Useful for CI/CD and testing.
 - `force_pull_image`: When set to `true`, forces Docker to pull fresh images from registries, even if they exist locally. Useful for ensuring latest versions or during development.
 - `auth_service`: When set to `true`, enables authentication service integration with Traefik proxy. Nodes will be configured with authentication middleware and proper routing.
@@ -996,7 +999,7 @@ with workflow("workflow-examples/workflow-example.yml", prefix="pretest") as env
     # env["workflow_result"] -> True/False (workflow execution success)
     # env["nodes"] -> List of nodes created by the workflow
     # env["endpoints"] -> RPC endpoints for each node
-    # env["manager"] -> CalimeroManager instance
+    # env["manager"] -> DockerManager instance
 
     # Your test logic here
     # The workflow environment is automatically cleaned up on exit

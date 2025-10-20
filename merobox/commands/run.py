@@ -10,7 +10,7 @@ import click
 from rich.console import Console
 
 from merobox.commands.binary_manager import BinaryManager
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.utils import validate_port
 
 console = Console()
@@ -96,7 +96,7 @@ def run(
     if no_docker:
         calimero_manager = BinaryManager(binary_path=binary_path)
     else:
-        calimero_manager = CalimeroManager()
+        calimero_manager = DockerManager()
 
     # Handle force pull if specified (Docker mode only)
     if not no_docker and force_pull and image:

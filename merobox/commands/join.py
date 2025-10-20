@@ -10,7 +10,7 @@ from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import ADMIN_API_CONTEXTS_JOIN
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console, get_node_rpc_url, run_async_function
@@ -54,7 +54,7 @@ def join():
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def context(node, context_id, invitee_id, invitation, verbose):
     """Join a context using an invitation."""
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     # Get admin API URL and run join
     admin_url = get_node_rpc_url(node, manager)

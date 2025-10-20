@@ -7,7 +7,7 @@ Supports Docker containers by default, and native binary mode with --no-docker.
 import click
 
 from merobox.commands.binary_manager import BinaryManager
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 
 
 @click.command()
@@ -37,5 +37,5 @@ def list(no_docker):
         table.add_column("Status", style="yellow")
         console.print(table)
     else:
-        calimero_manager = CalimeroManager()
+        calimero_manager = DockerManager()
         calimero_manager.list_nodes()

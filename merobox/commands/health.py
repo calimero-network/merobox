@@ -10,7 +10,7 @@ import click
 from rich import box
 from rich.table import Table
 
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.utils import (
     check_node_running,
     console,
@@ -98,7 +98,7 @@ def extract_peers_count(peers_data):
 )
 def health(node, timeout, verbose):
     """Check the health status of Calimero nodes."""
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     if node:
         # Check specific node

@@ -34,7 +34,7 @@ import docker
 from rich import box
 from rich.table import Table
 
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console, format_file_size
 
 
@@ -118,7 +118,7 @@ def nuke_all_data_dirs(data_dirs: list, dry_run: bool = False) -> dict:
 
 
 def execute_nuke(
-    manager: CalimeroManager,
+    manager: DockerManager,
     prefix: str = None,
     verbose: bool = False,
     silent: bool = False,
@@ -127,7 +127,7 @@ def execute_nuke(
     Execute the nuke operation programmatically (for use in workflows).
 
     Args:
-        manager: CalimeroManager instance
+        manager: DockerManager instance
         prefix: Optional prefix to filter which nodes to nuke
         verbose: Enable verbose output
         silent: Suppress most output (for workflow automation)
@@ -295,7 +295,7 @@ def nuke(dry_run, force, verbose, prefix):
             total_size += dir_size
 
     # Calculate auth volume size if it exists using Docker
-    manager = CalimeroManager()
+    manager = DockerManager()
     auth_volume_size = 0
     try:
         manager.client.volumes.get("calimero_auth_data")
