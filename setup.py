@@ -4,16 +4,19 @@ Setup script for merobox package.
 """
 
 from setuptools import setup, find_packages
-import toml
+import re
+from pathlib import Path
 
 # Read the README file
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-# Read version from pyproject.toml
-with open("pyproject.toml", "r", encoding="utf-8") as fh:
-    pyproject = toml.load(fh)
-    version = pyproject["project"]["version"]
+# Read version from merobox/__init__.py
+init_file = Path(__file__).parent / "merobox" / "__init__.py"
+version_match = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', init_file.read_text(), re.MULTILINE)
+if not version_match:
+    raise RuntimeError("Unable to find version string in merobox/__init__.py")
+version = version_match.group(1)
 
 setup(
     name="merobox",
