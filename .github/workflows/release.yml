@@ -1,6 +1,11 @@
-name: Release
+name: Release Pipeline
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'merobox/__init__.py'
   push:
     tags:
       - 'v*'
@@ -12,8 +17,74 @@ on:
         type: string
 
 jobs:
-  build:
+  # Job 1: Detect version bump and create tag
+  auto-tag:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: write
+    outputs:
+      tag_created: ${{ steps.create_tag.outputs.tag_created }}
+      version: ${{ steps.current_version.outputs.version }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Extract current version from __init__.py
+        id: current_version
+        run: |
+          VERSION=$(grep '^__version__ = ' merobox/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Current version: $VERSION"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          TAG="v${{ steps.current_version.outputs.version }}"
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⏭️  Tag $TAG already exists, skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✨ Tag $TAG does not exist, will create"
+          fi
+
+      - name: Create and push tag
+        id: create_tag
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          TAG="v${{ steps.current_version.outputs.version }}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git tag -a "$TAG" -m "Release $TAG (auto-tagged)"
+          git push origin "$TAG"
+          
+          echo "tag_created=true" >> $GITHUB_OUTPUT
+          echo "✅ Created and pushed tag: $TAG"
+
+      - name: Comment on commit
+        if: steps.create_tag.outputs.tag_created == 'true'
+        uses: peter-evans/commit-comment@v3
+        with:
+          body: |
+            🎉 **Auto-tagged release v${{ steps.current_version.outputs.version }}**
+            
+            Release pipeline is now running. Monitor: [Actions](https://github.com/${{ github.repository }}/actions)
+
+  # Job 2: Build binaries for all platforms
+  build-binaries:
     runs-on: ${{ matrix.os }}
+    needs: auto-tag
+    if: |
+      always() &&
+      (startsWith(github.ref, 'refs/tags/v') || 
+       needs.auto-tag.outputs.tag_created == 'true' ||
+       github.event_name == 'workflow_dispatch')
     strategy:
       matrix:
         include:
@@ -33,26 +104,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Set up QEMU (for ARM64 builds on x64 runners)
+      - name: Set up QEMU (for ARM64)
         if: matrix.arch == 'arm64' && matrix.os == 'ubuntu-latest'
         uses: docker/setup-qemu-action@v3
 
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+        run: sudo apt-get update && sudo apt-get install -y build-essential
 
       - name: Install system dependencies (macOS)
         if: matrix.os == 'macos-latest'
-        run: |
-          brew install gcc
+        run: brew install gcc
 
       - name: Install dependencies
         run: |
@@ -60,28 +130,35 @@ jobs:
           pip install pyinstaller
 
       - name: Build executable
-        run: |
-          pyinstaller --onefile --name merobox merobox/cli.py
+        run: pyinstaller --onefile --name merobox merobox/cli.py
 
       - name: Test executable
-        run: |
-          ./dist/merobox --version
+        run: ./dist/merobox --version
 
-      - name: Name artifact uniquely
+      - name: Determine version tag
+        id: version
         shell: bash
         run: |
-          set -euo pipefail
-          ext=""
-          [[ "${{ matrix.os }}" == "macos-latest" ]] && ext=""
-          [[ "${{ matrix.os }}" == "ubuntu-latest" ]] && ext=""
-          NAME="merobox-${{ github.ref_name }}-${{ matrix.target }}${ext}"
-          mv "dist/merobox${ext}" "dist/${NAME}"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ "${{ needs.auto-tag.outputs.version }}" != "" ]]; then
+            echo "tag=v${{ needs.auto-tag.outputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Generate checksum (portable)
+      - name: Name artifact
         shell: bash
         run: |
-          set -euo pipefail
-          FILE="dist/merobox-${{ github.ref_name }}-${{ matrix.target }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          NAME="merobox-${TAG}-${{ matrix.target }}"
+          mv "dist/merobox" "dist/${NAME}"
+
+      - name: Generate checksum
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          FILE="dist/merobox-${TAG}-${{ matrix.target }}"
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "${FILE}" > "${FILE}.sha256"
           else
@@ -93,43 +170,137 @@ jobs:
         with:
           name: merobox-${{ matrix.target }}
           path: |
-            dist/merobox-${{ github.ref_name }}-${{ matrix.target }}
-            dist/merobox-${{ github.ref_name }}-${{ matrix.target }}.sha256
+            dist/merobox-${{ steps.version.outputs.tag }}-${{ matrix.target }}
+            dist/merobox-${{ steps.version.outputs.tag }}-${{ matrix.target }}.sha256
           retention-days: 30
 
-  release:
-    needs: build
+  # Job 3: Create GitHub Release
+  create-release:
+    needs: build-binaries
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
+    if: |
+      always() &&
+      needs.build-binaries.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') || 
+       needs.auto-tag.outputs.tag_created == 'true' ||
+       github.event_name == 'workflow_dispatch')
     permissions:
       contents: write
 
     steps:
+      - name: Determine version tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ "${{ needs.auto-tag.outputs.version }}" != "" ]]; then
+            echo "tag=v${{ needs.auto-tag.outputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Validate tag format
         run: |
-          if [[ ! "${{ github.ref }}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ Invalid tag format. Expected: vX.Y.Z (e.g., v1.0.0)"
-            echo "Current tag: ${{ github.ref }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid tag format: $TAG"
             exit 1
           fi
-          echo "✅ Tag format is valid: ${{ github.ref }}"
+          echo "✅ Valid tag: $TAG"
 
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download all artifacts to release-assets
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-assets
           pattern: merobox-*
           merge-multiple: true
 
-      - name: Create and Publish GitHub Release
+      - name: Create and publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: release-assets/*
           generate_release_notes: true
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Job 4: Publish to PyPI
+  publish-pypi:
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.create-release.result == 'success'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+    
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+    
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install build twine
+    
+      - name: Build package
+        run: python -m build
+    
+      - name: Check package
+        run: twine check dist/*
+    
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
+    
+      - name: Publish to TestPyPI (optional)
+        if: ${{ secrets.TEST_PYPI_API_TOKEN != '' }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: twine upload --repository testpypi dist/* || echo "TestPyPI publish skipped"
+
+  # Job 5: Notify completion
+  notify-completion:
+    needs: [auto-tag, build-binaries, create-release, publish-pypi]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ needs.auto-tag.outputs.version }}" != "" ]]; then
+            echo "version=${{ needs.auto-tag.outputs.version }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Report status
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "🎉 Release Pipeline Complete!"
+          echo "Version: $VERSION"
+          echo ""
+          echo "Status:"
+          echo "  Auto-tag: ${{ needs.auto-tag.result }}"
+          echo "  Build Binaries: ${{ needs.build-binaries.result }}"
+          echo "  Create Release: ${{ needs.create-release.result }}"
+          echo "  Publish PyPI: ${{ needs.publish-pypi.result }}"
+          echo ""
+          echo "📦 Package: https://pypi.org/project/merobox/${VERSION}/"
+          echo "📥 Release: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+
