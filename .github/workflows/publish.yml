@@ -20,17 +20,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
+    - name: Install build tools
+      run: |
+        pip install build twine
+    
     - name: Build and check package
-      run: make check
+      run: make check-build
     
     - name: Publish to PyPI
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: make publish
+      run: twine upload dist/*
     
-    - name: Publish to TestPyPI
+    - name: Publish to TestPyPI (if token exists)
+      if: ${{ secrets.TEST_PYPI_API_TOKEN != '' }}
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
-      run: make test-publish
+      run: twine upload --repository testpypi dist/* || echo "TestPyPI publish failed or skipped"
