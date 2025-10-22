@@ -9,7 +9,7 @@ from calimero_client_py import create_client, create_connection
 from rich.console import Console
 from rich.panel import Panel
 
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import (
@@ -65,7 +65,7 @@ def call(node: str, context_id: str, function: str, args: str = None):
     """Execute function calls."""
 
     # Initialize manager and get RPC URL from node name
-    manager = CalimeroManager()
+    manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
 
     console.print(f"[blue]Using RPC endpoint: {rpc_url}[/blue]")

@@ -62,9 +62,9 @@ class GetProposalStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import CalimeroManager
+            from merobox.commands.manager import DockerManager
 
-            manager = CalimeroManager()
+            manager = DockerManager()
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -79,7 +79,6 @@ class GetProposalStep(BaseStep):
         console.print(f"  Data: {result.get('data')}")
 
         if result["success"]:
-
             response_data = result["data"]
             if isinstance(response_data, dict) and "data" in response_data:
                 actual_proposal = response_data["data"]
@@ -148,9 +147,9 @@ class ListProposalsStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import CalimeroManager
+            from merobox.commands.manager import DockerManager
 
-            manager = CalimeroManager()
+            manager = DockerManager()
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -165,7 +164,6 @@ class ListProposalsStep(BaseStep):
 
         data = result.get("data", [])
         if isinstance(data, dict) and "data" in data:
-
             proposals_list = data["data"]
             if isinstance(proposals_list, list):
                 console.print(f"  Proposals count: {len(proposals_list)}")
@@ -175,7 +173,6 @@ class ListProposalsStep(BaseStep):
             console.print(f"  Data type: {type(data)}")
 
         if result["success"]:
-
             response_data = result["data"]
 
             if isinstance(response_data, dict) and "data" in response_data:
@@ -245,9 +242,9 @@ class GetProposalApproversStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import CalimeroManager
+            from merobox.commands.manager import DockerManager
 
-            manager = CalimeroManager()
+            manager = DockerManager()
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -266,7 +263,6 @@ class GetProposalApproversStep(BaseStep):
 
         data = result.get("data", [])
         if isinstance(data, dict) and "data" in data:
-
             approvers_list = data["data"]
             if isinstance(approvers_list, list):
                 console.print(f"  Approvers count: {len(approvers_list)}")
@@ -278,7 +274,6 @@ class GetProposalApproversStep(BaseStep):
             console.print(f"  Data type: {type(data)}")
 
         if result["success"]:
-
             response_data = result["data"]
 
             if isinstance(response_data, dict) and "data" in response_data:

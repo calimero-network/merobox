@@ -62,11 +62,14 @@ class CreateIdentityStep(BaseStep):
                 "[yellow]⚠️  CreateIdentity step export configuration validation failed[/yellow]"
             )
 
-        # Get node RPC URL
         try:
-            from merobox.commands.manager import CalimeroManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = CalimeroManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -211,9 +214,13 @@ class InviteIdentityStep(BaseStep):
 
         # Get node RPC URL
         try:
-            from merobox.commands.manager import CalimeroManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = CalimeroManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(

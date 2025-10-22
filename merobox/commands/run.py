@@ -1,5 +1,7 @@
 """
-Run command - Start Calimero node(s) in Docker containers.
+Run command - Start Calimero node(s).
+
+Supports Docker containers by default, and native binary mode with --no-docker.
 """
 
 import sys
@@ -7,7 +9,8 @@ import sys
 import click
 from rich.console import Console
 
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.binary_manager import BinaryManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.utils import validate_port
 
 console = Console()
@@ -56,6 +59,20 @@ console = Console()
     default="debug",
     help="Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'",
 )
+@click.option(
+    "--no-docker",
+    is_flag=True,
+    help="Run nodes as native processes using merod (binary mode)",
+)
+@click.option(
+    "--binary-path",
+    help="Path to merod binary (optional). If not provided, PATH and common locations will be searched.",
+)
+@click.option(
+    "--foreground",
+    is_flag=True,
+    help="Run a single node in the foreground and attach to merod's interactive UI (binary mode only)",
+)
 def run(
     count,
     base_port,
@@ -70,12 +87,19 @@ def run(
     auth_use_cached,
     webui_use_cached,
     log_level,
+    no_docker,
+    binary_path,
+    foreground,
 ):
-    """Run Calimero node(s) in Docker containers."""
-    calimero_manager = CalimeroManager()
+    """Run Calimero node(s)."""
+    # Select manager based on mode
+    if no_docker:
+        calimero_manager = BinaryManager(binary_path=binary_path)
+    else:
+        calimero_manager = DockerManager()
 
-    # Handle force pull if specified
-    if force_pull and image:
+    # Handle force pull if specified (Docker mode only)
+    if not no_docker and force_pull and image:
         console.print(f"[yellow]Force pulling image: {image}[/yellow]")
         if not calimero_manager.force_pull_image(image):
             console.print(f"[red]Failed to force pull image: {image}[/red]")
@@ -88,36 +112,58 @@ def run(
     if base_rpc_port is not None:
         base_rpc_port = validate_port(base_rpc_port, "base RPC port")
 
-    if count == 1 and data_dir:
-        # Single node with custom data directory
+    # Validate foreground constraints
+    if foreground:
+        if not no_docker:
+            console.print("[red]--foreground is only supported with --no-docker[/red]")
+            sys.exit(1)
+        if count != 1:
+            console.print("[red]--foreground requires --count 1[/red]")
+            sys.exit(1)
+
+    # Ensure foreground binary runs use a less-verbose log level
+    if foreground:
+        log_level = "warm"
+
+    if count == 1:
+        # Single node path (supports optional data_dir and foreground in binary mode)
         node_name = f"{prefix}-1"
-        success = calimero_manager.run_node(
-            node_name,
-            base_port,
-            base_rpc_port,
-            chain_id,
-            data_dir,
-            image,
-            auth_service,
-            auth_image,
-            auth_use_cached,
-            webui_use_cached,
-            log_level,
-        )
+        # Build kwargs for run_node; only include 'foreground' when using BinaryManager
+        run_kwargs = {
+            "node_name": node_name,
+            "port": base_port,
+            "rpc_port": base_rpc_port,
+            "chain_id": chain_id,
+            "data_dir": data_dir,
+            "image": (image if not no_docker else None),
+            "auth_service": (auth_service if not no_docker else False),
+            "auth_image": (auth_image if not no_docker else None),
+            "auth_use_cached": (auth_use_cached if not no_docker else False),
+            "webui_use_cached": (webui_use_cached if not no_docker else False),
+            "log_level": log_level,
+        }
+
+        if no_docker:
+            run_kwargs["foreground"] = foreground
+
+        success = calimero_manager.run_node(**run_kwargs)
         sys.exit(0 if success else 1)
     else:
-        # Multiple nodes or single node with default settings
+        # Multiple nodes path (foreground not supported)
+        if foreground:
+            console.print("[red]--foreground requires a single node (--count 1)")
+            sys.exit(1)
         success = calimero_manager.run_multiple_nodes(
             count,
             base_port,
             base_rpc_port,
             chain_id,
             prefix,
-            image,
-            auth_service,
-            auth_image,
-            auth_use_cached,
-            webui_use_cached,
+            image if not no_docker else None,
+            auth_service if not no_docker else False,
+            auth_image if not no_docker else None,
+            auth_use_cached if not no_docker else False,
+            webui_use_cached if not no_docker else False,
             log_level,
         )
         sys.exit(0 if success else 1)

@@ -16,8 +16,8 @@ from merobox.commands.utils import console
 class ScriptStep(BaseStep):
     """Execute a script on Docker images or running nodes."""
 
-    def __init__(self, config: dict[str, Any]):
-        super().__init__(config)
+    def __init__(self, config: dict[str, Any], manager: object | None = None):
+        super().__init__(config, manager)
         self.script_path = config.get("script")
         self.target = config.get("target", "image")  # 'image' or 'nodes'
         self.description = config.get(
@@ -312,11 +312,20 @@ class ScriptStep(BaseStep):
             temp_container_name = f"script-step-{int(time.time())}"
 
             try:
+                if self.manager is not None and hasattr(self.manager, "binary_path"):
+                    console.print(
+                        "[yellow]Skipping image script execution: running in --no-docker mode (no container runtime available)[/yellow]"
+                    )
+                    return True
+
                 # Create container with the script mounted
                 try:
-                    from merobox.commands.manager import CalimeroManager
+                    if self.manager is not None:
+                        manager = self.manager
+                    else:
+                        from merobox.commands.manager import DockerManager
 
-                    manager = CalimeroManager()
+                        manager = DockerManager()
 
                     # Ensure the image is available
                     if not manager._ensure_image_pulled(image):
@@ -437,9 +446,19 @@ class ScriptStep(BaseStep):
                 return False
 
             # Get all running Calimero nodes
-            from merobox.commands.manager import CalimeroManager
 
-            manager = CalimeroManager()
+            if self.manager is not None and hasattr(self.manager, "binary_path"):
+                console.print(
+                    "[yellow]Skipping node script execution: running in --no-docker mode (node exec not implemented for binaries)[/yellow]"
+                )
+                return True
+
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
+
+                manager = DockerManager()
 
             containers = manager.client.containers.list(
                 filters={"label": "calimero.node=true"}

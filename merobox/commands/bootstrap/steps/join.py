@@ -97,12 +97,15 @@ class JoinContextStep(BaseStep):
         console.print(
             f"  invitation length: {len(invitation) if isinstance(invitation, str) else 'N/A'}"
         )
-
         # Get node RPC URL
         try:
-            from merobox.commands.manager import CalimeroManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = CalimeroManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(

@@ -12,12 +12,12 @@ from rich.console import Console
 from rich.table import Table
 
 from merobox.commands.constants import DEFAULT_RPC_PORT
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 
 console = Console()
 
 
-def get_node_rpc_url(node_name: str, manager: CalimeroManager) -> str:
+def get_node_rpc_url(node_name: str, manager: DockerManager) -> str:
     """Get the RPC URL for a specific node."""
     try:
         container = manager.client.containers.get(node_name)
@@ -40,7 +40,7 @@ def get_node_rpc_url(node_name: str, manager: CalimeroManager) -> str:
         return f"http://localhost:{DEFAULT_RPC_PORT}"
 
 
-def check_node_running(node: str, manager: CalimeroManager) -> None:
+def check_node_running(node: str, manager: DockerManager) -> None:
     """Check if a node is running and exit if not."""
     try:
         container = manager.client.containers.get(node)

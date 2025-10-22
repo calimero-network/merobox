@@ -13,7 +13,7 @@ from rich.table import Table
 console = Console()
 
 
-class CalimeroManager:
+class DockerManager:
     """Manages Calimero nodes in Docker containers."""
 
     def __init__(self):
@@ -227,8 +227,10 @@ class CalimeroManager:
                 "privileged": True,  # Run in privileged mode to avoid permission issues
                 "environment": node_env,
                 "ports": {
-                    "2428/tcp": port,  # Map external P2P port to internal P2P port (0.0.0.0:2428)
-                    "2528/tcp": rpc_port,  # Map external RPC port to internal admin server port (127.0.0.1:2528)
+                    # Map external P2P port to internal P2P port (0.0.0.0:2428)
+                    "2428/tcp": port,
+                    # Map external RPC port to internal admin server port (127.0.0.1:2528)
+                    "2528/tcp": rpc_port,
                 },
                 "volumes": {
                     os.path.abspath(data_dir): {"bind": "/app/data", "mode": "rw"}

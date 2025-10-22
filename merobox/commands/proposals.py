@@ -13,7 +13,7 @@ from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
     ADMIN_API_CONTEXTS,
 )
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console, get_node_rpc_url, run_async_function
@@ -94,7 +94,7 @@ def proposals():
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def get(node, context_id, proposal_id, verbose):
     """Get a specific proposal."""
-    manager = CalimeroManager()
+    manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
 
     console.print(
@@ -140,7 +140,7 @@ def get(node, context_id, proposal_id, verbose):
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def list(node, context_id, args, verbose):
     """List proposals for a context."""
-    manager = CalimeroManager()
+    manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
 
     console.print(
@@ -203,7 +203,7 @@ def list(node, context_id, args, verbose):
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def approvers(node, context_id, proposal_id, verbose):
     """Get list of approvers for a proposal."""
-    manager = CalimeroManager()
+    manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
 
     console.print(

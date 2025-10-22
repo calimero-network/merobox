@@ -1,0 +1,164 @@
+description: Binary-mode example — run Calimero nodes using native `merod` (no Docker)
+name: Sample Calimero Workflow (binary-mode)
+
+# This workflow is configured to run nodes in native (binary) mode.
+# The runner will use BinaryManager when `no_docker: true` is set here.
+# You can still override on the CLI with --no-docker or --binary-path.
+#
+# How to run:
+#  - With the YAML-only flag (runner now honours `no_docker`):
+#      python -m merobox.cli bootstrap run workflow-examples/workflow-example-binary.yml
+#  - Or explicitly via CLI:
+#      python -m merobox.cli bootstrap run workflow-examples/workflow-example-binary.yml --no-docker --binary-path /path/to/merod
+
+nuke_on_start: true
+
+# Enable binary/native mode (BinaryManager)
+no_docker: true
+# Optional: specify the merod binary if it's not on PATH
+# binary_path: /opt/homebrew/bin/merod
+
+# NOTE: Docker-only features are ignored in binary mode:
+#  - `force_pull_image` (image pulling) is a Docker-only behavior
+#  - `auth_service` / Traefik stack is not supported in binary mode
+# Keep the `image` field for compatibility, but it will be ignored by BinaryManager.
+force_pull_image: false
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  # Optional: reserve base ports for native nodes (BinaryManager will auto-allocate if omitted)
+  # base_port: 2428
+  # base_rpc_port: 2528
+
+steps:
+  # Step 1: Install the application on the first node
+  # This captures the application ID for use in subsequent steps
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId # Export 'applicationId' field as 'app_id'
+
+  # Step 2: Create a context using the installed application
+  # Uses the captured application ID from step 1
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId # Export 'contextId' field as 'context_id'
+      member_public_key: memberPublicKey # Export 'memberPublicKey' as 'member_public_key'
+
+  # Step 3: Generate an identity on the second node
+  # This captures the public key for use in invitation and joining
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      public_key: publicKey # Export 'publicKey' as 'public_key'
+
+  # Step 4: Wait for identity creation to complete
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Step 5: Invite the second node to join the context
+  # Uses captured values: context ID, member public key, and identity public key
+  - name: Invite Node 2 from Node 1
+    type: invite_identity
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    grantee_id: "{{public_key}}"
+    granter_id: "{{member_public_key}}"
+    capability: member
+    outputs:
+      invitation: invitation # Export 'invitation' as 'invitation'
+
+  # Step 6: Join the context from the second node
+  # Uses captured values: context ID, invitee identity, and invitation data
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    invitee_id: "{{public_key}}"
+    invitation: "{{invitation}}"
+
+  # Step 7: Execute a contract call to set a key-value pair
+  # Uses the member public key from the context as the executor
+  - name: Execute Contract Call - Set Key-Value
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: hello
+      value: world
+    outputs:
+      set_result: result # Export 'result' as 'set_result'
+
+  # Step 8: Wait for the set operation to complete and propagate
+  - name: Wait for Set Operation
+    type: wait
+    seconds: 3
+
+  # Step 9: Execute a view call to retrieve the stored value
+  # Demonstrates cross-node execution using the joined context
+  - name: Execute View Call - Get Value
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key}}"
+    method: get
+    args:
+      key: hello
+    outputs:
+      get_result: result # Export 'result' as 'get_result'
+
+  # Step 10: Repeat a set of operations multiple times
+  # Demonstrates the new repeat step functionality
+  - name: Repeat Operations Multiple Times
+    type: repeat
+    count: 3
+    outputs:
+      current_iteration: iteration # Export 'iteration' as 'current_iteration'
+    steps:
+      - name: Set Key-Value Pair
+        type: call
+        node: calimero-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: set
+        args:
+          key: "iteration_{{current_iteration}}"
+          value: "value_{{current_iteration}}"
+        outputs:
+          iteration_set_result: result # Export 'result' as 'iteration_set_result'
+
+      - name: Wait for Set Operation
+        type: wait
+        seconds: 2
+
+      - name: Get Key-Value Pair
+        type: call
+        node: calimero-node-2
+        context_id: "{{context_id}}"
+        executor_public_key: "{{public_key}}"
+        method: get
+        args:
+          key: "iteration_{{current_iteration}}"
+        outputs:
+          iteration_get_result: result # Export 'result' as 'iteration_get_result'
+
+# Configuration options
+stop_all_nodes: true # Stop all nodes at the end of workflow
+restart: false # Don't restart nodes at the beginning of workflow
+wait_timeout: 60
+# Clean up all data after workflow completes
+nuke_on_end: true

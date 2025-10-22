@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
-from merobox.commands.manager import CalimeroManager
+from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console, get_node_rpc_url
 
 # ============================================================================
@@ -26,7 +26,7 @@ class ClusterEnv(TypedDict):
 
     nodes: list[str]
     endpoints: dict[str, str]
-    manager: CalimeroManager
+    manager: DockerManager
 
 
 class WorkflowEnv(TypedDict):
@@ -34,7 +34,7 @@ class WorkflowEnv(TypedDict):
 
     nodes: list[str]
     endpoints: dict[str, str]
-    manager: CalimeroManager
+    manager: DockerManager
     workflow_result: bool
     dynamic_values: dict[str, Any] | None
 
@@ -71,7 +71,7 @@ def cluster(
     Yields:
         ClusterEnv with node names, endpoints map, and manager.
     """
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     try:
         # Use the efficient run_multiple_nodes method instead of manual loop
@@ -145,7 +145,7 @@ def workflow(
     if not workflow_path.exists():
         raise FileNotFoundError(f"Workflow file not found: {workflow_path}")
 
-    manager = CalimeroManager()
+    manager = DockerManager()
 
     # Initialize running_nodes at the beginning to avoid UnboundLocalError
     running_nodes = []
