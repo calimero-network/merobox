@@ -11,6 +11,8 @@ name: Sample Calimero Workflow (binary-mode)
 #  - Or explicitly via CLI:
 #      python -m merobox.cli bootstrap run workflow-examples/workflow-example-binary.yml --no-docker --binary-path /path/to/merod
 
+nuke_on_start: true
+
 # Enable binary/native mode (BinaryManager)
 no_docker: true
 # Optional: specify the merod binary if it's not on PATH
@@ -155,6 +157,8 @@ steps:
           iteration_get_result: result # Export 'result' as 'iteration_get_result'
 
 # Configuration options
-stop_all_nodes: false # Stop all nodes at the end of workflow
+stop_all_nodes: true # Stop all nodes at the end of workflow
 restart: false # Don't restart nodes at the beginning of workflow
 wait_timeout: 60
+# Clean up all data after workflow completes
+nuke_on_end: true

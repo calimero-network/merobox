@@ -118,7 +118,7 @@ def nuke_all_data_dirs(data_dirs: list, dry_run: bool = False) -> dict:
 
 
 def execute_nuke(
-    manager: DockerManager,
+    manager=None,
     prefix: str = None,
     verbose: bool = False,
     silent: bool = False,
@@ -127,7 +127,7 @@ def execute_nuke(
     Execute the nuke operation programmatically (for use in workflows).
 
     Args:
-        manager: DockerManager instance
+        manager: DockerManager or BinaryManager instance (optional)
         prefix: Optional prefix to filter which nodes to nuke
         verbose: Enable verbose output
         silent: Suppress most output (for workflow automation)
@@ -136,6 +136,8 @@ def execute_nuke(
         bool: True if nuke succeeded, False otherwise
     """
     try:
+        from merobox.commands.binary_manager import BinaryManager
+
         data_dirs = find_calimero_data_dirs(prefix)
 
         if not data_dirs:
@@ -150,63 +152,85 @@ def execute_nuke(
                 f"[red]Found {len(data_dirs)} Calimero node data directory(ies)[/red]"
             )
 
-        # Stop running nodes
-        running_nodes = []
+        # Stop running binary processes first (don't require binary for cleanup)
+        binary_manager = BinaryManager(require_binary=False)
+        binary_nodes_stopped = 0
         for data_dir in data_dirs:
             node_name = os.path.basename(data_dir)
+            if binary_manager.is_node_running(node_name):
+                if not silent:
+                    console.print(
+                        f"[yellow]Stopping binary process {node_name}...[/yellow]"
+                    )
+                if binary_manager.stop_node(node_name):
+                    binary_nodes_stopped += 1
+
+        if binary_nodes_stopped > 0 and not silent:
+            console.print(
+                f"[yellow]Stopped {binary_nodes_stopped} binary process(es)[/yellow]"
+            )
+
+        # Stop running Docker containers (if manager is DockerManager)
+        docker_nodes_stopped = 0
+        if manager and hasattr(manager, "client"):
+            for data_dir in data_dirs:
+                node_name = os.path.basename(data_dir)
+                try:
+                    container = manager.client.containers.get(node_name)
+                    if container.status == "running":
+                        if not silent:
+                            console.print(
+                                f"[yellow]Stopping Docker container {node_name}...[/yellow]"
+                            )
+                        container.stop(timeout=30)
+                        docker_nodes_stopped += 1
+                except Exception:
+                    pass
+
+            if docker_nodes_stopped > 0 and not silent:
+                console.print(
+                    f"[yellow]Stopped {docker_nodes_stopped} Docker container(s)[/yellow]"
+                )
+
+        # Stop and remove auth service stack if it exists (Docker only)
+        if manager and hasattr(manager, "client"):
             try:
-                container = manager.client.containers.get(node_name)
-                if container.status == "running":
-                    running_nodes.append(node_name)
-                    if not silent:
-                        console.print(f"[yellow]Stopping node {node_name}...[/yellow]")
-                    container.stop(timeout=30)
+                auth_container = manager.client.containers.get("auth")
+                if not silent:
+                    console.print("[yellow]Stopping auth service...[/yellow]")
+                auth_container.stop(timeout=30)
+                auth_container.remove()
+                if not silent:
+                    console.print("[green]✓ Auth service stopped and removed[/green]")
             except Exception:
                 pass
 
-        if running_nodes and not silent:
-            console.print(
-                f"[yellow]Stopped {len(running_nodes)} running node(s)[/yellow]"
-            )
+            try:
+                proxy_container = manager.client.containers.get("proxy")
+                if not silent:
+                    console.print("[yellow]Stopping Traefik proxy...[/yellow]")
+                proxy_container.stop(timeout=30)
+                proxy_container.remove()
+                if not silent:
+                    console.print("[green]✓ Traefik proxy stopped and removed[/green]")
+            except Exception:
+                pass
 
-        # Stop and remove auth service stack if it exists
-        try:
-            auth_container = manager.client.containers.get("auth")
-            if not silent:
-                console.print("[yellow]Stopping auth service...[/yellow]")
-            auth_container.stop(timeout=30)
-            auth_container.remove()
-            if not silent:
-                console.print("[green]✓ Auth service stopped and removed[/green]")
-        except Exception:
-            pass
-
-        try:
-            proxy_container = manager.client.containers.get("proxy")
-            if not silent:
-                console.print("[yellow]Stopping Traefik proxy...[/yellow]")
-            proxy_container.stop(timeout=30)
-            proxy_container.remove()
-            if not silent:
-                console.print("[green]✓ Traefik proxy stopped and removed[/green]")
-        except Exception:
-            pass
-
-        # Remove auth data volume if it exists
-        try:
-            auth_volume = manager.client.volumes.get("calimero_auth_data")
-            if not silent:
-                console.print("[yellow]Removing auth data volume...[/yellow]")
-            auth_volume.remove()
-            if not silent:
-                console.print("[green]✓ Auth data volume removed[/green]")
-        except docker.errors.NotFound:
-            pass
-        except Exception as e:
-            if not silent:
-                console.print(
-                    f"[yellow]⚠️  Warning: Could not remove auth data volume: {e}[/yellow]"
-                )
+            # Remove auth data volume if it exists
+            try:
+                auth_volume = manager.client.volumes.get("calimero_auth_data")
+                if not silent:
+                    console.print("[yellow]Removing auth data volume...[/yellow]")
+                auth_volume.remove()
+                if not silent:
+                    console.print("[green]✓ Auth data volume removed[/green]")
+            except docker.errors.NotFound:
+                pass
+            except Exception as e:
+                if not silent:
+                    console.print(
+                        f"[yellow]⚠️  Warning: Could not remove auth data volume: {e}[/yellow]"
+                    )
 
         # Delete data directories
         if not silent:
@@ -295,9 +319,10 @@ def nuke(dry_run, force, verbose, prefix):
             total_size += dir_size
 
     # Calculate auth volume size if it exists using Docker
-    manager = DockerManager()
+    manager = None
     auth_volume_size = 0
     try:
+        manager = DockerManager()
         manager.client.volumes.get("calimero_auth_data")
         # Use Docker to calculate the volume size
         try:
@@ -320,6 +345,9 @@ def nuke(dry_run, force, verbose, prefix):
             )
     except docker.errors.NotFound:
         pass
+    except Exception:
+        # Docker not available or other error, proceed without manager
+        pass
 
     total_size_formatted = format_file_size(total_size)
     console.print(f"[red]Total data size: {total_size_formatted}[/red]")
@@ -330,28 +358,29 @@ def nuke(dry_run, force, verbose, prefix):
         # Check what auth services would be cleaned up
         auth_cleanup_items = []
 
-        try:
-            manager.client.containers.get("auth")
-            auth_cleanup_items.append("Auth service container")
-        except Exception:
-            pass
+        if manager:
+            try:
+                manager.client.containers.get("auth")
+                auth_cleanup_items.append("Auth service container")
+            except Exception:
+                pass
 
-        try:
-            manager.client.containers.get("proxy")
-            auth_cleanup_items.append("Traefik proxy container")
-        except Exception:
-            pass
+            try:
+                manager.client.containers.get("proxy")
+                auth_cleanup_items.append("Traefik proxy container")
+            except Exception:
+                pass
 
-        try:
-            manager.client.volumes.get("calimero_auth_data")
-            if auth_volume_size > 0:
-                auth_cleanup_items.append(
-                    f"Auth data volume ({format_file_size(auth_volume_size)})"
-                )
-            else:
-                auth_cleanup_items.append("Auth data volume")
-        except Exception:
-            pass
+            try:
+                manager.client.volumes.get("calimero_auth_data")
+                if auth_volume_size > 0:
+                    auth_cleanup_items.append(
+                        f"Auth data volume ({format_file_size(auth_volume_size)})"
+                    )
+                else:
+                    auth_cleanup_items.append("Auth data volume")
+            except Exception:
+                pass
 
         if auth_cleanup_items:
             console.print(
@@ -381,4 +410,4 @@ def nuke(dry_run, force, verbose, prefix):
 
 
 if __name__ == "__main__":
-    nuke()
+    nuke()  # pylint: disable=no-value-for-parameter

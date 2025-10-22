@@ -18,20 +18,29 @@ console = Console()
 class BinaryManager:
     """Manages Calimero nodes as native binary processes."""
 
-    def __init__(self, binary_path: Optional[str] = None):
+    def __init__(self, binary_path: Optional[str] = None, require_binary: bool = True):
         """
         Initialize the BinaryManager.
 
         Args:
             binary_path: Path to the merod binary. If None, searches PATH.
+            require_binary: If True, exit if binary not found. If False, set to None gracefully.
         """
-        self.binary_path = binary_path or self._find_binary()
+        if binary_path:
+            self.binary_path = binary_path
+        else:
+            self.binary_path = self._find_binary(require=require_binary)
+
         self.processes = {}  # node_name -> subprocess.Popen
         self.pid_file_dir = Path("./data/.pids")
         self.pid_file_dir.mkdir(parents=True, exist_ok=True)
 
-    def _find_binary(self) -> str:
-        """Find the merod binary in PATH or common locations."""
+    def _find_binary(self, require: bool = True) -> Optional[str]:
+        """Find the merod binary in PATH or common locations.
+
+        Args:
+            require: If True, exit if not found. If False, return None gracefully.
+        """
         # Check PATH
         from shutil import which
 
@@ -54,17 +63,21 @@ class BinaryManager:
                 console.print(f"[green]✓ Found merod binary: {path}[/green]")
                 return path
 
-        console.print(
-            "[red]✗ merod binary not found. Please install or specify --binary-path[/red]"
-        )
-        console.print(
-            "[yellow]Searched: PATH and common locations (/usr/local/bin, /usr/bin, ~/bin, ./)[/yellow]"
-        )
-        console.print("\n[yellow]Install via Homebrew (macOS):[/yellow]")
-        console.print("  brew tap calimero-network/homebrew-tap")
-        console.print("  brew install merod")
-        console.print("  merod --version")
-        sys.exit(1)
+        # Not found - either exit or return None
+        if require:
+            console.print(
+                "[red]✗ merod binary not found. Please install or specify --binary-path[/red]"
+            )
+            console.print(
+                "[yellow]Searched: PATH and common locations (/usr/local/bin, /usr/bin, ~/bin, ./)[/yellow]"
+            )
+            console.print("\n[yellow]Install via Homebrew (macOS):[/yellow]")
+            console.print("  brew tap calimero-network/homebrew-tap")
+            console.print("  brew install merod")
+            console.print("  merod --version")
+            sys.exit(1)
+        else:
+            return None
 
     def _get_pid_file(self, node_name: str) -> Path:
         """Get the PID file path for a node."""

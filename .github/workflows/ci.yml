@@ -55,7 +55,7 @@ jobs:
           pip install -e .
       - name: Install merod binary
         run: |
-          echo "📦 Downloading latest merod binary..."
+          echo "Downloading latest merod binary..."
 
           # Get latest release version from GitHub API
           VERSION=$(curl -s https://api.github.com/repos/calimero-network/core/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
