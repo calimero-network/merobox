@@ -124,10 +124,12 @@ jobs:
           pattern: merobox-*
           merge-multiple: true
 
-      - name: Create GitHub Release
+      - name: Create and Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
           generate_release_notes: true
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

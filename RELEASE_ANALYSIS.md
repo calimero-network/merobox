@@ -129,81 +129,135 @@ Update `.github/workflows/publish.yml` to run commands directly:
 
 ---
 
-## How the Process Should Work
+## How the Process Works Now
 
-### Complete Release Flow:
+### Complete Release Flow (100% AUTOMATED):
 
 ```
 1. Update version in:
    - pyproject.toml
    - merobox/__init__.py
-   - setup.py (if exists)
-
-2. Commit changes:
-   git commit -m "chore: bump version to X.Y.Z"
-   git push
-
-3. Create and push tag:
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-
-4. GitHub Actions automatically:
-   a. Release workflow triggers
-      - Builds binaries for all platforms
-      - Creates GitHub release (as draft)
    
-   b. Manually publish the release on GitHub
-      - Go to Releases page
-      - Edit the draft release
-      - Click "Publish release"
+   Example:
+   version = "0.1.28"  (in pyproject.toml)
+   __version__ = "0.1.28"  (in merobox/__init__.py)
+
+2. Commit and push to master:
+   git add pyproject.toml merobox/__init__.py
+   git commit -m "chore: bump version to 0.1.28"
+   git push origin master
+
+3. 🎉 GitHub Actions automatically does EVERYTHING:
    
-   c. Publish workflow triggers
-      - Builds Python package
-      - Publishes to PyPI
-      - Publishes to TestPyPI
+   a. Auto-tag workflow triggers (on push to master)
+      ✓ Detects version bump in pyproject.toml
+      ✓ Verifies versions match in __init__.py
+      ✓ Creates tag vX.Y.Z automatically
+      ✓ Pushes tag to GitHub
+      ✓ Comments on commit with status
+   
+   b. Release workflow triggers (on tag creation)
+      ✓ Builds binaries for all platforms (macOS x64/arm64, Linux x64/arm64)
+      ✓ Generates checksums (SHA256)
+      ✓ Creates GitHub release with binaries
+      ✓ Generates release notes automatically
+      ✓ PUBLISHES the release immediately (not draft)
+   
+   c. Publish workflow triggers (on release published)
+      ✓ Builds Python package (sdist + wheel)
+      ✓ Validates package with twine
+      ✓ Publishes to PyPI automatically
+      ✓ Publishes to TestPyPI (if token exists)
+   
+   d. Done! 🎊
+      ✓ GitHub release is live with binaries
+      ✓ Package is on PyPI
+      ✓ Users can install via: pip install merobox
+      ✓ Users can download binaries from GitHub releases
+```
+
+### Zero Manual Steps Required!
+
+Just bump the version and push to master. Everything else is automatic. You can monitor progress in the Actions tab.
+
+### Workflow Chain:
+
+```
+Version Bump Commit → Auto-Tag → Release Build → Publish to PyPI
+       (you)         (automated)   (automated)      (automated)
 ```
 
 ---
 
 ## Current vs Expected Behavior
 
-### Current Behavior:
+### Before This Fix:
 1. ✅ Tag pushed → Release workflow runs → Binaries built
-2. ✅ GitHub release created
-3. 🔴 **Publish workflow fails** → `make publish` not found
+2. ✅ GitHub release created as **DRAFT**
+3. ❌ Manual step: Publish the draft release
+4. 🔴 **Publish workflow fails** → `make publish` not found
+5. ❌ Manual step: Build and publish to PyPI locally
 
-### Expected Behavior:
+### After This Fix (FULLY AUTOMATED):
 1. ✅ Tag pushed → Release workflow runs → Binaries built
-2. ✅ GitHub release created
-3. ✅ Publish release → Publish workflow runs → Package on PyPI
+2. ✅ GitHub release **PUBLISHED** automatically
+3. ✅ Publish workflow triggers → Package published to PyPI
+4. 🎉 **Done!** No manual steps required!
 
 ---
 
-## Immediate Action Required
+## Unified Workflow (Recommended)
 
-1. **Add missing Makefile targets** (see Option 1 above)
-2. **Ensure dependencies are installed** in workflow:
-   ```bash
-   pip install build twine
-   ```
-3. **Verify secrets are configured:**
-   - `PYPI_API_TOKEN` - PyPI token
-   - `TEST_PYPI_API_TOKEN` - TestPyPI token
+We've created a **single unified workflow** (`release-unified.yml`) that handles everything:
 
-4. **Test the flow:**
-   ```bash
-   # Locally test build
-   make clean
-   make build
-   make check
-   
-   # Create test tag
-   git tag v0.1.28-test
-   git push origin v0.1.28-test
-   
-   # Watch GitHub Actions
-   # If successful, publish the release manually
-   ```
+### Benefits:
+- ✅ Single workflow to maintain instead of 3 separate ones
+- ✅ Better job dependencies and error handling
+- ✅ Clearer execution flow
+- ✅ Automatic retry and rollback capabilities
+- ✅ Single source of truth for the release process
+
+### Workflow Jobs:
+
+1. **auto-tag** - Detects version bumps and creates tags
+2. **build-binaries** - Builds executables for all platforms
+3. **create-release** - Creates and publishes GitHub release
+4. **publish-pypi** - Publishes package to PyPI
+5. **notify-completion** - Reports final status
+
+### Migration Plan:
+
+**Option A: Use Unified Workflow (Recommended)**
+1. Enable `release-unified.yml`
+2. Disable old workflows:
+   - Rename `.github/workflows/release.yml` to `release.yml.disabled`
+   - Rename `.github/workflows/publish.yml` to `publish.yml.disabled`
+   - Rename `.github/workflows/auto-tag.yml` to `auto-tag.yml.disabled`
+
+**Option B: Keep Separate Workflows**
+1. Use the fixes in `release.yml`, `publish.yml`, and `auto-tag.yml`
+2. Keep workflows separate for granular control
+
+### Required Secrets:
+
+Ensure these are configured in GitHub repository settings:
+- `PYPI_API_TOKEN` - PyPI token (required)
+- `TEST_PYPI_API_TOKEN` - TestPyPI token (optional)
+
+### Test the Flow:
+
+```bash
+# 1. Update version
+# Edit pyproject.toml and merobox/__init__.py
+
+# 2. Commit and push
+git add pyproject.toml merobox/__init__.py
+git commit -m "chore: bump version to 0.1.28"
+git push origin master
+
+# 3. Watch the magic happen
+# Monitor: https://github.com/calimero-network/merobox/actions
+```
 
 ---
 
