@@ -268,10 +268,10 @@ class DockerManager:
                     f"traefik.http.routers.{node_name}-ws.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-ws.middlewares": f"cors,auth-{node_name}",
                     # SSE (Server-Sent Events) routes (protected when auth is available)
-                    f"traefik.http.routers.{node_name}-sse.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/admin-api/events`)",
+                    f"traefik.http.routers.{node_name}-sse.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/sse`)",
                     f"traefik.http.routers.{node_name}-sse.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-sse.service": f"{node_name}-core",
-                    f"traefik.http.routers.{node_name}-sse.middlewares": f"cors,auth-{node_name}",
+                    f"traefik.http.routers.{node_name}-sse.middlewares": f"cors-sse-{node_name},auth-{node_name}",
                     # Admin dashboard (publicly accessible)
                     f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
                     f"traefik.http.routers.{node_name}-dashboard.entrypoints": "web",
@@ -296,6 +296,13 @@ class DockerManager:
                     "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
                     "traefik.http.middlewares.cors.headers.addvaryheader": "true",
                     "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    # SSE-specific CORS middleware
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowmethods": "GET,OPTIONS",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowheaders": "Cache-Control,Last-Event-ID,Accept,Accept-Language,Content-Language,Content-Type,Authorization",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolalloworiginlist": "*",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolmaxage": "86400",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.addvaryheader": "true",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolexposeheaders": "X-Auth-Error",
                 }
 
                 # Add auth labels to container config
