@@ -267,6 +267,11 @@ class DockerManager:
                     f"traefik.http.routers.{node_name}-ws.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-ws.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-ws.middlewares": f"cors,auth-{node_name}",
+                    # SSE (Server-Sent Events) routes (protected when auth is available)
+                    f"traefik.http.routers.{node_name}-sse.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/admin-api/events`)",
+                    f"traefik.http.routers.{node_name}-sse.entrypoints": "web",
+                    f"traefik.http.routers.{node_name}-sse.service": f"{node_name}-core",
+                    f"traefik.http.routers.{node_name}-sse.middlewares": f"cors,auth-{node_name}",
                     # Admin dashboard (publicly accessible)
                     f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
                     f"traefik.http.routers.{node_name}-dashboard.entrypoints": "web",
