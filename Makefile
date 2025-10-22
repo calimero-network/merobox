@@ -55,3 +55,15 @@ ci: ## Run CI checks (format, lint, test)
 	$(MAKE) format
 	$(MAKE) lint
 	$(MAKE) test
+
+build: clean ## Build the package
+	python -m build
+
+check-build: build ## Build and validate package
+	twine check dist/*
+
+test-publish: check-build ## Publish to TestPyPI
+	twine upload --repository testpypi dist/*
+
+publish: check-build ## Publish to PyPI
+	twine upload dist/*

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "toml"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "merobox"
-version = "0.1.27"
+dynamic = ["version"]
 description = "A Python CLI tool for managing Calimero nodes in Docker containers"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -99,6 +99,9 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "merobox.__version__"}
 
 [dependency-groups]
 dev = [

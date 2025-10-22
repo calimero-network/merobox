@@ -13,6 +13,7 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 - [❓ Troubleshooting](#-troubleshooting)
 - [🏗️ Project Structure](#️-project-structure)
 - [📋 Requirements](#-requirements)
+- [🚀 Releases & Publishing](#-releases--publishing)
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
 - [🆘 Support](#-support)
@@ -1461,6 +1462,97 @@ merobox/
 - **Python**: 3.8+
 - **Docker**: 20.10+ for Calimero nodes
 - **OS**: Linux, macOS, Windows
+
+## 🚀 Releases & Publishing
+
+### Automated Release Process
+
+Merobox uses a fully automated release pipeline. When you bump the version, everything else happens automatically!
+
+#### How to Release
+
+```bash
+# 1. Update version in ONE place only
+vim merobox/__init__.py  # Change __version__ = "0.1.28"
+
+# 2. Commit and push to master
+git add merobox/__init__.py
+git commit -m "chore: bump version to 0.1.28"
+git push origin master
+
+# 3. That's it! The automation handles:
+#    ✓ Creates git tag (v0.1.28)
+#    ✓ Builds binaries for all platforms
+#    ✓ Creates GitHub release
+#    ✓ Publishes to PyPI
+```
+
+#### What Happens Automatically
+
+1. **Auto-Tagging** (~ 5 seconds)
+   - Detects version change in `__init__.py`
+   - Creates and pushes tag `vX.Y.Z`
+   - Comments on commit with status
+
+2. **Build Binaries** (~ 5-10 minutes)
+   - macOS x64 & arm64
+   - Linux x64 & arm64
+   - Generates SHA256 checksums
+
+3. **Create Release** (~ 30 seconds)
+   - Publishes GitHub release with binaries
+   - Auto-generates release notes
+
+4. **Publish to PyPI** (~ 1 minute)
+   - Builds Python package (sdist + wheel)
+   - Publishes to PyPI
+   - Publishes to TestPyPI (optional)
+
+#### Version Management
+
+- **Single Source of Truth**: `merobox/__init__.py`
+- **Dynamic Reading**: `pyproject.toml` reads version from `__init__.py` automatically
+- **No Duplication**: Update version in one place only!
+
+#### Workflow Pipeline
+
+```
+Version Bump → Auto-Tag → Build Binaries → GitHub Release → PyPI
+   (manual)    (automated)   (automated)     (automated)   (automated)
+```
+
+#### Required Secrets
+
+Configure these in GitHub repository settings:
+- `PYPI_API_TOKEN` - PyPI publishing token (required)
+- `TEST_PYPI_API_TOKEN` - TestPyPI token (optional)
+
+#### Manual Publishing (Backup)
+
+If you need to publish manually:
+
+```bash
+# Build package
+make clean
+make build
+
+# Check package
+make check-build
+
+# Publish to PyPI
+make publish
+
+# Or publish to TestPyPI
+make test-publish
+```
+
+#### Monitoring Releases
+
+- **GitHub Actions**: https://github.com/calimero-network/merobox/actions
+- **PyPI Releases**: https://pypi.org/project/merobox/
+- **GitHub Releases**: https://github.com/calimero-network/merobox/releases
+
+---
 
 ## 🤝 Contributing
 
