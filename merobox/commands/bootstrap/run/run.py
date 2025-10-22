@@ -24,6 +24,7 @@ async def run_workflow(
     auth_image: str = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
+    log_level: str = "debug",
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -45,6 +46,16 @@ async def run_workflow(
 
         manager = CalimeroManager()
 
+        # Debug: show incoming log level from CLI/defaults
+        try:
+            from merobox.commands.utils import console as _console
+
+            _console.print(
+                f"[cyan]run_workflow: incoming log_level='{log_level}'[/cyan]"
+            )
+        except Exception:
+            pass
+
         executor = WorkflowExecutor(
             config,
             manager,
@@ -53,6 +64,7 @@ async def run_workflow(
             auth_image,
             auth_use_cached,
             webui_use_cached,
+            log_level,
         )
 
         # Execute workflow
@@ -84,6 +96,7 @@ def run_workflow_sync(
     auth_image: str = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
+    log_level: str = "debug",
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -105,5 +118,6 @@ def run_workflow_sync(
             auth_image=auth_image,
             auth_use_cached=auth_use_cached,
             webui_use_cached=webui_use_cached,
+            log_level=log_level,
         )
     )

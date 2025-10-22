@@ -51,6 +51,11 @@ console = Console()
     is_flag=True,
     help="Use cached WebUI frontend instead of fetching fresh (disables CALIMERO_WEBUI_FETCH)",
 )
+@click.option(
+    "--log-level",
+    default="debug",
+    help="Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'",
+)
 def run(
     count,
     base_port,
@@ -64,6 +69,7 @@ def run(
     auth_image,
     auth_use_cached,
     webui_use_cached,
+    log_level,
 ):
     """Run Calimero node(s) in Docker containers."""
     calimero_manager = CalimeroManager()
@@ -96,6 +102,7 @@ def run(
             auth_image,
             auth_use_cached,
             webui_use_cached,
+            log_level,
         )
         sys.exit(0 if success else 1)
     else:
@@ -111,5 +118,6 @@ def run(
             auth_image,
             auth_use_cached,
             webui_use_cached,
+            log_level,
         )
         sys.exit(0 if success else 1)
