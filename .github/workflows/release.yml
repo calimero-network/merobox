@@ -44,6 +44,14 @@ jobs:
         path: dist/*.tar.gz
         retention-days: 1
 
+    - name: Test package installation (PR only)
+      if: github.event_name == 'pull_request'
+      run: |
+        pip install -r requirements.txt
+        pip install -e .
+        merobox --version
+        merobox --help
+
   # Job 2: Check if version was bumped
   check-version:
     name: Check if version was bumped
