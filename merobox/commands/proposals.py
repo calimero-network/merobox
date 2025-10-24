@@ -23,7 +23,7 @@ from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 async def get_proposal_via_admin_api(
     rpc_url: str, context_id: str, proposal_id: str
 ) -> dict:
-    """Get a specific proposal using calimero-client-py."""
+    """Get a specific proposal."""
     try:
         client = get_client_for_rpc_url(rpc_url)
         result = client.get_proposal(context_id=context_id, proposal_id=proposal_id)
@@ -39,7 +39,7 @@ async def get_proposal_via_admin_api(
 async def list_proposals_via_admin_api(
     rpc_url: str, context_id: str, args: Optional[str] = None
 ) -> dict:
-    """Get proposals list using calimero-client-py."""
+    """Get proposals list."""
     try:
         # If args is None or empty, use default pagination
         if not args or args == "{}":
@@ -67,7 +67,7 @@ async def list_proposals_via_admin_api(
 async def get_proposal_approvers_via_admin_api(
     rpc_url: str, context_id: str, proposal_id: str
 ) -> dict:
-    """Get list of approvers for a proposal using calimero-client-py."""
+    """Get list of approvers for a proposal."""
     try:
         client = get_client_for_rpc_url(rpc_url)
         result = client.get_proposal_approvers(
@@ -79,6 +79,42 @@ async def get_proposal_approvers_via_admin_api(
         )
     except Exception as e:
         return fail("get_proposal_approvers failed", error=e)
+
+
+@with_retry(config=NETWORK_RETRY_CONFIG)
+async def create_and_approve_proposal_via_admin_api(
+    rpc_url: str, context_id: str, request_json: str
+) -> dict:
+    """Create and approve a proposal ."""
+    try:
+        client = get_client_for_rpc_url(rpc_url)
+        result = client.create_and_approve_proposal(
+            context_id=context_id, request_json=request_json
+        )
+        return ok(
+            result,
+            endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS}/{context_id}/proposals/create-and-approve",
+        )
+    except Exception as e:
+        return fail("create_and_approve_proposal failed", error=e)
+
+
+@with_retry(config=NETWORK_RETRY_CONFIG)
+async def approve_proposal_via_admin_api(
+    rpc_url: str, context_id: str, request_json: str
+) -> dict:
+    """Approve a proposal."""
+    try:
+        client = get_client_for_rpc_url(rpc_url)
+        result = client.approve_proposal(
+            context_id=context_id, request_json=request_json
+        )
+        return ok(
+            result,
+            endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS}/{context_id}/proposals/approve",
+        )
+    except Exception as e:
+        return fail("approve_proposal failed", error=e)
 
 
 @click.group()
@@ -248,6 +284,102 @@ def approvers(node, context_id, proposal_id, verbose):
             console.print(f"{result}")
     else:
         console.print("\n[red]✗ Failed to get approvers[/red]")
+        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+        sys.exit(1)
+
+
+@proposals.command()
+@click.option("--node", "-n", required=True, help="Node name to query")
+@click.option("--context-id", required=True, help="Context ID")
+@click.option(
+    "--request-json",
+    required=True,
+    help="JSON request for creating and approving proposal",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
+def create_and_approve(node, context_id, request_json, verbose):
+    """Create and approve a proposal."""
+    manager = DockerManager()
+    rpc_url = get_node_rpc_url(node, manager)
+
+    console.print(
+        f"[blue]Creating and approving proposal in context {context_id} on node {node}[/blue]"
+    )
+
+    result = run_async_function(
+        create_and_approve_proposal_via_admin_api, rpc_url, context_id, request_json
+    )
+
+    if result["success"]:
+        console.print("\n[green]✓ Proposal created and approved successfully![/green]")
+
+        # Create table
+        table = Table(title="Created and Approved Proposal Details", box=box.ROUNDED)
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="green")
+
+        proposal_data = result.get("data", {})
+        table.add_row("Context ID", context_id)
+
+        # Add any additional proposal fields
+        for key, value in proposal_data.items():
+            if key not in ["contextId"]:
+                table.add_row(key, str(value))
+
+        console.print(table)
+
+        if verbose:
+            console.print("\n[bold]Full response:[/bold]")
+            console.print(f"{result}")
+    else:
+        console.print("\n[red]✗ Failed to create and approve proposal[/red]")
+        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+        sys.exit(1)
+
+
+@proposals.command()
+@click.option("--node", "-n", required=True, help="Node name to query")
+@click.option("--context-id", required=True, help="Context ID")
+@click.option(
+    "--request-json", required=True, help="JSON request for approving proposal"
+)
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
+def approve(node, context_id, request_json, verbose):
+    """Approve a proposal."""
+    manager = DockerManager()
+    rpc_url = get_node_rpc_url(node, manager)
+
+    console.print(
+        f"[blue]Approving proposal in context {context_id} on node {node}[/blue]"
+    )
+
+    result = run_async_function(
+        approve_proposal_via_admin_api, rpc_url, context_id, request_json
+    )
+
+    if result["success"]:
+        console.print("\n[green]✓ Proposal approved successfully![/green]")
+
+        # Create table
+        table = Table(title="Approved Proposal Details", box=box.ROUNDED)
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="green")
+
+        proposal_data = result.get("data", {})
+        table.add_row("Context ID", context_id)
+
+        # Add any additional proposal fields
+        for key, value in proposal_data.items():
+            if key not in ["contextId"]:
+                table.add_row(key, str(value))
+
+        console.print(table)
+
+        if verbose:
+            console.print("\n[bold]Full response:[/bold]")
+            console.print(f"{result}")
+    else:
+        console.print("\n[red]✗ Failed to approve proposal[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
