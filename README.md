@@ -719,10 +719,11 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 2. **Workflow Configuration**: Set `force_pull_image: true` in your workflow YAML
    ```yaml
    name: "My Workflow"
+   image: ghcr.io/calimero-network/merod:edge
    force_pull_image: true # Will force pull all images
    nodes:
-     image: ghcr.io/calimero-network/merod:edge
-   ```
+      count: 2
+      # ... other node configuration   ```
 
 #### **Use Cases**
 
