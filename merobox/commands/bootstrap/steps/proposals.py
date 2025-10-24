@@ -11,6 +11,8 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.proposals import (
+    approve_proposal_via_admin_api,
+    create_and_approve_proposal_via_admin_api,
     get_proposal_approvers_via_admin_api,
     get_proposal_via_admin_api,
     list_proposals_via_admin_api,
@@ -62,9 +64,13 @@ class GetProposalStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import DockerManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = DockerManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -147,9 +153,13 @@ class ListProposalsStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import DockerManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = DockerManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -242,9 +252,13 @@ class GetProposalApproversStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import DockerManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = DockerManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -296,5 +310,199 @@ class GetProposalApproversStep(BaseStep):
         else:
             console.print(
                 f"[red]✗ Failed to get proposal approvers on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+            )
+            return False
+
+
+class CreateAndApproveProposalStep(BaseStep):
+    """Create and approve a proposal."""
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "context_id", "request_json"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+
+        if not isinstance(self.config.get("node"), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+
+        if not isinstance(self.config.get("context_id"), str):
+            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+
+        if not isinstance(self.config.get("request_json"), str):
+            raise ValueError(f"Step '{step_name}': 'request_json' must be a string")
+
+    def _get_exportable_variables(self):
+        return [
+            ("proposal", "created_proposal_{node_name}", "Created proposal data"),
+            ("proposalId", "created_proposal_id_{node_name}", "Created proposal ID"),
+            (
+                "status",
+                "created_proposal_status_{node_name}",
+                "Created proposal status",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        context_id = self._resolve_dynamic_value(
+            self.config["context_id"], workflow_results, dynamic_values
+        )
+        request_json = self._resolve_dynamic_value(
+            self.config["request_json"], workflow_results, dynamic_values
+        )
+
+        if not self._validate_export_config():
+            console.print(
+                "[yellow]⚠️  Create and approve proposal step export configuration validation failed[/yellow]"
+            )
+
+        try:
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
+
+                manager = DockerManager()
+
+            rpc_url = get_node_rpc_url(node_name, manager)
+        except Exception as e:
+            console.print(
+                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+            )
+            return False
+
+        result = await create_and_approve_proposal_via_admin_api(
+            rpc_url, context_id, request_json
+        )
+
+        console.print(
+            f"[cyan]🔍 Create and Approve Proposal API Response for {node_name}:[/cyan]"
+        )
+        console.print(f"  Success: {result.get('success')}")
+        console.print(f"  Data: {result.get('data')}")
+
+        if result["success"]:
+            response_data = result["data"]
+
+            if isinstance(response_data, dict) and "data" in response_data:
+                actual_proposal = response_data["data"]
+            else:
+                actual_proposal = response_data
+
+            if self._check_jsonrpc_error(actual_proposal):
+                return False
+
+            step_key = f"create_and_approve_proposal_{node_name}"
+            workflow_results[step_key] = actual_proposal
+
+            self._export_variables(actual_proposal, node_name, dynamic_values)
+
+            console.print(
+                f"[green]✓ Proposal created and approved successfully on {node_name}[/green]"
+            )
+            return True
+        else:
+            console.print(
+                f"[red]✗ Failed to create and approve proposal on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+            )
+            return False
+
+
+class ApproveProposalStep(BaseStep):
+    """Approve a proposal."""
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "context_id", "request_json"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+
+        if not isinstance(self.config.get("node"), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+
+        if not isinstance(self.config.get("context_id"), str):
+            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+
+        if not isinstance(self.config.get("request_json"), str):
+            raise ValueError(f"Step '{step_name}': 'request_json' must be a string")
+
+    def _get_exportable_variables(self):
+        return [
+            ("proposal", "approved_proposal_{node_name}", "Approved proposal data"),
+            ("proposalId", "approved_proposal_id_{node_name}", "Approved proposal ID"),
+            (
+                "status",
+                "approved_proposal_status_{node_name}",
+                "Approved proposal status",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        context_id = self._resolve_dynamic_value(
+            self.config["context_id"], workflow_results, dynamic_values
+        )
+        request_json = self._resolve_dynamic_value(
+            self.config["request_json"], workflow_results, dynamic_values
+        )
+
+        if not self._validate_export_config():
+            console.print(
+                "[yellow]⚠️  Approve proposal step export configuration validation failed[/yellow]"
+            )
+
+        try:
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
+
+                manager = DockerManager()
+
+            rpc_url = get_node_rpc_url(node_name, manager)
+        except Exception as e:
+            console.print(
+                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+            )
+            return False
+
+        result = await approve_proposal_via_admin_api(rpc_url, context_id, request_json)
+
+        console.print(f"[cyan]🔍 Approve Proposal API Response for {node_name}:[/cyan]")
+        console.print(f"  Success: {result.get('success')}")
+        console.print(f"  Data: {result.get('data')}")
+
+        if result["success"]:
+            response_data = result["data"]
+
+            if isinstance(response_data, dict) and "data" in response_data:
+                actual_proposal = response_data["data"]
+            else:
+                actual_proposal = response_data
+
+            if self._check_jsonrpc_error(actual_proposal):
+                return False
+
+            step_key = f"approve_proposal_{node_name}"
+            workflow_results[step_key] = actual_proposal
+
+            self._export_variables(actual_proposal, node_name, dynamic_values)
+
+            console.print(
+                f"[green]✓ Proposal approved successfully on {node_name}[/green]"
+            )
+            return True
+        else:
+            console.print(
+                f"[red]✗ Failed to approve proposal on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
