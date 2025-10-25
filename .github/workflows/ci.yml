@@ -79,10 +79,31 @@ jobs:
           merod --version
           echo "merod installed successfully!"
 
-      - name: Test merobox CLI and workflow
+      - name: Test merobox CLI and workflow (PR - Essential workflows only)
+        if: github.event_name == 'pull_request'
         run: |
           merobox --version
           merobox --help
+          # Run only essential workflows on PRs for faster feedback
+          ESSENTIAL_WORKFLOWS=(
+            "workflow-examples/workflow-example.yml"
+            "workflow-examples/workflow-auth-example.yml"
+            "workflow-examples/workflow-proposals-example.yml"
+            "workflow-examples/workflow-assert-example.yml"
+          )
+          for f in "${ESSENTIAL_WORKFLOWS[@]}"; do \
+            echo "Running workflow: $f"; \
+            merobox bootstrap run "$f" --verbose; \
+            echo "Nuking merobox data between workflows..."; \
+            merobox nuke -f || true; \
+          done
+
+      - name: Test merobox CLI and workflow (Master - All workflows)
+        if: github.ref == 'refs/heads/master'
+        run: |
+          merobox --version
+          merobox --help
+          # Run all workflows on master for comprehensive testing
           for f in workflow-examples/*.yml; do \
             echo "Running workflow: $f"; \
             merobox bootstrap run "$f" --verbose; \
