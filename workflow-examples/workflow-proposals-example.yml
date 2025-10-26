@@ -1,73 +1,108 @@
-name: "Proposals API - Simple E2E Test"
-description: "Test the proposals API methods: get_proposal, list_proposals, get_proposal_approvers"
+description: Comprehensive e2e test for Proposals API methods on NEAR protocol with repeat step support
+name: Proposals API Comprehensive Test
 
+# Use --no-docker mode with native merod processes
+no_docker: true
 force_pull_image: false
 
 nodes:
-  count: 2
-  prefix: prop-test
-  chain_id: testnet-1
+  chain_id: calimero-testnet
+  count: 3
   image: ghcr.io/calimero-network/merod:edge
-  base_port: 2432
-  base_rpc_port: 2532
+  prefix: prop-test
 
 steps:
   # ============================================================================
-  # Phase 1: Setup - Install blockchain app and create multi-node context
+  # Setup: Install blockchain integration app and create multi-node context
   # ============================================================================
 
-  - name: Install Application on Node 1
+  # Step 1: Install the blockchain integration application
+  - name: Install Blockchain Integration App
     type: install_application
     node: prop-test-1
     url: "https://github.com/calimero-network/demo-blockchain-integrations/raw/refs/heads/master/logic/res/blockchain.wasm"
     dev: true
     outputs:
-      app_id: applicationId
+      app_id: applicationId # Export 'applicationId' as 'app_id'
 
-  - name: "Create Context"
+  # Step 2: Create a context on NEAR protocol
+  - name: Create Context on NEAR
     type: create_context
     node: prop-test-1
     application_id: "{{app_id}}"
+    protocol: near # Use NEAR protocol for proposals
     outputs:
-      context_id: contextId
-      inviter_key: memberPublicKey
+      context_id: contextId # Export 'contextId' as 'context_id'
+      inviter_key: memberPublicKey # Export 'memberPublicKey' as 'inviter_key'
 
-  - name: "Create Invitee Identity"
+  # Step 3: Generate identity on second node
+  - name: Create Identity on Node 2
     type: create_identity
     node: prop-test-2
     outputs:
-      invitee_key: publicKey
+      invitee2_key: publicKey # Export 'publicKey' as 'invitee2_key'
 
-  - name: "Wait for Identity"
+  # Step 4: Generate identity on third node
+  - name: Create Identity on Node 3
+    type: create_identity
+    node: prop-test-3
+    outputs:
+      invitee3_key: publicKey # Export 'publicKey' as 'invitee3_key'
+
+  # Step 5: Wait for identity creation to complete
+  - name: Wait for Identity Creation
     type: wait
     seconds: 3
 
-  - name: "Invite Second Node"
+  # Step 6: Invite the second node to join the context
+  - name: Invite Node 2 to Context
     type: invite_identity
     node: prop-test-1
     context_id: "{{context_id}}"
-    grantee_id: "{{invitee_key}}"
+    grantee_id: "{{invitee2_key}}"
     granter_id: "{{inviter_key}}"
     capability: member
     outputs:
-      invitation: invitation
+      invitation2: invitation # Export 'invitation' as 'invitation2'
 
-  - name: "Join Context"
+  # Step 7: Join the context from the second node
+  - name: Join Context from Node 2
     type: join_context
     node: prop-test-2
     context_id: "{{context_id}}"
-    invitee_id: "{{invitee_key}}"
-    invitation: "{{invitation}}"
+    invitee_id: "{{invitee2_key}}"
+    invitation: "{{invitation2}}"
 
-  - name: "Wait for Consensus"
+  # Step 8: Invite the third node to join the context
+  - name: Invite Node 3 to Context
+    type: invite_identity
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    grantee_id: "{{invitee3_key}}"
+    granter_id: "{{inviter_key}}"
+    capability: member
+    outputs:
+      invitation3: invitation # Export 'invitation' as 'invitation3'
+
+  # Step 9: Join the context from the third node
+  - name: Join Context from Node 3
+    type: join_context
+    node: prop-test-3
+    context_id: "{{context_id}}"
+    invitee_id: "{{invitee3_key}}"
+    invitation: "{{invitation3}}"
+
+  # Step 10: Wait for consensus after join
+  - name: Wait for Consensus After Join
     type: wait
     seconds: 5
 
   # ============================================================================
-  # Phase 2: Create Multiple Proposals (Using SetContextValue - no proxy needed)
+  # Create Multiple Proposals for Testing
   # ============================================================================
 
-  - name: "Create Proposal 1 - SetContextValue"
+  # Step 11: Create first proposal - SetContextValue
+  - name: Create Proposal 1 - SetContextValue
     type: call
     node: prop-test-1
     context_id: "{{context_id}}"
@@ -82,13 +117,15 @@ steps:
     outputs:
       prop1_id:
         field: result
-        path: output
+        path: output # Navigate to 'output' field in result
 
-  - name: "Wait After Proposal 1"
+  # Step 12: Wait for proposal 1 to propagate
+  - name: Wait After Proposal 1
     type: wait
     seconds: 2
 
-  - name: "Create Proposal 2 - SetContextValue"
+  # Step 13: Create second proposal - SetContextValue
+  - name: Create Proposal 2 - SetContextValue
     type: call
     node: prop-test-1
     context_id: "{{context_id}}"
@@ -105,11 +142,13 @@ steps:
         field: result
         path: output
 
-  - name: "Wait After Proposal 2"
+  # Step 14: Wait for proposal 2 to propagate
+  - name: Wait After Proposal 2
     type: wait
     seconds: 2
 
-  - name: "Create Proposal 3 - SetNumApprovals"
+  # Step 15: Create third proposal - SetNumApprovals (changes approval requirement)
+  - name: Create Proposal 3 - SetNumApprovals
     type: call
     node: prop-test-1
     context_id: "{{context_id}}"
@@ -119,62 +158,329 @@ steps:
       request:
         action_type: "SetNumApprovals"
         params:
-          num_approvals: 2
+          num_approvals: 2 # Require 2 approvals for future proposals
     outputs:
       prop3_id:
         field: result
         path: output
 
-  - name: "Wait for All Proposals"
+  # Step 16: Wait for proposal 3 to propagate
+  - name: Wait After Proposal 3
+    type: wait
+    seconds: 2
+
+  # Step 17: Approve proposal 3 to activate the num_approvals setting
+  # This is critical - proposal 3 must execute before creating proposal 4
+  - name: Approve Proposal 3 to Activate Setting
+    type: call
+    node: prop-test-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{invitee2_key}}"
+    method: approve_proposal
+    args:
+      proposal_id: "{{prop3_id}}"
+    outputs:
+      approve3_result: result
+
+  # Step 18: Wait for proposal 3 to execute
+  - name: Wait for Proposal 3 Execution
+    type: wait
+    seconds: 5
+
+  # Step 19: Create fourth proposal - will require 2 approvals (for testing approvers)
+  - name: Create Proposal 4 - SetContextValue
+    type: call
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{inviter_key}}"
+    method: create_new_proposal
+    args:
+      request:
+        action_type: "SetContextValue"
+        params:
+          key: "test_key_4"
+          value: "test_value_4"
+    outputs:
+      prop4_id:
+        field: result
+        path: output
+
+  # Step 20: Wait for all proposals to propagate
+  - name: Wait for All Proposals to Propagate
     type: wait
     seconds: 5
 
   # ============================================================================
-  # Phase 3: Test the 3 Supported Proposals API Methods
+  # Test Proposals API Method 1: list_proposals (cross-node consistency)
   # ============================================================================
 
-  - name: "Test 1: List All Proposals"
+  # Step 21: List all proposals from node 1
+  - name: List All Proposals from Node 1
     type: list_proposals
     node: prop-test-1
     context_id: "{{context_id}}"
 
-  - name: "Test 2: Get Specific Proposal (Proposal 1)"
+  # Step 22: List all proposals from node 2
+  - name: List All Proposals from Node 2
+    type: list_proposals
+    node: prop-test-2
+    context_id: "{{context_id}}"
+
+  # Step 23: List all proposals from node 3
+  - name: List All Proposals from Node 3
+    type: list_proposals
+    node: prop-test-3
+    context_id: "{{context_id}}"
+
+  # ============================================================================
+  # Test Proposals API Method 2: get_proposal (individual proposal details)
+  # ============================================================================
+
+  # Step 24: Get details of proposal 1 from node 1
+  - name: Get Proposal 1 Details from Node 1
     type: get_proposal
     node: prop-test-1
     context_id: "{{context_id}}"
     proposal_id: "{{prop1_id}}"
 
-  - name: "Test 3: Get Proposal Approvers (Proposal 1)"
-    type: get_proposal_approvers
-    node: prop-test-1
-    context_id: "{{context_id}}"
-    proposal_id: "{{prop1_id}}"
-
-  # ============================================================================
-  # Phase 4: Cross-Node Testing
-  # ============================================================================
-
-  - name: "Test 4: List Proposals from Node 2"
-    type: list_proposals
-    node: prop-test-2
-    context_id: "{{context_id}}"
-
-  - name: "Test 5: Get Proposal from Node 2"
+  # Step 25: Get details of proposal 2 from node 2
+  - name: Get Proposal 2 Details from Node 2
     type: get_proposal
     node: prop-test-2
     context_id: "{{context_id}}"
     proposal_id: "{{prop2_id}}"
 
-  - name: "Test 6: Get Approvers from Node 2"
+  # Step 26: Get details of proposal 4 from node 1
+  - name: Get Proposal 4 Details from Node 1
+    type: get_proposal
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop4_id}}"
+
+  # ============================================================================
+  # Test Proposals API Method 3: get_proposal_approvers (before approval)
+  # ============================================================================
+
+  # Step 27: Get approvers for proposal 1 (should be empty)
+  - name: Get Proposal 1 Approvers Before Approval
+    type: get_proposal_approvers
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop1_id}}"
+
+  # Step 28: Get approvers for proposal 2 (should be empty)
+  - name: Get Proposal 2 Approvers Before Approval
     type: get_proposal_approvers
     node: prop-test-2
     context_id: "{{context_id}}"
     proposal_id: "{{prop2_id}}"
 
   # ============================================================================
-  # Phase 5: Print Summary
+  # Test Proposal Messages Functionality
   # ============================================================================
 
-# Configuration
-stop_all_nodes: false
-restart: false
+  # Step 29: Send message to proposal 1
+  - name: Send Message to Proposal 1
+    type: call
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{inviter_key}}"
+    method: send_proposal_messages
+    args:
+      proposal_id: "{{prop1_id}}"
+      message:
+        id: "msg1"
+        author: "inviter"
+        text: "This is a test message for proposal 1"
+        created_at: "2023-11-24T12:34:56Z"
+        proposal_id: "{{prop1_id}}"
+    outputs:
+      send_msg_result: result
+
+  # Step 30: Wait for message to broadcast
+  - name: Wait for Message Broadcast
+    type: wait
+    seconds: 5
+
+  # Step 31: Get proposal messages from node 2
+  - name: Get Proposal Messages from Node 2
+    type: call
+    node: prop-test-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{invitee2_key}}"
+    method: get_proposal_messages
+    args:
+      proposal_id: "{{prop1_id}}"
+    outputs:
+      messages_result: result
+
+  # Step 32: Get proposal messages from node 3
+  - name: Get Proposal Messages from Node 3
+    type: call
+    node: prop-test-3
+    context_id: "{{context_id}}"
+    executor_public_key: "{{invitee3_key}}"
+    method: get_proposal_messages
+    args:
+      proposal_id: "{{prop1_id}}"
+    outputs:
+      messages_result_node3: result
+
+  # ============================================================================
+  # Test Proposal Approvals and Approvers API
+  # ============================================================================
+
+  # Step 33: Approve proposal 1 from node 2
+  - name: Approve Proposal 1 from Node 2
+    type: call
+    node: prop-test-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{invitee2_key}}"
+    method: approve_proposal
+    args:
+      proposal_id: "{{prop1_id}}"
+    outputs:
+      approve1_result: result
+
+  # Step 34: Approve proposal 2 from node 3
+  - name: Approve Proposal 2 from Node 3
+    type: call
+    node: prop-test-3
+    context_id: "{{context_id}}"
+    executor_public_key: "{{invitee3_key}}"
+    method: approve_proposal
+    args:
+      proposal_id: "{{prop2_id}}"
+    outputs:
+      approve2_result: result
+
+  # Step 35: Give first approval to proposal 4 (requires 2 total)
+  - name: Approve Proposal 4 from Node 2 (First Approval)
+    type: call
+    node: prop-test-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{invitee2_key}}"
+    method: approve_proposal
+    args:
+      proposal_id: "{{prop4_id}}"
+    outputs:
+      approve4_result: result
+
+  # Step 36: Wait for first approval to propagate
+  - name: Wait for First Approval to Propagate
+    type: wait
+    seconds: 3
+
+  # ============================================================================
+  # Verify Approvers After Approval (Before Proposal Execution)
+  # ============================================================================
+
+  # Step 37: Get approvers for proposal 1 (should show node 2)
+  - name: Verify Proposal 1 Approvers After Approval
+    type: get_proposal_approvers
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop1_id}}"
+
+  # Step 38: Get approvers for proposal 4 (should show node 2 only)
+  # This is checked BEFORE the second approval executes the proposal
+  - name: Verify Proposal 4 Approvers After First Approval
+    type: get_proposal_approvers
+    node: prop-test-1
+    context_id: "{{context_id}}"
+    proposal_id: "{{prop4_id}}"
+
+  # Step 39: Give second approval to proposal 4 (will execute immediately)
+  - name: Approve Proposal 4 from Node 3 (Second Approval - Triggers Execution)
+    type: call
+    node: prop-test-3
+    context_id: "{{context_id}}"
+    executor_public_key: "{{invitee3_key}}"
+    method: approve_proposal
+    args:
+      proposal_id: "{{prop4_id}}"
+    outputs:
+      approve4_result_node3: result
+
+  # Step 40: Wait for proposal 4 to execute
+  - name: Wait for Proposal 4 Execution
+    type: wait
+    seconds: 5
+
+  # ============================================================================
+  # Test Repeat Step with Proposal API Methods
+  # This tests that proposal steps work correctly inside repeat blocks
+  # ============================================================================
+
+  # Step 41: Create and query multiple proposals using repeat
+  - name: Create Multiple Proposals with Repeat
+    type: repeat
+    count: 3
+    outputs:
+      current_iteration: iteration # Export 'iteration' as 'current_iteration'
+      total_count: total_iterations # Export 'total_iterations' as 'total_count'
+    steps:
+      # Create a proposal in each iteration
+      - name: Create SetContextValue Proposal
+        type: call
+        node: prop-test-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{inviter_key}}"
+        method: create_new_proposal
+        args:
+          request:
+            action_type: "SetContextValue"
+            params:
+              key: "repeat_key_{{current_iteration}}"
+              value: "repeat_value_{{current_iteration}}"
+        outputs:
+          repeat_prop_id:
+            field: result
+            path: output
+
+      # Wait for proposal to propagate
+      - name: Wait After Creation
+        type: wait
+        seconds: 2
+
+      # Test get_proposal inside repeat block
+      - name: Get Proposal Details
+        type: get_proposal
+        node: prop-test-2
+        context_id: "{{context_id}}"
+        proposal_id: "{{repeat_prop_id}}"
+
+      # Test get_proposal_approvers inside repeat block
+      - name: Check Proposal Approvers
+        type: get_proposal_approvers
+        node: prop-test-3
+        context_id: "{{context_id}}"
+        proposal_id: "{{repeat_prop_id}}"
+
+  # ============================================================================
+  # Final Verification: List All Proposals from All Nodes
+  # ============================================================================
+
+  # Step 42: Final list from node 1 (verify all proposals are visible)
+  - name: Final List All Proposals from Node 1
+    type: list_proposals
+    node: prop-test-1
+    context_id: "{{context_id}}"
+
+  # Step 43: Final list from node 2 (verify cross-node consistency)
+  - name: Final List All Proposals from Node 2
+    type: list_proposals
+    node: prop-test-2
+    context_id: "{{context_id}}"
+
+  # Step 44: Final list from node 3 (verify cross-node consistency)
+  - name: Final List All Proposals from Node 3
+    type: list_proposals
+    node: prop-test-3
+    context_id: "{{context_id}}"
+
+# Configuration options
+stop_all_nodes: true # Stop all nodes at the end of workflow
+restart: false # Don't restart nodes at the beginning of workflow
+wait_timeout: 60 # Timeout for wait operations
+nuke_on_end: true # Clean up all data after workflow
