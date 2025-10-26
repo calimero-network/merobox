@@ -13,6 +13,11 @@ from merobox.commands.bootstrap.steps.identity import (
 )
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
+from merobox.commands.bootstrap.steps.proposals import (
+    GetProposalApproversStep,
+    GetProposalStep,
+    ListProposalsStep,
+)
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.utils import console
@@ -240,6 +245,12 @@ class RepeatStep(BaseStep):
             return WaitStep(step_config, manager=self.manager)
         elif step_type == "script":
             return ScriptStep(step_config, manager=self.manager)
+        elif step_type == "get_proposal":
+            return GetProposalStep(step_config, manager=self.manager)
+        elif step_type == "list_proposals":
+            return ListProposalsStep(step_config, manager=self.manager)
+        elif step_type == "get_proposal_approvers":
+            return GetProposalApproversStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None
