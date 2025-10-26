@@ -62,9 +62,13 @@ class GetProposalStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import DockerManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = DockerManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -147,9 +151,13 @@ class ListProposalsStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import DockerManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = DockerManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
@@ -242,9 +250,13 @@ class GetProposalApproversStep(BaseStep):
             )
 
         try:
-            from merobox.commands.manager import DockerManager
+            if self.manager is not None:
+                manager = self.manager
+            else:
+                from merobox.commands.manager import DockerManager
 
-            manager = DockerManager()
+                manager = DockerManager()
+
             rpc_url = get_node_rpc_url(node_name, manager)
         except Exception as e:
             console.print(
