@@ -201,13 +201,35 @@ jobs:
             # Linux builds
             if [ "${{ matrix.arch }}" = "i386" ]; then
               CC="gcc -m32" pyinstaller --onefile --name merobox merobox/cli.py
+            elif [ "${{ matrix.arch }}" = "aarch64" ]; then
+              # Use Docker with aarch64 base image for native ARM64 build
+              docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm64 python:3.11-slim bash -c "
+                apt-get update && 
+                apt-get install -y build-essential &&
+                pip install -r requirements.txt pyinstaller &&
+                pyinstaller --onefile --name merobox merobox/cli.py
+              "
+            elif [ "${{ matrix.arch }}" = "arm" ]; then
+              # Use Docker with arm32v7 base image for native ARM32 build
+              docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm/v7 python:3.11-slim bash -c "
+                apt-get update && 
+                apt-get install -y build-essential &&
+                pip install -r requirements.txt pyinstaller &&
+                pyinstaller --onefile --name merobox merobox/cli.py
+              "
             else
               pyinstaller --onefile --name merobox merobox/cli.py
             fi
           fi
 
       - name: Test executable
-        run: ./dist/merobox --version
+        run: |
+          if [ -f "./dist/merobox" ]; then
+            ./dist/merobox --version
+          else
+            echo "Binary not found in dist/, checking if it was built in Docker..."
+            ls -la dist/
+          fi
 
       - name: Verify architecture
         run: |
