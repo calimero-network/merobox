@@ -154,7 +154,13 @@ jobs:
           else
             # Linux builds
             if [ "${{ matrix.arch }}" = "i386" ]; then
-              CC="gcc -m32" pyinstaller --onefile --name merobox merobox/cli.py
+              # Use Docker with i386 base image for native 32-bit build
+              docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/386 python:3.11-slim bash -c "
+                apt-get update && 
+                apt-get install -y build-essential &&
+                pip install -r requirements.txt pyinstaller &&
+                pyinstaller --onefile --name merobox merobox/cli.py
+              "
             elif [ "${{ matrix.arch }}" = "aarch64" ]; then
               # Use Docker with aarch64 base image for native ARM64 build
               docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm64 python:3.11-slim bash -c "
