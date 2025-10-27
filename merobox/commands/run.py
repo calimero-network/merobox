@@ -66,7 +66,7 @@ console = Console()
 )
 @click.option(
     "--binary-path",
-    help="Path to merod binary (optional). If not provided, PATH and common locations will be searched.",
+    help="Set custom path to merod binary (used with --no-docker). Defaults to searching PATH and common locations (/usr/local/bin, /usr/bin, ~/bin).",
 )
 @click.option(
     "--foreground",

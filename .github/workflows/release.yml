@@ -130,18 +130,27 @@ jobs:
     strategy:
       matrix:
         include:
+          # macOS 64-bit architectures
           - os: macos-latest
-            arch: x64
-            target: darwin-x64
+            arch: x86-64
+            target: darwin-x86-64
           - os: macos-latest
-            arch: arm64
-            target: darwin-arm64
+            arch: aarch64
+            target: darwin-aarch64
+          # Linux 64-bit architectures
           - os: ubuntu-latest
-            arch: x64
-            target: linux-x64
+            arch: x86-64
+            target: linux-x86-64
           - os: ubuntu-latest
-            arch: arm64
-            target: linux-arm64
+            arch: aarch64
+            target: linux-aarch64
+          # Linux 32-bit architectures
+          - os: ubuntu-latest
+            arch: i386
+            target: linux-i386
+          - os: ubuntu-latest
+            arch: arm
+            target: linux-arm
 
     steps:
       - name: Checkout code
@@ -154,13 +163,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Set up QEMU (for ARM64)
-        if: matrix.arch == 'arm64' && matrix.os == 'ubuntu-latest'
+      - name: Set up QEMU (for ARM architectures)
+        if: (matrix.arch == 'aarch64' || matrix.arch == 'arm') && matrix.os == 'ubuntu-latest'
         uses: docker/setup-qemu-action@v3
 
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y build-essential
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+          # For 32-bit builds
+          if [ "${{ matrix.arch }}" = "i386" ]; then
+            sudo dpkg --add-architecture i386
+            sudo apt-get update
+            sudo apt-get install -y gcc-multilib
+          fi
 
       - name: Install system dependencies (macOS)
         if: matrix.os == 'macos-latest'
@@ -172,10 +189,88 @@ jobs:
           pip install pyinstaller
 
       - name: Build executable
-        run: pyinstaller --onefile --name merobox merobox/cli.py
+        run: |
+          # Set architecture-specific environment variables
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            if [ "${{ matrix.arch }}" = "x86-64" ]; then
+              arch -x86_64 pyinstaller --onefile --name merobox merobox/cli.py
+            else
+              pyinstaller --onefile --name merobox merobox/cli.py
+            fi
+          else
+            # Linux builds
+            if [ "${{ matrix.arch }}" = "i386" ]; then
+              CC="gcc -m32" pyinstaller --onefile --name merobox merobox/cli.py
+            elif [ "${{ matrix.arch }}" = "aarch64" ]; then
+              # Use Docker with aarch64 base image for native ARM64 build
+              docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm64 python:3.11-slim bash -c "
+                apt-get update && 
+                apt-get install -y build-essential &&
+                pip install -r requirements.txt pyinstaller &&
+                pyinstaller --onefile --name merobox merobox/cli.py
+              "
+            elif [ "${{ matrix.arch }}" = "arm" ]; then
+              # Use Docker with arm32v7 base image for native ARM32 build
+              docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm/v7 python:3.11-slim bash -c "
+                apt-get update && 
+                apt-get install -y build-essential &&
+                pip install -r requirements.txt pyinstaller &&
+                pyinstaller --onefile --name merobox merobox/cli.py
+              "
+            else
+              pyinstaller --onefile --name merobox merobox/cli.py
+            fi
+          fi
 
       - name: Test executable
-        run: ./dist/merobox --version
+        run: |
+          if [ -f "./dist/merobox" ]; then
+            ./dist/merobox --version
+          else
+            echo "Binary not found in dist/, checking if it was built in Docker..."
+            ls -la dist/
+          fi
+
+      - name: Verify architecture
+        run: |
+          file_output=$(file ./dist/merobox)
+          echo "Binary architecture: $file_output"
+          
+          # Verify correct architecture
+          case "${{ matrix.arch }}" in
+            "x86-64")
+              if [[ "$file_output" == *"x86_64"* ]]; then
+                echo "✅ Correct x86-64 architecture detected"
+              else
+                echo "❌ Expected x86-64, got: $file_output"
+                exit 1
+              fi
+              ;;
+            "aarch64")
+              if [[ "$file_output" == *"arm64"* ]] || [[ "$file_output" == *"aarch64"* ]]; then
+                echo "✅ Correct aarch64 architecture detected"
+              else
+                echo "❌ Expected aarch64, got: $file_output"
+                exit 1
+              fi
+              ;;
+            "i386")
+              if [[ "$file_output" == *"Intel 80386"* ]] || [[ "$file_output" == *"i386"* ]]; then
+                echo "✅ Correct i386 architecture detected"
+              else
+                echo "❌ Expected i386, got: $file_output"
+                exit 1
+              fi
+              ;;
+            "arm")
+              if [[ "$file_output" == *"ARM"* ]] && [[ "$file_output" != *"aarch64"* ]]; then
+                echo "✅ Correct ARM architecture detected"
+              else
+                echo "❌ Expected ARM (32-bit), got: $file_output"
+                exit 1
+              fi
+              ;;
+          esac
 
       - name: Determine version tag
         id: version
