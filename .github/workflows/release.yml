@@ -193,7 +193,7 @@ jobs:
           # Verify correct architecture
           case "${{ matrix.arch }}" in
             "x86-64")
-              if [[ "$file_output" == *"x86_64"* ]]; then
+              if [[ "$file_output" == *"x86-64"* ]] || [[ "$file_output" == *"x86_64"* ]]; then
                 echo "✅ Correct x86-64 architecture detected"
               else
                 echo "❌ Expected x86-64, got: $file_output"
