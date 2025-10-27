@@ -3,7 +3,8 @@ name: Release Pipeline
 on:
   push:
     branches:
-      - master
+      - 'feature/*'
+      - 'release/*'
   pull_request:
     branches:
       - master
@@ -57,7 +58,7 @@ jobs:
     name: Check if version was bumped
     runs-on: ubuntu-latest
     needs: [build-source]
-    if: github.ref == 'refs/heads/master'
+    if: startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/')
     permissions:
       contents: write
       actions: write
@@ -125,7 +126,7 @@ jobs:
     needs: check-version
     if: |
       always() &&
-      github.ref == 'refs/heads/master' &&
+      (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/')) &&
       needs.check-version.outputs.version-bumped == 'true'
     strategy:
       matrix:
@@ -305,14 +306,40 @@ jobs:
             dist/merobox-${{ steps.version.outputs.tag }}-${{ matrix.target }}.sha256
           retention-days: 30
 
-  # Job 4: Create GitHub Release
-  create-release:
+  # Job 4: Manual approval for release
+  approve-release:
     needs: [check-version, build-binaries]
     runs-on: ubuntu-latest
     if: |
       always() &&
       needs.build-binaries.result == 'success' &&
-      github.ref == 'refs/heads/master' &&
+      (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/')) &&
+      needs.check-version.outputs.version-bumped == 'true'
+    steps:
+      - name: Manual approval required
+        run: |
+          echo "🚨 MANUAL APPROVAL REQUIRED FOR RELEASE"
+          echo "Version: v${{ needs.check-version.outputs.current-version }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo ""
+          echo "To proceed with release:"
+          echo "1. Go to the Actions tab"
+          echo "2. Find this workflow run"
+          echo "3. Click 'Approve and run' on the 'Manual approval required' step"
+          echo ""
+          echo "This prevents accidental releases from feature branches."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Job 5: Create GitHub Release
+  create-release:
+    needs: [check-version, build-binaries, approve-release]
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.build-binaries.result == 'success' &&
+      needs.approve-release.result == 'success' &&
+      (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/')) &&
       needs.check-version.outputs.version-bumped == 'true'
     permissions:
       contents: write
@@ -353,14 +380,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Job 5: Publish to PyPI
+  # Job 6: Publish to PyPI
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
     needs: [build-source, check-version, create-release]
     if: |
       always() &&
-      github.ref == 'refs/heads/master' &&
+      (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/')) &&
       needs.check-version.outputs.version-bumped == 'true' &&
       needs.create-release.result == 'success'
     permissions:
@@ -386,13 +413,13 @@ jobs:
           tar -tzf "$file" | head -10
         done
 
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
-        packages-dir: dist/
+    # - name: Publish to PyPI
+    #   uses: pypa/gh-action-pypi-publish@release/v1
+    #   with:
+    #     password: ${{ secrets.PYPI_API_TOKEN }}
+    #     packages-dir: dist/
 
-  # Job 6: Notify completion
+  # Job 7: Notify completion
   notify-completion:
     needs: [build-source, check-version, build-binaries, create-release, publish-pypi]
     runs-on: ubuntu-latest
