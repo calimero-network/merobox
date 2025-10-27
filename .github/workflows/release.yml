@@ -84,10 +84,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # macOS 64-bit architectures
-          - os: macos-latest
-            arch: x86-64
-            target: darwin-x86-64
+          # macOS Apple Silicon only (GitHub Actions only provides ARM64 runners)
           - os: macos-latest
             arch: aarch64
             target: darwin-aarch64
@@ -140,11 +137,8 @@ jobs:
         run: |
           # Set architecture-specific environment variables
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            if [ "${{ matrix.arch }}" = "x86-64" ]; then
-              arch -x86_64 pyinstaller --onefile --name merobox merobox/cli.py
-            else
-              pyinstaller --onefile --name merobox merobox/cli.py
-            fi
+            # macOS builds (only aarch64 supported on GitHub Actions)
+            pyinstaller --onefile --name merobox merobox/cli.py
           else
             # Linux builds
             if [ "${{ matrix.arch }}" = "aarch64" ]; then
@@ -176,19 +170,19 @@ jobs:
           
           # Verify correct architecture
           case "${{ matrix.arch }}" in
-            "x86-64")
-              if [[ "$file_output" == *"x86-64"* ]] || [[ "$file_output" == *"x86_64"* ]]; then
-                echo "✅ Correct x86-64 architecture detected"
-              else
-                echo "❌ Expected x86-64, got: $file_output"
-                exit 1
-              fi
-              ;;
             "aarch64")
               if [[ "$file_output" == *"arm64"* ]] || [[ "$file_output" == *"aarch64"* ]]; then
                 echo "✅ Correct aarch64 architecture detected"
               else
                 echo "❌ Expected aarch64, got: $file_output"
+                exit 1
+              fi
+              ;;
+            "x86-64")
+              if [[ "$file_output" == *"x86-64"* ]] || [[ "$file_output" == *"x86_64"* ]]; then
+                echo "✅ Correct x86-64 architecture detected"
+              else
+                echo "❌ Expected x86-64, got: $file_output"
                 exit 1
               fi
               ;;
