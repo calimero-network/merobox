@@ -145,7 +145,7 @@ jobs:
               # Use Docker with aarch64 base image for native ARM64 build
               docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm64 python:3.11-slim bash -c "
                 apt-get update && 
-                apt-get install -y build-essential &&
+                apt-get install -y build-essential libssl-dev pkg-config &&
                 pip install -r requirements.txt pyinstaller &&
                 pyinstaller --onefile --name merobox merobox/cli.py
               "
