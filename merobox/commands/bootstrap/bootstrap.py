@@ -72,6 +72,10 @@ def bootstrap():
     is_flag=True,
     help="Run nodes as native binaries (merod) instead of Docker containers",
 )
+@click.option(
+    "--binary-path",
+    help="Set custom path to merod binary (used with --no-docker). Defaults to searching PATH and common locations (/usr/local/bin, /usr/bin, ~/bin).",
+)
 def run(
     config_file,
     verbose,
@@ -82,6 +86,7 @@ def run(
     webui_use_cached,
     log_level,
     no_docker,
+    binary_path,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -103,6 +108,7 @@ def run(
         webui_use_cached=webui_use_cached,
         log_level=log_level,
         no_docker=no_docker,
+        binary_path=binary_path,
     )
     if not success:
         sys.exit(1)
