@@ -1,0 +1,285 @@
+name: Blob API Example Workflow
+description: A workflow demonstrating the Calimero blob API for file sharing
+
+# Force pull Docker images even if they exist locally
+force_pull_image: true
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the blobs application on the first node
+  - name: Install Blobs Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/blobs.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Step 2: Create a context using the installed application
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  - name: Assert context created
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+      - "is_set({{member_public_key}})"
+
+  # Step 3: Generate identity on second node
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      public_key: publicKey
+
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Step 4: Invite second node to join the context
+  - name: Invite Node 2 from Node 1
+    type: invite_identity
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    grantee_id: "{{public_key}}"
+    granter_id: "{{member_public_key}}"
+    capability: member
+    outputs:
+      invitation: invitation
+
+  # Step 5: Join context from second node
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    invitee_id: "{{public_key}}"
+    invitation: "{{invitation}}"
+
+  # BLOB API DEMONSTRATION STARTS HERE
+  # TRUE END-TO-END TESTING: Upload real files to blob storage, then register in contract
+
+  # Step 6a: Upload real PDF file to blob storage
+  - name: Upload PDF to Blob Storage
+    type: upload_blob
+    node: calimero-node-1
+    file_path: workflow-examples/blob-test-files/sample.pdf
+    context_id: "{{context_id}}"
+    outputs:
+      pdf_blob_id: blob_id
+      pdf_blob_size: size
+
+  # Step 6b: Register PDF in contract with real blob ID
+  - name: Register PDF Document in Contract
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: upload_file
+    args:
+      name: project-proposal.pdf
+      blob_id_str: "{{pdf_blob_id}}"
+      size: "{{pdf_blob_size}}"
+      mime_type: application/pdf
+    outputs:
+      file_0_id: result
+
+  - name: Wait for blob announcement to propagate
+    type: wait
+    seconds: 2
+
+  # Step 7a: Upload real image file to blob storage
+  - name: Upload PNG to Blob Storage
+    type: upload_blob
+    node: calimero-node-1
+    file_path: workflow-examples/blob-test-files/screenshot.png
+    context_id: "{{context_id}}"
+    outputs:
+      png_blob_id: blob_id
+      png_blob_size: size
+
+  # Step 7b: Register image in contract with real blob ID
+  - name: Register Image File in Contract
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: upload_file
+    args:
+      name: screenshot.png
+      blob_id_str: "{{png_blob_id}}"
+      size: "{{png_blob_size}}"
+      mime_type: image/png
+    outputs:
+      file_1_id: result
+
+  # Step 8a: Upload real text file to blob storage
+  - name: Upload TXT to Blob Storage
+    type: upload_blob
+    node: calimero-node-1
+    file_path: workflow-examples/blob-test-files/readme.txt
+    context_id: "{{context_id}}"
+    outputs:
+      txt_blob_id: blob_id
+      txt_blob_size: size
+
+  # Step 8b: Register text file in contract with real blob ID
+  - name: Register Text File in Contract
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: upload_file
+    args:
+      name: readme.txt
+      blob_id_str: "{{txt_blob_id}}"
+      size: "{{txt_blob_size}}"
+      mime_type: text/plain
+    outputs:
+      file_2_id: result
+
+  # Step 9: List all files from Node 1
+  - name: List All Files (Node 1)
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: list_files
+    outputs:
+      files_list_node1: result
+
+  - name: Wait for file list to settle
+    type: wait
+    seconds: 1
+
+  # Step 10: Verify blobs are accessible from Node 2 (blob announcement worked)
+  - name: List All Files (Node 2)
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key}}"
+    method: list_files
+    outputs:
+      files_list_node2: result
+
+  - name: Wait for blob sync verification
+    type: wait
+    seconds: 1
+
+  # Step 11: Get specific file metadata
+  - name: Get PDF File Metadata
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get_file
+    args:
+      file_id: file_0
+    outputs:
+      pdf_metadata: result
+
+  # Step 12: Get blob ID for download and verify it matches uploaded blob
+  - name: Get Blob ID for PDF
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key}}"
+    method: get_blob_id_b58
+    args:
+      file_id: file_0
+    outputs:
+      retrieved_pdf_blob_id: result
+
+  # Step 13: Search files by name
+  - name: Search for PDF Files
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: search_files
+    args:
+      query: pdf
+    outputs:
+      search_results: result
+
+  # Step 14: Get storage statistics
+  - name: Get Storage Stats
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get_stats
+    outputs:
+      stats: result
+
+  - name: Wait for stats to update
+    type: wait
+    seconds: 1
+
+  # Step 15: Get total Files Size and verify it matches sum of uploaded files
+  - name: Get Total Files Size
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get_total_files_size
+    outputs:
+      total_files_size: result
+
+  # Step 16: Delete a file
+  - name: Delete Screenshot
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: delete_file
+    args:
+      file_id: file_1
+    outputs:
+      delete_result: result
+
+  - name: Wait for deletion to propagate
+    type: wait
+    seconds: 2
+
+  # Step 17: Verify file was deleted
+  - name: List Files After Delete
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: list_files
+    outputs:
+      files_after_delete: result
+
+  - name: Wait for delete to propagate
+    type: wait
+    seconds: 1
+
+  # Step 18: Verify deletion is visible on Node 2
+  - name: Verify Delete on Node 2
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key}}"
+    method: list_files
+    outputs:
+      files_node2_after_delete: result
+
+  - name: Verify Node 2 sees deletion
+    type: wait
+    seconds: 1
+
+# Configuration
+stop_all_nodes: false
+restart: false
+wait_timeout: 60
