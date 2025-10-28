@@ -3,6 +3,7 @@ name: Release Pipeline
 on:
   push:
     branches:
+      - master
       - 'feature/*'
       - 'release/*'
   pull_request:
@@ -53,34 +54,44 @@ jobs:
         merobox --version
         merobox --help
 
-  # Job 2: Get current version
-  get-version:
-    name: Get current version
+  # Job 2: Check version and determine if release needed
+  check-version:
+    name: Check version and determine if release needed
     runs-on: ubuntu-latest
     needs: [build-source]
-    if: startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/')
+    if: github.ref == 'refs/heads/master'
     outputs:
       current-version: ${{ steps.version.outputs.current_version }}
+      version-bumped: ${{ steps.version.outputs.version_bumped }}
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Get version
+    - name: Get current version
       id: version
       run: |
         # Get current version from __init__.py
         CURRENT_VERSION=$(grep '^__version__ = ' merobox/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
         echo "Current version: $CURRENT_VERSION"
         echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        
+        # Check if this version already exists as a release
+        if git rev-parse "v$CURRENT_VERSION" >/dev/null 2>&1; then
+          echo "Version v$CURRENT_VERSION already exists as a release"
+          echo "version_bumped=false" >> $GITHUB_OUTPUT
+        else
+          echo "Version v$CURRENT_VERSION is new, proceeding with release"
+          echo "version_bumped=true" >> $GITHUB_OUTPUT
+        fi
 
   # Job 3: Build binaries for all platforms
   build-binaries:
     runs-on: ${{ matrix.os }}
-    needs: get-version
+    needs: check-version
     if: |
       always() &&
-      (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/'))
+      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/'))
     strategy:
       matrix:
         include:
@@ -179,7 +190,11 @@ jobs:
         id: version
         shell: bash
         run: |
-          echo "tag=v${{ needs.get-version.outputs.current-version }}" >> $GITHUB_OUTPUT
+          if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            echo "tag=v${{ needs.check-version.outputs.current-version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v${{ needs.check-version.outputs.current-version }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Name artifact
         shell: bash
@@ -239,12 +254,13 @@ jobs:
 
   # Job 4: Create GitHub Release
   create-release:
-    needs: [get-version, build-binaries]
+    needs: [check-version, build-binaries]
     runs-on: ubuntu-latest
     if: |
       always() &&
       needs.build-binaries.result == 'success' &&
-      (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/'))
+      github.ref == 'refs/heads/master' &&
+      needs.check-version.outputs.version-bumped == 'true'
     permissions:
       contents: write
 
@@ -252,7 +268,7 @@ jobs:
       - name: Determine version tag
         id: version
         run: |
-          echo "tag=v${{ needs.get-version.outputs.current-version }}" >> $GITHUB_OUTPUT
+          echo "tag=v${{ needs.check-version.outputs.current-version }}" >> $GITHUB_OUTPUT
 
       - name: Validate tag format
         run: |
@@ -288,10 +304,10 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: [build-source, get-version, create-release]
+    needs: [build-source, check-version, create-release]
     if: |
       always() &&
-      (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/')) &&
+      github.ref == 'refs/heads/master' &&
       needs.create-release.result == 'success'
     permissions:
       contents: read
@@ -316,32 +332,36 @@ jobs:
           tar -tzf "$file" | head -10
         done
 
-    # - name: Publish to PyPI
-    #   uses: pypa/gh-action-pypi-publish@release/v1
-    #   with:
-    #     password: ${{ secrets.PYPI_API_TOKEN }}
-    #     packages-dir: dist/
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        packages-dir: dist/
 
   # Job 6: Notify completion
   notify-completion:
-    needs: [build-source, get-version, build-binaries, create-release, publish-pypi]
+    needs: [build-source, check-version, build-binaries, create-release, publish-pypi]
     runs-on: ubuntu-latest
     if: always()
     
     steps:
       - name: Report status
         run: |
-          VERSION="${{ needs.get-version.outputs.current-version }}"
+          VERSION="${{ needs.check-version.outputs.current-version }}"
           echo "🎉 Release Pipeline Complete!"
           echo "Version: $VERSION"
           echo ""
           echo "Status:"
           echo "  Build Source: ${{ needs.build-source.result }}"
-          echo "  Get Version: ${{ needs.get-version.result }}"
+          echo "  Check Version: ${{ needs.check-version.result }}"
           echo "  Build Binaries: ${{ needs.build-binaries.result }}"
           echo "  Create Release: ${{ needs.create-release.result }}"
           echo "  Publish PyPI: ${{ needs.publish-pypi.result }}"
           echo ""
-          echo "📦 Package: https://pypi.org/project/merobox/${VERSION}/"
-          echo "📥 Release: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+          if [ "${{ needs.create-release.result }}" = "success" ]; then
+            echo "📦 Package: https://pypi.org/project/merobox/${VERSION}/"
+            echo "📥 Release: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+          else
+            echo "ℹ️  No release created (version may already exist or not on master branch)"
+          fi
 
