@@ -295,6 +295,39 @@ Executes steps multiple times.
     iteration: "current_iteration"
 ```
 
+#### Upload Blob Step
+
+Uploads files to blob storage and captures blob IDs for E2E testing.
+
+```yaml
+- name: "Upload File to Blob Storage"
+  type: "upload_blob"
+  node: "calimero-node-1"
+  file_path: "res/kv_store.wasm" # Path to file on local filesystem
+  context_id: "{{context_id}}" # Optional: associate with context
+  outputs:
+    blob_id: "wasm_blob_id" # Capture the blob ID
+    size: "wasm_blob_size" # Capture the blob size
+
+# Use the blob ID in contract calls
+- name: "Register Blob in Contract"
+  type: "call"
+  node: "calimero-node-1"
+  context_id: "{{context_id}}"
+  method: "register_blob"
+  args:
+    blob_id: "{{wasm_blob_id}}" # Use real blob ID from upload
+    size: "{{wasm_blob_size}}" # Use real size from upload
+```
+
+**Features:**
+
+- Upload files from local filesystem to blob storage
+- Capture `blob_id` and `size` for use in subsequent steps
+- Optional context association via `context_id`
+- Full binary file support
+- Automatic error handling and validation
+
 ### Dynamic Variables
 
 Workflows support dynamic variable substitution using `{{variable_name}}` syntax.
@@ -717,13 +750,14 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
    ```
 
 2. **Workflow Configuration**: Set `force_pull_image: true` in your workflow YAML
-   ```yaml
+   ````yaml
    name: "My Workflow"
    image: ghcr.io/calimero-network/merod:edge
    force_pull_image: true # Will force pull all images
    nodes:
-      count: 2
-      # ... other node configuration   ```
+     count: 2
+     # ... other node configuration   ```
+   ````
 
 #### **Use Cases**
 
@@ -1491,16 +1525,19 @@ git push origin master
 #### What Happens Automatically
 
 1. **Auto-Tagging** (~ 5 seconds)
+
    - Detects version change in `__init__.py`
    - Creates and pushes tag `vX.Y.Z`
    - Comments on commit with status
 
 2. **Build Binaries** (~ 5-10 minutes)
+
    - macOS x64 & arm64
    - Linux x64 & arm64
    - Generates SHA256 checksums
 
 3. **Create Release** (~ 30 seconds)
+
    - Publishes GitHub release with binaries
    - Auto-generates release notes
 
@@ -1525,6 +1562,7 @@ Version Bump → Auto-Tag → Build Binaries → GitHub Release → PyPI
 #### Required Secrets
 
 Configure these in GitHub repository settings:
+
 - `PYPI_API_TOKEN` - PyPI publishing token (required)
 - `TEST_PYPI_API_TOKEN` - TestPyPI token (optional)
 
