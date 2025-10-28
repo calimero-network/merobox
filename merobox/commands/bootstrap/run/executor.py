@@ -638,6 +638,10 @@ class WorkflowExecutor:
             )
 
             return GetProposalApproversStep(step_config, manager=self.manager)
+        elif step_type == "upload_blob":
+            from merobox.commands.bootstrap.steps import UploadBlobStep
+
+            return UploadBlobStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None
