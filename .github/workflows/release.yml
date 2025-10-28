@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+
   pull_request:
     branches:
       - master
@@ -130,27 +131,14 @@ jobs:
     strategy:
       matrix:
         include:
-          # macOS 64-bit architectures
+          - os: ubuntu-24.04-8cpu
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
           - os: macos-latest
-            arch: x86-64
-            target: darwin-x86-64
-          - os: macos-latest
-            arch: aarch64
-            target: darwin-aarch64
-          # Linux 64-bit architectures
-          - os: ubuntu-latest
-            arch: x86-64
-            target: linux-x86-64
-          - os: ubuntu-latest
-            arch: aarch64
-            target: linux-aarch64
-          # Linux 32-bit architectures
-          - os: ubuntu-latest
-            arch: i386
-            target: linux-i386
-          - os: ubuntu-latest
-            arch: arm
-            target: linux-arm
+            target: aarch64-apple-darwin
 
     steps:
       - name: Checkout code
@@ -163,24 +151,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Set up QEMU (for ARM architectures)
-        if: (matrix.arch == 'aarch64' || matrix.arch == 'arm') && matrix.os == 'ubuntu-latest'
-        uses: docker/setup-qemu-action@v3
 
       - name: Install system dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
-          # For 32-bit builds
-          if [ "${{ matrix.arch }}" = "i386" ]; then
-            sudo dpkg --add-architecture i386
-            sudo apt-get update
-            sudo apt-get install -y gcc-multilib
-          fi
 
       - name: Install system dependencies (macOS)
-        if: matrix.os == 'macos-latest'
+        if: startsWith(matrix.os, 'macos')
         run: brew install gcc
 
       - name: Install dependencies
@@ -190,44 +169,15 @@ jobs:
 
       - name: Build executable
         run: |
-          # Set architecture-specific environment variables
-          if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            if [ "${{ matrix.arch }}" = "x86-64" ]; then
-              arch -x86_64 pyinstaller --onefile --name merobox merobox/cli.py
-            else
-              pyinstaller --onefile --name merobox merobox/cli.py
-            fi
-          else
-            # Linux builds
-            if [ "${{ matrix.arch }}" = "i386" ]; then
-              CC="gcc -m32" pyinstaller --onefile --name merobox merobox/cli.py
-            elif [ "${{ matrix.arch }}" = "aarch64" ]; then
-              # Use Docker with aarch64 base image for native ARM64 build
-              docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm64 python:3.11-slim bash -c "
-                apt-get update && 
-                apt-get install -y build-essential &&
-                pip install -r requirements.txt pyinstaller &&
-                pyinstaller --onefile --name merobox merobox/cli.py
-              "
-            elif [ "${{ matrix.arch }}" = "arm" ]; then
-              # Use Docker with arm32v7 base image for native ARM32 build
-              docker run --rm -v $(pwd):/workspace -w /workspace --platform linux/arm/v7 python:3.11-slim bash -c "
-                apt-get update && 
-                apt-get install -y build-essential &&
-                pip install -r requirements.txt pyinstaller &&
-                pyinstaller --onefile --name merobox merobox/cli.py
-              "
-            else
-              pyinstaller --onefile --name merobox merobox/cli.py
-            fi
-          fi
+          # Build with PyInstaller on native workers
+          pyinstaller --onefile --name merobox merobox/cli.py
 
       - name: Test executable
         run: |
           if [ -f "./dist/merobox" ]; then
             ./dist/merobox --version
           else
-            echo "Binary not found in dist/, checking if it was built in Docker..."
+            echo "Binary not found in dist/"
             ls -la dist/
           fi
 
@@ -236,37 +186,37 @@ jobs:
           file_output=$(file ./dist/merobox)
           echo "Binary architecture: $file_output"
           
-          # Verify correct architecture
-          case "${{ matrix.arch }}" in
-            "x86-64")
-              if [[ "$file_output" == *"x86_64"* ]]; then
-                echo "✅ Correct x86-64 architecture detected"
-              else
-                echo "❌ Expected x86-64, got: $file_output"
-                exit 1
-              fi
-              ;;
-            "aarch64")
-              if [[ "$file_output" == *"arm64"* ]] || [[ "$file_output" == *"aarch64"* ]]; then
+          # Verify correct architecture based on target
+          case "${{ matrix.target }}" in
+            "aarch64-unknown-linux-gnu")
+              if [[ "$file_output" == *"aarch64"* ]]; then
                 echo "✅ Correct aarch64 architecture detected"
               else
                 echo "❌ Expected aarch64, got: $file_output"
                 exit 1
               fi
               ;;
-            "i386")
-              if [[ "$file_output" == *"Intel 80386"* ]] || [[ "$file_output" == *"i386"* ]]; then
-                echo "✅ Correct i386 architecture detected"
+            "x86_64-unknown-linux-gnu")
+              if [[ "$file_output" == *"x86-64"* ]] || [[ "$file_output" == *"x86_64"* ]]; then
+                echo "✅ Correct x86-64 architecture detected"
               else
-                echo "❌ Expected i386, got: $file_output"
+                echo "❌ Expected x86-64, got: $file_output"
                 exit 1
               fi
               ;;
-            "arm")
-              if [[ "$file_output" == *"ARM"* ]] && [[ "$file_output" != *"aarch64"* ]]; then
-                echo "✅ Correct ARM architecture detected"
+            "aarch64-apple-darwin")
+              if [[ "$file_output" == *"arm64"* ]]; then
+                echo "✅ Correct arm64 architecture detected"
               else
-                echo "❌ Expected ARM (32-bit), got: $file_output"
+                echo "❌ Expected arm64, got: $file_output"
+                exit 1
+              fi
+              ;;
+            "x86_64-apple-darwin")
+              if [[ "$file_output" == *"x86_64"* ]]; then
+                echo "✅ Correct x86_64 architecture detected"
+              else
+                echo "❌ Expected x86_64, got: $file_output"
                 exit 1
               fi
               ;;
@@ -282,14 +232,44 @@ jobs:
         shell: bash
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          NAME="merobox-${TAG}-${{ matrix.target }}"
+          # Convert target to simpler naming convention
+          case "${{ matrix.target }}" in
+            "x86_64-unknown-linux-gnu")
+              TARGET_NAME="linux-x86-64"
+              ;;
+            "aarch64-unknown-linux-gnu")
+              TARGET_NAME="linux-aarch64"
+              ;;
+            "x86_64-apple-darwin")
+              TARGET_NAME="darwin-x86-64"
+              ;;
+            "aarch64-apple-darwin")
+              TARGET_NAME="darwin-aarch64"
+              ;;
+          esac
+          NAME="merobox-${TAG}-${TARGET_NAME}"
           mv "dist/merobox" "dist/${NAME}"
 
       - name: Generate checksum
         shell: bash
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          FILE="dist/merobox-${TAG}-${{ matrix.target }}"
+          # Convert target to simpler naming convention
+          case "${{ matrix.target }}" in
+            "x86_64-unknown-linux-gnu")
+              TARGET_NAME="linux-x86-64"
+              ;;
+            "aarch64-unknown-linux-gnu")
+              TARGET_NAME="linux-aarch64"
+              ;;
+            "x86_64-apple-darwin")
+              TARGET_NAME="darwin-x86-64"
+              ;;
+            "aarch64-apple-darwin")
+              TARGET_NAME="darwin-aarch64"
+              ;;
+          esac
+          FILE="dist/merobox-${TAG}-${TARGET_NAME}"
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "${FILE}" > "${FILE}.sha256"
           else
@@ -301,8 +281,7 @@ jobs:
         with:
           name: merobox-${{ matrix.target }}
           path: |
-            dist/merobox-${{ steps.version.outputs.tag }}-${{ matrix.target }}
-            dist/merobox-${{ steps.version.outputs.tag }}-${{ matrix.target }}.sha256
+            dist/merobox-*
           retention-days: 30
 
   # Job 4: Create GitHub Release
