@@ -4,6 +4,7 @@ Steps module - Individual step implementations for workflow execution.
 
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.identity import (
@@ -30,4 +31,5 @@ __all__ = [
     "ScriptStep",
     "AssertStep",
     "JsonAssertStep",
+    "UploadBlobStep",
 ]
