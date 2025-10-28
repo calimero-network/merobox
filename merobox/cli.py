@@ -8,6 +8,7 @@ import click
 
 from merobox import __version__
 from merobox.commands import (
+    blob,
     bootstrap,
     call,
     health,
@@ -41,6 +42,7 @@ cli.add_command(nuke)
 cli.add_command(identity)
 cli.add_command(join)
 cli.add_command(call)
+cli.add_command(blob)
 cli.add_command(proposals)
 cli.add_command(bootstrap)
 
