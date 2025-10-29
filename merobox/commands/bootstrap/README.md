@@ -23,6 +23,8 @@ bootstrap/
 │   ├── context.py       # Context creation step
 │   ├── identity.py      # Identity management steps
 │   ├── join.py          # Context joining step
+│   ├── invite_open.py   # Open invitation creation step
+│   ├── join_open.py     # Join via open invitation step
 │   ├── execute.py       # Contract execution step
 │   ├── repeat.py        # Loop/repeat step
 │   ├── wait.py          # Wait/delay step
@@ -78,6 +80,8 @@ Generate a sample workflow configuration file.
 - **create_identity**: Generate node identities
 - **invite_identity**: Invite nodes to contexts
 - **join_context**: Join existing contexts
+- **invite_open**: Create open invitations (multiple participants can join)
+- **join_open**: Join contexts using open invitations
 
 ### Execution Steps
 - **call**: Execute contract functions
