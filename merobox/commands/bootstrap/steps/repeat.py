@@ -239,6 +239,14 @@ class RepeatStep(BaseStep):
             return InviteIdentityStep(step_config, manager=self.manager)
         elif step_type == "join_context":
             return JoinContextStep(step_config, manager=self.manager)
+        elif step_type == "invite_open":
+            from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
+
+            return InviteOpenStep(step_config, manager=self.manager)
+        elif step_type == "join_open":
+            from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
+
+            return JoinOpenStep(step_config, manager=self.manager)
         elif step_type == "call":
             return ExecuteStep(step_config, manager=self.manager)
         elif step_type == "wait":
