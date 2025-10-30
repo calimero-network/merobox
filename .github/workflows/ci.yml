@@ -90,6 +90,7 @@ jobs:
             "workflow-examples/workflow-auth-example.yml"
             "workflow-examples/workflow-proposals-example.yml"
             "workflow-examples/workflow-assert-example.yml"
+            "workflow-examples/workflow-open-invitation-example.yml"
           )
           for f in "${ESSENTIAL_WORKFLOWS[@]}"; do \
             echo "Running workflow: $f"; \
