@@ -11,16 +11,16 @@ nodes:
   prefix: open-inv-node
 
 steps:
-  # Step 1: Install application (equivalent to applicationInstall with target: allMembers)
+  # Install application
   - name: Install Application
     type: install_application
     node: open-inv-node-1
-    url: "https://github.com/calimero-network/merobox-workflow-examples/raw/main/workflow-examples/res/kv_store.wasm"
+    path: workflow-examples/res/kv_store.wasm
     dev: true
     outputs:
       app_id: applicationId
 
-  # Step 2: Create context (contextCreate)
+  # Create context
   - name: Create Context
     type: create_context
     node: open-inv-node-1
@@ -29,13 +29,12 @@ steps:
       context_id: contextId
       member_public_key: memberPublicKey
 
-  # Step 3: Wait for context initialization to complete (wait for broadcast, 5000ms)
+  # Wait for initialization
   - name: Wait for Context Initialization
     type: wait
     seconds: 5
-    description: Wait for context initialization to complete
 
-  # Step 4: Set initial value (call set with key="foo", value="bar" as inviter)
+  # Set initial value
   - name: Set Initial Value
     type: call
     node: open-inv-node-1
@@ -46,7 +45,7 @@ steps:
       key: foo
       value: bar
 
-  # Step 5: Verify initial value (call get with key="foo", expected="bar" as inviter)
+  # Verify initial value
   - name: Get Initial Value - Inviter
     type: call
     node: open-inv-node-1
@@ -63,7 +62,7 @@ steps:
     statements:
       - 'json_equal({{get_result_initial}}, {"output": "bar"})'
 
-  # Step 6: Create identities for nodes 2 and 3 before open invitation
+  # Create identities for nodes 2 and 3
   - name: Create Identity on Node 2
     type: create_identity
     node: open-inv-node-2
@@ -76,7 +75,7 @@ steps:
     outputs:
       public_key_3: publicKey
 
-  # Step 7: Create open invitation (contextInviteJoinOpen equivalent)
+  # Create open invitation
   - name: Create Open Invitation
     type: invite_open
     node: open-inv-node-1
@@ -86,7 +85,7 @@ steps:
     outputs:
       open_invitation: invitation
 
-  # Step 8: Join nodes 2 and 3 using the open invitation
+  # Join using open invitation
   - name: Join via Open Invitation - Node 2
     type: join_open
     node: open-inv-node-2
@@ -105,14 +104,12 @@ steps:
       joined_context_id_3: contextId
       joined_member_key_3: memberPublicKey
 
-  # Step 9: Wait for consensus (wait for consensus, 5000ms)
+  # Wait for consensus
   - name: Wait for Consensus
     type: wait
     seconds: 5
-    description: Wait for gossipsub mesh formation + initial sync completion
 
-  # Step 10: Verify all members can read initial state (call get key="foo", expected="bar", target: allMembers)
-  # Verify Node 1 (inviter) can still read
+  # Verify all members can read initial state
   - name: Get State - Node 1 (Inviter)
     type: call
     node: open-inv-node-1
@@ -124,7 +121,6 @@ steps:
     outputs:
       get_result_node1: result
 
-  # Verify Node 2 can read
   - name: Get State - Node 2
     type: call
     node: open-inv-node-2
@@ -136,7 +132,6 @@ steps:
     outputs:
       get_result_node2: result
 
-  # Verify Node 3 can read
   - name: Get State - Node 3
     type: call
     node: open-inv-node-3
@@ -148,7 +143,6 @@ steps:
     outputs:
       get_result_node3: result
 
-  # Assert all members see initial value 'bar'
   - name: Assert All Members See Initial Value 'bar'
     type: json_assert
     statements:
@@ -156,7 +150,7 @@ steps:
       - 'json_equal({{get_result_node2}}, {"output": "bar"})'
       - 'json_equal({{get_result_node3}}, {"output": "bar"})'
 
-  # Step 11: Update value (call set key="foo", value="baz" as inviter)
+  # Update value
   - name: Update Value
     type: call
     node: open-inv-node-1
@@ -167,14 +161,12 @@ steps:
       key: foo
       value: baz
 
-  # Step 12: Wait for broadcast (wait for broadcast, 5000ms)
+  # Wait for broadcast
   - name: Wait for Broadcast
     type: wait
     seconds: 5
-    description: Wait exactly 5s for the broadcast to propagate
 
-  # Step 13: Verify all members see the update (call get key="foo", expected="baz", target: allMembers)
-  # Verify Node 1 (inviter) sees update
+  # Verify all members see the update
   - name: Get Update - Node 1 (Inviter)
     type: call
     node: open-inv-node-1
@@ -186,7 +178,6 @@ steps:
     outputs:
       get_update_node1: result
 
-  # Verify Node 2 sees update
   - name: Get Update - Node 2
     type: call
     node: open-inv-node-2
@@ -198,7 +189,6 @@ steps:
     outputs:
       get_update_node2: result
 
-  # Verify Node 3 sees update
   - name: Get Update - Node 3
     type: call
     node: open-inv-node-3
@@ -210,7 +200,6 @@ steps:
     outputs:
       get_update_node3: result
 
-  # Assert all members see updated value 'baz'
   - name: Assert All Members See Updated Value 'baz'
     type: json_assert
     statements:
