@@ -600,6 +600,14 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import JoinContextStep
 
             return JoinContextStep(step_config, manager=self.manager)
+        elif step_type == "invite_open":
+            from merobox.commands.bootstrap.steps import InviteOpenStep
+
+            return InviteOpenStep(step_config, manager=self.manager)
+        elif step_type == "join_open":
+            from merobox.commands.bootstrap.steps import JoinOpenStep
+
+            return JoinOpenStep(step_config, manager=self.manager)
         elif step_type == "call":
             from merobox.commands.bootstrap.steps import ExecuteStep
 

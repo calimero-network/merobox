@@ -1,0 +1,184 @@
+description: Open invitation workflow following e2e test pattern
+name: Open Invitation Workflow
+
+# Force pull Docker images even if they exist locally
+force_pull_image: true
+
+# TODO: update the image to the latest version
+nodes:
+  chain_id: testnet-1
+  count: 3
+  image: ghcr.io/calimero-network/merod:pr-1604
+  prefix: open-inv-node
+
+steps:
+  # Install application
+  - name: Install Application
+    type: install_application
+    node: open-inv-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Create context
+  - name: Create Context
+    type: create_context
+    node: open-inv-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Wait for initialization
+  - name: Wait for Context Initialization
+    type: wait
+    seconds: 5
+
+  # Set initial value
+  - name: Set Initial Value
+    type: call
+    node: open-inv-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: foo
+      value: bar
+
+  # Verify initial value
+  - name: Get Initial Value - Inviter
+    type: call
+    node: open-inv-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: foo
+    outputs:
+      get_result_initial: result
+
+  - name: Assert Initial Value is 'bar'
+    type: json_assert
+    statements:
+      - 'json_equal({{get_result_initial}}, {"output": "bar"})'
+
+  # Create identities for nodes 2 and 3
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: open-inv-node-2
+    outputs:
+      public_key_2: publicKey
+
+
+
+  # Create open invitation
+  - name: Create Open Invitation
+    type: invite_open
+    node: open-inv-node-1
+    context_id: "{{context_id}}"
+    granter_id: "{{member_public_key}}"
+    valid_for_blocks: 1000
+    outputs:
+      open_invitation: invitation
+
+  # Join using open invitation
+  - name: Join via Open Invitation - Node 2
+    type: join_open
+    node: open-inv-node-2
+    invitee_id: "{{public_key_2}}"
+    invitation: "{{open_invitation}}"
+    outputs:
+      joined_context_id_2: contextId
+      joined_member_key_2: memberPublicKey
+
+
+
+  # Wait for consensus
+  - name: Wait for Consensus
+    type: wait
+    seconds: 5
+
+  # Verify all members can read initial state
+  - name: Get State - Node 1 (Inviter)
+    type: call
+    node: open-inv-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: foo
+    outputs:
+      get_result_node1: result
+
+  - name: Get State - Node 2
+    type: call
+    node: open-inv-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_2}}"
+    method: get
+    args:
+      key: foo
+    outputs:
+      get_result_node2: result
+
+
+
+  - name: Assert All Members See Initial Value 'bar'
+    type: json_assert
+    statements:
+      - 'json_equal({{get_result_node1}}, {"output": "bar"})'
+      - 'json_equal({{get_result_node2}}, {"output": "bar"})'
+
+  # Update value
+  - name: Update Value
+    type: call
+    node: open-inv-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: foo
+      value: baz
+
+  # Wait for broadcast
+  - name: Wait for Broadcast
+    type: wait
+    seconds: 5
+
+  # Verify all members see the update
+  - name: Get Update - Node 1 (Inviter)
+    type: call
+    node: open-inv-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: foo
+    outputs:
+      get_update_node1: result
+
+  - name: Get Update - Node 2
+    type: call
+    node: open-inv-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_2}}"
+    method: get
+    args:
+      key: foo
+    outputs:
+      get_update_node2: result
+
+
+
+  - name: Assert All Members See Updated Value 'baz'
+    type: json_assert
+    statements:
+      - 'json_equal({{get_update_node1}}, {"output": "baz"})'
+      - 'json_equal({{get_update_node2}}, {"output": "baz"})'
+
+
+# Configuration options
+stop_all_nodes: false
+restart: false
+wait_timeout: 60
