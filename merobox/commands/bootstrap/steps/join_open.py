@@ -6,52 +6,49 @@ import json as json_lib
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.result import fail, ok
 from merobox.commands.utils import console, get_node_rpc_url
 
 
-@with_retry(config=NETWORK_RETRY_CONFIG)
 async def join_context_via_open_invitation(
     rpc_url: str, invitation_dict: dict, new_member_public_key: str
 ) -> dict:
-    """Join a context using an open invitation via calimero-client-py."""
+    """Join a context using an open invitation ."""
     try:
-        import json as json_lib
-
-        from merobox.commands.client import get_client_for_rpc_url
-        from merobox.commands.result import fail, ok
-        from merobox.commands.utils import console
-
         client = get_client_for_rpc_url(rpc_url)
+    except Exception as exc:
+        return fail(
+            "join_context_via_open_invitation failed during client creation",
+            error=exc,
+        )
 
-        # Serialize the SignedOpenInvitation to JSON
-        # invitation_dict contains {"invitation": {...}, "inviterSignature": "..."}
+    try:
         invitation_json = json_lib.dumps(invitation_dict)
+    except (TypeError, ValueError) as exc:
+        return fail(
+            "join_context_via_open_invitation failed: invalid invitation", error=exc
+        )
 
-        console.print("[dim]Calling join_context_by_open_invitation:[/dim]")
-        console.print(f"[dim]  RPC URL: {rpc_url}[/dim]")
-        console.print(f"[dim]  Member key: {new_member_public_key}[/dim]")
-        console.print(f"[dim]  Invitation JSON length: {len(invitation_json)}[/dim]")
-
+    try:
         result = client.join_context_by_open_invitation(
-            invitation_json=invitation_json, new_member_public_key=new_member_public_key
+            invitation_json=invitation_json,
+            new_member_public_key=new_member_public_key,
+        )
+    except Exception as exc:
+        return fail(
+            "join_context_via_open_invitation failed",
+            error=exc,
+            client_method="client.join_context_by_open_invitation",
+            endpoint="calimero_client_py.join_context_by_open_invitation",
         )
 
-        return ok(
-            result,
-            endpoint=f"{rpc_url}/admin-api/dev/contexts/join-open",
-            payload_format=0,
-        )
-    except Exception as e:
-        import traceback
-
-        from merobox.commands.result import fail
-        from merobox.commands.utils import console
-
-        console.print(f"[red]Exception: {e}[/red]")
-        console.print(f"[red]Type: {type(e).__name__}[/red]")
-        console.print(f"[red]Traceback:\n{traceback.format_exc()}[/red]")
-        return fail(f"join_context_via_open_invitation failed: {str(e)}", error=e)
+    return ok(
+        result,
+        client_method="client.join_context_by_open_invitation",
+        payload_format="json",
+        endpoint="calimero_client_py.join_context_by_open_invitation",
+    )
 
 
 class JoinOpenStep(BaseStep):
@@ -126,21 +123,12 @@ class JoinOpenStep(BaseStep):
 
         # Ensure invitation is a dict (not a string)
         if isinstance(invitation, str):
-            console.print("[blue]Parsing invitation from JSON string...[/blue]")
             invitation_dict = json_lib.loads(invitation)
         elif isinstance(invitation, dict):
             invitation_dict = invitation
         else:
             console.print(f"[red]Unexpected invitation type: {type(invitation)}[/red]")
             return False
-
-        # Debug: Show resolved values
-        console.print("[blue]Debug: Resolved values for join_open step:[/blue]")
-        console.print(f"  invitee_id: {invitee_id}")
-        console.print(f"  invitation type: {type(invitation_dict)}")
-        console.print(
-            f"  invitation keys: {list(invitation_dict.keys()) if isinstance(invitation_dict, dict) else 'N/A'}"
-        )
 
         # Get node RPC URL
         try:
@@ -152,38 +140,18 @@ class JoinOpenStep(BaseStep):
                 manager = DockerManager()
 
             rpc_url = get_node_rpc_url(node_name, manager)
-        except Exception as e:
+        except Exception as exc:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to get RPC URL for node {node_name}: {exc}[/red]"
             )
             return False
 
         # Execute join via open invitation
-        console.print(
-            f"[blue]Joining context via open invitation on {node_name}...[/blue]"
-        )
         result = await join_context_via_open_invitation(
             rpc_url, invitation_dict, invitee_id
         )
 
-        # Log detailed API response
-        console.print(f"[cyan]🔍 Join Open API Response for {node_name}:[/cyan]")
-        console.print(f"  Success: {result.get('success')}")
-
-        data = result.get("data")
-        if isinstance(data, dict):
-            try:
-                formatted_data = json_lib.dumps(data, indent=2)
-                console.print(f"  Data:\n{formatted_data}")
-            except Exception:
-                console.print(f"  Data: {data}")
-        else:
-            console.print(f"  Data: {data}")
-
-        console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
-        console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
         if not result.get("success"):
-            console.print(f"  Error: {result.get('error')}")
             if "tried_payloads" in result:
                 console.print(f"  Tried Payloads: {result['tried_payloads']}")
             if "errors" in result:

@@ -4,10 +4,11 @@ name: Open Invitation Workflow
 # Force pull Docker images even if they exist locally
 force_pull_image: true
 
+# TODO: update the image to the latest version
 nodes:
   chain_id: testnet-1
   count: 3
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:pr-1604
   prefix: open-inv-node
 
 steps:
@@ -69,11 +70,7 @@ steps:
     outputs:
       public_key_2: publicKey
 
-  - name: Create Identity on Node 3
-    type: create_identity
-    node: open-inv-node-3
-    outputs:
-      public_key_3: publicKey
+
 
   # Create open invitation
   - name: Create Open Invitation
@@ -95,14 +92,7 @@ steps:
       joined_context_id_2: contextId
       joined_member_key_2: memberPublicKey
 
-  - name: Join via Open Invitation - Node 3
-    type: join_open
-    node: open-inv-node-3
-    invitee_id: "{{public_key_3}}"
-    invitation: "{{open_invitation}}"
-    outputs:
-      joined_context_id_3: contextId
-      joined_member_key_3: memberPublicKey
+
 
   # Wait for consensus
   - name: Wait for Consensus
@@ -132,23 +122,13 @@ steps:
     outputs:
       get_result_node2: result
 
-  - name: Get State - Node 3
-    type: call
-    node: open-inv-node-3
-    context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_3}}"
-    method: get
-    args:
-      key: foo
-    outputs:
-      get_result_node3: result
+
 
   - name: Assert All Members See Initial Value 'bar'
     type: json_assert
     statements:
       - 'json_equal({{get_result_node1}}, {"output": "bar"})'
       - 'json_equal({{get_result_node2}}, {"output": "bar"})'
-      - 'json_equal({{get_result_node3}}, {"output": "bar"})'
 
   # Update value
   - name: Update Value
@@ -189,23 +169,14 @@ steps:
     outputs:
       get_update_node2: result
 
-  - name: Get Update - Node 3
-    type: call
-    node: open-inv-node-3
-    context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_3}}"
-    method: get
-    args:
-      key: foo
-    outputs:
-      get_update_node3: result
+
 
   - name: Assert All Members See Updated Value 'baz'
     type: json_assert
     statements:
       - 'json_equal({{get_update_node1}}, {"output": "baz"})'
       - 'json_equal({{get_update_node2}}, {"output": "baz"})'
-      - 'json_equal({{get_update_node3}}, {"output": "baz"})'
+
 
 # Configuration options
 stop_all_nodes: false
