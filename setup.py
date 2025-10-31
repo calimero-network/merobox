@@ -3,17 +3,20 @@
 Setup script for merobox package.
 """
 
-from setuptools import setup, find_packages
 import re
 from pathlib import Path
 
+from setuptools import find_packages, setup
+
 # Read the README file
-with open("README.md", "r", encoding="utf-8") as fh:
+with open("README.md", encoding="utf-8") as fh:
     long_description = fh.read()
 
 # Read version from merobox/__init__.py
 init_file = Path(__file__).parent / "merobox" / "__init__.py"
-version_match = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', init_file.read_text(), re.MULTILINE)
+version_match = re.search(
+    r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', init_file.read_text(), re.MULTILINE
+)
 if not version_match:
     raise RuntimeError("Unable to find version string in merobox/__init__.py")
 version = version_match.group(1)
@@ -48,7 +51,7 @@ setup(
         "docker>=6.0.0",
         "rich>=13.0.0",
         "PyYAML>=6.0.0",
-        "calimero-client-py==0.2.6",
+        "calimero-client-py==0.2.7",
         "aiohttp>=3.8.0",
     ],
     extras_require={
