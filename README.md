@@ -268,6 +268,40 @@ Adds delays between steps.
   seconds: 5
 ```
 
+#### Wait for Sync Step
+
+Waits for nodes to reach consensus by verifying they have the same root hash. This is more reliable than fixed wait times because it only proceeds once nodes are actually synchronized.
+
+```yaml
+- name: "Wait for Nodes to Sync"
+  type: "wait_for_sync"
+  context_id: "{{context_id}}"
+  nodes:
+    - calimero-node-1
+    - calimero-node-2
+  timeout: 30 # Max seconds to wait (default: 30)
+  check_interval: 1 # Seconds between checks (default: 1.0)
+  trigger_sync: true # Trigger sync before checking (default: true)
+  outputs:
+    root_hash: "synced_hash"
+    elapsed_seconds: "sync_time"
+```
+
+**Key Features:**
+
+- Verifies root hash consensus across specified nodes
+- Fails workflow if nodes don't sync within timeout
+- Provides detailed sync progress logging
+- More reliable than fixed wait times
+- Captures sync metrics (time, attempts, final hash)
+
+**When to Use:**
+
+- After state-changing operations (set, delete, update)
+- After nodes join a context
+- Before reading data from different nodes
+- In critical workflows where consistency is required
+
 #### Repeat Step
 
 Executes steps multiple times.
