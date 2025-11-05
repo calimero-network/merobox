@@ -154,14 +154,14 @@ merobox bootstrap create-sample
 ```yaml
 name: Simple Node Setup
 steps:
-  - type: install
-    node_name: node-1
-    wasm_path: ./app.wasm
+  - type: install_application
+    node: node-1
+    path: ./app.wasm
     outputs:
       app_id: "application_id"
 
   - type: call
-    node_name: node-1
+    node: node-1
     application_id: "{{app_id}}"
     method: "initialize"
     args:
@@ -221,55 +221,58 @@ merobox bootstrap run workflow.yml --auth-service
 
 ### Available Step Types
 
-#### 1. Install Step
+#### 1. Install Application Step
 Install a WASM application on a node.
 
 ```yaml
-- type: install
-  node_name: node-1
-  wasm_path: ./my-app.wasm
+- type: install_application
+  node: node-1
+  path: ./my-app.wasm
   outputs:
     app_id: "application_id"
 ```
 
-#### 2. Context Step
+#### 2. Create Context Step
 Create a new context on a node.
 
 ```yaml
-- type: context
-  node_name: node-1
+- type: create_context
+  node: node-1
   application_id: "{{app_id}}"
   outputs:
     context_id: "context.context_id"
     context_seed: "context.seed"
 ```
 
-#### 3. Identity Step
+#### 3. Create Identity Step
 Create a new identity for a node.
 
 ```yaml
-- type: identity
+- type: create_identity
+  node: node-1
   outputs:
     private_key: "private_key"
     public_key: "public_key"
 ```
 
-#### 4. Join Step
-Join a node to a context.
+#### 4. Join Context Step
+Join a node to a context using an invitation.
 
 ```yaml
-- type: join
-  node_name: node-2
+- name: Join Context from Node 2
+  type: join_context
+  node: node-2
   context_id: "{{context_id}}"
-  private_key: "{{private_key}}"
+  invitee_id: "{{public_key}}"
+  invitation: "{{invitation}}"
 ```
 
-#### 5. Execute (Call) Step
+#### 5. Call Step
 Call a method on an application.
 
 ```yaml
-- type: execute
-  node_name: node-1
+- type: call
+  node: node-1
   context_id: "{{context_id}}"
   method: "set_value"
   args:
@@ -293,12 +296,14 @@ Loop through a sequence of steps multiple times.
 
 ```yaml
 - type: repeat
-  times: 3
+  count: 3
   variable: iteration
   steps:
-    - type: execute
-      node_name: node-1
+    - type: call
+      node: node-1
+      context_id: "{{context_id}}"
       method: "process_{{iteration}}"
+      executor_public_key: "{{public_key}}"
   outputs:
     - key: "result_{{iteration}}"
       value: "output"
@@ -418,25 +423,26 @@ Workflows support dynamic variable substitution using `{{variable_name}}` syntax
 
 ```yaml
 steps:
-  - type: identity
+  - type: create_identity
+    node: main-node
     outputs:
       admin_key: "private_key"
       admin_pub: "public_key"
 
-  - type: install
-    node_name: main-node
-    wasm_path: ./app.wasm
+  - type: install_application
+    node: main-node
+    path: ./app.wasm
     outputs:
       app: "application_id"
 
-  - type: context
-    node_name: main-node
+  - type: create_context
+    node: main-node
     application_id: "{{app}}"
     outputs:
       ctx: "context.context_id"
 
-  - type: execute
-    node_name: main-node
+  - type: call
+    node: main-node
     context_id: "{{ctx}}"
     method: "initialize"
     executor_public_key: "{{admin_pub}}"
@@ -450,47 +456,57 @@ Example: Create a network with 3 nodes sharing a context
 name: Multi-Node Network
 steps:
   # Start nodes
-  - type: install
-    node_name: node-1
-    wasm_path: ./app.wasm
+  - type: install_application
+    node: node-1
+    path: ./app.wasm
     outputs:
       app_id: "application_id"
 
-  - type: context
-    node_name: node-1
+  - type: create_context
+    node: node-1
     application_id: "{{app_id}}"
     outputs:
       context_id: "context.context_id"
       seed: "context.seed"
 
   # Create identities for joining nodes
-  - type: identity
+  - type: create_identity
+    node: node-2
     outputs:
       node2_key: "private_key"
+      node2_pub: "public_key"
 
-  - type: identity
+  - type: create_identity
+    node: node-3
     outputs:
       node3_key: "private_key"
+      node3_pub: "public_key"
 
-  # Join additional nodes
-  - type: join
-    node_name: node-2
+  # Invite nodes to join (you'll need to add invite_identity steps)
+  # Then join additional nodes
+  - name: Join Context from Node 2
+    type: join_context
+    node: node-2
     context_id: "{{context_id}}"
-    private_key: "{{node2_key}}"
+    invitee_id: "{{node2_pub}}"
+    invitation: "{{invitation2}}"
 
-  - type: join
-    node_name: node-3
+  - name: Join Context from Node 3
+    type: join_context
+    node: node-3
     context_id: "{{context_id}}"
-    private_key: "{{node3_key}}"
+    invitee_id: "{{node3_pub}}"
+    invitation: "{{invitation3}}"
 
   - type: wait
     seconds: 2
 
   # Verify all nodes can execute
-  - type: execute
-    node_name: node-2
+  - type: call
+    node: node-2
     context_id: "{{context_id}}"
     method: "ping"
+    executor_public_key: "{{node2_pub}}"
 ```
 
 ## Common Patterns
@@ -500,25 +516,26 @@ steps:
 ```yaml
 name: Quick Test
 steps:
-  - type: install
-    node_name: test-node
-    wasm_path: ./app.wasm
+  - type: install_application
+    node: test-node
+    path: ./app.wasm
     outputs:
       app_id: "application_id"
 
-  - type: context
-    node_name: test-node
+  - type: create_context
+    node: test-node
     application_id: "{{app_id}}"
     outputs:
       ctx_id: "context.context_id"
 
-  - type: identity
+  - type: create_identity
+    node: test-node
     outputs:
       pk: "private_key"
       pub: "public_key"
 
-  - type: execute
-    node_name: test-node
+  - type: call
+    node: test-node
     context_id: "{{ctx_id}}"
     method: "test_function"
     executor_public_key: "{{pub}}"
@@ -539,11 +556,11 @@ steps:
   # ... setup steps ...
 
   - type: repeat
-    times: 10
+    count: 10
     variable: i
     steps:
-      - type: execute
-        node_name: node-1
+      - type: call
+        node: node-1
         context_id: "{{context_id}}"
         method: "insert"
         args:
@@ -561,36 +578,40 @@ steps:
 name: Node Communication Test
 steps:
   # Setup two nodes in same context
-  - type: install
-    node_name: sender
-    wasm_path: ./app.wasm
+  - type: install_application
+    node: sender
+    path: ./app.wasm
     outputs:
       app_id: "application_id"
 
-  - type: context
-    node_name: sender
+  - type: create_context
+    node: sender
     application_id: "{{app_id}}"
     outputs:
       ctx: "context.context_id"
 
-  - type: identity
+  - type: create_identity
+    node: sender
     outputs:
       sender_key: "private_key"
       sender_pub: "public_key"
 
-  - type: identity
+  - type: create_identity
+    node: receiver
     outputs:
       receiver_key: "private_key"
       receiver_pub: "public_key"
 
-  - type: join
-    node_name: receiver
+  - name: Join Context from Receiver
+    type: join_context
+    node: receiver
     context_id: "{{ctx}}"
-    private_key: "{{receiver_key}}"
+    invitee_id: "{{receiver_pub}}"
+    invitation: "{{receiver_invitation}}"
 
   # Sender writes data
-  - type: execute
-    node_name: sender
+  - type: call
+    node: sender
     context_id: "{{ctx}}"
     method: "write_message"
     args:
@@ -601,8 +622,8 @@ steps:
     seconds: 1
 
   # Receiver reads data
-  - type: execute
-    node_name: receiver
+  - type: call
+    node: receiver
     context_id: "{{ctx}}"
     method: "read_message"
     executor_public_key: "{{receiver_pub}}"
@@ -620,19 +641,20 @@ steps:
 name: Public Context with Open Invitations
 steps:
   # Setup context
-  - type: install
-    node_name: main-node
-    wasm_path: ./app.wasm
+  - type: install_application
+    node: main-node
+    path: ./app.wasm
     outputs:
       app_id: "application_id"
 
-  - type: context
-    node_name: main-node
+  - type: create_context
+    node: main-node
     application_id: "{{app_id}}"
     outputs:
       ctx: "context.context_id"
 
-  - type: identity
+  - type: create_identity
+    node: main-node
     outputs:
       admin_key: "private_key"
       admin_pub: "public_key"
@@ -647,7 +669,8 @@ steps:
       open_invite: "invitation"
 
   # New member creates identity
-  - type: identity
+  - type: create_identity
+    node: secondary-node
     outputs:
       new_member_pub: "public_key"
 
@@ -661,8 +684,8 @@ steps:
     seconds: 2
 
   # Verify new member can participate
-  - type: execute
-    node_name: secondary-node
+  - type: call
+    node: secondary-node
     context_id: "{{ctx}}"
     method: "ping"
     executor_public_key: "{{new_member_pub}}"
@@ -673,14 +696,14 @@ steps:
 ```yaml
 name: Data Upload and Processing
 steps:
-  - type: install
-    node_name: data-node
-    wasm_path: ./processor.wasm
+  - type: install_application
+    node: data-node
+    path: ./processor.wasm
     outputs:
       app_id: "application_id"
 
-  - type: context
-    node_name: data-node
+  - type: create_context
+    node: data-node
     application_id: "{{app_id}}"
     outputs:
       ctx: "context.context_id"
@@ -693,13 +716,14 @@ steps:
     outputs:
       data_blob_id: "blob_id"
 
-  - type: identity
+  - type: create_identity
+    node: data-node
     outputs:
       processor_pub: "public_key"
 
   # Process the uploaded blob
-  - type: execute
-    node_name: data-node
+  - type: call
+    node: data-node
     context_id: "{{ctx}}"
     method: "process_blob"
     args:
@@ -724,10 +748,12 @@ outputs:
 
 ### 2. Add Wait Steps After Node Operations
 ```yaml
-- type: join
-  node_name: node-2
+- name: Join Context from Node 2
+  type: join_context
+  node: node-2
   context_id: "{{ctx}}"
-  private_key: "{{key}}"
+  invitee_id: "{{public_key}}"
+  invitation: "{{invitation}}"
 
 - type: wait
   seconds: 2  # Allow node to fully sync
@@ -735,8 +761,8 @@ outputs:
 
 ### 3. Use Assertions to Validate State
 ```yaml
-- type: execute
-  node_name: node-1
+- type: call
+  node: node-1
   context_id: "{{ctx}}"
   method: "set_value"
   args:
@@ -826,10 +852,11 @@ merobox list
 
 ### Environment Variables in Workflows
 ```yaml
-- type: execute
-  node_name: "{{env.NODE_NAME}}"
+- type: call
+  node: "{{env.NODE_NAME}}"
   context_id: "{{env.CONTEXT_ID}}"
   method: "process"
+  executor_public_key: "{{public_key}}"
 ```
 
 ### JSON Assertions
@@ -916,8 +943,7 @@ merobox blob info --node <node> --blob-id <id>     # Get metadata
 merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
-install, context, identity, join, execute, wait, 
-repeat, script, assert, json_assert, call,
-upload_blob, invite_open, join_open
+install_application, create_context, create_identity, join_context, call, wait, 
+repeat, script, assert, json_assert, upload_blob, invite_open, join_open
 ```
 
