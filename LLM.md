@@ -258,63 +258,67 @@ Execute shell scripts or commands.
 
 ```yaml
 - type: script
-  pre_script: "./scripts/setup.sh"
-  post_script: "./scripts/cleanup.sh"
-  steps:
-    - type: wait
-      seconds: 1
+  description: "Execute setup script"
+  script: "./scripts/setup.sh"
+  target: "image"  # or "nodes"
 ```
 
 #### 9. Assertion Steps
 Validate execution results.
 
 ```yaml
-# Simple assertion
+# Simple assertion with statements
 - type: assert
-  node_name: node-1
-  context_id: "{{context_id}}"
-  method: "get_value"
-  args:
-    key: "my_key"
-  expected_output: "my_value"
+  statements:
+    - "is_set({{context_id}})"
+    - "contains({{result}}, 'expected_value')"
+    - "{{value}} == 'expected'"
 
-# JSON path assertion
+# JSON assertion with equality and subset checks
 - type: json_assert
-  node_name: node-1
-  context_id: "{{context_id}}"
-  method: "get_data"
-  json_path: "$.user.name"
-  expected_value: "Alice"
+  statements:
+    - 'json_equal({{result}}, {"key": "value"})'
+    - 'json_subset({{result}}, {"key": "value"})'
 ```
 
 #### 10. Proposals
 Create and vote on proposals in a context.
 
 ```yaml
-- type: propose
-  node_name: node-1
+# Create a proposal
+- type: call
+  node: node-1
   context_id: "{{context_id}}"
-  author_id: "{{public_key}}"
-  actions:
-    - type: "ExternalFunctionCall"
-      method: "update_config"
-      args:
-        setting: "enabled"
+  executor_public_key: "{{public_key}}"
+  method: create_new_proposal
+  args:
+    request:
+      action_type: "SetContextValue"
+      params:
+        key: "config_key"
+        value: "config_value"
   outputs:
-    proposal_id: "proposal_id"
+    proposal_id:
+      field: result
+      path: output
 
-- type: approve
-  node_name: node-1
+# Approve a proposal
+- type: call
+  node: node-2
   context_id: "{{context_id}}"
-  proposal_id: "{{proposal_id}}"
-  approver_id: "{{public_key}}"
+  executor_public_key: "{{approver_public_key}}"
+  method: approve_proposal
+  args:
+    proposal_id: "{{proposal_id}}"
+  outputs:
+    approval_result: result
 ```
 
 #### 11. Blob Upload Step
 Upload files to blob storage in workflows.
 
 ```yaml
-- type: blob
+- type: upload_blob
   node: node-1
   file_path: ./data/file.txt
   context_id: "{{context_id}}"  # Optional
@@ -467,12 +471,13 @@ steps:
     context_id: "{{ctx_id}}"
     method: "test_function"
     executor_public_key: "{{pub}}"
+    outputs:
+      test_result: "output"
 
   - type: assert
-    node_name: test-node
-    context_id: "{{ctx_id}}"
-    method: "get_result"
-    expected_output: "success"
+    statements:
+      - "is_set({{test_result}})"
+      - "contains({{test_result}}, 'success')"
 ```
 
 ### Pattern 2: Batch Operations with Repeat
@@ -519,7 +524,13 @@ steps:
 
   - type: identity
     outputs:
+      sender_key: "private_key"
+      sender_pub: "public_key"
+
+  - type: identity
+    outputs:
       receiver_key: "private_key"
+      receiver_pub: "public_key"
 
   - type: join
     node_name: receiver
@@ -533,16 +544,23 @@ steps:
     method: "write_message"
     args:
       msg: "Hello from sender"
+    executor_public_key: "{{sender_pub}}"
 
   - type: wait
     seconds: 1
 
   # Receiver reads data
-  - type: assert
+  - type: execute
     node_name: receiver
     context_id: "{{ctx}}"
     method: "read_message"
-    expected_output: "Hello from sender"
+    executor_public_key: "{{receiver_pub}}"
+    outputs:
+      message: "output"
+
+  - type: assert
+    statements:
+      - "contains({{message}}, 'Hello from sender')"
 ```
 
 ### Pattern 4: Open Invitations (Public Context Joining)
@@ -617,7 +635,7 @@ steps:
       ctx: "context.context_id"
 
   # Upload data file to blob storage
-  - type: blob
+  - type: upload_blob
     node: data-node
     file_path: ./data/input.json
     context_id: "{{ctx}}"
@@ -668,26 +686,27 @@ outputs:
 ```yaml
 - type: execute
   node_name: node-1
+  context_id: "{{ctx}}"
   method: "set_value"
   args:
     key: "test"
     value: "123"
+  executor_public_key: "{{pub_key}}"
+  outputs:
+    result: "output"
 
 - type: assert
-  node_name: node-1
-  method: "get_value"
-  args:
-    key: "test"
-  expected_output: "123"
+  statements:
+    - "is_set({{result}})"
+    - "contains({{result}}, '123')"
 ```
 
 ### 4. Organize Complex Workflows with Scripts
 ```yaml
 - type: script
-  pre_script: "./setup-environment.sh"
-  steps:
-    # ... main workflow steps ...
-  post_script: "./cleanup.sh"
+  description: "Setup environment"
+  script: "./setup-environment.sh"
+  target: "image"
 ```
 
 ## Troubleshooting
@@ -762,37 +781,43 @@ merobox list
   method: "process"
 ```
 
-### JSON Path Assertions
+### JSON Assertions
 ```yaml
 - type: json_assert
-  node_name: node-1
-  method: "get_user"
-  json_path: "$.user.profile.email"
-  expected_value: "user@example.com"
+  statements:
+    - 'json_equal({{user_data}}, {"email": "user@example.com"})'
+    - 'json_subset({{user_data}}, {"profile": {"email": "user@example.com"}})'
 ```
 
 ### Proposal-Based Governance
 ```yaml
 # Create proposal
-- type: propose
-  node_name: node-1
+- type: call
+  node: node-1
   context_id: "{{ctx}}"
-  author_id: "{{proposer_pub}}"
-  actions:
-    - type: "ExternalFunctionCall"
-      method: "update_setting"
-      args:
+  executor_public_key: "{{proposer_pub}}"
+  method: create_new_proposal
+  args:
+    request:
+      action_type: "SetContextValue"
+      params:
         key: "max_users"
         value: "1000"
   outputs:
-    prop_id: "proposal_id"
+    prop_id:
+      field: result
+      path: output
 
 # Approve proposal
-- type: approve
-  node_name: node-2
+- type: call
+  node: node-2
   context_id: "{{ctx}}"
-  proposal_id: "{{prop_id}}"
-  approver_id: "{{approver_pub}}"
+  executor_public_key: "{{approver_pub}}"
+  method: approve_proposal
+  args:
+    proposal_id: "{{prop_id}}"
+  outputs:
+    approval_result: result
 ```
 
 ## Tips for LLM Assistance
@@ -841,7 +866,7 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
 install, context, identity, join, execute, wait, 
-repeat, script, assert, json_assert, propose, approve,
-blob, invite_open, join_open
+repeat, script, assert, json_assert, call,
+upload_blob, invite_open, join_open
 ```
 
