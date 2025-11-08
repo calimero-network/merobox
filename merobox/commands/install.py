@@ -35,12 +35,14 @@ async def install_application_via_admin_api(
         client = get_client_for_rpc_url(rpc_url)
         metadata_bytes = metadata or DEFAULT_METADATA
 
-        if is_dev and path:
+        normalized_path = os.path.abspath(os.path.expanduser(path)) if path else None
+
+        if is_dev and normalized_path:
             console.print(
-                f"[blue]Installing development application from path: {path}[/blue]"
+                f"[blue]Installing development application from path: {normalized_path}[/blue]"
             )
             result = await client.install_dev_application(
-                path=path, metadata=metadata_bytes
+                path=normalized_path, metadata=metadata_bytes
             )
         else:
             result = await client.install_application(url=url, metadata=metadata_bytes)

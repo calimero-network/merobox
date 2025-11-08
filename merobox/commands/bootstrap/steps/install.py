@@ -2,7 +2,9 @@
 Install application step executor.
 """
 
-from typing import Any
+import os
+import shutil
+from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
@@ -68,11 +70,73 @@ class InstallApplicationStep(BaseStep):
             ),
         ]
 
+    def _is_binary_mode(self) -> bool:
+        manager = getattr(self, "manager", None)
+        if manager is None:
+            return False
+        return (
+            hasattr(manager, "binary_path")
+            and manager.binary_path is not None
+        )
+
+    def _resolve_application_path(self, path: str) -> str:
+        expanded_path = os.path.expanduser(path)
+        return os.path.abspath(expanded_path)
+
+    def _copy_to_container_data_dir(
+        self, node_name: str, source_path: str
+    ) -> Optional[str]:
+        container_data_dir: Optional[str] = None
+
+        for pattern in CONTAINER_DATA_DIR_PATTERNS:
+            if "{prefix}-{node_num}-{chain_id}" in pattern:
+                parts = node_name.split("-")
+                if len(parts) >= 3:
+                    candidate = pattern.format(
+                        prefix=parts[0], node_num=parts[1], chain_id=parts[2]
+                    )
+                else:
+                    candidate = None
+            elif "{node_name}" in pattern:
+                candidate = pattern.format(node_name=node_name)
+            else:
+                candidate = None
+
+            if candidate and os.path.exists(candidate):
+                container_data_dir = candidate
+                break
+
+        if not container_data_dir or not os.path.exists(container_data_dir):
+            console.print(
+                f"[red]Container data directory not found for {node_name}[/red]"
+            )
+            return None
+
+        filename = os.path.basename(source_path)
+        try:
+            os.makedirs(container_data_dir, exist_ok=True)
+            container_file_path = os.path.join(container_data_dir, filename)
+            shutil.copy2(source_path, container_file_path)
+            console.print(
+                f"[blue]Copied file to container data directory: {container_file_path}[/blue]"
+            )
+            return f"/app/data/{filename}"
+        except (OSError, shutil.Error) as error:
+            console.print(
+                f"[red]Failed to copy file to container data directory: {error}[/red]"
+            )
+            return None
+
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
-        application_path = self.config.get("path")
+        raw_application_path = self.config.get("path")
+        application_path = (
+            self._resolve_application_path(raw_application_path)
+            if raw_application_path
+            else None
+        )
         application_url = self.config.get("url")
         is_dev = self.config.get("dev", False)
 
@@ -107,49 +171,34 @@ class InstallApplicationStep(BaseStep):
             client = get_client_for_rpc_url(rpc_url)
 
             if is_dev and application_path:
-                # Try local path first
-                try:
+                if not os.path.isfile(application_path):
+                    console.print(
+                        f"[red]Application path not found or not a file: {application_path}[/red]"
+                    )
+                    return False
+
+                if self._is_binary_mode():
+                    console.print(
+                        f"[cyan]Installing dev application from host filesystem path: {application_path}[/cyan]"
+                    )
                     api_result = client.install_dev_application(
                         path=application_path, metadata=DEFAULT_METADATA
                     )
-                except Exception:
-                    # Fallback: copy into node data dir and use container path
-                    import os
-                    import shutil
+                else:
+                    try:
+                        api_result = client.install_dev_application(
+                            path=application_path, metadata=DEFAULT_METADATA
+                        )
+                    except Exception as install_error:
+                        container_path = self._copy_to_container_data_dir(
+                            node_name, application_path
+                        )
+                        if not container_path:
+                            raise install_error
 
-                    container_data_dir = None
-                    for pattern in CONTAINER_DATA_DIR_PATTERNS:
-                        if "{prefix}-{node_num}-{chain_id}" in pattern:
-                            parts = node_name.split("-")
-                            if len(parts) >= 3:
-                                container_data_dir = pattern.format(
-                                    prefix=parts[0],
-                                    node_num=parts[1],
-                                    chain_id=parts[2],
-                                )
-                        elif "{node_name}" in pattern:
-                            container_data_dir = pattern.format(node_name=node_name)
-
-                        if container_data_dir and os.path.exists(container_data_dir):
-                            break
-
-                    if not container_data_dir or not os.path.exists(container_data_dir):
-                        return {
-                            "success": False,
-                            "error": f"Container data directory not found for {node_name}",
-                        }
-
-                    filename = os.path.basename(application_path)
-                    os.makedirs(container_data_dir, exist_ok=True)
-                    container_file_path = os.path.join(container_data_dir, filename)
-                    shutil.copy2(application_path, container_file_path)
-                    console.print(
-                        f"[blue]Copied file to container data directory: {container_file_path}[/blue]"
-                    )
-                    container_path = f"/app/data/{filename}"
-                    api_result = client.install_dev_application(
-                        path=container_path, metadata=DEFAULT_METADATA
-                    )
+                        api_result = client.install_dev_application(
+                            path=container_path, metadata=DEFAULT_METADATA
+                        )
             else:
                 api_result = client.install_application(
                     url=application_url, metadata=DEFAULT_METADATA
