@@ -80,7 +80,7 @@ class InstallApplicationStep(BaseStep):
         expanded_path = os.path.expanduser(path)
         return os.path.abspath(expanded_path)
 
-    def _copy_to_container_data_dir(
+    def _prepare_container_path(
         self, node_name: str, source_path: str
     ) -> Optional[str]:
         container_data_dir: Optional[str] = None
@@ -108,6 +108,14 @@ class InstallApplicationStep(BaseStep):
                 f"[red]Container data directory not found for {node_name}[/red]"
             )
             return None
+        try:
+            if os.path.commonpath(
+                [os.path.abspath(source_path), container_data_dir]
+            ) == os.path.abspath(container_data_dir):
+                filename = os.path.relpath(source_path, container_data_dir)
+                return f"/app/data/{filename}"
+        except ValueError:
+            pass
 
         filename = os.path.basename(source_path)
         try:
@@ -182,20 +190,21 @@ class InstallApplicationStep(BaseStep):
                         path=application_path, metadata=DEFAULT_METADATA
                     )
                 else:
-                    try:
-                        api_result = client.install_dev_application(
-                            path=application_path, metadata=DEFAULT_METADATA
+                    container_path = self._prepare_container_path(
+                        node_name, application_path
+                    )
+                    if not container_path:
+                        console.print(
+                            "[red]Unable to prepare application file inside container data directory[/red]"
                         )
-                    except Exception as install_error:
-                        container_path = self._copy_to_container_data_dir(
-                            node_name, application_path
-                        )
-                        if not container_path:
-                            raise install_error
+                        return False
 
-                        api_result = client.install_dev_application(
-                            path=container_path, metadata=DEFAULT_METADATA
-                        )
+                    console.print(
+                        f"[cyan]Installing dev application using container path: {container_path}[/cyan]"
+                    )
+                    api_result = client.install_dev_application(
+                        path=container_path, metadata=DEFAULT_METADATA
+                    )
             else:
                 api_result = client.install_application(
                     url=application_url, metadata=DEFAULT_METADATA
