@@ -74,10 +74,7 @@ class InstallApplicationStep(BaseStep):
         manager = getattr(self, "manager", None)
         if manager is None:
             return False
-        return (
-            hasattr(manager, "binary_path")
-            and manager.binary_path is not None
-        )
+        return hasattr(manager, "binary_path") and manager.binary_path is not None
 
     def _resolve_application_path(self, path: str) -> str:
         expanded_path = os.path.expanduser(path)
