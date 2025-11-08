@@ -93,6 +93,27 @@ async def invite_identity_via_admin_api(
         return fail("invite_to_context failed", error=e)
 
 
+@with_retry(config=NETWORK_RETRY_CONFIG)
+async def create_open_invitation_via_admin_api(
+    rpc_url: str, context_id: str, inviter_id: str, valid_for_blocks: int = 1000
+) -> dict:
+    """Create an open invitation using calimero-client-py."""
+    try:
+        client = get_client_for_rpc_url(rpc_url)
+        result = client.invite_to_context_by_open_invitation(
+            context_id=context_id,
+            inviter_id=inviter_id,
+            valid_for_blocks=valid_for_blocks,
+        )
+        return ok(
+            result,
+            endpoint=f"{rpc_url}/admin-api/dev/contexts/invite-open",
+            payload_format=0,
+        )
+    except Exception as e:
+        return fail("create_open_invitation failed", error=e)
+
+
 @click.group()
 def identity():
     """Manage Calimero identities for contexts."""
@@ -287,6 +308,89 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
             console.print(
                 "[yellow]The identity should be automatically added as a member when invited.[/yellow]"
             )
+
+        sys.exit(1)
+
+
+@identity.command("invite-open")
+@click.option("--node", "-n", required=True, help="Node name to create invitation on")
+@click.option("--context-id", required=True, help="Context ID to create invitation for")
+@click.option(
+    "--inviter-id", required=True, help="Public key of the inviter (context member)"
+)
+@click.option(
+    "--valid-for-blocks",
+    default=1000,
+    help="Number of blocks the invitation is valid for (default: 1000)",
+    type=int,
+)
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
+def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
+    """Create an open invitation that can be used by multiple identities."""
+    manager = DockerManager()
+
+    # Get admin API URL and run invitation creation
+    admin_url = get_node_rpc_url(node, manager)
+    console.print(
+        f"[blue]Creating open invitation for context {context_id} on node {node}[/blue]"
+    )
+    console.print(f"[blue]Valid for {valid_for_blocks} blocks[/blue]")
+
+    result = run_async_function(
+        create_open_invitation_via_admin_api,
+        admin_url,
+        context_id,
+        inviter_id,
+        valid_for_blocks,
+    )
+
+    # Show which endpoint was used if successful
+    if result["success"] and "endpoint" in result:
+        console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
+
+    if result["success"]:
+        console.print("\n[green]✓ Open invitation created successfully![/green]")
+
+        # Create table
+        table = Table(title="Open Invitation Details", box=box.ROUNDED)
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Context ID", context_id)
+        table.add_row("Inviter ID", inviter_id)
+        table.add_row("Valid for Blocks", str(valid_for_blocks))
+
+        console.print(table)
+
+        # Display the invitation data
+        import json
+
+        response_data = result.get("data", {})
+        if response_data:
+            console.print("\n[bold cyan]Invitation Data:[/bold cyan]")
+            invitation_json = json.dumps(response_data, indent=2)
+            console.print(f"[yellow]{invitation_json}[/yellow]")
+            console.print(
+                "\n[dim]Save this invitation data to share with others who want to join.[/dim]"
+            )
+
+        if verbose:
+            console.print("\n[bold]Full response:[/bold]")
+            console.print(f"{result}")
+
+    else:
+        console.print("\n[red]✗ Failed to create open invitation[/red]")
+        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+
+        # Show detailed error information if available
+        if "errors" in result:
+            console.print("\n[yellow]Detailed errors:[/yellow]")
+            for error in result["errors"]:
+                console.print(f"[red]  {error}[/red]")
+
+        if verbose:
+            console.print("\n[bold]Full response:[/bold]")
+            console.print(f"{result}")
 
         sys.exit(1)
 

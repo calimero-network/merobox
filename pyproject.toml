@@ -26,7 +26,7 @@ dependencies = [
     "docker>=6.0.0",
     "rich>=13.0.0",
     "PyYAML>=6.0.0",
-    "calimero-client-py==0.2.5",
+    "calimero-client-py==0.2.7",
     "aiohttp>=3.9.0",
 ]
 

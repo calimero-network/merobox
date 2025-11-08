@@ -12,7 +12,9 @@ from merobox.commands.bootstrap.steps.identity import (
     InviteIdentityStep,
 )
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
+from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
+from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
@@ -24,7 +26,9 @@ __all__ = [
     "CreateContextStep",
     "CreateIdentityStep",
     "InviteIdentityStep",
+    "InviteOpenStep",
     "JoinContextStep",
+    "JoinOpenStep",
     "ExecuteStep",
     "WaitStep",
     "RepeatStep",
