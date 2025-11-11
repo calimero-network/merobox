@@ -21,7 +21,7 @@ async def run_workflow(
     verbose: bool = False,
     image: Optional[str] = None,
     auth_service: bool = False,
-    auth_image: Optional[str] = None,
+    auth_image: [str] = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",

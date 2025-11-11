@@ -136,10 +136,10 @@ def run(
             "chain_id": chain_id,
             "data_dir": data_dir,
             "image": (image if not no_docker else None),
-            "auth_service": (auth_service if not no_docker else False),
-            "auth_image": (auth_image if not no_docker else None),
-            "auth_use_cached": (auth_use_cached if not no_docker else False),
-            "webui_use_cached": (webui_use_cached if not no_docker else False),
+            "auth_service": auth_service,
+            "auth_image": auth_image,
+            "auth_use_cached": auth_use_cached,
+            "webui_use_cached": webui_use_cached,
             "log_level": log_level,
         }
 
@@ -160,10 +160,10 @@ def run(
             chain_id,
             prefix,
             image if not no_docker else None,
-            auth_service if not no_docker else False,
-            auth_image if not no_docker else None,
-            auth_use_cached if not no_docker else False,
-            webui_use_cached if not no_docker else False,
+            auth_service,
+            auth_image,
+            auth_use_cached,
+            webui_use_cached,
             log_level,
         )
         sys.exit(0 if success else 1)
