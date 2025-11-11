@@ -17,27 +17,54 @@ from merobox.commands.manager import DockerManager
 console = Console()
 
 
-def get_node_rpc_url(node_name: str, manager: DockerManager) -> str:
+def _normalize_port(port_value: Any) -> int | None:
+    """Normalize an arbitrary port value into an integer if possible."""
+    if isinstance(port_value, int):
+        return port_value
+    if isinstance(port_value, str) and port_value.isdigit():
+        return int(port_value)
+    return None
+
+
+def get_node_rpc_url(node_name: str, manager: Any) -> str:
     """Get the RPC URL for a specific node."""
-    try:
-        container = manager.client.containers.get(node_name)
+    host_port: int | None = None
 
-        # Get port mappings from container attributes
-        if container.attrs.get("NetworkSettings", {}).get("Ports"):
-            port_mappings = container.attrs["NetworkSettings"]["Ports"]
+    if hasattr(manager, "get_node_rpc_port"):
+        try:
+            host_port = _normalize_port(manager.get_node_rpc_port(node_name))
+        except Exception:
+            host_port = None
 
-            for container_port, host_bindings in port_mappings.items():
-                if host_bindings and container_port == "2528/tcp":
-                    for binding in host_bindings:
-                        if "HostPort" in binding:
-                            host_port = binding["HostPort"]
-                            return f"http://localhost:{host_port}"
+    if host_port is None and hasattr(manager, "client"):
+        try:
+            container = manager.client.containers.get(node_name)
+            container.reload()
+            port_mappings = (
+                container.attrs.get("NetworkSettings", {}).get("Ports") or {}
+            )
+            host_bindings = port_mappings.get("2528/tcp") or []
+            for binding in host_bindings:
+                host_port = _normalize_port(binding.get("HostPort"))
+                if host_port is not None:
+                    break
 
-        # Fallback to default
-        return f"http://localhost:{DEFAULT_RPC_PORT}"
+            if host_port is None:
+                port_bindings = (
+                    container.attrs.get("HostConfig", {}).get("PortBindings") or {}
+                )
+                host_bindings = port_bindings.get("2528/tcp") or []
+                for binding in host_bindings:
+                    host_port = _normalize_port(binding.get("HostPort"))
+                    if host_port is not None:
+                        break
+        except Exception:
+            host_port = None
 
-    except Exception:
-        return f"http://localhost:{DEFAULT_RPC_PORT}"
+    if host_port is None:
+        host_port = DEFAULT_RPC_PORT
+
+    return f"http://localhost:{host_port}"
 
 
 def check_node_running(node: str, manager: DockerManager) -> None:
