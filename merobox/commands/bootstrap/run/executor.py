@@ -59,7 +59,9 @@ class WorkflowExecutor:
         )
         # Log level can be set by CLI flag or workflow config (CLI takes precedence)
         self.rust_backtrace = (
-            rust_backtrace if rust_backtrace is not None else config.get("rust_backtrace", "0")
+            rust_backtrace
+            if rust_backtrace is not None
+            else config.get("rust_backtrace", "0")
         )
         try:
             console.print(
