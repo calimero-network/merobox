@@ -54,6 +54,8 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "auth_image": "ghcr.io/calimero-network/mero-auth:edge",
         # Set the RUST_LOG level for Calimero nodes (error, warn, info, debug, trace)
         "log_level": "debug",
+        # Set the RUST_BACKTRACE level for Calimero nodes (0, 1, full)
+        "rust_backtrace": "0",
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",
