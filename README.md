@@ -534,6 +534,7 @@ merobox run [OPTIONS]
 - `--auth-service`: Enable authentication service with Traefik proxy
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
 - `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
+- `--rust-backtrace TEXT`: Set the RUST_BACKTRACE level for Calimero nodes (default: 0).
 - `--help`: Show help message
 
 #### `merobox stop`
@@ -607,6 +608,7 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 - `--auth-service`: Enable authentication service with Traefik proxy
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
 - `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
+- `--rust-backtrace TEXT`: Set the RUST_BACKTRACE level for Calimero nodes (default: 0).
 - `--verbose, -v`: Enable verbose output
 - `--help`: Show help message
 
@@ -771,6 +773,7 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 - `CALIMERO_IMAGE`: Docker image for Calimero nodes
 - `DOCKER_HOST`: Docker daemon connection string
 - `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
+- `RUST_BACKTRACE`: RUST_BACKTRACE level (0, 1, full)
 - `CALIMERO_AUTH_FRONTEND_FETCH`: Set to `0` to use cached auth frontend (default is `1` for fresh fetch)
 - `CALIMERO_WEBUI_FETCH`: Set to `0` to use cached WebUI frontend (default is `1` for fresh fetch)
 

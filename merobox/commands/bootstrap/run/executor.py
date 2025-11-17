@@ -32,6 +32,7 @@ class WorkflowExecutor:
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
         log_level: str = "debug",
+        rust_backtrace: str = "0",
     ):
         self.config = config
         self.manager = manager
@@ -56,9 +57,21 @@ class WorkflowExecutor:
         self.log_level = (
             log_level if log_level is not None else config.get("log_level", "debug")
         )
+        # Log level can be set by CLI flag or workflow config (CLI takes precedence)
+        self.rust_backtrace = (
+            rust_backtrace
+            if rust_backtrace is not None
+            else config.get("rust_backtrace", "0")
+        )
         try:
             console.print(
                 f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}', binary_mode={self.is_binary_mode}[/cyan]"
+            )
+        except Exception:
+            pass
+        try:
+            console.print(
+                f"[cyan]WorkflowExecutor: resolved rust_backtrace='{self.rust_backtrace}', binary_mode={self.is_binary_mode}[/cyan]"
             )
         except Exception:
             pass
@@ -348,6 +361,7 @@ class WorkflowExecutor:
                     self.auth_use_cached,
                     self.webui_use_cached,
                     self.log_level,
+                    self.rust_backtrace,
                 ):
                     return False
             else:
@@ -379,6 +393,7 @@ class WorkflowExecutor:
                         self.auth_use_cached,
                         self.webui_use_cached,
                         self.log_level,
+                        self.rust_backtrace,
                     ):
                         return False
 
@@ -446,6 +461,7 @@ class WorkflowExecutor:
                         self.auth_use_cached,
                         self.webui_use_cached,
                         self.log_level,
+                        self.rust_backtrace,
                     ):
                         return False
                 else:
@@ -467,6 +483,7 @@ class WorkflowExecutor:
                     self.auth_use_cached,
                     self.webui_use_cached,
                     self.log_level,
+                    self.rust_backtrace,
                 ):
                     return False
 

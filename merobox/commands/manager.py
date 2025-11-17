@@ -156,6 +156,7 @@ class DockerManager:
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
         log_level: str = "debug",
+        rust_backtrace: str = "0",
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -236,11 +237,16 @@ class DockerManager:
                 "CALIMERO_HOME": "/app/data",
                 "NODE_NAME": node_name,
                 "RUST_LOG": log_level,
+                "RUST_BACKTRACE": rust_backtrace,
             }
 
             # Debug: Print the RUST_LOG value being set
             console.print(
                 f"[cyan]Setting RUST_LOG for node {node_name}: {log_level}[/cyan]"
+            )
+            # Debug: Print the RUST_BACKTRACE value being set
+            console.print(
+                f"[cyan]Setting RUST_BACKTRACE for node {node_name}: {rust_backtrace}[/cyan]"
             )
 
             # Also print all environment variables being set for debugging
@@ -843,6 +849,7 @@ class DockerManager:
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
         log_level: str = "debug",
+        rust_backtrace: str = "0",
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -876,6 +883,7 @@ class DockerManager:
                 auth_use_cached=auth_use_cached,
                 webui_use_cached=webui_use_cached,
                 log_level=log_level,
+                rust_backtrace=rust_backtrace,
             ):
                 success_count += 1
             else:

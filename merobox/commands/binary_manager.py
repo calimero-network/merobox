@@ -126,6 +126,7 @@ class BinaryManager:
         auth_use_cached: bool = False,  # Ignored in binary mode
         webui_use_cached: bool = False,  # Ignored in binary mode
         log_level: str = "debug",
+        rust_backtrace: str = "0",
         foreground: bool = False,
     ) -> bool:
         """
@@ -138,6 +139,7 @@ class BinaryManager:
             chain_id: Chain ID
             data_dir: Data directory (defaults to ./data/{node_name})
             log_level: Rust log level
+            rust_backtrace: RUST_BACKTRACE level
 
         Returns:
             True if successful, False otherwise
@@ -186,6 +188,7 @@ class BinaryManager:
             env["CALIMERO_HOME"] = str(node_data_dir.absolute())
             env["NODE_NAME"] = node_name
             env["RUST_LOG"] = log_level
+            env["RUST_BACKTRACE"] = rust_backtrace
 
             # First-time init if needed (config.toml not present)
             config_file = node_data_dir / "config.toml"
@@ -546,6 +549,7 @@ class BinaryManager:
         auth_use_cached: bool = False,  # Ignored
         webui_use_cached: bool = False,  # Ignored
         log_level: str = "debug",
+        rust_backtrace: str = "0",
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -561,6 +565,7 @@ class BinaryManager:
             auth_use_cached: Ignored
             webui_use_cached: Ignored
             log_level: RUST_LOG level
+            rust_backtrace: RUST_BACKTRACE level
 
         Returns:
             True if all nodes started successfully
@@ -590,6 +595,7 @@ class BinaryManager:
                 rpc_port=rpc_port,
                 chain_id=chain_id,
                 log_level=log_level,
+                rust_backtrace=rust_backtrace,
             ):
                 success_count += 1
             else:
