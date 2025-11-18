@@ -1,0 +1,170 @@
+description: Example workflow demonstrating wait_for_sync step for root hash verification
+name: Wait for Sync Example
+
+# This workflow demonstrates the new wait_for_sync step that actively verifies
+# node synchronization by comparing root hashes instead of using fixed wait times.
+
+nodes:
+  chain_id: testnet-1
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: sync-node
+
+steps:
+  # Step 1: Install application on first node
+  - name: Install KV Store Application
+    type: install_application
+    node: sync-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Step 2: Create context on first node
+  - name: Create Context on Node 1
+    type: create_context
+    node: sync-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Step 3: Generate identity on node 2
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: sync-node-2
+    outputs:
+      public_key_node_2: publicKey
+
+  # Step 4: Generate identity on node 3
+  - name: Create Identity on Node 3
+    type: create_identity
+    node: sync-node-3
+    outputs:
+      public_key_node_3: publicKey
+
+  # Step 5: Wait for identity operations to complete
+  - name: Wait for Identity Operations
+    type: wait
+    seconds: 3
+
+  # Step 6: Invite node 2 to join
+  - name: Invite Node 2
+    type: invite_identity
+    node: sync-node-1
+    context_id: "{{context_id}}"
+    grantee_id: "{{public_key_node_2}}"
+    granter_id: "{{member_public_key}}"
+    capability: member
+    outputs:
+      invitation_node_2: invitation
+
+  # Step 7: Node 2 joins the context
+  - name: Join Context from Node 2
+    type: join_context
+    node: sync-node-2
+    context_id: "{{context_id}}"
+    invitee_id: "{{public_key_node_2}}"
+    invitation: "{{invitation_node_2}}"
+
+  # Step 8: Invite node 3 to join
+  - name: Invite Node 3
+    type: invite_identity
+    node: sync-node-1
+    context_id: "{{context_id}}"
+    grantee_id: "{{public_key_node_3}}"
+    granter_id: "{{member_public_key}}"
+    capability: member
+    outputs:
+      invitation_node_3: invitation
+
+  # Step 9: Node 3 joins the context
+  - name: Join Context from Node 3
+    type: join_context
+    node: sync-node-3
+    context_id: "{{context_id}}"
+    invitee_id: "{{public_key_node_3}}"
+    invitation: "{{invitation_node_3}}"
+
+  # Step 10: NEW! Wait for all nodes to sync after join operations
+  - name: Wait for All Nodes to Sync After Join
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - sync-node-1
+      - sync-node-2
+      - sync-node-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
+    outputs:
+      sync_root_hash: root_hash
+      sync_time: elapsed_seconds
+
+  # Step 11: Perform a state operation
+  - name: Set Key-Value on Node 1
+    type: call
+    node: sync-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: demo_key
+      value: demo_value
+    outputs:
+      set_result: result
+
+  # Step 12: Wait for state change to sync
+
+  - name: Wait for State Change to Sync
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - sync-node-1
+      - sync-node-2
+      - sync-node-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
+    outputs:
+      operation_sync_hash: root_hash
+      operation_sync_time: elapsed_seconds
+
+  # Step 13: Verify all nodes can read the value
+  - name: Verify Value from Node 2
+    type: call
+    node: sync-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_node_2}}"
+    method: get
+    args:
+      key: demo_key
+    outputs:
+      verify_result_node_2: result
+
+  - name: Verify Value from Node 3
+    type: call
+    node: sync-node-3
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_node_3}}"
+    method: get
+    args:
+      key: demo_key
+    outputs:
+      verify_result_node_3: result
+
+  # Step 14: Assert values match (proves sync worked)
+  - name: Assert Node 2 Has Correct Value
+    type: json_assert
+    statements:
+      - 'json_equal({{verify_result_node_2}}, {"output": "demo_value"})'
+
+  - name: Assert Node 3 Has Correct Value
+    type: json_assert
+    statements:
+      - 'json_equal({{verify_result_node_3}}, {"output": "demo_value"})'
+
+# Configuration
+stop_all_nodes: true
+restart: true
+wait_timeout: 60
