@@ -28,6 +28,7 @@ async def run_workflow(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
+    mock_relayer: bool = False,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -52,6 +53,12 @@ async def run_workflow(
         effective_no_docker = no_docker or yaml_no_docker
         effective_binary_path = binary_path or yaml_binary_path
 
+        if mock_relayer and effective_no_docker:
+            console.print(
+                "[red]--mock-relayer requires Docker mode; remove --no-docker or yaml no_docker flag[/red]"
+            )
+            return False
+
         # Create and execute workflow
         # Choose manager implementation based on effective_no_docker
         if effective_no_docker:
@@ -75,6 +82,8 @@ async def run_workflow(
             _console.print(
                 f"[cyan]run_workflow: incoming rust_backtrace='{rust_backtrace}'[/cyan]"
             )
+            if mock_relayer:
+                _console.print("[cyan]run_workflow: mock relayer requested[/cyan]")
         except Exception:
             pass
 
@@ -88,6 +97,7 @@ async def run_workflow(
             webui_use_cached,
             log_level,
             rust_backtrace,
+            mock_relayer,
         )
 
         # Execute workflow
@@ -123,6 +133,7 @@ def run_workflow_sync(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
+    mock_relayer: bool = False,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -148,5 +159,6 @@ def run_workflow_sync(
             rust_backtrace=rust_backtrace,
             no_docker=no_docker,
             binary_path=binary_path,
+            mock_relayer=mock_relayer,
         )
     )

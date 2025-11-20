@@ -128,6 +128,7 @@ class BinaryManager:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         foreground: bool = False,
+        mock_relayer: bool = False,  # Ignored in binary mode
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -145,6 +146,10 @@ class BinaryManager:
             True if successful, False otherwise
         """
         try:
+            if mock_relayer:
+                console.print(
+                    "[yellow]⚠ Mock relayer is not supported in binary mode (--no-docker); flag will be ignored[/yellow]"
+                )
             # Default ports if None provided
             if port is None:
                 port = 2428
@@ -550,6 +555,7 @@ class BinaryManager:
         webui_use_cached: bool = False,  # Ignored
         log_level: str = "debug",
         rust_backtrace: str = "0",
+        mock_relayer: bool = False,  # Ignored
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -596,6 +602,7 @@ class BinaryManager:
                 chain_id=chain_id,
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
+                mock_relayer=mock_relayer,
             ):
                 success_count += 1
             else:

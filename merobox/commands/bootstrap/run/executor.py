@@ -33,6 +33,7 @@ class WorkflowExecutor:
         webui_use_cached: bool = False,
         log_level: str = "debug",
         rust_backtrace: str = "0",
+        mock_relayer: bool = False,
     ):
         self.config = config
         self.manager = manager
@@ -63,6 +64,8 @@ class WorkflowExecutor:
             if rust_backtrace is not None
             else config.get("rust_backtrace", "0")
         )
+        # Mock relayer can be enabled by CLI flag or workflow config (CLI takes precedence)
+        self.mock_relayer = mock_relayer or config.get("mock_relayer", False)
         try:
             console.print(
                 f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}', binary_mode={self.is_binary_mode}[/cyan]"
@@ -73,6 +76,11 @@ class WorkflowExecutor:
             console.print(
                 f"[cyan]WorkflowExecutor: resolved rust_backtrace='{self.rust_backtrace}', binary_mode={self.is_binary_mode}[/cyan]"
             )
+        except Exception:
+            pass
+        try:
+            if self.mock_relayer:
+                console.print("[cyan]WorkflowExecutor: mock relayer enabled[/cyan]")
         except Exception:
             pass
         self.workflow_results = {}
@@ -345,6 +353,11 @@ class WorkflowExecutor:
         # If workflow declares a count, delegate to manager to handle bulk creation
         if "count" in nodes_config:
             count = nodes_config["count"]
+            if self.mock_relayer and not restart:
+                console.print(
+                    "[yellow]Mock relayer requested; forcing restart to wire nodes to the relayer[/yellow]"
+                )
+                restart = True
             if restart:
                 console.print(
                     f"Starting {count} nodes with prefix '{prefix}' (restart mode)..."
@@ -362,6 +375,7 @@ class WorkflowExecutor:
                     self.webui_use_cached,
                     self.log_level,
                     self.rust_backtrace,
+                    self.mock_relayer,
                 ):
                     return False
             else:
@@ -394,6 +408,7 @@ class WorkflowExecutor:
                         self.webui_use_cached,
                         self.log_level,
                         self.rust_backtrace,
+                        self.mock_relayer,
                     ):
                         return False
 
@@ -462,6 +477,7 @@ class WorkflowExecutor:
                         self.webui_use_cached,
                         self.log_level,
                         self.rust_backtrace,
+                        self.mock_relayer,
                     ):
                         return False
                 else:
@@ -484,6 +500,7 @@ class WorkflowExecutor:
                     self.webui_use_cached,
                     self.log_level,
                     self.rust_backtrace,
+                    self.mock_relayer,
                 ):
                     return False
 
