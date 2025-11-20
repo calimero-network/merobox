@@ -374,14 +374,16 @@ class WorkflowExecutor:
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
 
+        # Ensure nodes are restarted when mock relayer is requested so wiring is fresh
+        if self.mock_relayer and not restart:
+            console.print(
+                "[yellow]Mock relayer requested; forcing restart to wire nodes to the relayer[/yellow]"
+            )
+            restart = True
+
         # If workflow declares a count, delegate to manager to handle bulk creation
         if "count" in nodes_config:
             count = nodes_config["count"]
-            if self.mock_relayer and not restart:
-                console.print(
-                    "[yellow]Mock relayer requested; forcing restart to wire nodes to the relayer[/yellow]"
-                )
-                restart = True
             if restart:
                 console.print(
                     f"Starting {count} nodes with prefix '{prefix}' (restart mode)..."
