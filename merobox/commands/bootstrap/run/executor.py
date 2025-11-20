@@ -144,8 +144,6 @@ class WorkflowExecutor:
                     console.print(
                         "[red]❌ Failed to stop workflow nodes - stopping workflow[/red]"
                     )
-                    if stop_all_nodes:
-                        self._stop_nodes_on_failure()
                     return False
                 console.print("[green]✓ Workflow nodes stopped[/green]")
                 time.sleep(2)  # Give time for cleanup
