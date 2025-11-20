@@ -144,6 +144,8 @@ class WorkflowExecutor:
                     console.print(
                         "[red]❌ Failed to stop workflow nodes - stopping workflow[/red]"
                     )
+                    if stop_all_nodes:
+                        self._stop_nodes_on_failure()
                     return False
                 console.print("[green]✓ Workflow nodes stopped[/green]")
                 time.sleep(2)  # Give time for cleanup
@@ -161,6 +163,8 @@ class WorkflowExecutor:
                 console.print(
                     "[red]❌ Node management failed - stopping workflow[/red]"
                 )
+                if stop_all_nodes:
+                    self._stop_nodes_on_failure()
                 return False
 
             # Step 3: Wait for nodes to be ready
@@ -169,6 +173,8 @@ class WorkflowExecutor:
             )
             if not await self._wait_for_nodes_ready():
                 console.print("[red]❌ Nodes not ready - stopping workflow[/red]")
+                if stop_all_nodes:
+                    self._stop_nodes_on_failure()
                 return False
 
             # Step 4: Execute workflow steps
@@ -177,6 +183,8 @@ class WorkflowExecutor:
             )
             if not await self._execute_workflow_steps():
                 console.print("[red]❌ Workflow steps failed - stopping workflow[/red]")
+                if stop_all_nodes:
+                    self._stop_nodes_on_failure()
                 return False
 
             # Step 5: Stop all nodes if requested (at end)
@@ -223,7 +231,23 @@ class WorkflowExecutor:
 
         except Exception as e:
             console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
+            stop_all_nodes = self.config.get("stop_all_nodes", False)
+            if stop_all_nodes:
+                self._stop_nodes_on_failure()
             return False
+
+    def _stop_nodes_on_failure(self) -> None:
+        """
+        Stop all nodes when workflow fails, if stop_all_nodes is configured.
+        This ensures nodes are cleaned up even on failure.
+        """
+        console.print(
+            "\n[bold yellow]Stopping all nodes due to workflow failure (stop_all_nodes=true)...[/bold yellow]"
+        )
+        if not self.manager.stop_all_nodes():
+            console.print("[red]Failed to stop all nodes[/red]")
+        else:
+            console.print("[green]✓ All nodes stopped[/green]")
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
