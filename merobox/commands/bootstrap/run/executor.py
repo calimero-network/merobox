@@ -586,7 +586,7 @@ class WorkflowExecutor:
                 node_refs.add(node_value)
 
         if step.get("type") == "repeat":
-            for nested_step in step.get("steps", []):
+            for nested_step in step.get("steps") or []:
                 node_refs.update(self._extract_node_references_from_step(nested_step))
 
         return node_refs
@@ -600,12 +600,17 @@ class WorkflowExecutor:
 
         valid_nodes = self._get_valid_node_names()
 
-        if not valid_nodes:
-            return True
-
         referenced_nodes = set()
         for step in steps:
             referenced_nodes.update(self._extract_node_references_from_step(step))
+
+        if not valid_nodes:
+            if referenced_nodes:
+                console.print(
+                    f"[red]❌ Workflow references nodes but no nodes are configured: {', '.join(sorted(referenced_nodes))}[/red]"
+                )
+                return False
+            return True
 
         invalid_nodes = referenced_nodes - valid_nodes
 
