@@ -560,10 +560,11 @@ class WorkflowExecutor:
         if not nodes_config:
             return set()
 
-        if "count" in nodes_config:
+        if isinstance(nodes_config, dict) and "count" in nodes_config:
             count = nodes_config["count"]
-            prefix = nodes_config.get("prefix", "calimero-node")
-            return {f"{prefix}-{i+1}" for i in range(count)}
+            if isinstance(count, int) and count >= 0:
+                prefix = nodes_config.get("prefix", "calimero-node")
+                return {f"{prefix}-{i+1}" for i in range(count)}
 
         if isinstance(nodes_config, dict):
             return set(nodes_config.keys())
