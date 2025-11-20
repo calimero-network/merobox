@@ -553,6 +553,81 @@ class WorkflowExecutor:
             console.print(f"[red]❌ Nodes not ready: {', '.join(missing_nodes)}[/red]")
             return False
 
+    def _get_valid_node_names(self) -> set[str]:
+        """Get the set of valid node names based on nodes configuration."""
+        nodes_config = self.config.get("nodes", {})
+
+        if not nodes_config:
+            return set()
+
+        if "count" in nodes_config:
+            count = nodes_config["count"]
+            prefix = nodes_config.get("prefix", "calimero-node")
+            return {f"{prefix}-{i+1}" for i in range(count)}
+
+        if isinstance(nodes_config, dict):
+            return set(nodes_config.keys())
+        elif isinstance(nodes_config, list):
+            return set(nodes_config)
+
+        return set()
+
+    def _extract_node_references_from_step(self, step: dict[str, Any]) -> set[str]:
+        """Extract all node references from a step, including nested steps."""
+        node_refs = set()
+
+        if "node" in step:
+            node_value = step["node"]
+            if (
+                isinstance(node_value, str)
+                and "{{" not in node_value
+                and "}}" not in node_value
+            ):
+                node_refs.add(node_value)
+
+        if step.get("type") == "repeat":
+            for nested_step in step.get("steps", []):
+                node_refs.update(self._extract_node_references_from_step(nested_step))
+
+        return node_refs
+
+    def _validate_node_references(self) -> bool:
+        """Validate that all node references in workflow steps exist."""
+        steps = self.config.get("steps", [])
+
+        if not steps:
+            return True
+
+        valid_nodes = self._get_valid_node_names()
+
+        if not valid_nodes:
+            return True
+
+        referenced_nodes = set()
+        for step in steps:
+            referenced_nodes.update(self._extract_node_references_from_step(step))
+
+        invalid_nodes = referenced_nodes - valid_nodes
+
+        if invalid_nodes:
+            console.print(
+                f"[red]❌ Workflow references non-existent nodes: {', '.join(sorted(invalid_nodes))}[/red]"
+            )
+            console.print(
+                f"[yellow]Valid nodes based on configuration: {', '.join(sorted(valid_nodes))}[/yellow]"
+            )
+            nodes_config = self.config.get("nodes", {})
+            if "count" in nodes_config:
+                count = nodes_config["count"]
+                prefix = nodes_config.get("prefix", "calimero-node")
+                console.print(
+                    f"[yellow]Configuration specifies count={count} with prefix='{prefix}', "
+                    f"so only nodes {prefix}-1 through {prefix}-{count} exist[/yellow]"
+                )
+            return False
+
+        return True
+
     async def _execute_workflow_steps(self) -> bool:
         """Execute the configured workflow steps."""
         steps = self.config.get("steps", [])
@@ -560,6 +635,9 @@ class WorkflowExecutor:
         if not steps:
             console.print("[yellow]No workflow steps configured[/yellow]")
             return True
+
+        if not self._validate_node_references():
+            return False
 
         for i, step in enumerate(steps, 1):
             step_type = step.get("type")
