@@ -140,9 +140,10 @@ class DockerManager:
             existing = self.client.containers.get(MOCK_RELAYER_NAME)
             existing.reload()
             if existing.status == "running":
-                host_port = self._extract_host_port(
-                    existing, f"{MOCK_RELAYER_PORT}/tcp"
-                ) or MOCK_RELAYER_PORT
+                host_port = (
+                    self._extract_host_port(existing, f"{MOCK_RELAYER_PORT}/tcp")
+                    or MOCK_RELAYER_PORT
+                )
                 self.mock_relayer_url = f"http://host.docker.internal:{host_port}"
                 console.print(
                     f"[cyan]✓ Mock relayer already running at {self.mock_relayer_url}[/cyan]"
@@ -188,9 +189,11 @@ class DockerManager:
                     labels={"calimero.mock_relayer": "true"},
                 )
                 container.reload()
-                host_port = self._extract_host_port(
-                    container, f"{MOCK_RELAYER_PORT}/tcp"
-                ) or port_binding or MOCK_RELAYER_PORT
+                host_port = (
+                    self._extract_host_port(container, f"{MOCK_RELAYER_PORT}/tcp")
+                    or port_binding
+                    or MOCK_RELAYER_PORT
+                )
                 self.mock_relayer_url = f"http://host.docker.internal:{host_port}"
                 console.print(
                     f"[green]✓ Mock relayer started ({container.short_id}) at {self.mock_relayer_url}[/green]"
