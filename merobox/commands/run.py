@@ -78,6 +78,11 @@ console = Console()
     is_flag=True,
     help="Run a single node in the foreground and attach to merod's interactive UI (binary mode only)",
 )
+@click.option(
+    "--mock-relayer",
+    is_flag=True,
+    help="Start a local mock relayer (ghcr.io/calimero-network/mero-relayer:8ee178e) and point nodes at it",
+)
 def run(
     count,
     base_port,
@@ -96,8 +101,15 @@ def run(
     no_docker,
     binary_path,
     foreground,
+    mock_relayer,
 ):
     """Run Calimero node(s)."""
+    if mock_relayer and no_docker:
+        console.print(
+            "[red]--mock-relayer is only supported with Docker mode (omit --no-docker)[/red]"
+        )
+        sys.exit(1)
+
     # Select manager based on mode
     if no_docker:
         calimero_manager = BinaryManager(binary_path=binary_path)
@@ -148,6 +160,7 @@ def run(
             "webui_use_cached": webui_use_cached,
             "log_level": log_level,
             "rust_backtrace": rust_backtrace,
+            "mock_relayer": mock_relayer,
         }
 
         if no_docker:
@@ -173,5 +186,6 @@ def run(
             webui_use_cached,
             log_level,
             rust_backtrace,
+            mock_relayer,
         )
         sys.exit(0 if success else 1)
