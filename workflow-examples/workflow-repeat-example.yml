@@ -117,9 +117,9 @@ steps:
       
       - name: Retrieve First Key-Value Pair
         type: call
-        node: calimero-node-2
+        node: calimero-node-1
         context_id: '{{context_id}}'
-        executor_public_key: '{{public_key}}'
+        executor_public_key: '{{member_public_key}}'
         method: get
         args:
           key: "complex_key_{{current_iteration}}_a"
@@ -128,9 +128,9 @@ steps:
       
       - name: Retrieve Second Key-Value Pair
         type: call
-        node: calimero-node-2
+        node: calimero-node-1
         context_id: '{{context_id}}'
-        executor_public_key: '{{public_key}}'
+        executor_public_key: '{{member_public_key}}'
         method: get
         args:
           key: "complex_key_{{current_iteration}}_b"
@@ -160,11 +160,11 @@ steps:
         type: wait
         seconds: 1
       
-      - name: Verify Data from Different Node
+      - name: Verify Data
         type: call
-        node: calimero-node-2
+        node: calimero-node-1
         context_id: '{{context_id}}'
-        executor_public_key: '{{public_key}}'
+        executor_public_key: '{{member_public_key}}'
         method: get
         args:
           key: "iteration_{{current_iteration}}"

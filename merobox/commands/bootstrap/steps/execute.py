@@ -2,6 +2,7 @@
 Execute step executor for contract calls.
 """
 
+import asyncio
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -170,39 +171,82 @@ class ExecuteStep(BaseStep):
             if not exec_type:
                 exec_type = "function_call"
 
-            if exec_type in ["contract_call", "view_call", "function_call"]:
-                result = await call_function(
-                    rpc_url, context_id, method, resolved_args, executor_public_key
-                )
-            else:
-                console.print(f"[red]Unknown execution type: {exec_type}[/red]")
-                return False
-
-            # Log detailed API response
-            import json as json_lib
-
-            console.print(f"[cyan]🔍 Execute API Response for {node_name}:[/cyan]")
-            console.print(f"  Success: {result.get('success')}")
-
-            data = result.get("data")
-            if isinstance(data, dict):
-                try:
-                    formatted_data = json_lib.dumps(data, indent=2)
-                    console.print(f"  Data:\n{formatted_data}")
-                except Exception:
-                    console.print(f"  Data: {data}")
-            else:
-                console.print(f"  Data: {data}")
-
-            if not result.get("success"):
-                console.print(f"  Error: {result.get('error')}")
-
             # Check if this step expects failure
             expected_failure = self.config.get("expected_failure", False)
 
-            if result["success"]:
+            max_state_retries = int(self.config.get("state_retry_attempts", 5))
+            state_retry_delay = float(self.config.get("state_retry_delay", 3.0))
+            retry_attempt = 1
+
+            while retry_attempt <= max_state_retries:
+                if exec_type in ["contract_call", "view_call", "function_call"]:
+                    result = await call_function(
+                        rpc_url, context_id, method, resolved_args, executor_public_key
+                    )
+                else:
+                    console.print(f"[red]Unknown execution type: {exec_type}[/red]")
+                    return False
+
+                # Log detailed API response
+                import json as json_lib
+
+                console.print(f"[cyan]🔍 Execute API Response for {node_name} (attempt {retry_attempt}/{max_state_retries}):[/cyan]")
+                console.print(f"  Success: {result.get('success')}")
+
+                data = result.get("data")
+                if isinstance(data, dict):
+                    try:
+                        formatted_data = json_lib.dumps(data, indent=2)
+                        console.print(f"  Data:\n{formatted_data}")
+                    except Exception:
+                        console.print(f"  Data: {data}")
+                else:
+                    console.print(f"  Data: {data}")
+
+                if not result.get("success"):
+                    console.print(f"  Error: {result.get('error')}")
+                    # Call failed (network/connection/API level failure)
+                    error_message = result.get("error", "Unknown error")
+
+                    if expected_failure:
+                        # This is an expected failure - capture error details and continue
+                        console.print(
+                            f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]"
+                        )
+
+                        # Structure error information for export
+                        error_info = self._extract_error_info(
+                            result, expected=expected_failure
+                        )
+
+                        # Store error information for later use
+                        step_key = f"execute_{node_name}_{method}"
+                        workflow_results[step_key] = error_info
+
+                        # Always export error details when expected_failure is True
+                        self._export_error_variables(error_info, node_name, dynamic_values)
+
+                        return True
+                    else:
+                        # Unexpected failure - stop workflow
+                        console.print(f"[red]❌ Execution failed: {error_message}[/red]")
+                        return False
+
                 # Check if the JSON-RPC response contains an error
                 if self._check_jsonrpc_error(result["data"]):
+                    # Check for transient missing state error - retry if applicable
+                    if (
+                        retry_attempt < max_state_retries
+                        and self._is_missing_state_error(result["data"])
+                    ):
+                        console.print(
+                            f"[yellow]App state not available yet on {node_name}; retrying in {state_retry_delay}s...[/yellow]"
+                        )
+                        retry_attempt += 1
+                        await asyncio.sleep(state_retry_delay)
+                        continue
+
+                    # Handle JSON-RPC error
                     error_info = self._extract_error_info(
                         result["data"], expected=expected_failure
                     )
@@ -266,33 +310,11 @@ class ExecuteStep(BaseStep):
                 self._export_variables(result["data"], node_name, dynamic_values)
 
                 return True
-            else:
-                # Call failed (network/connection/API level failure)
-                error_message = result.get("error", "Unknown error")
 
-                if expected_failure:
-                    # This is an expected failure - capture error details and continue
-                    console.print(
-                        f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]"
-                    )
-
-                    # Structure error information for export
-                    error_info = self._extract_error_info(
-                        result, expected=expected_failure
-                    )
-
-                    # Store error information for later use
-                    step_key = f"execute_{node_name}_{method}"
-                    workflow_results[step_key] = error_info
-
-                    # Always export error details when expected_failure is True
-                    self._export_error_variables(error_info, node_name, dynamic_values)
-
-                    return True
-                else:
-                    # Unexpected failure - stop workflow
-                    console.print(f"[red]❌ Execution failed: {error_message}[/red]")
-                    return False
+            console.print(
+                "[red]Execution failed: app state not available after retries[/red]"
+            )
+            return False
 
         except Exception as e:
             console.print(f"[red]Execution failed with error: {str(e)}[/red]")
@@ -523,3 +545,20 @@ class ExecuteStep(BaseStep):
             return self._resolve_dynamic_value(args, workflow_results, dynamic_values)
         else:
             return args
+
+    def _is_missing_state_error(self, result_data: Any) -> bool:
+        """Detect transient missing app state errors to allow retry after propagation."""
+        if not isinstance(result_data, dict):
+            return False
+
+        error_info = result_data.get("error")
+        message = ""
+
+        if isinstance(error_info, dict):
+            message = str(
+                error_info.get("data") or error_info.get("message") or ""
+            )
+        elif error_info:
+            message = str(error_info)
+
+        return "Failed to find or read app state" in message
