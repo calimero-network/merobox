@@ -1,0 +1,125 @@
+description: A workflow demonstrating the create_mesh step that creates a context and connects multiple nodes in one step
+name: Create Mesh Workflow Example
+
+force_pull_image: true
+
+nodes:
+  chain_id: testnet-1
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Mesh
+    type: create_mesh
+    context_node: calimero-node-1
+    application_id: "{{app_id}}"
+    nodes:
+      - calimero-node-2
+      - calimero-node-3
+    capability: member
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  - name: Execute Contract Call - Set Key-Value from Node 1
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: mesh_test
+      value: "Hello from mesh!"
+    outputs:
+      set_result: result
+
+  - name: Wait for Set Operation
+    type: wait
+    seconds: 3
+
+  - name: Execute View Call - Get Value from Node 2
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_calimero-node-2}}"
+    method: get
+    args:
+      key: mesh_test
+    outputs:
+      get_result_node2: result
+
+  - name: Execute View Call - Get Value from Node 3
+    type: call
+    node: calimero-node-3
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_calimero-node-3}}"
+    method: get
+    args:
+      key: mesh_test
+    outputs:
+      get_result_node3: result
+
+  - name: Execute Contract Call - Update from Node 2
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_calimero-node-2}}"
+    method: set
+    args:
+      key: mesh_test
+      value: "Updated from node 2!"
+    outputs:
+      update_result: result
+
+  - name: Wait for Update Operation
+    type: wait
+    seconds: 3
+
+  - name: Verify Update from Node 2
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_calimero-node-2}}"
+    method: get
+    args:
+      key: mesh_test
+    outputs:
+      verify_result_node2: result
+
+  - name: Assert Mesh Variables
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+      - "is_set({{member_public_key}})"
+      - "is_set({{public_key_calimero-node-2}})"
+      - "is_set({{public_key_calimero-node-3}})"
+      - "{{context_id}} != ''"
+      - "{{member_public_key}} != ''"
+
+  - name: Assert Cross-Node Operations
+    type: assert
+    statements:
+      - "contains({{get_result_node2}}, 'Hello from mesh!')"
+      - "contains({{get_result_node3}}, 'Hello from mesh!')"
+      - "is_set({{set_result}})"
+      - "is_set({{update_result}})"
+
+  - name: Assert JSON Results
+    type: json_assert
+    statements:
+      - 'json_subset({{get_result_node2}}, {"output": "Hello from mesh!"})'
+      - 'json_subset({{get_result_node3}}, {"output": "Hello from mesh!"})'
+      - 'json_subset({{verify_result_node2}}, {"output": "Updated from node 2!"})'
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 60
