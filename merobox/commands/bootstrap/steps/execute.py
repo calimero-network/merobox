@@ -190,7 +190,9 @@ class ExecuteStep(BaseStep):
                 # Log detailed API response
                 import json as json_lib
 
-                console.print(f"[cyan]🔍 Execute API Response for {node_name} (attempt {retry_attempt}/{max_state_retries}):[/cyan]")
+                console.print(
+                    f"[cyan]🔍 Execute API Response for {node_name} (attempt {retry_attempt}/{max_state_retries}):[/cyan]"
+                )
                 console.print(f"  Success: {result.get('success')}")
 
                 data = result.get("data")
@@ -555,9 +557,7 @@ class ExecuteStep(BaseStep):
         message = ""
 
         if isinstance(error_info, dict):
-            message = str(
-                error_info.get("data") or error_info.get("message") or ""
-            )
+            message = str(error_info.get("data") or error_info.get("message") or "")
         elif error_info:
             message = str(error_info)
 
