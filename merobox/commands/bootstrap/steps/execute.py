@@ -2,6 +2,7 @@
 Execute step executor for contract calls.
 """
 
+import asyncio
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -162,36 +163,52 @@ class ExecuteStep(BaseStep):
             if not exec_type:
                 exec_type = "function_call"
 
-            if exec_type in ["contract_call", "view_call", "function_call"]:
-                result = await call_function(
-                    rpc_url, context_id, method, resolved_args, executor_public_key
+            max_state_retries = int(self.config.get("state_retry_attempts", 5))
+            state_retry_delay = float(self.config.get("state_retry_delay", 3.0))
+            retry_attempt = 1
+
+            while retry_attempt <= max_state_retries:
+                if exec_type in ["contract_call", "view_call", "function_call"]:
+                    result = await call_function(
+                        rpc_url, context_id, method, resolved_args, executor_public_key
+                    )
+                else:
+                    console.print(f"[red]Unknown execution type: {exec_type}[/red]")
+                    return False
+
+                # Log detailed API response
+                import json as json_lib
+
+                console.print(
+                    f"[cyan]🔍 Execute API Response for {node_name} (attempt {retry_attempt}/{max_state_retries}):[/cyan]"
                 )
-            else:
-                console.print(f"[red]Unknown execution type: {exec_type}[/red]")
-                return False
+                console.print(f"  Success: {result.get('success')}")
 
-            # Log detailed API response
-            import json as json_lib
-
-            console.print(f"[cyan]🔍 Execute API Response for {node_name}:[/cyan]")
-            console.print(f"  Success: {result.get('success')}")
-
-            data = result.get("data")
-            if isinstance(data, dict):
-                try:
-                    formatted_data = json_lib.dumps(data, indent=2)
-                    console.print(f"  Data:\n{formatted_data}")
-                except Exception:
+                data = result.get("data")
+                if isinstance(data, dict):
+                    try:
+                        formatted_data = json_lib.dumps(data, indent=2)
+                        console.print(f"  Data:\n{formatted_data}")
+                    except Exception:
+                        console.print(f"  Data: {data}")
+                else:
                     console.print(f"  Data: {data}")
-            else:
-                console.print(f"  Data: {data}")
 
-            if not result.get("success"):
-                console.print(f"  Error: {result.get('error')}")
+                if not result.get("success"):
+                    console.print(f"  Error: {result.get('error')}")
+                    return False
 
-            if result["success"]:
-                # Check if the JSON-RPC response contains an error
                 if self._check_jsonrpc_error(result["data"]):
+                    if (
+                        retry_attempt < max_state_retries
+                        and self._is_missing_state_error(result["data"])
+                    ):
+                        console.print(
+                            f"[yellow]App state not available yet on {node_name}; retrying in {state_retry_delay}s...[/yellow]"
+                        )
+                        retry_attempt += 1
+                        await asyncio.sleep(state_retry_delay)
+                        continue
                     return False
 
                 # Store result for later use
@@ -203,11 +220,11 @@ class ExecuteStep(BaseStep):
                 self._export_variables(result["data"], node_name, dynamic_values)
 
                 return True
-            else:
-                console.print(
-                    f"[red]Execution failed: {result.get('error', 'Unknown error')}[/red]"
-                )
-                return False
+
+            console.print(
+                "[red]Execution failed: app state not available after retries[/red]"
+            )
+            return False
 
         except Exception as e:
             console.print(f"[red]Execution failed with error: {str(e)}[/red]")
@@ -238,3 +255,18 @@ class ExecuteStep(BaseStep):
             return self._resolve_dynamic_value(args, workflow_results, dynamic_values)
         else:
             return args
+
+    def _is_missing_state_error(self, result_data: Any) -> bool:
+        """Detect transient missing app state errors to allow retry after propagation."""
+        if not isinstance(result_data, dict):
+            return False
+
+        error_info = result_data.get("error")
+        message = ""
+
+        if isinstance(error_info, dict):
+            message = str(error_info.get("data") or error_info.get("message") or "")
+        elif error_info:
+            message = str(error_info)
+
+        return "Failed to find or read app state" in message

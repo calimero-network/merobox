@@ -5,7 +5,7 @@ Shared utilities for Calimero CLI commands.
 import asyncio
 import json
 import sys
-from typing import Any
+from typing import Any, Optional
 
 from rich import box
 from rich.console import Console
@@ -17,7 +17,7 @@ from merobox.commands.manager import DockerManager
 console = Console()
 
 
-def _normalize_port(port_value: Any) -> int | None:
+def _normalize_port(port_value: Any) -> Optional[int]:
     """Normalize an arbitrary port value into an integer if possible."""
     if isinstance(port_value, int):
         return port_value
@@ -28,7 +28,7 @@ def _normalize_port(port_value: Any) -> int | None:
 
 def get_node_rpc_url(node_name: str, manager: Any) -> str:
     """Get the RPC URL for a specific node."""
-    host_port: int | None = None
+    host_port: Optional[int] = None
 
     if hasattr(manager, "get_node_rpc_port"):
         try:

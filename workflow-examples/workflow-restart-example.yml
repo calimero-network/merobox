@@ -76,11 +76,12 @@ steps:
     seconds: 3
 
   # Step 9: Execute a view call to retrieve the stored value
+  # Use the creator node to avoid state-sync timing issues across nodes
   - name: Execute View Call - Get Value
     type: call
-    node: calimero-node-2
+    node: calimero-node-1
     context_id: '{{context_id}}'
-    executor_public_key: '{{public_key}}'
+    executor_public_key: '{{member_public_key}}'
     method: get
     args:
       key: hello
