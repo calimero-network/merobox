@@ -73,12 +73,12 @@ class CreateMeshStep(BaseStep):
         return [
             (
                 "contextId",
-                "context_id_{context_node}",
+                "context_id_{node_name}",
                 "Context ID - ID for the created context",
             ),
             (
                 "memberPublicKey",
-                "context_member_public_key_{context_node}",
+                "context_member_public_key_{node_name}",
                 "Public key of the context member",
             ),
         ]
@@ -200,6 +200,8 @@ class CreateMeshStep(BaseStep):
                 member_public_key
             )
 
+        nodes_to_process_count = len([n for n in nodes if n != context_node])
+
         for node_name in nodes:
             if node_name == context_node:
                 console.print(
@@ -275,7 +277,7 @@ class CreateMeshStep(BaseStep):
 
             if f"public_key_{node_name}" not in dynamic_values:
                 dynamic_values[f"public_key_{node_name}"] = public_key
-            if len(nodes) == 1 and "public_key" not in dynamic_values:
+            if nodes_to_process_count == 1 and "public_key" not in dynamic_values:
                 dynamic_values["public_key"] = public_key
 
             console.print(
