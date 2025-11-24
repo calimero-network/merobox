@@ -1,0 +1,223 @@
+description: Example workflow demonstrating negative testing with expected failures
+name: Negative Testing Example
+
+# Force pull Docker images even if they exist locally
+force_pull_image: false
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the application on the first node
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Step 2: Create a context using the installed application
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Step 3: Execute a call that will fail - using an invalid method
+  # This demonstrates expected failure handling when a method doesn't exist
+  - name: Expected Failure - Invalid Method
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: invalid_method_that_does_not_exist
+    args: {}
+    expected_failure: true
+    outputs:
+      error_code: error_code # Extract error code from JSON-RPC error
+      error_type: error_type # Extract error type
+      error_message: error_message # Extract error message
+      error: error # Full error object
+
+  # Step 4: Assert that we got an error (error_type should be set)
+  - name: Assert Error Occurred
+    type: assert
+    statements:
+      - statement: "is_set({{error_type}})"
+        message: "Expected an error to occur (error_type should be set)"
+      - statement: "equal({{error_type}}, FunctionCallError)"
+        message: "Expected FunctionCallError type"
+      - statement: "contains({{error_message}}, not found)"
+        message: "Expected error message to contain 'not found'"
+
+  # Step 5: Set a key successfully
+  - name: Successful Call - Set Key
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: test_key
+      value: test_value
+    outputs:
+      set_result: result
+
+  # Step 6: Expected failure - wrong executor public key
+  - name: Expected Failure - Unauthorized Access
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: invalid_public_key_12345
+    method: set
+    args:
+      key: unauthorized_key
+      value: unauthorized_value
+    expected_failure: true
+    outputs:
+      auth_error_code: error_code
+      auth_error_type: error_type
+      auth_error_message: error_message
+
+  # Step 7: Verify successful call still works
+  - name: Successful Call - Get Key
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: test_key
+    outputs:
+      get_result: result
+
+  # Step 8: Expected failure - invalid arguments (missing required field)
+  - name: Expected Failure - Invalid Arguments
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: missing_value_key
+      # Missing 'value' field - should cause an error
+    expected_failure: true
+    outputs:
+      invalid_args_error_type: error_type
+      invalid_args_error_message: error_message
+
+  # Step 9: Expected failure - invalid context ID
+  - name: Expected Failure - Invalid Context ID
+    type: call
+    node: calimero-node-1
+    context_id: invalid_context_id_12345
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: test_key
+    expected_failure: true
+    outputs:
+      invalid_context_error_type: error_type
+      invalid_context_error_code: error_code
+      invalid_context_error_message: error_message
+
+  # Step 10: Expected failure - wrong argument types
+  - name: Expected Failure - Wrong Argument Types
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: 12345 # Should be string, not number
+      value: test_value
+    expected_failure: true
+    outputs:
+      type_error_type: error_type
+      type_error_message: error_message
+
+  # Step 11: Expected failure - method exists but wrong number of arguments
+  - name: Expected Failure - Missing Required Argument
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args: {} # Missing 'key' argument
+    expected_failure: true
+    outputs:
+      missing_arg_error_type: error_type
+      missing_arg_error_message: error_message
+
+  # Step 12: Test that expected failure with no outputs still works
+  - name: Expected Failure - No Outputs Configured
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: invalid_method_no_outputs
+    args: {}
+    expected_failure: true
+    # No outputs - should still handle error gracefully
+
+  # Step 13: Verify successful operations still work after failures
+  - name: Successful Call - Set Another Key
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: final_test_key
+      value: final_test_value
+    outputs:
+      final_set_result: result
+
+  # Step 14: Assert on multiple error types captured
+  # Note: Some errors may be network-level (no error_code/error_type) or JSON-RPC level
+  - name: Assert Multiple Error Types
+    type: assert
+    statements:
+      - statement: "is_set({{error_type}})"
+        message: "First error (invalid method) should have error_type set"
+      - statement: "is_set({{auth_error_message}})"
+        message: "Auth error should have error_message set (may be network or JSON-RPC error)"
+      - statement: "is_set({{invalid_args_error_type}})"
+        message: "Invalid args error should have error_type set"
+      - statement: "is_set({{invalid_context_error_message}})"
+        message: "Invalid context error should have error_message set (may be network or JSON-RPC error)"
+
+  # Step 15: Test expected failure when call succeeds (should warn but continue)
+  - name: Expected Failure But Call Succeeds
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: test_key
+    expected_failure: true # This should succeed, but we expect failure
+    outputs:
+      unexpected_success_error_type: error_type # Should be None
+      unexpected_success_error_code: error_code # Should be None
+
+  # Step 16: Assert that unexpected success exported None values
+  # Note: When expected_failure is True but call succeeds, error fields are exported as None
+  - name: Assert Unexpected Success Handled
+    type: assert
+    statements:
+      - statement: "is_empty({{unexpected_success_error_type}})"
+        message: "When expected failure doesn't occur, error_type should be None/empty"
+      - statement: "is_empty({{unexpected_success_error_code}})"
+        message: "When expected failure doesn't occur, error_code should be None/empty"
+
+# Configuration options
+stop_all_nodes: false
+restart: false
+wait_timeout: 60

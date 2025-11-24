@@ -247,11 +247,19 @@ class BaseStep:
             return
 
         # Extract the actual data (handle nested structures)
-        actual_data = (
-            response_data.get("data", response_data)
-            if isinstance(response_data, dict)
-            else response_data
-        )
+        # If response_data is error_info (has error fields at top level), use it directly
+        if isinstance(response_data, dict):
+            is_error_info = any(
+                key in response_data
+                for key in ["error_code", "error_type", "error_message", "expected"]
+            )
+            actual_data = (
+                response_data
+                if is_error_info
+                else response_data.get("data", response_data)
+            )
+        else:
+            actual_data = response_data
 
         for source_field, target_key_template, description in self.exportable_variables:
             # Replace placeholders in target_key_template
@@ -291,11 +299,19 @@ class BaseStep:
             return
 
         # Extract the actual data (handle nested structures)
-        actual_data = (
-            response_data.get("data", response_data)
-            if isinstance(response_data, dict)
-            else response_data
-        )
+        # If response_data is error_info (has error fields at top level), use it directly
+        if isinstance(response_data, dict):
+            is_error_info = any(
+                key in response_data
+                for key in ["error_code", "error_type", "error_message", "expected"]
+            )
+            actual_data = (
+                response_data
+                if is_error_info
+                else response_data.get("data", response_data)
+            )
+        else:
+            actual_data = response_data
 
         console.print(f"[cyan]� Exporting variables from {node_name} response:[/cyan]")
 
@@ -503,6 +519,16 @@ class BaseStep:
         """Resolve dynamic values using placeholders and captured results."""
         if not isinstance(value, str):
             return value
+
+        # Strip quotes from simple string literals (e.g., 'value' or "value" -> value)
+        # This helps with assertions where string literals are quoted
+        if len(value) >= 2:
+            if (value.startswith("'") and value.endswith("'")) or (
+                value.startswith('"') and value.endswith('"')
+            ):
+                # Only strip if it's a simple string literal without placeholders
+                if "{{" not in value and "}}" not in value:
+                    return value[1:-1]
 
         # Check if there are any placeholders in the string (embedded or complete)
         if "{{" in value and "}}" in value:

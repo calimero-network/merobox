@@ -57,6 +57,14 @@ class ExecuteStep(BaseStep):
         if "exec_type" in self.config and not isinstance(self.config["exec_type"], str):
             raise ValueError(f"Step '{step_name}': 'exec_type' must be a string")
 
+        # Validate expected_failure is a boolean if provided
+        if "expected_failure" in self.config and not isinstance(
+            self.config["expected_failure"], bool
+        ):
+            raise ValueError(
+                f"Step '{step_name}': 'expected_failure' must be a boolean"
+            )
+
     def _get_exportable_variables(self):
         """
         Define which variables this step can export.
@@ -189,14 +197,59 @@ class ExecuteStep(BaseStep):
             if not result.get("success"):
                 console.print(f"  Error: {result.get('error')}")
 
+            # Check if this step expects failure
+            expected_failure = self.config.get("expected_failure", False)
+
             if result["success"]:
                 # Check if the JSON-RPC response contains an error
                 if self._check_jsonrpc_error(result["data"]):
-                    return False
+                    error_info = self._extract_error_info(
+                        result["data"], expected=expected_failure
+                    )
+                    if expected_failure:
+                        console.print(
+                            "[yellow]✓ Expected failure occurred (JSON-RPC error detected)[/yellow]"
+                        )
+
+                        step_key = f"execute_{node_name}_{method}"
+                        workflow_results[step_key] = error_info
+
+                        self._export_error_variables(
+                            error_info, node_name, dynamic_values
+                        )
+
+                        return True
+                    else:
+                        console.print(
+                            "[red]❌ Unexpected JSON-RPC error detected[/red]"
+                        )
+                        return False
 
                 # Store result for later use
                 step_key = f"execute_{node_name}_{method}"
                 workflow_results[step_key] = result["data"]
+
+                # If failure was expected but call succeeded, warn the user
+                if expected_failure:
+                    console.print(
+                        "[yellow]⚠️  Warning: Expected failure but call succeeded[/yellow]"
+                    )
+                    # If outputs are configured for error fields, export None values
+                    # to indicate no error occurred
+                    if "outputs" in self.config:
+                        error_info = {
+                            "success": True,
+                            "expected": False,  # Expected failure didn't occur
+                            "error_code": None,
+                            "error_type": None,
+                            "error_message": None,
+                            "error": None,
+                            "data": result["data"],
+                        }
+                        self._export_error_variables(
+                            error_info, node_name, dynamic_values
+                        )
+                    return True
 
                 # Export variables using the new standardized approach
                 # Note: We need to handle the method dynamically for the export
@@ -204,14 +257,197 @@ class ExecuteStep(BaseStep):
 
                 return True
             else:
-                console.print(
-                    f"[red]Execution failed: {result.get('error', 'Unknown error')}[/red]"
-                )
-                return False
+                # Call failed (network/connection/API level failure)
+                error_message = result.get("error", "Unknown error")
+
+                if expected_failure:
+                    # This is an expected failure - capture error details and continue
+                    console.print(
+                        f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]"
+                    )
+
+                    # Structure error information for export
+                    error_info = self._extract_error_info(
+                        result, expected=expected_failure
+                    )
+
+                    # Store error information for later use
+                    step_key = f"execute_{node_name}_{method}"
+                    workflow_results[step_key] = error_info
+
+                    # Always export error details when expected_failure is True
+                    self._export_error_variables(error_info, node_name, dynamic_values)
+
+                    return True
+                else:
+                    # Unexpected failure - stop workflow
+                    console.print(f"[red]❌ Execution failed: {error_message}[/red]")
+                    return False
 
         except Exception as e:
             console.print(f"[red]Execution failed with error: {str(e)}[/red]")
             return False
+
+    def _extract_error_info(
+        self, error_data: Any, expected: bool = False
+    ) -> dict[str, Any]:
+        """
+        Extract and normalize error information from Calimero API error formats.
+
+        Args:
+            error_data: The error data from the API response.
+                       Can be:
+                       - Full result dict with success=False (network/API failure)
+                       - result["data"] dict containing {"error": {...}} (JSON-RPC error)
+            expected: Whether this error was expected
+
+        Returns:
+            Normalized error information dictionary with consistent structure:
+            {
+                "success": False,
+                "expected": bool,
+                "error_code": int | None,
+                "error_type": str | None,
+                "error_message": str | None,
+                "error": dict | str,
+                "data": Any
+            }
+        """
+        error_info = {
+            "success": False,
+            "expected": expected,
+        }
+
+        # Network/API level failure (call_function caught an exception)
+        if (
+            isinstance(error_data, dict)
+            and "success" in error_data
+            and not error_data.get("success")
+        ):
+            error_info["error"] = error_data.get("error", "Unknown error")
+            error_info["error_message"] = error_info["error"]
+
+            # Extract exception details if present
+            if "exception" in error_data:
+                exception = error_data["exception"]
+                if isinstance(exception, dict):
+                    error_info["exception_type"] = exception.get("type")
+                    error_info["exception_message"] = exception.get("message")
+                    error_info["exception_traceback"] = exception.get("traceback")
+
+            # Check if there's a nested JSON-RPC error in the data field
+            if "data" in error_data and isinstance(error_data["data"], dict):
+                if "error" in error_data["data"]:
+                    rpc_error = error_data["data"]["error"]
+                    error_info.update(self._extract_jsonrpc_error_details(rpc_error))
+
+            error_info["data"] = error_data.get("data")
+
+        # JSON-RPC error (function call succeeded but returned error)
+        elif isinstance(error_data, dict) and "error" in error_data:
+            rpc_error = error_data["error"]
+            error_info.update(self._extract_jsonrpc_error_details(rpc_error))
+            error_info["data"] = error_data
+            error_info["error"] = rpc_error
+
+        else:
+            error_info["error"] = str(error_data)
+            error_info["error_message"] = str(error_data)
+            error_info["data"] = error_data
+
+        return error_info
+
+    def _extract_jsonrpc_error_details(self, rpc_error: Any) -> dict[str, Any]:
+        """
+        Extract details from a Calimero JSON-RPC error object.
+
+        Calimero JSON-RPC errors have the structure:
+        {
+            "type": "FunctionCallError" | "UnauthorizedError" | etc.,
+            "code": <numeric_code>,
+            "message": "<error_message>",
+            "data": <optional_additional_data>
+        }
+
+        Args:
+            rpc_error: JSON-RPC error object (dict)
+
+        Returns:
+            Dictionary with extracted error details:
+            {
+                "error_code": int | None,
+                "error_type": str | None,
+                "error_message": str | None,
+                "error_data": Any,
+                "error": dict
+            }
+        """
+        details = {}
+
+        if isinstance(rpc_error, dict):
+            details["error_code"] = rpc_error.get("code")
+            details["error_type"] = rpc_error.get("type")
+            details["error_data"] = rpc_error.get("data")
+            error_msg = rpc_error.get("message")
+            if error_msg:
+                details["error_message"] = error_msg
+            else:
+                details["error_message"] = rpc_error.get("data")
+            details["error"] = rpc_error
+        else:
+            details["error"] = rpc_error
+            details["error_message"] = str(rpc_error)
+
+        return details
+
+    def _export_error_variables(
+        self,
+        error_info: dict[str, Any],
+        node_name: str,
+        dynamic_values: dict[str, Any],
+    ) -> None:
+        """
+        Export error information to dynamic_values for use in subsequent steps or assertions.
+
+        Args:
+            error_info: Normalized error information dictionary
+            node_name: Name of the node where the error occurred
+            dynamic_values: Dictionary to export variables to
+        """
+        method = self.config.get("method", "unknown")
+        step_key = f"execute_{node_name}_{method}"
+
+        if "outputs" in self.config:
+            self._export_variables(error_info, node_name, dynamic_values)
+
+            outputs_config = self.config.get("outputs", {})
+            for exported_var, assigned_var in outputs_config.items():
+                if isinstance(assigned_var, str) and exported_var not in dynamic_values:
+                    if assigned_var in error_info:
+                        value = error_info[assigned_var]
+                    elif "." in assigned_var:
+                        value = self._extract_path(error_info, assigned_var)
+                    else:
+                        value = error_info.get(assigned_var)
+
+                    dynamic_values[exported_var] = value
+                    console.print(
+                        f"[blue]📝 Exported error variable {exported_var} → {exported_var}: {value}[/blue]"
+                    )
+        else:
+            error_fields = {
+                "error_code": error_info.get("error_code"),
+                "error_type": error_info.get("error_type"),
+                "error_message": error_info.get("error_message"),
+                "error": error_info.get("error"),
+            }
+
+            for field, value in error_fields.items():
+                export_key = f"{step_key}_{field}"
+                dynamic_values[export_key] = value
+                console.print(
+                    f"[blue]📝 Exported error field {field} → {export_key}: {value}[/blue]"
+                )
 
     def _resolve_args_dynamic_values(
         self,
