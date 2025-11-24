@@ -234,20 +234,37 @@ class ExecuteStep(BaseStep):
                     console.print(
                         "[yellow]⚠️  Warning: Expected failure but call succeeded[/yellow]"
                     )
-                    # If outputs are configured for error fields, export None values
-                    # to indicate no error occurred
+                    # If outputs are configured, export error fields as None and actual data normally
                     if "outputs" in self.config:
+                        # First, export error fields as None for error-related outputs
+                        # Note: We only include error fields, not metadata like "success" or "expected"
+                        # to avoid _export_custom_outputs detecting this as error_info structure
                         error_info = {
-                            "success": True,
-                            "expected": False,  # Expected failure didn't occur
                             "error_code": None,
                             "error_type": None,
                             "error_message": None,
                             "error": None,
-                            "data": result["data"],
                         }
-                        self._export_error_variables(
-                            error_info, node_name, dynamic_values
+                        # Export error fields (will export None values for error_code, error_type, etc.)
+                        outputs_config = self.config.get("outputs", {})
+                        for exported_var, assigned_var in outputs_config.items():
+                            if isinstance(assigned_var, str):
+                                # Check if this is an error field
+                                if assigned_var in [
+                                    "error_code",
+                                    "error_type",
+                                    "error_message",
+                                    "error",
+                                ]:
+                                    if assigned_var in error_info:
+                                        dynamic_values[exported_var] = error_info[
+                                            assigned_var
+                                        ]
+                                        console.print(
+                                            f"[blue]📝 Exported error variable {exported_var} → {exported_var}: {error_info[assigned_var]}[/blue]"
+                                        )
+                        self._export_variables(
+                            result["data"], node_name, dynamic_values
                         )
                     return True
 
