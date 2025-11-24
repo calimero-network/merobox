@@ -182,6 +182,25 @@ class CreateMeshStep(BaseStep):
                     pass
             return False
 
+        if not member_public_key:
+            console.print(
+                "[red]Failed to extract member public key from context creation response[/red]"
+            )
+            console.print(
+                "[red]Member public key is required to invite other nodes to the context[/red]"
+            )
+            if isinstance(context_data, dict):
+                console.print(
+                    f"[yellow]Available keys in response: {list(context_data.keys())}[/yellow]"
+                )
+                try:
+                    console.print(
+                        f"[yellow]Full response structure:\n{json_lib.dumps(context_data, indent=2)}[/yellow]"
+                    )
+                except Exception:
+                    pass
+            return False
+
         console.print(f"[green]✓ Context created: {context_id}[/green]")
         if member_public_key:
             console.print(f"[green]✓ Member public key: {member_public_key}[/green]")
