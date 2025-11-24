@@ -60,6 +60,11 @@ console = Console()
     help="Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'",
 )
 @click.option(
+    "--rust-backtrace",
+    default="0",
+    help="Set the RUST_BACKTRACE level for Calimero nodes (default: 0)",
+)
+@click.option(
     "--no-docker",
     is_flag=True,
     help="Run nodes as native processes using merod (binary mode)",
@@ -87,6 +92,7 @@ def run(
     auth_use_cached,
     webui_use_cached,
     log_level,
+    rust_backtrace,
     no_docker,
     binary_path,
     foreground,
@@ -136,11 +142,12 @@ def run(
             "chain_id": chain_id,
             "data_dir": data_dir,
             "image": (image if not no_docker else None),
-            "auth_service": (auth_service if not no_docker else False),
-            "auth_image": (auth_image if not no_docker else None),
-            "auth_use_cached": (auth_use_cached if not no_docker else False),
-            "webui_use_cached": (webui_use_cached if not no_docker else False),
+            "auth_service": auth_service,
+            "auth_image": auth_image,
+            "auth_use_cached": auth_use_cached,
+            "webui_use_cached": webui_use_cached,
             "log_level": log_level,
+            "rust_backtrace": rust_backtrace,
         }
 
         if no_docker:
@@ -160,10 +167,11 @@ def run(
             chain_id,
             prefix,
             image if not no_docker else None,
-            auth_service if not no_docker else False,
-            auth_image if not no_docker else None,
-            auth_use_cached if not no_docker else False,
-            webui_use_cached if not no_docker else False,
+            auth_service,
+            auth_image,
+            auth_use_cached,
+            webui_use_cached,
             log_level,
+            rust_backtrace,
         )
         sys.exit(0 if success else 1)

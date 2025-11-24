@@ -5,6 +5,7 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 import os
 import sys
 import time
+from typing import Optional
 
 import docker
 from rich.console import Console
@@ -26,6 +27,7 @@ class DockerManager:
             )
             sys.exit(1)
         self.nodes = {}
+        self.node_rpc_ports: dict[str, int] = {}
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""
@@ -90,6 +92,57 @@ class DockerManager:
             )
             return False
 
+    def _extract_host_port(self, container, container_port: str) -> Optional[int]:
+        """Extract the published host port for a given container port."""
+        try:
+            ports = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
+            host_bindings = ports.get(container_port)
+            if host_bindings:
+                for binding in host_bindings:
+                    host_port = binding.get("HostPort")
+                    if host_port and host_port.isdigit():
+                        return int(host_port)
+
+            port_bindings = (
+                container.attrs.get("HostConfig", {}).get("PortBindings") or {}
+            )
+            host_bindings = port_bindings.get(container_port)
+            if host_bindings:
+                for binding in host_bindings:
+                    host_port = binding.get("HostPort")
+                    if host_port and host_port.isdigit():
+                        return int(host_port)
+
+            env_vars = container.attrs.get("Config", {}).get("Env") or []
+            for env_entry in env_vars:
+                if isinstance(env_entry, str) and env_entry.startswith(
+                    "HOST_RPC_PORT="
+                ):
+                    value = env_entry.split("=", 1)[1]
+                    if value.isdigit():
+                        return int(value)
+        except Exception:
+            return None
+
+        return None
+
+    def get_node_rpc_port(self, node_name: str) -> Optional[int]:
+        """Return the published RPC port for the given node, if available."""
+        if node_name in self.node_rpc_ports:
+            return self.node_rpc_ports[node_name]
+
+        try:
+            container = self.client.containers.get(node_name)
+            container.reload()
+            host_port = self._extract_host_port(container, "2528/tcp")
+            if host_port is not None:
+                self.node_rpc_ports[node_name] = host_port
+            return host_port
+        except docker.errors.NotFound:
+            return None
+        except Exception:
+            return None
+
     def run_node(
         self,
         node_name: str,
@@ -103,6 +156,7 @@ class DockerManager:
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
         log_level: str = "debug",
+        rust_backtrace: str = "0",
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -183,11 +237,16 @@ class DockerManager:
                 "CALIMERO_HOME": "/app/data",
                 "NODE_NAME": node_name,
                 "RUST_LOG": log_level,
+                "RUST_BACKTRACE": rust_backtrace,
             }
 
             # Debug: Print the RUST_LOG value being set
             console.print(
                 f"[cyan]Setting RUST_LOG for node {node_name}: {log_level}[/cyan]"
+            )
+            # Debug: Print the RUST_BACKTRACE value being set
+            console.print(
+                f"[cyan]Setting RUST_BACKTRACE for node {node_name}: {rust_backtrace}[/cyan]"
             )
 
             # Also print all environment variables being set for debugging
@@ -420,8 +479,18 @@ class DockerManager:
             console.print(f"  - RPC/Admin Port: {rpc_port}")
             console.print(f"  - Chain ID: {chain_id}")
             console.print(f"  - Data Directory: {data_dir}")
+            host_rpc_port = self._extract_host_port(container, "2528/tcp")
+            if host_rpc_port is None and rpc_port is not None:
+                try:
+                    host_rpc_port = int(rpc_port)
+                except (TypeError, ValueError):
+                    host_rpc_port = None
+            if host_rpc_port is not None:
+                self.node_rpc_ports[node_name] = host_rpc_port
+
+            display_rpc_port = host_rpc_port if host_rpc_port is not None else rpc_port
             console.print(
-                f"  - Non Auth Node URL: [link]http://localhost:{rpc_port}[/link]"
+                f"  - Non Auth Node URL: [link]http://localhost:{display_rpc_port}[/link]"
             )
 
             if auth_service:
@@ -780,6 +849,7 @@ class DockerManager:
         auth_use_cached: bool = False,
         webui_use_cached: bool = False,
         log_level: str = "debug",
+        rust_backtrace: str = "0",
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -813,6 +883,7 @@ class DockerManager:
                 auth_use_cached=auth_use_cached,
                 webui_use_cached=webui_use_cached,
                 log_level=log_level,
+                rust_backtrace=rust_backtrace,
             ):
                 success_count += 1
             else:
@@ -835,6 +906,7 @@ class DockerManager:
                 container.remove()
                 del self.nodes[node_name]
                 console.print(f"[green]✓ Stopped and removed node {node_name}[/green]")
+                self.node_rpc_ports.pop(node_name, None)
                 return True
             else:
                 # Try to find container by name
@@ -845,6 +917,7 @@ class DockerManager:
                     console.print(
                         f"[green]✓ Stopped and removed node {node_name}[/green]"
                     )
+                    self.node_rpc_ports.pop(node_name, None)
                     return True
                 except docker.errors.NotFound:
                     console.print(f"[yellow]Node {node_name} not found[/yellow]")
@@ -879,6 +952,7 @@ class DockerManager:
                         f"[green]✓ Stopped and removed {container.name}[/green]"
                     )
                     success_count += 1
+                    self.node_rpc_ports.pop(container.name, None)
 
                     # Remove from nodes dict if present
                     if container.name in self.nodes:

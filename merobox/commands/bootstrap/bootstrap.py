@@ -68,6 +68,11 @@ def bootstrap():
     help="Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'",
 )
 @click.option(
+    "--rust-backtrace",
+    default="0",
+    help="Set the RUST_BACKTRACE level for Calimero nodes (default: 0)",
+)
+@click.option(
     "--no-docker",
     is_flag=True,
     help="Run nodes as native binaries (merod) instead of Docker containers",
@@ -85,6 +90,7 @@ def run(
     auth_use_cached,
     webui_use_cached,
     log_level,
+    rust_backtrace,
     no_docker,
     binary_path,
 ):
@@ -107,6 +113,7 @@ def run(
         auth_use_cached=auth_use_cached,
         webui_use_cached=webui_use_cached,
         log_level=log_level,
+        rust_backtrace=rust_backtrace,
         no_docker=no_docker,
         binary_path=binary_path,
     )
