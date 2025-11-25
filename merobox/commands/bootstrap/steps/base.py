@@ -341,7 +341,14 @@ class BaseStep:
                 ):
                     value = self._try_parse_json(value)
 
+                field_missing = False
                 if value is None and isinstance(actual_data, dict):
+                    if "." in assigned_var:
+                        field_missing = False
+                    else:
+                        field_missing = assigned_var not in actual_data
+
+                if field_missing:
                     console.print(
                         f"[yellow]⚠️  Export failed: '{assigned_var}' not found[/yellow]"
                     )
@@ -385,7 +392,14 @@ class BaseStep:
                             base_value, assigned_var["path"]
                         )
 
+                    field_missing = False
                     if base_value is None and isinstance(actual_data, dict):
+                        if isinstance(assigned_var.get("path"), str):
+                            field_missing = False
+                        else:
+                            field_missing = field_name not in actual_data
+
+                    if field_missing:
                         console.print(
                             f"[yellow]⚠️  Export failed: '{field_name}' not found or path unresolved[/yellow]"
                         )
