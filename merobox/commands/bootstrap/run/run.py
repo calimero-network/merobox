@@ -21,10 +21,11 @@ async def run_workflow(
     verbose: bool = False,
     image: Optional[str] = None,
     auth_service: bool = False,
-    auth_image: Optional[str] = None,
+    auth_image: [str] = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",
+    rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
 ) -> bool:
@@ -71,6 +72,9 @@ async def run_workflow(
             _console.print(
                 f"[cyan]run_workflow: incoming log_level='{log_level}'[/cyan]"
             )
+            _console.print(
+                f"[cyan]run_workflow: incoming rust_backtrace='{rust_backtrace}'[/cyan]"
+            )
         except Exception:
             pass
 
@@ -83,6 +87,7 @@ async def run_workflow(
             auth_use_cached,
             webui_use_cached,
             log_level,
+            rust_backtrace,
         )
 
         # Execute workflow
@@ -115,6 +120,7 @@ def run_workflow_sync(
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",
+    rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
 ) -> bool:
@@ -139,6 +145,7 @@ def run_workflow_sync(
             auth_use_cached=auth_use_cached,
             webui_use_cached=webui_use_cached,
             log_level=log_level,
+            rust_backtrace=rust_backtrace,
             no_docker=no_docker,
             binary_path=binary_path,
         )

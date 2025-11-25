@@ -32,6 +32,7 @@ class BinaryManager:
             self.binary_path = self._find_binary(require=require_binary)
 
         self.processes = {}  # node_name -> subprocess.Popen
+        self.node_rpc_ports: dict[str, int] = {}
         self.pid_file_dir = Path("./data/.pids")
         self.pid_file_dir.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +126,7 @@ class BinaryManager:
         auth_use_cached: bool = False,  # Ignored in binary mode
         webui_use_cached: bool = False,  # Ignored in binary mode
         log_level: str = "debug",
+        rust_backtrace: str = "0",
         foreground: bool = False,
     ) -> bool:
         """
@@ -137,6 +139,7 @@ class BinaryManager:
             chain_id: Chain ID
             data_dir: Data directory (defaults to ./data/{node_name})
             log_level: Rust log level
+            rust_backtrace: RUST_BACKTRACE level
 
         Returns:
             True if successful, False otherwise
@@ -185,6 +188,7 @@ class BinaryManager:
             env["CALIMERO_HOME"] = str(node_data_dir.absolute())
             env["NODE_NAME"] = node_name
             env["RUST_LOG"] = log_level
+            env["RUST_BACKTRACE"] = rust_backtrace
 
             # First-time init if needed (config.toml not present)
             config_file = node_data_dir / "config.toml"
@@ -242,6 +246,10 @@ class BinaryManager:
                     )
                     self.processes[node_name] = process
                     self._save_pid(node_name, process.pid)
+                    try:
+                        self.node_rpc_ports[node_name] = int(rpc_port)
+                    except (TypeError, ValueError):
+                        pass
                     console.print(
                         f"[green]✓ Node {node_name} started (foreground) (PID: {process.pid})[/green]"
                     )
@@ -270,6 +278,10 @@ class BinaryManager:
                 # Save process info
                 self.processes[node_name] = process
                 self._save_pid(node_name, process.pid)
+                try:
+                    self.node_rpc_ports[node_name] = int(rpc_port)
+                except (TypeError, ValueError):
+                    pass
 
                 console.print(
                     f"[green]✓ Node {node_name} started successfully (PID: {process.pid})[/green]"
@@ -323,6 +335,7 @@ class BinaryManager:
                     process.wait()
                 del self.processes[node_name]
                 self._remove_pid_file(node_name)
+                self.node_rpc_ports.pop(node_name, None)
                 return True
 
             # Try loading PID from file
@@ -337,6 +350,7 @@ class BinaryManager:
                     os.kill(pid, signal.SIGKILL)
 
                 self._remove_pid_file(node_name)
+                self.node_rpc_ports.pop(node_name, None)
                 console.print(f"[green]✓ Stopped node {node_name}[/green]")
                 return True
             else:
@@ -428,6 +442,16 @@ class BinaryManager:
         """Check if a node is running."""
         pid = self._load_pid(node_name)
         return pid is not None and self._is_process_running(pid)
+
+    def get_node_rpc_port(self, node_name: str) -> Optional[int]:
+        """Return the RPC port for a node if known."""
+        if node_name in self.node_rpc_ports:
+            return self.node_rpc_ports[node_name]
+
+        port = self._read_rpc_port(node_name)
+        if port is not None:
+            self.node_rpc_ports[node_name] = port
+        return port
 
     def get_node_logs(self, node_name: str, lines: int = 50) -> Optional[str]:
         """Get the last N lines of node logs."""
@@ -525,6 +549,7 @@ class BinaryManager:
         auth_use_cached: bool = False,  # Ignored
         webui_use_cached: bool = False,  # Ignored
         log_level: str = "debug",
+        rust_backtrace: str = "0",
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -540,6 +565,7 @@ class BinaryManager:
             auth_use_cached: Ignored
             webui_use_cached: Ignored
             log_level: RUST_LOG level
+            rust_backtrace: RUST_BACKTRACE level
 
         Returns:
             True if all nodes started successfully
@@ -569,6 +595,7 @@ class BinaryManager:
                 rpc_port=rpc_port,
                 chain_id=chain_id,
                 log_level=log_level,
+                rust_backtrace=rust_backtrace,
             ):
                 success_count += 1
             else:
