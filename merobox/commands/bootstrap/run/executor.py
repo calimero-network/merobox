@@ -565,13 +565,15 @@ class WorkflowExecutor:
             if isinstance(count, int) and count >= 0:
                 prefix = nodes_config.get("prefix", "calimero-node")
                 return {f"{prefix}-{i+1}" for i in range(count)}
-
-        if isinstance(nodes_config, dict):
-            return set(nodes_config.keys())
-        elif isinstance(nodes_config, list):
-            return set(nodes_config)
-
-        return set()
+            else:
+                return set()
+        else:
+            if isinstance(nodes_config, dict):
+                return set(nodes_config.keys())
+            elif isinstance(nodes_config, list):
+                return set(nodes_config)
+            else:
+                return set()
 
     def _extract_node_references_from_step(self, step: dict[str, Any]) -> set[str]:
         """Extract all node references from a step, including nested steps."""
