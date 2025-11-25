@@ -402,7 +402,13 @@ class ExecuteStep(BaseStep):
             if error_msg:
                 details["error_message"] = error_msg
             else:
-                details["error_message"] = rpc_error.get("data")
+                data_value = rpc_error.get("data")
+                if data_value is not None:
+                    details["error_message"] = (
+                        data_value if isinstance(data_value, str) else str(data_value)
+                    )
+                else:
+                    details["error_message"] = None
             details["error"] = rpc_error
         else:
             details["error"] = rpc_error
