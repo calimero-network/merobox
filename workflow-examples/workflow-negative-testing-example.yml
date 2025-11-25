@@ -276,6 +276,74 @@ steps:
       - statement: "equal({{complex_error}}, FunctionCallError)"
         message: "Complex assignment should export FunctionCallError"
 
+  # Step 19: Test that error field exports are protected from overwriting
+  # Test scenario: Export error_type to a key, then also export result to potentially
+  # the same key. The error field export should be protected and remain None.
+  - name: Expected Failure But Succeeds - Protected Error Fields
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: test_key
+    expected_failure: true # This should succeed, but we expect failure
+    outputs:
+      # Export error fields first (should be None)
+      # These keys will be marked as protected
+      protected_error_type: error_type # Should remain None, protected from overwriting
+      protected_error_code: error_code # Should remain None, protected from overwriting
+      # Export result field to a different key (this should work normally)
+      protected_result: result # Should export the actual result value
+
+  # Step 20: Assert that protected error fields were not overwritten
+  - name: Assert Protected Error Fields Not Overwritten
+    type: assert
+    statements:
+      - statement: "is_empty({{protected_error_type}})"
+        message: "Error field 'protected_error_type' should remain None (protected from overwriting by result data)"
+      - statement: "is_empty({{protected_error_code}})"
+        message: "Error field 'protected_error_code' should remain None (protected from overwriting by result data)"
+      - statement: "is_set({{protected_result}})"
+        message: "Non-error field 'protected_result' should still export successfully (not protected)"
+      - statement: "contains({{protected_result}}, test_value)"
+        message: "Result field should contain the actual result value (not None)"
+
+  # Step 21: Test protection with complex output syntax
+  # This tests that the protection mechanism also works with complex dict-based
+  # output syntax, ensuring custom target keys are also protected.
+  - name: Expected Failure But Succeeds - Protected Complex Error Fields
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: test_key
+    expected_failure: true # This should succeed, but we expect failure
+    outputs:
+      # Complex dict syntax for error fields (with custom targets)
+      # These should be protected from overwriting
+      protected_complex_error_type:
+        field: error_type
+        target: custom_protected_error_type_{node_name}
+      protected_complex_error_code:
+        field: error_code
+        target: custom_protected_error_code_{node_name}
+      # Regular result export (should work)
+      protected_complex_result: result
+
+  # Step 22: Assert that complex error field exports are protected
+  - name: Assert Protected Complex Error Fields Not Overwritten
+    type: assert
+    statements:
+      - statement: "is_empty({{custom_protected_error_type_calimero-node-1}})"
+        message: "Complex error field with custom target should remain None (protected)"
+      - statement: "is_empty({{custom_protected_error_code_calimero-node-1}})"
+        message: "Complex error code with custom target should remain None (protected)"
+      - statement: "is_set({{protected_complex_result}})"
+        message: "Non-error result field should still export successfully"
+
 # Configuration options
 stop_all_nodes: false
 restart: false

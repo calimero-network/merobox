@@ -286,6 +286,7 @@ class BaseStep:
         response_data: dict[str, Any],
         node_name: str,
         dynamic_values: dict[str, Any],
+        protected_keys: Optional[set[str]] = None,
     ) -> None:
         """
         Export variables based on custom outputs configuration specified by the user.
@@ -294,10 +295,14 @@ class BaseStep:
             response_data: The API response data
             node_name: The name of the node
             dynamic_values: The dynamic values dictionary to update
+            protected_keys: Set of keys that should not be overwritten (e.g., error field exports)
         """
         outputs_config = self.config.get("outputs", {})
         if not outputs_config:
             return
+
+        if protected_keys is None:
+            protected_keys = set()
 
         # Extract the actual data (handle nested structures)
         # If response_data is error_info (has error fields at top level), use it directly
@@ -345,6 +350,12 @@ class BaseStep:
                     )
                 else:
                     target_key = exported_variable
+                    # Skip exporting if this key is protected (e.g., error field export)
+                    if target_key in protected_keys:
+                        console.print(
+                            f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                        )
+                        continue
                     dynamic_values[target_key] = value
 
                     display_value = str(value)
@@ -384,6 +395,12 @@ class BaseStep:
                     else:
                         target_key = assigned_var.get("target", exported_variable)
                         target_key = target_key.replace("{node_name}", node_name)
+                        # Skip exporting if this key is protected (e.g., error field export)
+                        if target_key in protected_keys:
+                            console.print(
+                                f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                            )
+                            continue
                         dynamic_values[target_key] = base_value
 
                         # Format the value for display (truncate if too long)
@@ -409,6 +426,7 @@ class BaseStep:
         response_data: dict[str, Any],
         node_name: str,
         dynamic_values: dict[str, Any],
+        protected_keys: Optional[set[str]] = None,
     ) -> None:
         """
         Main export method that handles only custom outputs (explicit exports).
@@ -417,10 +435,13 @@ class BaseStep:
             response_data: The API response data
             node_name: The name of the node
             dynamic_values: The dynamic values dictionary to update
+            protected_keys: Set of keys that should not be overwritten (e.g., error field exports)
         """
         # Only handle custom outputs - no automatic exports
         if "outputs" in self.config:
-            self._export_custom_outputs(response_data, node_name, dynamic_values)
+            self._export_custom_outputs(
+                response_data, node_name, dynamic_values, protected_keys
+            )
         else:
             console.print(
                 "[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"

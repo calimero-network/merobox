@@ -247,9 +247,18 @@ class ExecuteStep(BaseStep):
                     # Export error fields (will export None values) using the same method as actual failures
                     # This maintains consistency: when no outputs are configured, error fields are auto-exported
                     # with keys like execute_node_method_error_code
-                    self._export_error_variables(error_info, node_name, dynamic_values)
-                    # Also export the successful result data
-                    self._export_variables(result["data"], node_name, dynamic_values)
+                    # Get protected keys (error field exports) to prevent overwriting
+                    protected_keys = self._export_error_variables(
+                        error_info, node_name, dynamic_values
+                    )
+                    # Also export the successful result data, but protect error field exports
+                    # This prevents successful result fields from overwriting error field None values
+                    self._export_variables(
+                        result["data"],
+                        node_name,
+                        dynamic_values,
+                        protected_keys=protected_keys,
+                    )
                     return True
 
                 # Export variables using the new standardized approach
@@ -406,7 +415,7 @@ class ExecuteStep(BaseStep):
         error_info: dict[str, Any],
         node_name: str,
         dynamic_values: dict[str, Any],
-    ) -> None:
+    ) -> set[str]:
         """
         Export error information to dynamic_values for use in subsequent steps or assertions.
 
@@ -414,9 +423,13 @@ class ExecuteStep(BaseStep):
             error_info: Normalized error information dictionary
             node_name: Name of the node where the error occurred
             dynamic_values: Dictionary to export variables to
+
+        Returns:
+            Set of protected keys (error field exports) that should not be overwritten
         """
         method = self.config.get("method", "unknown")
         step_key = f"execute_{node_name}_{method}"
+        protected_keys = set()
 
         if "outputs" in self.config:
             self._export_variables(error_info, node_name, dynamic_values)
@@ -449,6 +462,9 @@ class ExecuteStep(BaseStep):
                         target_key = assigned_var.get("target", exported_var)
                         target_key = target_key.replace("{node_name}", node_name)
 
+                    # Track this as a protected key
+                    protected_keys.add(target_key)
+
                     if target_key not in dynamic_values:
                         value = error_info.get(error_field_name)
 
@@ -474,10 +490,13 @@ class ExecuteStep(BaseStep):
 
             for field, value in error_fields.items():
                 export_key = f"{step_key}_{field}"
+                protected_keys.add(export_key)
                 dynamic_values[export_key] = value
                 console.print(
                     f"[blue]📝 Exported error field {field} → {export_key}: {value}[/blue]"
                 )
+
+        return protected_keys
 
     def _resolve_args_dynamic_values(
         self,
