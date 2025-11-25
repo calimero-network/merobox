@@ -1,9 +1,8 @@
 description: Comprehensive e2e test for Proposals API methods on NEAR protocol with repeat step support
 name: Proposals API Comprehensive Test
 
-# Use --no-docker mode with native merod processes
-no_docker: true
-force_pull_image: false
+# Force pull Docker images even if they exist locally
+force_pull_image: true
 
 nodes:
   chain_id: calimero-testnet
