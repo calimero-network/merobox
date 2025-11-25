@@ -209,15 +209,11 @@ class CreateMeshStep(BaseStep):
         workflow_results[step_key] = context_data
         self._export_variables(context_data, context_node, dynamic_values)
 
-        if f"context_id_{context_node}" not in dynamic_values:
-            dynamic_values[f"context_id_{context_node}"] = context_id
-        if (
-            member_public_key
-            and f"context_member_public_key_{context_node}" not in dynamic_values
-        ):
-            dynamic_values[f"context_member_public_key_{context_node}"] = (
-                member_public_key
-            )
+        if "outputs" not in self.config:
+            if "context_id" not in dynamic_values:
+                dynamic_values["context_id"] = context_id
+            if member_public_key and "member_public_key" not in dynamic_values:
+                dynamic_values["member_public_key"] = member_public_key
 
         nodes_to_process_count = len([n for n in nodes if n != context_node])
 
