@@ -248,10 +248,11 @@ class BaseStep:
 
         # Extract the actual data (handle nested structures)
         # If response_data is error_info (has error fields at top level), use it directly
+        # Check for success=False and at least one error-specific field to reliably detect error_info
         if isinstance(response_data, dict):
-            is_error_info = any(
+            is_error_info = response_data.get("success") is False and any(
                 key in response_data
-                for key in ["error_code", "error_type", "error_message", "expected"]
+                for key in ["error_code", "error_type", "error_message"]
             )
             actual_data = (
                 response_data
@@ -300,10 +301,11 @@ class BaseStep:
 
         # Extract the actual data (handle nested structures)
         # If response_data is error_info (has error fields at top level), use it directly
+        # Check for success=False and at least one error-specific field to reliably detect error_info
         if isinstance(response_data, dict):
-            is_error_info = any(
+            is_error_info = response_data.get("success") is False and any(
                 key in response_data
-                for key in ["error_code", "error_type", "error_message", "expected"]
+                for key in ["error_code", "error_type", "error_message"]
             )
             actual_data = (
                 response_data
