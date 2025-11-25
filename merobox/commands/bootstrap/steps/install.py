@@ -247,8 +247,7 @@ class InstallApplicationStep(BaseStep):
             workflow_results[step_key] = result["data"]
 
             # Debug: Show what we actually received
-            console.print(
-                f"[blue]📝 Install result data: {result['data']}[/blue]")
+            console.print(f"[blue]📝 Install result data: {result['data']}[/blue]")
 
             # Export variables using the new standardized approach
             self._export_variables(result["data"], node_name, dynamic_values)
@@ -259,8 +258,7 @@ class InstallApplicationStep(BaseStep):
                 if isinstance(result["data"], dict):
                     actual_data = result["data"].get("data", result["data"])
                     app_id = actual_data.get(
-                        "id", actual_data.get(
-                            "applicationId", actual_data.get("name"))
+                        "id", actual_data.get("applicationId", actual_data.get("name"))
                     )
                     if app_id:
                         dynamic_values[f"app_id_{node_name}"] = app_id
