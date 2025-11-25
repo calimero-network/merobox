@@ -473,21 +473,6 @@ class ExecuteStep(BaseStep):
 
         if "outputs" in self.config:
             self._export_variables(error_info, node_name, dynamic_values)
-
-            outputs_config = self.config.get("outputs", {})
-            for exported_var, assigned_var in outputs_config.items():
-                if isinstance(assigned_var, str) and exported_var not in dynamic_values:
-                    if assigned_var in error_info:
-                        value = error_info[assigned_var]
-                    elif "." in assigned_var:
-                        value = self._extract_path(error_info, assigned_var)
-                    else:
-                        value = error_info.get(assigned_var)
-
-                    dynamic_values[exported_var] = value
-                    console.print(
-                        f"[blue]📝 Exported error variable {exported_var} → {exported_var}: {value}[/blue]"
-                    )
         else:
             error_fields = {
                 "error_code": error_info.get("error_code"),
