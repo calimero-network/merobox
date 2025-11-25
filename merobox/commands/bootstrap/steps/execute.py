@@ -438,8 +438,15 @@ class ExecuteStep(BaseStep):
         protected_keys = set()
 
         if "outputs" in self.config:
-            self._export_variables(error_info, node_name, dynamic_values)
             outputs_config = self.config.get("outputs", {})
+            # First, export error_info to set error field values (including None)
+            # We don't pass protected_keys here so all fields can be exported
+            self._export_variables(error_info, node_name, dynamic_values)
+
+            # After exporting error fields, identify and mark them as protected
+            # This prevents subsequent result data exports from overwriting error fields
+            # Error fields should always be protected, especially when they are None
+            # (when expected_failure is True but call succeeds)
             for exported_var, assigned_var in outputs_config.items():
                 error_field_name = None
                 if isinstance(assigned_var, str):
@@ -468,24 +475,11 @@ class ExecuteStep(BaseStep):
                         target_key = assigned_var.get("target", exported_var)
                         target_key = target_key.replace("{node_name}", node_name)
 
-                    # Track this as a protected key
+                    # Always mark error field exports as protected
+                    # This prevents subsequent result data from overwriting them
+                    # This is critical when expected_failure is True but call succeeds,
+                    # where error fields are None and must remain None
                     protected_keys.add(target_key)
-
-                    if target_key not in dynamic_values:
-                        value = error_info.get(error_field_name)
-
-                        if isinstance(assigned_var, str):
-                            dynamic_values[target_key] = value
-                            console.print(
-                                f"[blue]📝 Exported error variable {exported_var} → {target_key}: {value}[/blue]"
-                            )
-                        else:
-                            if isinstance(assigned_var.get("path"), str):
-                                value = self._extract_path(value, assigned_var["path"])
-                            dynamic_values[target_key] = value
-                            console.print(
-                                f"[blue]📝 Exported error variable {exported_var} → {target_key}: {value}[/blue]"
-                            )
         else:
             error_fields = {
                 "error_code": error_info.get("error_code"),
