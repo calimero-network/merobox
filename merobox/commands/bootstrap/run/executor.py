@@ -144,6 +144,8 @@ class WorkflowExecutor:
                     console.print(
                         "[red]❌ Failed to stop workflow nodes - stopping workflow[/red]"
                     )
+                    if stop_all_nodes:
+                        self._stop_nodes_on_failure()
                     return False
                 console.print("[green]✓ Workflow nodes stopped[/green]")
                 time.sleep(2)  # Give time for cleanup
@@ -161,6 +163,8 @@ class WorkflowExecutor:
                 console.print(
                     "[red]❌ Node management failed - stopping workflow[/red]"
                 )
+                if stop_all_nodes:
+                    self._stop_nodes_on_failure()
                 return False
 
             # Step 3: Wait for nodes to be ready
@@ -169,6 +173,8 @@ class WorkflowExecutor:
             )
             if not await self._wait_for_nodes_ready():
                 console.print("[red]❌ Nodes not ready - stopping workflow[/red]")
+                if stop_all_nodes:
+                    self._stop_nodes_on_failure()
                 return False
 
             # Step 4: Execute workflow steps
@@ -177,6 +183,8 @@ class WorkflowExecutor:
             )
             if not await self._execute_workflow_steps():
                 console.print("[red]❌ Workflow steps failed - stopping workflow[/red]")
+                if stop_all_nodes:
+                    self._stop_nodes_on_failure()
                 return False
 
             # Step 5: Stop all nodes if requested (at end)
@@ -223,7 +231,23 @@ class WorkflowExecutor:
 
         except Exception as e:
             console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
+            stop_all_nodes = self.config.get("stop_all_nodes", False)
+            if stop_all_nodes:
+                self._stop_nodes_on_failure()
             return False
+
+    def _stop_nodes_on_failure(self) -> None:
+        """
+        Stop all nodes when workflow fails, if stop_all_nodes is configured.
+        This ensures nodes are cleaned up even on failure.
+        """
+        console.print(
+            "\n[bold yellow]Stopping all nodes due to workflow failure (stop_all_nodes=true)...[/bold yellow]"
+        )
+        if not self.manager.stop_all_nodes():
+            console.print("[red]Failed to stop all nodes[/red]")
+        else:
+            console.print("[green]✓ All nodes stopped[/green]")
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
@@ -553,6 +577,89 @@ class WorkflowExecutor:
             console.print(f"[red]❌ Nodes not ready: {', '.join(missing_nodes)}[/red]")
             return False
 
+    def _get_valid_node_names(self) -> set[str]:
+        """Get the set of valid node names based on nodes configuration."""
+        nodes_config = self.config.get("nodes", {})
+
+        if not nodes_config:
+            return set()
+
+        if isinstance(nodes_config, dict) and "count" in nodes_config:
+            count = nodes_config["count"]
+            if isinstance(count, int) and count >= 0:
+                prefix = nodes_config.get("prefix", "calimero-node")
+                return {f"{prefix}-{i+1}" for i in range(count)}
+            else:
+                return set()
+        else:
+            if isinstance(nodes_config, dict):
+                return set(nodes_config.keys())
+            elif isinstance(nodes_config, list):
+                return set(nodes_config)
+            else:
+                return set()
+
+    def _extract_node_references_from_step(self, step: dict[str, Any]) -> set[str]:
+        """Extract all node references from a step, including nested steps."""
+        node_refs = set()
+
+        if "node" in step:
+            node_value = step["node"]
+            if (
+                isinstance(node_value, str)
+                and "{{" not in node_value
+                and "}}" not in node_value
+            ):
+                node_refs.add(node_value)
+
+        if step.get("type") == "repeat":
+            for nested_step in step.get("steps") or []:
+                node_refs.update(self._extract_node_references_from_step(nested_step))
+
+        return node_refs
+
+    def _validate_node_references(self) -> bool:
+        """Validate that all node references in workflow steps exist."""
+        steps = self.config.get("steps", [])
+
+        if not steps:
+            return True
+
+        valid_nodes = self._get_valid_node_names()
+
+        referenced_nodes = set()
+        for step in steps:
+            referenced_nodes.update(self._extract_node_references_from_step(step))
+
+        if not valid_nodes:
+            if referenced_nodes:
+                console.print(
+                    f"[red]❌ Workflow references nodes but no nodes are configured: {', '.join(sorted(referenced_nodes))}[/red]"
+                )
+                return False
+            return True
+
+        invalid_nodes = referenced_nodes - valid_nodes
+
+        if invalid_nodes:
+            console.print(
+                f"[red]❌ Workflow references non-existent nodes: {', '.join(sorted(invalid_nodes))}[/red]"
+            )
+            console.print(
+                f"[yellow]Valid nodes based on configuration: {', '.join(sorted(valid_nodes))}[/yellow]"
+            )
+            nodes_config = self.config.get("nodes", {})
+            if "count" in nodes_config:
+                count = nodes_config["count"]
+                prefix = nodes_config.get("prefix", "calimero-node")
+                console.print(
+                    f"[yellow]Configuration specifies count={count} with prefix='{prefix}', "
+                    f"so only nodes {prefix}-1 through {prefix}-{count} exist[/yellow]"
+                )
+            return False
+
+        return True
+
     async def _execute_workflow_steps(self) -> bool:
         """Execute the configured workflow steps."""
         steps = self.config.get("steps", [])
@@ -560,6 +667,9 @@ class WorkflowExecutor:
         if not steps:
             console.print("[yellow]No workflow steps configured[/yellow]")
             return True
+
+        if not self._validate_node_references():
+            return False
 
         for i, step in enumerate(steps, 1):
             step_type = step.get("type")
@@ -667,6 +777,10 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import UploadBlobStep
 
             return UploadBlobStep(step_config, manager=self.manager)
+        elif step_type == "create_mesh":
+            from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+
+            return CreateMeshStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

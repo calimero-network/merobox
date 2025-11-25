@@ -240,6 +240,45 @@ Joins contexts using invitations.
   invitation: "{{invitation_data}}"
 ```
 
+#### Create Mesh Step
+
+Creates a context and connects multiple nodes in a single step. It automatically creates a context on the specified node, generates identities for each target node, sends invitations, and joins all nodes to the context.
+
+```yaml
+- name: "Create Mesh"
+  type: "create_mesh"
+  context_node: "calimero-node-1"
+  application_id: "{{app_id}}"
+  nodes:
+    - calimero-node-2
+    - calimero-node-3
+  capability: member # Optional, defaults to "member"
+  outputs:
+    context_id: contextId
+    member_public_key: memberPublicKey
+```
+
+**What it does:**
+
+- Creates a context on the specified `context_node`
+- Creates identities on each node in the `nodes` list
+- Invites each node from the context node
+- Joins each node to the context
+
+**Parameters:**
+
+- `context_node`: Node where the context will be created
+- `application_id`: Application ID to use for context creation
+- `nodes`: List of node names to create identities on and join to the context
+- `capability`: Optional capability for invitations (defaults to `"member"`).
+
+**Exported variables:**
+
+- `context_id`: The created context ID
+- `member_public_key`: The context creator's public key
+- `public_key_{node_name}`: Public key for each joined node (e.g., `public_key_calimero-node-2`)
+- `public_key`: If only one node is joined, also exported as just `public_key`
+
 #### Execute Step
 
 Executes smart contract functions.
