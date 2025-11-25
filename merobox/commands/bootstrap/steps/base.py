@@ -247,11 +247,20 @@ class BaseStep:
             return
 
         # Extract the actual data (handle nested structures)
-        actual_data = (
-            response_data.get("data", response_data)
-            if isinstance(response_data, dict)
-            else response_data
-        )
+        # If response_data is error_info (has error fields at top level), use it directly
+        # Check for success=False and at least one error-specific field to reliably detect error_info
+        if isinstance(response_data, dict):
+            is_error_info = response_data.get("success") is False and any(
+                key in response_data
+                for key in ["error_code", "error_type", "error_message"]
+            )
+            actual_data = (
+                response_data
+                if is_error_info
+                else response_data.get("data", response_data)
+            )
+        else:
+            actual_data = response_data
 
         for source_field, target_key_template, description in self.exportable_variables:
             # Replace placeholders in target_key_template
@@ -277,6 +286,7 @@ class BaseStep:
         response_data: dict[str, Any],
         node_name: str,
         dynamic_values: dict[str, Any],
+        protected_keys: Optional[set[str]] = None,
     ) -> None:
         """
         Export variables based on custom outputs configuration specified by the user.
@@ -285,17 +295,30 @@ class BaseStep:
             response_data: The API response data
             node_name: The name of the node
             dynamic_values: The dynamic values dictionary to update
+            protected_keys: Set of keys that should not be overwritten (e.g., error field exports)
         """
         outputs_config = self.config.get("outputs", {})
         if not outputs_config:
             return
 
+        if protected_keys is None:
+            protected_keys = set()
+
         # Extract the actual data (handle nested structures)
-        actual_data = (
-            response_data.get("data", response_data)
-            if isinstance(response_data, dict)
-            else response_data
-        )
+        # If response_data is error_info (has error fields at top level), use it directly
+        # Check for success=False and at least one error-specific field to reliably detect error_info
+        if isinstance(response_data, dict):
+            is_error_info = response_data.get("success") is False and any(
+                key in response_data
+                for key in ["error_code", "error_type", "error_message"]
+            )
+            actual_data = (
+                response_data
+                if is_error_info
+                else response_data.get("data", response_data)
+            )
+        else:
+            actual_data = response_data
 
         console.print(f"[cyan]� Exporting variables from {node_name} response:[/cyan]")
 
@@ -318,7 +341,14 @@ class BaseStep:
                 ):
                     value = self._try_parse_json(value)
 
+                field_missing = False
                 if value is None and isinstance(actual_data, dict):
+                    if "." in assigned_var:
+                        field_missing = False
+                    else:
+                        field_missing = assigned_var not in actual_data
+
+                if field_missing:
                     console.print(
                         f"[yellow]⚠️  Export failed: '{assigned_var}' not found[/yellow]"
                     )
@@ -327,6 +357,12 @@ class BaseStep:
                     )
                 else:
                     target_key = exported_variable
+                    # Skip exporting if this key is protected (e.g., error field export)
+                    if target_key in protected_keys:
+                        console.print(
+                            f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                        )
+                        continue
                     dynamic_values[target_key] = value
 
                     display_value = str(value)
@@ -356,7 +392,14 @@ class BaseStep:
                             base_value, assigned_var["path"]
                         )
 
+                    field_missing = False
                     if base_value is None and isinstance(actual_data, dict):
+                        if isinstance(assigned_var.get("path"), str):
+                            field_missing = False
+                        else:
+                            field_missing = field_name not in actual_data
+
+                    if field_missing:
                         console.print(
                             f"[yellow]⚠️  Export failed: '{field_name}' not found or path unresolved[/yellow]"
                         )
@@ -366,6 +409,12 @@ class BaseStep:
                     else:
                         target_key = assigned_var.get("target", exported_variable)
                         target_key = target_key.replace("{node_name}", node_name)
+                        # Skip exporting if this key is protected (e.g., error field export)
+                        if target_key in protected_keys:
+                            console.print(
+                                f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                            )
+                            continue
                         dynamic_values[target_key] = base_value
 
                         # Format the value for display (truncate if too long)
@@ -391,6 +440,7 @@ class BaseStep:
         response_data: dict[str, Any],
         node_name: str,
         dynamic_values: dict[str, Any],
+        protected_keys: Optional[set[str]] = None,
     ) -> None:
         """
         Main export method that handles only custom outputs (explicit exports).
@@ -399,10 +449,13 @@ class BaseStep:
             response_data: The API response data
             node_name: The name of the node
             dynamic_values: The dynamic values dictionary to update
+            protected_keys: Set of keys that should not be overwritten (e.g., error field exports)
         """
         # Only handle custom outputs - no automatic exports
         if "outputs" in self.config:
-            self._export_custom_outputs(response_data, node_name, dynamic_values)
+            self._export_custom_outputs(
+                response_data, node_name, dynamic_values, protected_keys
+            )
         else:
             console.print(
                 "[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
@@ -503,6 +556,16 @@ class BaseStep:
         """Resolve dynamic values using placeholders and captured results."""
         if not isinstance(value, str):
             return value
+
+        # Strip quotes from simple string literals (e.g., 'value' or "value" -> value)
+        # This helps with assertions where string literals are quoted
+        if len(value) >= 2:
+            if (value.startswith("'") and value.endswith("'")) or (
+                value.startswith('"') and value.endswith('"')
+            ):
+                # Only strip if it's a simple string literal without placeholders
+                if "{{" not in value and "}}" not in value:
+                    return value[1:-1]
 
         # Check if there are any placeholders in the string (embedded or complete)
         if "{{" in value and "}}" in value:
