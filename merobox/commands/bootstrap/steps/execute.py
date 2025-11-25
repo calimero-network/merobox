@@ -287,7 +287,9 @@ class ExecuteStep(BaseStep):
                                     value = error_info[error_field_name]
                                     # Handle path extraction if specified
                                     if isinstance(assigned_var.get("path"), str):
-                                        value = None
+                                        value = self._extract_path(
+                                            value, assigned_var["path"]
+                                        )
                                     target_key = assigned_var.get(
                                         "target", exported_var
                                     )
