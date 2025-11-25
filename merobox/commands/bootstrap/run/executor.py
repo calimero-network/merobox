@@ -777,6 +777,10 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import UploadBlobStep
 
             return UploadBlobStep(step_config, manager=self.manager)
+        elif step_type == "create_mesh":
+            from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+
+            return CreateMeshStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None
