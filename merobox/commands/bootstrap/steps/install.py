@@ -110,13 +110,12 @@ class InstallApplicationStep(BaseStep):
             return None
         try:
             abs_container_data_dir = os.path.abspath(container_data_dir)
+            abs_source_path = os.path.abspath(source_path)
             if (
-                os.path.commonpath(
-                    [os.path.abspath(source_path), abs_container_data_dir]
-                )
+                os.path.commonpath([abs_source_path, abs_container_data_dir])
                 == abs_container_data_dir
             ):
-                filename = os.path.relpath(source_path, abs_container_data_dir)
+                filename = os.path.basename(source_path)
                 return f"/app/data/{filename}"
         except ValueError:
             pass
