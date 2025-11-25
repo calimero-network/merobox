@@ -234,74 +234,21 @@ class ExecuteStep(BaseStep):
                     console.print(
                         "[yellow]⚠️  Warning: Expected failure but call succeeded[/yellow]"
                     )
-                    # If outputs are configured, export error fields as None
-                    if "outputs" in self.config:
-                        # First, export error fields as None for error-related outputs
-                        # Note: We only include error fields, not metadata like "success" or "expected"
-                        # to avoid _export_custom_outputs detecting this as error_info structure
-                        error_info = {
-                            "error_code": None,
-                            "error_type": None,
-                            "error_message": None,
-                            "error": None,
-                        }
-                        # Export error fields (will export None values for error_code, error_type, etc.)
-                        outputs_config = self.config.get("outputs", {})
-                        for exported_var, assigned_var in outputs_config.items():
-                            error_field_name = None
-
-                            # Check for simple string assignment (e.g., error_type: error_type)
-                            if isinstance(assigned_var, str):
-                                if assigned_var in [
-                                    "error_code",
-                                    "error_type",
-                                    "error_message",
-                                    "error",
-                                ]:
-                                    error_field_name = assigned_var
-
-                            # Check for complex dict assignment (e.g., my_error: {field: error_type})
-                            elif (
-                                isinstance(assigned_var, dict)
-                                and "field" in assigned_var
-                            ):
-                                field_name = assigned_var["field"]
-                                if field_name in [
-                                    "error_code",
-                                    "error_type",
-                                    "error_message",
-                                    "error",
-                                ]:
-                                    error_field_name = field_name
-
-                            if error_field_name and error_field_name in error_info:
-                                if isinstance(assigned_var, str):
-                                    dynamic_values[exported_var] = error_info[
-                                        error_field_name
-                                    ]
-                                    console.print(
-                                        f"[blue]📝 Exported error variable {exported_var} → {exported_var}: {error_info[error_field_name]}[/blue]"
-                                    )
-                                # For complex assignments, handle path extraction and target
-                                elif isinstance(assigned_var, dict):
-                                    value = error_info[error_field_name]
-                                    # Handle path extraction if specified
-                                    if isinstance(assigned_var.get("path"), str):
-                                        value = self._extract_path(
-                                            value, assigned_var["path"]
-                                        )
-                                    target_key = assigned_var.get(
-                                        "target", exported_var
-                                    )
-                                    target_key = target_key.replace(
-                                        "{node_name}", node_name
-                                    )
-                                    dynamic_values[target_key] = value
-                                    console.print(
-                                        f"[blue]📝 Exported error variable {exported_var} → {target_key}: {value}[/blue]"
-                                    )
-
-                    # Always export the successful result data, regardless of whether outputs are configured
+                    # Create error_info with None values to maintain consistency with actual failures
+                    # This ensures error fields are auto-exported even when no outputs are configured
+                    error_info = {
+                        "success": False,
+                        "expected": True,
+                        "error_code": None,
+                        "error_type": None,
+                        "error_message": None,
+                        "error": None,
+                    }
+                    # Export error fields (will export None values) using the same method as actual failures
+                    # This maintains consistency: when no outputs are configured, error fields are auto-exported
+                    # with keys like execute_node_method_error_code
+                    self._export_error_variables(error_info, node_name, dynamic_values)
+                    # Also export the successful result data
                     self._export_variables(result["data"], node_name, dynamic_values)
                     return True
 
