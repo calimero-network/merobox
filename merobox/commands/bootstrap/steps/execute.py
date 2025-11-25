@@ -248,21 +248,56 @@ class ExecuteStep(BaseStep):
                         # Export error fields (will export None values for error_code, error_type, etc.)
                         outputs_config = self.config.get("outputs", {})
                         for exported_var, assigned_var in outputs_config.items():
+                            error_field_name = None
+
+                            # Check for simple string assignment (e.g., error_type: error_type)
                             if isinstance(assigned_var, str):
-                                # Check if this is an error field
                                 if assigned_var in [
                                     "error_code",
                                     "error_type",
                                     "error_message",
                                     "error",
                                 ]:
-                                    if assigned_var in error_info:
-                                        dynamic_values[exported_var] = error_info[
-                                            assigned_var
-                                        ]
-                                        console.print(
-                                            f"[blue]📝 Exported error variable {exported_var} → {exported_var}: {error_info[assigned_var]}[/blue]"
-                                        )
+                                    error_field_name = assigned_var
+
+                            # Check for complex dict assignment (e.g., my_error: {field: error_type})
+                            elif (
+                                isinstance(assigned_var, dict)
+                                and "field" in assigned_var
+                            ):
+                                field_name = assigned_var["field"]
+                                if field_name in [
+                                    "error_code",
+                                    "error_type",
+                                    "error_message",
+                                    "error",
+                                ]:
+                                    error_field_name = field_name
+
+                            if error_field_name and error_field_name in error_info:
+                                if isinstance(assigned_var, str):
+                                    dynamic_values[exported_var] = error_info[
+                                        error_field_name
+                                    ]
+                                    console.print(
+                                        f"[blue]📝 Exported error variable {exported_var} → {exported_var}: {error_info[error_field_name]}[/blue]"
+                                    )
+                                # For complex assignments, handle path extraction and target
+                                elif isinstance(assigned_var, dict):
+                                    value = error_info[error_field_name]
+                                    # Handle path extraction if specified
+                                    if isinstance(assigned_var.get("path"), str):
+                                        value = None
+                                    target_key = assigned_var.get(
+                                        "target", exported_var
+                                    )
+                                    target_key = target_key.replace(
+                                        "{node_name}", node_name
+                                    )
+                                    dynamic_values[target_key] = value
+                                    console.print(
+                                        f"[blue]📝 Exported error variable {exported_var} → {target_key}: {value}[/blue]"
+                                    )
                         self._export_variables(
                             result["data"], node_name, dynamic_values
                         )

@@ -262,6 +262,8 @@ Executes smart contract functions.
 
 You can test error scenarios by setting `expected_failure: true`. When enabled, the step will continue even if the call fails, and error details are exported for assertions.
 
+Both simple and complex output syntax are supported for error fields:
+
 ```yaml
 - name: "Expected Failure - Invalid Method"
   type: "call"
@@ -272,10 +274,18 @@ You can test error scenarios by setting `expected_failure: true`. When enabled, 
   args: {}
   expected_failure: true
   outputs:
+    # Simple string assignment
     error_code: error_code      # JSON-RPC error code
     error_type: error_type      # Error type (e.g., "FunctionCallError")
     error_message: error_message # Error message
     error: error                 # Full error object
+
+    # Complex dict-based assignment (also supported)
+    custom_error:
+      field: error_type
+    custom_error_code:
+      field: error_code
+      target: error_code_{node_name}  # Optional: custom target with node name
 
 - name: "Assert Error Occurred"
   type: assert
@@ -283,6 +293,7 @@ You can test error scenarios by setting `expected_failure: true`. When enabled, 
     - "is_set({{error_type}})"
     - "equal({{error_type}}, FunctionCallError)"
     - "contains({{error_message}}, not found)"
+    - "equal({{custom_error}}, FunctionCallError)"
 ```
 
 **Error Handling:**

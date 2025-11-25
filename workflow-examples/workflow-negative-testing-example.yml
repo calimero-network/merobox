@@ -2,7 +2,7 @@ description: Example workflow demonstrating negative testing with expected failu
 name: Negative Testing Example
 
 # Force pull Docker images even if they exist locally
-force_pull_image: false
+force_pull_image: true
 
 nodes:
   chain_id: testnet-1
@@ -216,6 +216,45 @@ steps:
         message: "When expected failure doesn't occur, error_type should be None/empty"
       - statement: "is_empty({{unexpected_success_error_code}})"
         message: "When expected failure doesn't occur, error_code should be None/empty"
+
+  # Step 17: Test complex output syntax for error fields
+  # This demonstrates that complex dict-based output syntax works for error fields
+  - name: Expected Failure - Complex Output Syntax
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: invalid_method_complex_test
+    args: {}
+    expected_failure: true
+    outputs:
+      # Simple string assignment
+      simple_error_type: error_type
+      # Complex dict-based assignment
+      complex_error:
+        field: error_type
+      complex_error_code:
+        field: error_code
+        target: custom_error_code_{node_name}
+      complex_error_message:
+        field: error_message
+
+  # Step 18: Assert complex output syntax exported error fields correctly
+  - name: Assert Complex Output Syntax
+    type: assert
+    statements:
+      - statement: "is_set({{simple_error_type}})"
+        message: "Simple error_type assignment should work"
+      - statement: "is_set({{complex_error}})"
+        message: "Complex dict-based error_type assignment should work"
+      - statement: "is_set({{custom_error_code_calimero-node-1}})"
+        message: "Complex error_code with custom target should work"
+      - statement: "is_set({{complex_error_message}})"
+        message: "Complex error_message assignment should work"
+      - statement: "equal({{simple_error_type}}, FunctionCallError)"
+        message: "Simple assignment should export FunctionCallError"
+      - statement: "equal({{complex_error}}, FunctionCallError)"
+        message: "Complex assignment should export FunctionCallError"
 
 # Configuration options
 stop_all_nodes: false
