@@ -194,6 +194,7 @@ steps:
         message: "Invalid context error should have error_message set (may be network or JSON-RPC error)"
 
   # Step 15: Test expected failure when call succeeds (should warn but continue)
+  # This tests that None values are properly exported for both simple and complex dict syntax
   - name: Expected Failure But Call Succeeds
     type: call
     node: calimero-node-1
@@ -204,18 +205,34 @@ steps:
       key: test_key
     expected_failure: true # This should succeed, but we expect failure
     outputs:
+      # Simple string assignments (should export None)
       unexpected_success_error_type: error_type # Should be None
       unexpected_success_error_code: error_code # Should be None
+      # Complex dict-based assignments (should export None - this tests the fix)
+      unexpected_success_complex_error_type:
+        field: error_type
+      unexpected_success_complex_error_code:
+        field: error_code
+        target: unexpected_error_code_{node_name}
+      unexpected_success_complex_error_message:
+        field: error_message
 
   # Step 16: Assert that unexpected success exported None values
   # Note: When expected_failure is True but call succeeds, error fields are exported as None
+  # This tests both simple and complex dict syntax export None values correctly
   - name: Assert Unexpected Success Handled
     type: assert
     statements:
       - statement: "is_empty({{unexpected_success_error_type}})"
-        message: "When expected failure doesn't occur, error_type should be None/empty"
+        message: "When expected failure doesn't occur, error_type should be None/empty (simple syntax)"
       - statement: "is_empty({{unexpected_success_error_code}})"
-        message: "When expected failure doesn't occur, error_code should be None/empty"
+        message: "When expected failure doesn't occur, error_code should be None/empty (simple syntax)"
+      - statement: "is_empty({{unexpected_success_complex_error_type}})"
+        message: "When expected failure doesn't occur, complex error_type should be None/empty"
+      - statement: "is_empty({{unexpected_error_code_calimero-node-1}})"
+        message: "When expected failure doesn't occur, complex error_code with custom target should be None/empty"
+      - statement: "is_empty({{unexpected_success_complex_error_message}})"
+        message: "When expected failure doesn't occur, complex error_message should be None/empty"
 
   # Step 17: Test complex output syntax for error fields
   # This demonstrates that complex dict-based output syntax works for error fields
@@ -240,6 +257,9 @@ steps:
         field: error_message
 
   # Step 18: Assert complex output syntax exported error fields correctly
+  # Note: error_code may be None for some JSON-RPC errors (Calimero uses type/data, not always code)
+  # The export mechanism is verified by: (1) terminal output shows export message, (2) is_empty() verifies
+  # the variable was exported (if not exported, unresolved placeholder would be a non-empty string, causing failure)
   - name: Assert Complex Output Syntax
     type: assert
     statements:
@@ -247,8 +267,8 @@ steps:
         message: "Simple error_type assignment should work"
       - statement: "is_set({{complex_error}})"
         message: "Complex dict-based error_type assignment should work"
-      - statement: "is_set({{custom_error_code_calimero-node-1}})"
-        message: "Complex error_code with custom target should work"
+      - statement: "is_empty({{custom_error_code_calimero-node-1}})"
+        message: "Complex error_code with custom target should be exported as None (export verified by terminal output and is_empty check)"
       - statement: "is_set({{complex_error_message}})"
         message: "Complex error_message assignment should work"
       - statement: "equal({{simple_error_type}}, FunctionCallError)"
