@@ -58,6 +58,15 @@ class CreateMeshStep(BaseStep):
             if not isinstance(node, str):
                 raise ValueError(f"Step '{step_name}': 'nodes[{i}]' must be a string")
 
+        # Validate that at least one node is different from context_node
+        context_node = self.config.get("context_node")
+        if context_node and isinstance(context_node, str):
+            distinct_nodes = [n for n in nodes if n != context_node]
+            if len(distinct_nodes) == 0:
+                raise ValueError(
+                    f"Step '{step_name}': 'nodes' must contain at least one node different from 'context_node' ({context_node})"
+                )
+
         # Validate params is JSON string if provided
         if "params" in self.config and not isinstance(self.config["params"], str):
             raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
@@ -216,6 +225,7 @@ class CreateMeshStep(BaseStep):
                 dynamic_values["member_public_key"] = member_public_key
 
         nodes_to_process_count = len([n for n in nodes if n != context_node])
+        connected_nodes = [context_node]
 
         for node_name in nodes:
             if node_name == context_node:
@@ -347,9 +357,10 @@ class CreateMeshStep(BaseStep):
 
             join_key = f"join_{node_name}_{public_key}"
             workflow_results[join_key] = join_result["data"]
+            connected_nodes.append(node_name)
 
         console.print("\n[bold green]✓ Mesh created successfully![/bold green]")
         console.print(f"  Context: {context_id} on {context_node}")
-        console.print(f"  Connected nodes: {', '.join(nodes)}")
+        console.print(f"  Connected nodes: {', '.join(connected_nodes)}")
 
         return True
