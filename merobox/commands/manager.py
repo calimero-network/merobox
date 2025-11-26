@@ -551,7 +551,7 @@ class DockerManager:
                 )
 
                 # Apply e2e-style configuration for reliable testing
-                config_file = os.path.join(data_dir, "config.toml")
+                config_file = os.path.join(node_data_dir, "config.toml")
                 self._apply_e2e_defaults(config_file, node_name, workflow_id)
 
             except Exception as e:
