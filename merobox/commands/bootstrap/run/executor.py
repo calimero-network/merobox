@@ -66,10 +66,16 @@ class WorkflowExecutor:
         )
         # Mock relayer can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.mock_relayer = mock_relayer or config.get("mock_relayer", False)
+        
+        # Generate unique workflow ID for test isolation (like e2e tests)
+        import uuid
+        self.workflow_id = str(uuid.uuid4())[:8]
+        
         try:
             console.print(
                 f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}', binary_mode={self.is_binary_mode}[/cyan]"
             )
+            console.print(f"[cyan]WorkflowExecutor: workflow_id='{self.workflow_id}' (for test isolation)[/cyan]")
         except Exception:
             pass
         try:
@@ -435,6 +441,7 @@ class WorkflowExecutor:
                         self.log_level,
                         self.rust_backtrace,
                         self.mock_relayer,
+                        workflow_id=self.workflow_id,
                     ):
                         return False
 
@@ -504,6 +511,7 @@ class WorkflowExecutor:
                         self.log_level,
                         self.rust_backtrace,
                         self.mock_relayer,
+                        workflow_id=self.workflow_id,
                     ):
                         return False
                 else:
@@ -527,6 +535,7 @@ class WorkflowExecutor:
                     self.log_level,
                     self.rust_backtrace,
                     self.mock_relayer,
+                    workflow_id=self.workflow_id,
                 ):
                     return False
 

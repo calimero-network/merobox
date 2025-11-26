@@ -129,6 +129,7 @@ class BinaryManager:
         rust_backtrace: str = "0",
         foreground: bool = False,
         mock_relayer: bool = False,  # Ignored in binary mode
+        workflow_id: Optional[str] = None,  # NEW: for test isolation
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -231,6 +232,9 @@ class BinaryManager:
                         )
                         console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                         return False
+
+            # Apply e2e-style configuration for reliable testing
+            self._apply_e2e_defaults(config_file, node_name, workflow_id)
 
             # Build run command (ports are taken from config created during init)
             cmd = [
@@ -639,3 +643,61 @@ class BinaryManager:
         """
         # For binary mode, just check if the process is running
         return self.is_node_running(node_name)
+
+    def _apply_e2e_defaults(self, config_file: Path, node_name: str, workflow_id: Optional[str]):
+        """Apply e2e-style defaults for reliable testing."""
+        try:
+            import toml
+            import uuid
+            
+            # Generate unique workflow ID if not provided
+            if not workflow_id:
+                workflow_id = str(uuid.uuid4())[:8]
+            
+            # Load existing config
+            with open(config_file, 'r') as f:
+                config = toml.load(f)
+            
+            # Apply e2e-style defaults for reliable testing
+            e2e_config = {
+                # Disable bootstrap nodes for test isolation (like e2e tests)
+                "bootstrap.nodes": [],
+                
+                # Use unique rendezvous namespace per workflow (like e2e tests)
+                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
+                
+                # Keep mDNS as backup (like e2e tests)
+                "discovery.mdns": True,
+                
+                # Use aggressive sync settings for tests (like e2e tests)
+                "sync.timeout_ms": 30000,   # 30s (like e2e)
+                "sync.interval_ms": 500,    # 500ms (like e2e) 
+                "sync.frequency_ms": 1000,  # 1s (like e2e)
+            }
+            
+            # Apply each configuration
+            for key, value in e2e_config.items():
+                self._set_nested_config(config, key, value)
+            
+            # Write back to file
+            with open(config_file, 'w') as f:
+                toml.dump(config, f)
+                
+            console.print(f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]")
+            
+        except ImportError:
+            console.print(f"[red]✗ toml package not found. Install with: pip install toml[/red]")
+        except Exception as e:
+            console.print(f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]")
+
+    def _set_nested_config(self, config: dict, key: str, value):
+        """Set nested configuration value using dot notation."""
+        keys = key.split('.')
+        current = config
+        for k in keys[:-1]:
+            if k not in current:
+                current[k] = {}
+            current = current[k]
+        
+        current[keys[-1]] = value
+        console.print(f"[cyan]  {key} = {value}[/cyan]")
