@@ -1005,14 +1005,6 @@ class DockerManager:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
 
-        if mock_relayer:
-            relayer_url = self._ensure_mock_relayer()
-            if not relayer_url:
-                console.print(
-                    "[red]✗ Cannot start nodes because mock relayer failed to start[/red]"
-                )
-                return False
-
         # Find available ports automatically if not specified
         if base_port is None:
             p2p_ports = self._find_available_ports(count, 2428)
