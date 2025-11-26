@@ -133,8 +133,24 @@ class DockerManager:
 
     def _ensure_mock_relayer(self) -> Optional[str]:
         """Ensure a mock relayer container is running and return its host URL."""
+        # Validate cached URL by checking if container is still running
         if self.mock_relayer_url:
-            return self.mock_relayer_url
+            try:
+                existing = self.client.containers.get(MOCK_RELAYER_NAME)
+                existing.reload()
+                if existing.status == "running":
+                    return self.mock_relayer_url
+                # Container stopped - clear cached URL and continue to restart
+                console.print(
+                    "[yellow]Mock relayer container stopped, restarting...[/yellow]"
+                )
+                self.mock_relayer_url = None
+            except docker.errors.NotFound:
+                # Container removed - clear cached URL and continue to restart
+                console.print(
+                    "[yellow]Mock relayer container not found, starting new one...[/yellow]"
+                )
+                self.mock_relayer_url = None
 
         try:
             existing = self.client.containers.get(MOCK_RELAYER_NAME)

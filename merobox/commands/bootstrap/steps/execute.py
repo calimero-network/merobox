@@ -226,27 +226,35 @@ class ExecuteStep(BaseStep):
                         workflow_results[step_key] = error_info
 
                         # Always export error details when expected_failure is True
-                        self._export_error_variables(error_info, node_name, dynamic_values)
+                        self._export_error_variables(
+                            error_info, node_name, dynamic_values
+                        )
 
                         return True
                     else:
                         # Unexpected failure - stop workflow
-                        console.print(f"[red]❌ Execution failed: {error_message}[/red]")
+                        console.print(
+                            f"[red]❌ Execution failed: {error_message}[/red]"
+                        )
                         return False
 
                 # Check if the JSON-RPC response contains an error
                 if self._check_jsonrpc_error(result["data"]):
                     # Check for transient missing state error - retry if applicable
-                    if (
-                        retry_attempt < max_state_retries
-                        and self._is_missing_state_error(result["data"])
-                    ):
-                        console.print(
-                            f"[yellow]App state not available yet on {node_name}; retrying in {state_retry_delay}s...[/yellow]"
-                        )
-                        retry_attempt += 1
-                        await asyncio.sleep(state_retry_delay)
-                        continue
+                    if self._is_missing_state_error(result["data"]):
+                        if retry_attempt < max_state_retries:
+                            console.print(
+                                f"[yellow]App state not available yet on {node_name}; retrying in {state_retry_delay}s...[/yellow]"
+                            )
+                            retry_attempt += 1
+                            await asyncio.sleep(state_retry_delay)
+                            continue
+                        else:
+                            # Exhausted retries for missing state
+                            console.print(
+                                "[red]Execution failed: app state not available after retries[/red]"
+                            )
+                            return False
 
                     # Handle JSON-RPC error
                     error_info = self._extract_error_info(
@@ -312,11 +320,6 @@ class ExecuteStep(BaseStep):
                 self._export_variables(result["data"], node_name, dynamic_values)
 
                 return True
-
-            console.print(
-                "[red]Execution failed: app state not available after retries[/red]"
-            )
-            return False
 
         except Exception as e:
             console.print(f"[red]Execution failed with error: {str(e)}[/red]")
