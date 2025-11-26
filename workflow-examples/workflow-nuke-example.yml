@@ -82,12 +82,11 @@ steps:
     seconds: 3
 
   # Test contract call - get value
-  # Use the creator node to avoid state-sync timing issues across nodes
   - name: Get Value from KV Store
     type: call
-    node: calimero-node-1
+    node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
+    executor_public_key: "{{public_key}}"
     method: get
     args:
       key: hello
