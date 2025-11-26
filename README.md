@@ -51,6 +51,9 @@ merobox health
 # Execute a workflow
 merobox bootstrap run workflow.yml
 
+# Run everything against the local mock relayer
+merobox bootstrap run workflow.yml --mock-relayer
+
 # Stop all nodes and auth services
 merobox stop --all
 ```
@@ -64,6 +67,7 @@ merobox stop --all
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
 - **Dynamic Variables**: Advanced placeholder resolution with embedded support
+- **Mock Relayer Support**: One flag (`--mock-relayer`) spins up ghcr.io/calimero-network/mero-relayer:8ee178e and wires nodes to it
 
 ---
 

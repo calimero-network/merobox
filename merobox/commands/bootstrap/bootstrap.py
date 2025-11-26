@@ -81,6 +81,11 @@ def bootstrap():
     "--binary-path",
     help="Set custom path to merod binary (used with --no-docker). Defaults to searching PATH and common locations (/usr/local/bin, /usr/bin, ~/bin).",
 )
+@click.option(
+    "--mock-relayer",
+    is_flag=True,
+    help="Start a local mock relayer (Docker only) and wire nodes to it",
+)
 def run(
     config_file,
     verbose,
@@ -93,6 +98,7 @@ def run(
     rust_backtrace,
     no_docker,
     binary_path,
+    mock_relayer,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -116,6 +122,7 @@ def run(
         rust_backtrace=rust_backtrace,
         no_docker=no_docker,
         binary_path=binary_path,
+        mock_relayer=mock_relayer,
     )
     if not success:
         sys.exit(1)
