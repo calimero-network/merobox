@@ -1007,6 +1007,7 @@ class DockerManager:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
+        workflow_id: str = None,  # for test isolation
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1042,6 +1043,7 @@ class DockerManager:
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
                 mock_relayer=mock_relayer,
+                workflow_id=workflow_id,
             ):
                 success_count += 1
             else:
