@@ -151,6 +151,12 @@ class DockerManager:
                     "[yellow]Mock relayer container not found, starting new one...[/yellow]"
                 )
                 self.mock_relayer_url = None
+            except Exception as e:
+                # Unexpected error - clear cached URL and continue
+                console.print(
+                    f"[yellow]Error checking mock relayer status: {e}, will attempt restart...[/yellow]"
+                )
+                self.mock_relayer_url = None
 
         try:
             existing = self.client.containers.get(MOCK_RELAYER_NAME)
@@ -191,7 +197,7 @@ class DockerManager:
             return None
 
         # Try preferred host port first, fall back to random if it's taken
-        port_binding: int | None = MOCK_RELAYER_PORT
+        port_binding: Optional[int] = MOCK_RELAYER_PORT
         for attempt in range(2):
             try:
                 container = self.client.containers.run(
@@ -245,7 +251,8 @@ class DockerManager:
                 )
                 return None
 
-        return self.mock_relayer_url
+        # Loop exhausted without success (should not normally reach here)
+        return None
 
     def get_node_rpc_port(self, node_name: str) -> Optional[int]:
         """Return the published RPC port for the given node, if available."""
