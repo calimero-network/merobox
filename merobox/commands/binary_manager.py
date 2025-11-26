@@ -668,11 +668,6 @@ class BinaryManager:
                 
                 # Keep mDNS as backup (like e2e tests)
                 "discovery.mdns": True,
-                
-                # Use aggressive sync settings for tests (like e2e tests)
-                "sync.timeout_ms": 30000,   # 30s (like e2e)
-                "sync.interval_ms": 500,    # 500ms (like e2e) 
-                "sync.frequency_ms": 1000,  # 1s (like e2e)
             }
             
             # Apply each configuration

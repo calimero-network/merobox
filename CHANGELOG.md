@@ -10,15 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **E2E-Style Test Isolation**: Automatic application of e2e-style network configuration for reliable CI testing
 - **Unique Rendezvous Namespaces**: Each workflow gets a unique namespace (`calimero/merobox-tests/{workflow_id}`) for test isolation
-- **Aggressive Sync Settings**: Fast sync configuration (30s timeout, 500ms interval, 1s frequency) for reliable testing
 - **Bootstrap Node Isolation**: Automatic disabling of production bootstrap nodes for test isolation
 
 ### Changed
-- **Default Network Configuration**: All workflows now use e2e-style isolation by default
+- **Default Network Configuration**: All workflows now use e2e-style network isolation by default
 - **Test Reliability**: Significantly improved 3-node test reliability in CI environments
 - **Peer Discovery**: Uses rendezvous-based discovery instead of unreliable mDNS in CI
+- **Sync Settings**: Uses regular production sync defaults (no aggressive overrides needed)
 
 ### Technical Details
+- **Network Isolation Only**: Focus on network-level isolation without sync timing changes
 - **Automatic Config Override**: Node configurations are automatically modified after initialization
 - **Workflow ID Generation**: Each workflow gets a unique 8-character ID for namespace isolation
 - **TOML Configuration**: Added toml dependency for config file manipulation
