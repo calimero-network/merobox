@@ -286,6 +286,7 @@ class DockerManager:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
+        workflow_id: str = None,  # NEW: for test isolation
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -548,6 +549,11 @@ class DockerManager:
                 console.print(
                     f"[green]✓ Node {node_name} initialized successfully[/green]"
                 )
+                
+                # Apply e2e-style configuration for reliable testing
+                config_file = os.path.join(data_dir, "config.toml")
+                self._apply_e2e_defaults(config_file, node_name, workflow_id)
+                
             except Exception as e:
                 console.print(
                     f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
@@ -1360,3 +1366,62 @@ class DockerManager:
                 f"[red]Failed to verify admin binding for {node_name}: {str(e)}[/red]"
             )
             return False
+
+    def _apply_e2e_defaults(self, config_file: str, node_name: str, workflow_id: str):
+        """Apply e2e-style defaults for reliable testing."""
+        try:
+            import toml
+            import uuid
+            from pathlib import Path
+            
+            # Generate unique workflow ID if not provided
+            if not workflow_id:
+                workflow_id = str(uuid.uuid4())[:8]
+            
+            config_path = Path(config_file)
+            if not config_path.exists():
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+                return
+            
+            # Load existing config
+            with open(config_path, 'r') as f:
+                config = toml.load(f)
+            
+            # Apply e2e-style defaults for reliable testing
+            e2e_config = {
+                # Disable bootstrap nodes for test isolation (like e2e tests)
+                "bootstrap.nodes": [],
+                
+                # Use unique rendezvous namespace per workflow (like e2e tests)
+                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
+                
+                # Keep mDNS as backup (like e2e tests)
+                "discovery.mdns": True,
+            }
+            
+            # Apply each configuration
+            for key, value in e2e_config.items():
+                self._set_nested_config(config, key, value)
+            
+            # Write back to file
+            with open(config_path, 'w') as f:
+                toml.dump(config, f)
+                
+            console.print(f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]")
+            
+        except ImportError:
+            console.print(f"[red]✗ toml package not found. Install with: pip install toml[/red]")
+        except Exception as e:
+            console.print(f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]")
+
+    def _set_nested_config(self, config: dict, key: str, value):
+        """Set nested configuration value using dot notation."""
+        keys = key.split('.')
+        current = config
+        for k in keys[:-1]:
+            if k not in current:
+                current[k] = {}
+            current = current[k]
+        
+        current[keys[-1]] = value
+        console.print(f"[cyan]  {key} = {value}[/cyan]")
