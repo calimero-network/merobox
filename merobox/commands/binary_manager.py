@@ -591,6 +591,7 @@ class BinaryManager:
         # Generate a single shared workflow_id for all nodes if none provided
         if workflow_id is None:
             import uuid
+
             workflow_id = str(uuid.uuid4())[:8]
             console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
