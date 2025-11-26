@@ -129,7 +129,7 @@ class BinaryManager:
         rust_backtrace: str = "0",
         foreground: bool = False,
         mock_relayer: bool = False,  # Ignored in binary mode
-        workflow_id: Optional[str] = None,  # NEW: for test isolation
+        workflow_id: Optional[str] = None,  # for test isolation
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -644,55 +644,62 @@ class BinaryManager:
         # For binary mode, just check if the process is running
         return self.is_node_running(node_name)
 
-    def _apply_e2e_defaults(self, config_file: Path, node_name: str, workflow_id: Optional[str]):
+    def _apply_e2e_defaults(
+        self, config_file: Path, node_name: str, workflow_id: Optional[str]
+    ):
         """Apply e2e-style defaults for reliable testing."""
         try:
-            import toml
             import uuid
-            
+
+            import toml
+
             # Generate unique workflow ID if not provided
             if not workflow_id:
                 workflow_id = str(uuid.uuid4())[:8]
-            
+
             # Load existing config
-            with open(config_file, 'r') as f:
+            with open(config_file) as f:
                 config = toml.load(f)
-            
+
             # Apply e2e-style defaults for reliable testing
             e2e_config = {
                 # Disable bootstrap nodes for test isolation (like e2e tests)
                 "bootstrap.nodes": [],
-                
                 # Use unique rendezvous namespace per workflow (like e2e tests)
                 "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-                
                 # Keep mDNS as backup (like e2e tests)
                 "discovery.mdns": True,
             }
-            
+
             # Apply each configuration
             for key, value in e2e_config.items():
                 self._set_nested_config(config, key, value)
-            
+
             # Write back to file
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 toml.dump(config, f)
-                
-            console.print(f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]")
-            
+
+            console.print(
+                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
+            )
+
         except ImportError:
-            console.print(f"[red]✗ toml package not found. Install with: pip install toml[/red]")
+            console.print(
+                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+            )
         except Exception as e:
-            console.print(f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]")
+            console.print(
+                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
+            )
 
     def _set_nested_config(self, config: dict, key: str, value):
         """Set nested configuration value using dot notation."""
-        keys = key.split('.')
+        keys = key.split(".")
         current = config
         for k in keys[:-1]:
             if k not in current:
                 current[k] = {}
             current = current[k]
-        
+
         current[keys[-1]] = value
         console.print(f"[cyan]  {key} = {value}[/cyan]")
