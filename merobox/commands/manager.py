@@ -1012,6 +1012,13 @@ class DockerManager:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
 
+        # Generate a single shared workflow_id for all nodes if none provided
+        if workflow_id is None:
+            import uuid
+
+            workflow_id = str(uuid.uuid4())[:8]
+            console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
+
         # Find available ports automatically if not specified
         if base_port is None:
             p2p_ports = self._find_available_ports(count, 2428)

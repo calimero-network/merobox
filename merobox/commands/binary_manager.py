@@ -588,6 +588,13 @@ class BinaryManager:
 
         console.print(f"[cyan]Starting {count} nodes with prefix '{prefix}'...[/cyan]")
 
+        # Generate a single shared workflow_id for all nodes if none provided
+        if workflow_id is None:
+            import uuid
+
+            workflow_id = str(uuid.uuid4())[:8]
+            console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
+
         success_count = 0
         # Default base ports if None provided
         if base_port is None:
