@@ -666,6 +666,11 @@ class BinaryManager:
             if not workflow_id:
                 workflow_id = str(uuid.uuid4())[:8]
 
+            # Check if config file exists
+            if not config_file.exists():
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+                return
+
             # Load existing config
             with open(config_file) as f:
                 config = toml.load(f)
