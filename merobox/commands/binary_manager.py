@@ -693,9 +693,10 @@ class BinaryManager:
 
             # Write back to file (ensure it's writable first)
             import stat
+
             if config_file.exists():
                 config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
-            
+
             with open(config_file, "w") as f:
                 toml.dump(config, f)
 
