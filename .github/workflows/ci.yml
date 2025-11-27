@@ -53,13 +53,14 @@ jobs:
       - name: Install merobox in development mode
         run: |
           pip install -e .
-      - name: Install merod binary
-        run: |
-          echo "Downloading latest merod binary..."
 
-          # Get latest release version from GitHub API
-          VERSION=$(curl -s https://api.github.com/repos/calimero-network/core/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Latest version: $VERSION"
+      - name: Install merod binary (specific release)
+        run: |
+          echo "Downloading merod binary from specific release..."
+
+          # Use specific release version
+          VERSION="0.10.0-rc.20"
+          echo "Using version: $VERSION"
 
           ARCH="x86_64"
           PLATFORM="unknown-linux-gnu"
@@ -85,7 +86,7 @@ jobs:
           merobox --version
           merobox --help
           echo "🧹 Performing initial cleanup..."
-          merobox stop --all || true
+          merobox stop --all --no-docker || true
           merobox nuke -f || true
           # Run only essential workflows on PRs for faster feedback
           ESSENTIAL_WORKFLOWS=(
@@ -97,9 +98,9 @@ jobs:
           )
           for f in "${ESSENTIAL_WORKFLOWS[@]}"; do \
             echo "Running workflow: $f"; \
-            merobox bootstrap run "$f" --verbose; \
+            merobox bootstrap run "$f" --no-docker --verbose; \
             echo "Cleaning up after workflow..."; \
-            merobox stop --all || true; \
+            merobox stop --all --no-docker || true; \
             merobox nuke -f || true; \
           done
 
@@ -108,16 +109,16 @@ jobs:
         run: |
           merobox --version
           merobox --help
-          # Initial cleanup to ensure no containers from previous runs
+          # Initial cleanup to ensure no leftover data from previous runs
           echo "Performing initial cleanup..."
-          merobox stop --all || true
+          merobox stop --all --no-docker || true
           merobox nuke -f || true
           # Run all workflows on master for comprehensive testing
           for f in workflow-examples/*.yml; do \
             echo "Running workflow: $f"; \
-            merobox bootstrap run "$f" --verbose; \
+            merobox bootstrap run "$f" --no-docker --verbose; \
             echo "Cleaning up after workflow..."; \
-            merobox stop --all || true; \
+            merobox stop --all --no-docker || true; \
             merobox nuke -f || true; \
           done
 
