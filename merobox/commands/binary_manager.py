@@ -666,10 +666,23 @@ class BinaryManager:
             if not workflow_id:
                 workflow_id = str(uuid.uuid4())[:8]
 
-            # Check if config file exists
-            if not config_file.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
+            # Check if config file exists (with retry for timing issues)
+            import time
+            for attempt in range(3):
+                if config_file.exists():
+                    break
+                if attempt < 2:
+                    console.print(f"[yellow]Config file not found (attempt {attempt + 1}): {config_file}[/yellow]")
+                    time.sleep(0.5)  # Wait 500ms and retry
+                else:
+                    console.print(f"[yellow]Config file not found after 3 attempts: {config_file}[/yellow]")
+                    # Debug: list what files actually exist in the directory
+                    if config_file.parent.exists():
+                        files = list(config_file.parent.iterdir())
+                        console.print(f"[yellow]Files in {config_file.parent}: {[f.name for f in files]}[/yellow]")
+                    else:
+                        console.print(f"[yellow]Directory {config_file.parent} doesn't exist[/yellow]")
+                    return
 
             # Load existing config
             with open(config_file) as f:
