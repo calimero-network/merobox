@@ -292,7 +292,7 @@ class BinaryManager:
                     # E2E tests work better when process is in same process group
                     if not e2e_mode:
                         popen_kwargs["start_new_session"] = True
-                    
+
                     process = subprocess.Popen(cmd, **popen_kwargs)
 
                 # Save process info

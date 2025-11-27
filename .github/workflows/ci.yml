@@ -173,7 +173,8 @@ jobs:
           merobox --version
           merobox --help
           echo "🧹 Performing initial cleanup..."
-          # Note: No Docker cleanup needed in binary mode
+          merobox stop --all --no-docker || true
+          merobox nuke -f || true
           # Run only essential workflows on PRs for faster feedback
           ESSENTIAL_WORKFLOWS=(
             "workflow-examples/workflow-example.yml"
@@ -187,6 +188,7 @@ jobs:
             merobox bootstrap run "$f" --no-docker --verbose; \
             echo "Cleaning up after workflow..."; \
             merobox stop --all --no-docker || true; \
+            merobox nuke -f || true; \
           done
 
       - name: Test merobox CLI and workflow in binary mode (Master - All workflows)
@@ -194,14 +196,17 @@ jobs:
         run: |
           merobox --version
           merobox --help
-          # Initial cleanup (no Docker containers in binary mode)
+          # Initial cleanup to ensure no leftover data from previous runs
           echo "Performing initial cleanup..."
+          merobox stop --all --no-docker || true
+          merobox nuke -f || true
           # Run all workflows on master for comprehensive testing
           for f in workflow-examples/*.yml; do \
             echo "Running workflow in binary mode: $f"; \
             merobox bootstrap run "$f" --no-docker --verbose; \
             echo "Cleaning up after workflow..."; \
             merobox stop --all --no-docker || true; \
+            merobox nuke -f || true; \
           done
 
   test-merobox-integration:
