@@ -129,6 +129,7 @@ class BinaryManager:
         rust_backtrace: str = "0",
         foreground: bool = False,
         mock_relayer: bool = False,  # Ignored in binary mode
+        workflow_id: Optional[str] = None,  # for test isolation
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -231,6 +232,9 @@ class BinaryManager:
                         )
                         console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                         return False
+
+            # Apply e2e-style configuration for reliable testing
+            self._apply_e2e_defaults(config_file, node_name, workflow_id)
 
             # Build run command (ports are taken from config created during init)
             cmd = [
@@ -556,6 +560,7 @@ class BinaryManager:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         mock_relayer: bool = False,  # Ignored
+        workflow_id: Optional[str] = None,  # for test isolation
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -583,6 +588,13 @@ class BinaryManager:
 
         console.print(f"[cyan]Starting {count} nodes with prefix '{prefix}'...[/cyan]")
 
+        # Generate a single shared workflow_id for all nodes if none provided
+        if workflow_id is None:
+            import uuid
+
+            workflow_id = str(uuid.uuid4())[:8]
+            console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
+
         success_count = 0
         # Default base ports if None provided
         if base_port is None:
@@ -603,6 +615,7 @@ class BinaryManager:
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
                 mock_relayer=mock_relayer,
+                workflow_id=workflow_id,
             ):
                 success_count += 1
             else:
@@ -639,3 +652,63 @@ class BinaryManager:
         """
         # For binary mode, just check if the process is running
         return self.is_node_running(node_name)
+
+    def _apply_e2e_defaults(
+        self, config_file: Path, node_name: str, workflow_id: Optional[str]
+    ):
+        """Apply e2e-style defaults for reliable testing."""
+        try:
+            import uuid
+
+            import toml
+
+            # Generate unique workflow ID if not provided
+            if not workflow_id:
+                workflow_id = str(uuid.uuid4())[:8]
+
+            # Load existing config
+            with open(config_file) as f:
+                config = toml.load(f)
+
+            # Apply e2e-style defaults for reliable testing
+            e2e_config = {
+                # Disable bootstrap nodes for test isolation (like e2e tests)
+                "bootstrap.nodes": [],
+                # Use unique rendezvous namespace per workflow (like e2e tests)
+                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
+                # Keep mDNS as backup (like e2e tests)
+                "discovery.mdns": True,
+            }
+
+            # Apply each configuration
+            for key, value in e2e_config.items():
+                self._set_nested_config(config, key, value)
+
+            # Write back to file
+            with open(config_file, "w") as f:
+                toml.dump(config, f)
+
+            console.print(
+                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
+            )
+
+        except ImportError:
+            console.print(
+                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+            )
+        except Exception as e:
+            console.print(
+                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
+            )
+
+    def _set_nested_config(self, config: dict, key: str, value):
+        """Set nested configuration value using dot notation."""
+        keys = key.split(".")
+        current = config
+        for k in keys[:-1]:
+            if k not in current:
+                current[k] = {}
+            current = current[k]
+
+        current[keys[-1]] = value
+        console.print(f"[cyan]  {key} = {value}[/cyan]")
