@@ -278,15 +278,22 @@ class BinaryManager:
                     return False
             else:
                 # Start detached with logs to file
+                # For e2e mode, don't create new session to match e2e test behavior
+                # (process should be managed together with parent, not detached)
+                # For regular mode, create new session so process survives parent death
                 with open(log_file, "a") as log_f:
-                    process = subprocess.Popen(
-                        cmd,
-                        env=env,
-                        stdin=subprocess.DEVNULL,
-                        stdout=log_f,
-                        stderr=subprocess.STDOUT,
-                        start_new_session=True,
-                    )
+                    popen_kwargs = {
+                        "env": env,
+                        "stdin": subprocess.DEVNULL,
+                        "stdout": log_f,
+                        "stderr": subprocess.STDOUT,
+                    }
+                    # Only create new session if NOT in e2e mode
+                    # E2E tests work better when process is in same process group
+                    if not e2e_mode:
+                        popen_kwargs["start_new_session"] = True
+                    
+                    process = subprocess.Popen(cmd, **popen_kwargs)
 
                 # Save process info
                 self.processes[node_name] = process
