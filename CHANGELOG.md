@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2024-11-27
+
+### Added
+- **Dynamic Port Allocation for Binary Mode**: Added dynamic port allocation in e2e mode to prevent port conflicts when multiple test workflows run concurrently.
+  - When `--e2e-mode` is enabled, binary mode now finds available ports dynamically instead of using fixed port ranges.
+  - Starts port search from 3000 to avoid common system port conflicts.
+  - Prevents "Address already in use" errors in CI environments where multiple workflows run simultaneously.
+
+### Fixed
+- **Port Conflicts in CI**: Resolved persistent "Address already in use (os error 98)" errors that were causing test failures in GitHub Actions.
+- **Concurrent Test Execution**: Tests can now run concurrently without port conflicts, improving CI reliability and speed.
+
 ## [0.2.9] - 2024-11-27
 
 ### Added

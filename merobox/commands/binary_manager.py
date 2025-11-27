@@ -601,16 +601,32 @@ class BinaryManager:
             console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
         success_count = 0
-        # Default base ports if None provided
-        if base_port is None:
-            base_port = 2428
-        if base_rpc_port is None:
-            base_rpc_port = 2528
+
+        # Use dynamic port allocation for e2e mode to avoid conflicts
+        if e2e_mode:
+            # Find available ports dynamically
+            allocated_ports = self._find_available_ports(
+                count * 2
+            )  # Need P2P + RPC for each node
+            console.print(f"[cyan]Allocated dynamic ports: {allocated_ports}[/cyan]")
+        else:
+            # Default base ports if None provided (legacy behavior)
+            if base_port is None:
+                base_port = 2428
+            if base_rpc_port is None:
+                base_rpc_port = 2528
+            allocated_ports = []
 
         for i in range(count):
             node_name = f"{prefix}-{i+1}"
-            port = base_port + (i * 100)  # Space out ports
-            rpc_port = base_rpc_port + (i * 100)
+            if e2e_mode:
+                # Use dynamically allocated ports
+                port = allocated_ports[i * 2]  # P2P port
+                rpc_port = allocated_ports[i * 2 + 1]  # RPC port
+            else:
+                # Use fixed port ranges (legacy behavior)
+                port = base_port + (i * 100)  # Space out ports
+                rpc_port = base_rpc_port + (i * 100)
 
             if self.run_node(
                 node_name=node_name,
@@ -727,6 +743,33 @@ class BinaryManager:
             console.print(
                 f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
             )
+
+    def _find_available_ports(self, count: int) -> list[int]:
+        """Find available ports for dynamic allocation."""
+        import socket
+
+        ports = []
+        start_port = 3000  # Start from a higher range to avoid common conflicts
+
+        for port in range(
+            start_port, start_port + 10000
+        ):  # Search in a reasonable range
+            if len(ports) >= count:
+                break
+
+            # Check if port is available
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                try:
+                    sock.bind(("127.0.0.1", port))
+                    ports.append(port)
+                except OSError:
+                    # Port is in use, try next one
+                    continue
+
+        if len(ports) < count:
+            raise RuntimeError(f"Could not find {count} available ports")
+
+        return ports
 
     def _set_nested_config(self, config: dict, key: str, value):
         """Set nested configuration value using dot notation."""
