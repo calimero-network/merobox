@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2024-11-27
+
+### Added
+- **Dynamic Port Allocation for Binary Mode**: Added dynamic port allocation in e2e mode to prevent port conflicts when multiple test workflows run concurrently.
+  - When `--e2e-mode` is enabled, binary mode now finds available ports dynamically instead of using fixed port ranges.
+  - Starts port search from 3000 to avoid common system port conflicts.
+  - Prevents "Address already in use" errors in CI environments where multiple workflows run simultaneously.
+
+### Fixed
+- **Port Conflicts in CI**: Resolved persistent "Address already in use (os error 98)" errors that were causing test failures in GitHub Actions.
+- **Concurrent Test Execution**: Tests can now run concurrently without port conflicts, improving CI reliability and speed.
+
+## [0.2.9] - 2024-11-27
+
+### Added
+- **Ethereum Local Devnet Support**: Added local Anvil devnet configuration to e2e defaults
+  - `context.config.ethereum.contract_id = "0x5FbDB2315678afecb367f032d93F642f64180aa3"` (local contract)
+  - `context.config.signer.self.ethereum.sepolia.rpc_url = "http://127.0.0.1:8545"` (local Anvil)
+  - `context.config.signer.self.ethereum.sepolia.account_id = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"` (test account)
+  - Uses same configuration as e2e tests for consistency and reliability
+
+### Fixed
+- **Ethereum Relayer Timeouts**: Resolved by using local Anvil devnet instead of public Sepolia testnet
+- **Test Reliability**: Ethereum tests now use fast, reliable local blockchain instead of congested public network
+- **Configuration Consistency**: Merobox now matches e2e test Ethereum setup exactly
+
+### Changed
+- **E2E Mode**: When `--e2e-mode` is enabled, Ethereum tests automatically use local devnet configuration
+- **CI Integration**: Works with existing GitHub workflow that already deploys Anvil devnet
+
+## [0.2.8] - 2024-11-27
+
+### Added
+- **`--e2e-mode` Flag**: Added optional flag to enable e2e-style test defaults
+  - Only applies aggressive sync settings and test isolation when explicitly requested
+  - Prevents e2e defaults from being applied by default to all workflows
+  - Maintains backward compatibility for existing workflows
+
+### Changed
+- **E2E Defaults**: Made e2e-style configuration optional instead of always applied
+  - `bootstrap.nodes = []` (disable bootstrap nodes)
+  - `discovery.rendezvous.namespace = calimero/merobox-tests/{workflow_id}` (unique namespace)
+  - `sync.timeout_ms = 30000`, `sync.interval_ms = 500`, `sync.frequency_ms = 1000` (aggressive sync)
+  - Only applied when `--e2e-mode` flag is used
+
+### Fixed
+- **Default Behavior**: Restored normal merobox behavior for regular workflows (no forced e2e defaults)
+- **GitHub Workflow**: Updated CI to use `--e2e-mode` flag for proper test isolation
+
+## [0.2.7] - 2024-11-27
+
+### Added
+- **Aggressive Sync Settings**: Added e2e-style sync configuration for improved test reliability
+  - `sync.timeout_ms=30000` (30s timeout, matches production)
+  - `sync.interval_ms=500` (500ms between syncs, very aggressive for tests)
+  - `sync.frequency_ms=1000` (1s periodic checks, ensures rapid sync in tests)
+
+### Fixed
+- **Connection Stability**: Improved node synchronization and connection stability by matching e2e test sync settings
+- **TLS Connection Issues**: Resolved TLS close_notify errors by improving sync timing and reliability
+
+## [0.2.6] - 2024-11-26
+
+### Added
+- **E2E-Style Test Isolation**: Automatic application of e2e-style network configuration for reliable CI testing
+- **Unique Rendezvous Namespaces**: Each workflow gets a unique namespace (`calimero/merobox-tests/{workflow_id}`) for test isolation
+- **Bootstrap Node Isolation**: Automatic disabling of production bootstrap nodes for test isolation
+
+### Changed
+- **Default Network Configuration**: All workflows now use e2e-style network isolation by default
+- **Test Reliability**: Significantly improved 3-node test reliability in CI environments
+- **Peer Discovery**: Uses rendezvous-based discovery instead of unreliable mDNS in CI
+- **Sync Settings**: Uses regular production sync defaults (no aggressive overrides needed)
+
+### Technical Details
+- **Network Isolation Only**: Focus on network-level isolation without sync timing changes
+- **Automatic Config Override**: Node configurations are automatically modified after initialization
+- **Workflow ID Generation**: Each workflow gets a unique 8-character ID for namespace isolation
+- **TOML Configuration**: Added toml dependency for config file manipulation
+- **Backward Compatibility**: Existing workflows work unchanged with improved reliability
+
+### Dependencies
+- **Added**: `toml>=0.10.2` for configuration file management
+
 ## [0.1.21] - 2024-12-19
 
 ### Changed

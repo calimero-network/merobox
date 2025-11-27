@@ -51,6 +51,9 @@ merobox health
 # Execute a workflow
 merobox bootstrap run workflow.yml
 
+# Run everything against the local mock relayer
+merobox bootstrap run workflow.yml --mock-relayer
+
 # Stop all nodes and auth services
 merobox stop --all
 ```
@@ -64,6 +67,7 @@ merobox stop --all
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
 - **Dynamic Variables**: Advanced placeholder resolution with embedded support
+- **Mock Relayer Support**: One flag (`--mock-relayer`) spins up ghcr.io/calimero-network/mero-relayer:8ee178e and wires nodes to it
 
 ---
 
@@ -240,6 +244,45 @@ Joins contexts using invitations.
   invitation: "{{invitation_data}}"
 ```
 
+#### Create Mesh Step
+
+Creates a context and connects multiple nodes in a single step. It automatically creates a context on the specified node, generates identities for each target node, sends invitations, and joins all nodes to the context.
+
+```yaml
+- name: "Create Mesh"
+  type: "create_mesh"
+  context_node: "calimero-node-1"
+  application_id: "{{app_id}}"
+  nodes:
+    - calimero-node-2
+    - calimero-node-3
+  capability: member # Optional, defaults to "member"
+  outputs:
+    context_id: contextId
+    member_public_key: memberPublicKey
+```
+
+**What it does:**
+
+- Creates a context on the specified `context_node`
+- Creates identities on each node in the `nodes` list
+- Invites each node from the context node
+- Joins each node to the context
+
+**Parameters:**
+
+- `context_node`: Node where the context will be created
+- `application_id`: Application ID to use for context creation
+- `nodes`: List of node names to create identities on and join to the context
+- `capability`: Optional capability for invitations (defaults to `"member"`).
+
+**Exported variables:**
+
+- `context_id`: The created context ID
+- `member_public_key`: The context creator's public key
+- `public_key_{node_name}`: Public key for each joined node (e.g., `public_key_calimero-node-2`)
+- `public_key`: If only one node is joined, also exported as just `public_key`
+
 #### Execute Step
 
 Executes smart contract functions.
@@ -257,6 +300,52 @@ Executes smart contract functions.
   outputs:
     result: "function_result"
 ```
+
+**Negative Testing with Expected Failures:**
+
+You can test error scenarios by setting `expected_failure: true`. When enabled, the step will continue even if the call fails, and error details are exported for assertions.
+
+Both simple and complex output syntax are supported for error fields:
+
+```yaml
+- name: "Expected Failure - Invalid Method"
+  type: "call"
+  node: "calimero-node-1"
+  context_id: "{{context_id}}"
+  executor_public_key: "{{member_public_key}}"
+  method: "invalid_method_that_does_not_exist"
+  args: {}
+  expected_failure: true
+  outputs:
+    # Simple string assignment
+    error_code: error_code      # JSON-RPC error code
+    error_type: error_type      # Error type (e.g., "FunctionCallError")
+    error_message: error_message # Error message
+    error: error                 # Full error object
+
+    # Complex dict-based assignment (also supported)
+    custom_error:
+      field: error_type
+    custom_error_code:
+      field: error_code
+      target: error_code_{node_name}  # Optional: custom target with node name
+
+- name: "Assert Error Occurred"
+  type: assert
+  statements:
+    - "is_set({{error_type}})"
+    - "equal({{error_type}}, FunctionCallError)"
+    - "contains({{error_message}}, not found)"
+    - "equal({{custom_error}}, FunctionCallError)"
+```
+
+**Error Handling:**
+
+- **JSON-RPC Errors**: When a function call succeeds but returns a JSON-RPC error (e.g., invalid method, wrong arguments), error fields are extracted and exported.
+- **Network/API Errors**: When the API call itself fails (e.g., invalid context ID, network issues), error information is captured and exported.
+- **Unexpected Success**: If `expected_failure: true` but the call succeeds, a warning is shown and error fields are exported as `None`.
+
+See `workflow-examples/workflow-negative-testing-example.yml` for comprehensive examples.
 
 #### Wait Step
 
@@ -396,9 +485,11 @@ outputs:
   variableName: "export_name" # Maps API response field to export name
 ```
 
-### Example Workflow
+### Example Workflows
 
-See `workflow-examples/workflow-example.yml` for a complete example.
+- **Basic Workflow**: `workflow-examples/workflow-example.yml` - Complete example with dynamic variables
+- **Negative Testing**: `workflow-examples/workflow-negative-testing-example.yml` - Testing error scenarios with expected failures
+- **Assertions**: `workflow-examples/workflow-assert-example.yml` - Assertion and JSON assertion examples
 
 ### Export variables from execute (call) steps
 

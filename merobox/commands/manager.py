@@ -13,6 +13,10 @@ from rich.table import Table
 
 console = Console()
 
+MOCK_RELAYER_IMAGE = "ghcr.io/calimero-network/mero-relayer:8ee178e"
+MOCK_RELAYER_PORT = 63529
+MOCK_RELAYER_NAME = "mock-relayer"
+
 
 class DockerManager:
     """Manages Calimero nodes in Docker containers."""
@@ -28,6 +32,7 @@ class DockerManager:
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
+        self.mock_relayer_url: Optional[str] = None
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""
@@ -126,6 +131,129 @@ class DockerManager:
 
         return None
 
+    def _ensure_mock_relayer(self) -> Optional[str]:
+        """Ensure a mock relayer container is running and return its host URL."""
+        # Validate cached URL by checking if container is still running
+        if self.mock_relayer_url:
+            try:
+                existing = self.client.containers.get(MOCK_RELAYER_NAME)
+                existing.reload()
+                if existing.status == "running":
+                    return self.mock_relayer_url
+                # Container stopped - clear cached URL and continue to restart
+                console.print(
+                    "[yellow]Mock relayer container stopped, restarting...[/yellow]"
+                )
+                self.mock_relayer_url = None
+            except docker.errors.NotFound:
+                # Container removed - clear cached URL and continue to restart
+                console.print(
+                    "[yellow]Mock relayer container not found, starting new one...[/yellow]"
+                )
+                self.mock_relayer_url = None
+            except Exception as e:
+                # Unexpected error - clear cached URL and continue
+                console.print(
+                    f"[yellow]Error checking mock relayer status: {e}, will attempt restart...[/yellow]"
+                )
+                self.mock_relayer_url = None
+
+        try:
+            existing = self.client.containers.get(MOCK_RELAYER_NAME)
+            existing.reload()
+            if existing.status == "running":
+                host_port = self._extract_host_port(
+                    existing, f"{MOCK_RELAYER_PORT}/tcp"
+                )
+                if host_port is None:
+                    console.print(
+                        "[red]✗ Mock relayer is running but could not determine host port[/red]"
+                    )
+                    return None
+                self.mock_relayer_url = f"http://host.docker.internal:{host_port}"
+                console.print(
+                    f"[cyan]✓ Mock relayer already running at {self.mock_relayer_url}[/cyan]"
+                )
+                return self.mock_relayer_url
+
+            console.print(
+                f"[yellow]Found stopped mock relayer container '{MOCK_RELAYER_NAME}', removing...[/yellow]"
+            )
+            try:
+                existing.remove(force=True)
+            except Exception as remove_err:
+                console.print(
+                    f"[red]✗ Failed to clean up existing mock relayer: {remove_err}[/red]"
+                )
+                return None
+        except docker.errors.NotFound:
+            pass
+        except Exception as e:
+            console.print(f"[red]✗ Error inspecting mock relayer: {e}[/red]")
+            return None
+
+        # Pull image if needed
+        if not self._ensure_image_pulled(MOCK_RELAYER_IMAGE):
+            return None
+
+        # Try preferred host port first, fall back to random if it's taken
+        port_binding: Optional[int] = MOCK_RELAYER_PORT
+        for attempt in range(2):
+            try:
+                container = self.client.containers.run(
+                    name=MOCK_RELAYER_NAME,
+                    image=MOCK_RELAYER_IMAGE,
+                    detach=True,
+                    ports={f"{MOCK_RELAYER_PORT}/tcp": port_binding},
+                    command=["--enable-mock-relayer"],
+                    environment={
+                        "ENABLE_NEAR": "false",
+                        "ENABLE_STARKNET": "false",
+                        "ENABLE_ICP": "false",
+                        "ENABLE_ETHEREUM": "false",
+                    },
+                    labels={"calimero.mock_relayer": "true"},
+                )
+                container.reload()
+                host_port = self._extract_host_port(
+                    container, f"{MOCK_RELAYER_PORT}/tcp"
+                )
+                if host_port is None:
+                    if port_binding is not None:
+                        # Fallback to requested port only if we explicitly requested it
+                        host_port = port_binding
+                    else:
+                        # Random port was requested but we couldn't determine it
+                        console.print(
+                            "[red]✗ Failed to determine mock relayer host port[/red]"
+                        )
+                        container.remove(force=True)
+                        return None
+                self.mock_relayer_url = f"http://host.docker.internal:{host_port}"
+                console.print(
+                    f"[green]✓ Mock relayer started ({container.short_id}) at {self.mock_relayer_url}[/green]"
+                )
+                return self.mock_relayer_url
+            except docker.errors.APIError as e:
+                if attempt == 0 and "port is already allocated" in str(e).lower():
+                    console.print(
+                        f"[yellow]Port {MOCK_RELAYER_PORT} is in use, starting mock relayer on a random host port...[/yellow]"
+                    )
+                    port_binding = None
+                    continue
+                console.print(
+                    f"[red]✗ Failed to start mock relayer container: {str(e)}[/red]"
+                )
+                return None
+            except Exception as e:
+                console.print(
+                    f"[red]✗ Unexpected error starting mock relayer: {str(e)}[/red]"
+                )
+                return None
+
+        # Loop exhausted without success (should not normally reach here)
+        return None
+
     def get_node_rpc_port(self, node_name: str) -> Optional[int]:
         """Return the published RPC port for the given node, if available."""
         if node_name in self.node_rpc_ports:
@@ -157,6 +285,9 @@ class DockerManager:
         webui_use_cached: bool = False,
         log_level: str = "debug",
         rust_backtrace: str = "0",
+        mock_relayer: bool = False,
+        workflow_id: str = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -169,6 +300,18 @@ class DockerManager:
                     f"[red]✗ Cannot proceed without image: {image_to_use}[/red]"
                 )
                 return False
+
+            relayer_url = None
+            if mock_relayer:
+                relayer_url = self._ensure_mock_relayer()
+                if not relayer_url:
+                    console.print(
+                        "[red]✗ Mock relayer requested but failed to start[/red]"
+                    )
+                    return False
+                console.print(
+                    f"[cyan]Using mock relayer for node {node_name}: {relayer_url}[/cyan]"
+                )
 
             # Check if containers already exist and clean them up
             for container_name in [node_name, f"{node_name}-init"]:
@@ -301,6 +444,11 @@ class DockerManager:
                 },
             }
 
+            if mock_relayer:
+                container_config["extra_hosts"] = {
+                    "host.docker.internal": "host-gateway"
+                }
+
             # Add auth service configuration if enabled
             if auth_service:
                 console.print(
@@ -391,6 +539,10 @@ class DockerManager:
                 "--swarm-port",
                 str(2428),
             ]
+            if mock_relayer and relayer_url:
+                init_config["command"].extend(
+                    ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
+                )
             init_config["detach"] = False
 
             try:
@@ -398,6 +550,12 @@ class DockerManager:
                 console.print(
                     f"[green]✓ Node {node_name} initialized successfully[/green]"
                 )
+
+                # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
+                if e2e_mode:
+                    config_file = os.path.join(node_data_dir, "config.toml")
+                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+
             except Exception as e:
                 console.print(
                     f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
@@ -850,9 +1008,19 @@ class DockerManager:
         webui_use_cached: bool = False,
         log_level: str = "debug",
         rust_backtrace: str = "0",
+        mock_relayer: bool = False,
+        workflow_id: str = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
+
+        # Generate a single shared workflow_id for all nodes if none provided
+        if workflow_id is None:
+            import uuid
+
+            workflow_id = str(uuid.uuid4())[:8]
+            console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
         # Find available ports automatically if not specified
         if base_port is None:
@@ -884,6 +1052,9 @@ class DockerManager:
                 webui_use_cached=webui_use_cached,
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
+                mock_relayer=mock_relayer,
+                workflow_id=workflow_id,
+                e2e_mode=e2e_mode,
             ):
                 success_count += 1
             else:
@@ -933,46 +1104,67 @@ class DockerManager:
                 filters={"label": "calimero.node=true"}
             )
 
+            success = True
+            success_count = 0
+            failed_nodes = []
+
             if not containers:
                 console.print(
                     "[yellow]No Calimero nodes are currently running[/yellow]"
                 )
-                return True
+            else:
+                console.print(
+                    f"[bold]Stopping {len(containers)} Calimero nodes...[/bold]"
+                )
 
-            console.print(f"[bold]Stopping {len(containers)} Calimero nodes...[/bold]")
+                for container in containers:
+                    try:
+                        container.stop(timeout=10)
+                        container.remove()
+                        console.print(
+                            f"[green]✓ Stopped and removed {container.name}[/green]"
+                        )
+                        success_count += 1
+                        self.node_rpc_ports.pop(container.name, None)
 
-            success_count = 0
-            failed_nodes = []
+                        # Remove from nodes dict if present
+                        if container.name in self.nodes:
+                            del self.nodes[container.name]
 
-            for container in containers:
-                try:
-                    container.stop(timeout=10)
-                    container.remove()
+                    except Exception as e:
+                        console.print(
+                            f"[red]✗ Failed to stop {container.name}: {str(e)}[/red]"
+                        )
+                        failed_nodes.append(container.name)
+
+                console.print(
+                    f"\n[bold]Stop Summary: {success_count}/{len(containers)} nodes stopped successfully[/bold]"
+                )
+
+                if failed_nodes:
                     console.print(
-                        f"[green]✓ Stopped and removed {container.name}[/green]"
+                        f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]"
                     )
-                    success_count += 1
-                    self.node_rpc_ports.pop(container.name, None)
+                    success = False
 
-                    # Remove from nodes dict if present
-                    if container.name in self.nodes:
-                        del self.nodes[container.name]
+            # Stop mock relayer if it's running
+            try:
+                relayer = self.client.containers.get(MOCK_RELAYER_NAME)
+                if relayer.status == "running":
+                    console.print("[cyan]Stopping mock relayer container...[/cyan]")
+                    relayer.stop(timeout=10)
+                relayer.remove()
+                console.print("[green]✓ Mock relayer stopped[/green]")
+                self.mock_relayer_url = None
+            except docker.errors.NotFound:
+                pass
+            except Exception as e:
+                console.print(
+                    f"[yellow]⚠️  Warning: Failed to stop mock relayer: {e}[/yellow]"
+                )
+                success = False
 
-                except Exception as e:
-                    console.print(
-                        f"[red]✗ Failed to stop {container.name}: {str(e)}[/red]"
-                    )
-                    failed_nodes.append(container.name)
-
-            console.print(
-                f"\n[bold]Stop Summary: {success_count}/{len(containers)} nodes stopped successfully[/bold]"
-            )
-
-            if failed_nodes:
-                console.print(f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]")
-                return False
-
-            return True
+            return success
 
         except Exception as e:
             console.print(f"[red]Failed to stop all nodes: {str(e)}[/red]")
@@ -1187,3 +1379,78 @@ class DockerManager:
                 f"[red]Failed to verify admin binding for {node_name}: {str(e)}[/red]"
             )
             return False
+
+    def _apply_e2e_defaults(self, config_file: str, node_name: str, workflow_id: str):
+        """Apply e2e-style defaults for reliable testing."""
+        try:
+            import uuid
+            from pathlib import Path
+
+            import toml
+
+            # Generate unique workflow ID if not provided
+            if not workflow_id:
+                workflow_id = str(uuid.uuid4())[:8]
+
+            config_path = Path(config_file)
+            if not config_path.exists():
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+                return
+
+            # Load existing config
+            with open(config_path) as f:
+                config = toml.load(f)
+
+            # Apply e2e-style defaults for reliable testing
+            e2e_config = {
+                # Disable bootstrap nodes for test isolation (like e2e tests)
+                "bootstrap.nodes": [],
+                # Use unique rendezvous namespace per workflow (like e2e tests)
+                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
+                # Keep mDNS as backup (like e2e tests)
+                "discovery.mdns": True,
+                # Aggressive sync settings from e2e tests for reliable testing
+                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
+                "sync.interval_ms": 500,  # 500ms between syncs (very aggressive for tests)
+                "sync.frequency_ms": 1000,  # 1s periodic checks (ensures rapid sync in tests)
+                # Ethereum local devnet configuration (same as e2e tests)
+                "context.config.ethereum.network": "sepolia",
+                "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "context.config.ethereum.signer": "self",
+                "context.config.signer.self.ethereum.sepolia.rpc_url": "http://127.0.0.1:8545",
+                "context.config.signer.self.ethereum.sepolia.account_id": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "context.config.signer.self.ethereum.sepolia.secret_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+            }
+
+            # Apply each configuration
+            for key, value in e2e_config.items():
+                self._set_nested_config(config, key, value)
+
+            # Write back to file
+            with open(config_path, "w") as f:
+                toml.dump(config, f)
+
+            console.print(
+                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
+            )
+
+        except ImportError:
+            console.print(
+                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+            )
+        except Exception as e:
+            console.print(
+                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
+            )
+
+    def _set_nested_config(self, config: dict, key: str, value):
+        """Set nested configuration value using dot notation."""
+        keys = key.split(".")
+        current = config
+        for k in keys[:-1]:
+            if k not in current:
+                current[k] = {}
+            current = current[k]
+
+        current[keys[-1]] = value
+        console.print(f"[cyan]  {key} = {value}[/cyan]")

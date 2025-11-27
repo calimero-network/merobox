@@ -26,7 +26,9 @@ def multi_test_nodes():
     pass
 
 
-@run_workflow("./workflows/workflow-example.yml", prefix="shared-workflow", scope="session")
+@run_workflow(
+    "./workflows/workflow-example.yml", prefix="shared-workflow", scope="session"
+)
 def shared_workflow():
     """Shared workflow setup for advanced testing - session scoped for reuse"""
     pass
@@ -103,7 +105,6 @@ def merobox_simple_workflow(shared_workflow):
     return shared_workflow
 
 
-
 @pytest.fixture
 def simple_workflow_environment(shared_workflow):
     """Alias for shared_workflow"""
@@ -125,6 +126,7 @@ def endpoints(shared_cluster):
 def client(shared_cluster):
     """Quick access to client from the shared cluster"""
     from hello_world.client import Client
+
     return Client(shared_cluster.endpoint(0))
 
 

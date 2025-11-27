@@ -128,6 +128,9 @@ class BinaryManager:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         foreground: bool = False,
+        mock_relayer: bool = False,  # Ignored in binary mode
+        workflow_id: Optional[str] = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -145,6 +148,10 @@ class BinaryManager:
             True if successful, False otherwise
         """
         try:
+            if mock_relayer:
+                console.print(
+                    "[yellow]⚠ Mock relayer is not supported in binary mode (--no-docker); flag will be ignored[/yellow]"
+                )
             # Default ports if None provided
             if port is None:
                 port = 2428
@@ -227,6 +234,12 @@ class BinaryManager:
                         console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                         return False
 
+            # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
+            if e2e_mode:
+                # The actual config file is in a nested subdirectory created by merod init
+                actual_config_file = node_data_dir / node_name / "config.toml"
+                self._apply_e2e_defaults(actual_config_file, node_name, workflow_id)
+
             # Build run command (ports are taken from config created during init)
             cmd = [
                 self.binary_path,
@@ -265,15 +278,22 @@ class BinaryManager:
                     return False
             else:
                 # Start detached with logs to file
+                # For e2e mode, don't create new session to match e2e test behavior
+                # (process should be managed together with parent, not detached)
+                # For regular mode, create new session so process survives parent death
                 with open(log_file, "a") as log_f:
-                    process = subprocess.Popen(
-                        cmd,
-                        env=env,
-                        stdin=subprocess.DEVNULL,
-                        stdout=log_f,
-                        stderr=subprocess.STDOUT,
-                        start_new_session=True,
-                    )
+                    popen_kwargs = {
+                        "env": env,
+                        "stdin": subprocess.DEVNULL,
+                        "stdout": log_f,
+                        "stderr": subprocess.STDOUT,
+                    }
+                    # Only create new session if NOT in e2e mode
+                    # E2E tests work better when process is in same process group
+                    if not e2e_mode:
+                        popen_kwargs["start_new_session"] = True
+                    
+                    process = subprocess.Popen(cmd, **popen_kwargs)
 
                 # Save process info
                 self.processes[node_name] = process
@@ -550,6 +570,9 @@ class BinaryManager:
         webui_use_cached: bool = False,  # Ignored
         log_level: str = "debug",
         rust_backtrace: str = "0",
+        mock_relayer: bool = False,  # Ignored
+        workflow_id: Optional[str] = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -577,17 +600,40 @@ class BinaryManager:
 
         console.print(f"[cyan]Starting {count} nodes with prefix '{prefix}'...[/cyan]")
 
+        # Generate a single shared workflow_id for all nodes if none provided
+        if workflow_id is None:
+            import uuid
+
+            workflow_id = str(uuid.uuid4())[:8]
+            console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
+
         success_count = 0
-        # Default base ports if None provided
-        if base_port is None:
-            base_port = 2428
-        if base_rpc_port is None:
-            base_rpc_port = 2528
+
+        # Use dynamic port allocation for e2e mode to avoid conflicts
+        if e2e_mode:
+            # Find available ports dynamically
+            allocated_ports = self._find_available_ports(
+                count * 2
+            )  # Need P2P + RPC for each node
+            console.print(f"[cyan]Allocated dynamic ports: {allocated_ports}[/cyan]")
+        else:
+            # Default base ports if None provided (legacy behavior)
+            if base_port is None:
+                base_port = 2428
+            if base_rpc_port is None:
+                base_rpc_port = 2528
+            allocated_ports = []
 
         for i in range(count):
             node_name = f"{prefix}-{i+1}"
-            port = base_port + (i * 100)  # Space out ports
-            rpc_port = base_rpc_port + (i * 100)
+            if e2e_mode:
+                # Use dynamically allocated ports
+                port = allocated_ports[i * 2]  # P2P port
+                rpc_port = allocated_ports[i * 2 + 1]  # RPC port
+            else:
+                # Use fixed port ranges (legacy behavior)
+                port = base_port + (i * 100)  # Space out ports
+                rpc_port = base_rpc_port + (i * 100)
 
             if self.run_node(
                 node_name=node_name,
@@ -596,6 +642,9 @@ class BinaryManager:
                 chain_id=chain_id,
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
+                mock_relayer=mock_relayer,
+                workflow_id=workflow_id,
+                e2e_mode=e2e_mode,
             ):
                 success_count += 1
             else:
@@ -632,3 +681,111 @@ class BinaryManager:
         """
         # For binary mode, just check if the process is running
         return self.is_node_running(node_name)
+
+    def _apply_e2e_defaults(
+        self, config_file: Path, node_name: str, workflow_id: Optional[str]
+    ):
+        """Apply e2e-style defaults for reliable testing."""
+        try:
+            import uuid
+
+            import toml
+
+            # Generate unique workflow ID if not provided
+            if not workflow_id:
+                workflow_id = str(uuid.uuid4())[:8]
+
+            # Check if config file exists
+            if not config_file.exists():
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+                return
+
+            # Load existing config
+            with open(config_file) as f:
+                config = toml.load(f)
+
+            # Apply e2e-style defaults for reliable testing
+            e2e_config = {
+                # Disable bootstrap nodes for test isolation (like e2e tests)
+                "bootstrap.nodes": [],
+                # Use unique rendezvous namespace per workflow (like e2e tests)
+                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
+                # Keep mDNS as backup (like e2e tests)
+                "discovery.mdns": True,
+                # Aggressive sync settings from e2e tests for reliable testing
+                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
+                "sync.interval_ms": 500,  # 500ms between syncs (very aggressive for tests)
+                "sync.frequency_ms": 1000,  # 1s periodic checks (ensures rapid sync in tests)
+                # Ethereum local devnet configuration (same as e2e tests)
+                "context.config.ethereum.network": "sepolia",
+                "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "context.config.ethereum.signer": "self",
+                "context.config.signer.self.ethereum.sepolia.rpc_url": "http://127.0.0.1:8545",
+                "context.config.signer.self.ethereum.sepolia.account_id": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "context.config.signer.self.ethereum.sepolia.secret_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+            }
+
+            # Apply each configuration
+            for key, value in e2e_config.items():
+                self._set_nested_config(config, key, value)
+
+            # Write back to file (ensure it's writable first)
+            import stat
+
+            if config_file.exists():
+                config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
+
+            with open(config_file, "w") as f:
+                toml.dump(config, f)
+
+            console.print(
+                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
+            )
+
+        except ImportError:
+            console.print(
+                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+            )
+        except Exception as e:
+            console.print(
+                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
+            )
+
+    def _find_available_ports(self, count: int) -> list[int]:
+        """Find available ports for dynamic allocation."""
+        import socket
+
+        ports = []
+        start_port = 3000  # Start from a higher range to avoid common conflicts
+
+        for port in range(
+            start_port, start_port + 10000
+        ):  # Search in a reasonable range
+            if len(ports) >= count:
+                break
+
+            # Check if port is available
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                try:
+                    sock.bind(("127.0.0.1", port))
+                    ports.append(port)
+                except OSError:
+                    # Port is in use, try next one
+                    continue
+
+        if len(ports) < count:
+            raise RuntimeError(f"Could not find {count} available ports")
+
+        return ports
+
+    def _set_nested_config(self, config: dict, key: str, value):
+        """Set nested configuration value using dot notation."""
+        keys = key.split(".")
+        current = config
+        for k in keys[:-1]:
+            if k not in current:
+                current[k] = {}
+            current = current[k]
+
+        current[keys[-1]] = value
+        console.print(f"[cyan]  {key} = {value}[/cyan]")
