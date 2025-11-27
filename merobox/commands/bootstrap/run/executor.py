@@ -411,6 +411,7 @@ class WorkflowExecutor:
                     self.log_level,
                     self.rust_backtrace,
                     self.mock_relayer,
+                    workflow_id=self.workflow_id,
                 ):
                     return False
             else:
