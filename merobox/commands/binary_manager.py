@@ -685,6 +685,10 @@ class BinaryManager:
                 "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
                 # Keep mDNS as backup (like e2e tests)
                 "discovery.mdns": True,
+                # Aggressive sync settings from e2e tests for reliable testing
+                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
+                "sync.interval_ms": 500,   # 500ms between syncs (very aggressive for tests)
+                "sync.frequency_ms": 1000, # 1s periodic checks (ensures rapid sync in tests)
             }
 
             # Apply each configuration

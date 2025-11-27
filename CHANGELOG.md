@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2024-11-27
+
+### Added
+- **Aggressive Sync Settings**: Added e2e-style sync configuration for improved test reliability
+  - `sync.timeout_ms=30000` (30s timeout, matches production)
+  - `sync.interval_ms=500` (500ms between syncs, very aggressive for tests)
+  - `sync.frequency_ms=1000` (1s periodic checks, ensures rapid sync in tests)
+
+### Fixed
+- **Connection Stability**: Improved node synchronization and connection stability by matching e2e test sync settings
+- **TLS Connection Issues**: Resolved TLS close_notify errors by improving sync timing and reliability
+
 ## [0.2.6] - 2024-11-26
 
 ### Added
