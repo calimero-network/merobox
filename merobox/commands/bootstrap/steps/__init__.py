@@ -20,6 +20,7 @@ from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
+from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
 
 __all__ = [
     "BaseStep",
@@ -32,6 +33,7 @@ __all__ = [
     "JoinOpenStep",
     "ExecuteStep",
     "WaitStep",
+    "WaitForSyncStep",
     "RepeatStep",
     "ScriptStep",
     "AssertStep",

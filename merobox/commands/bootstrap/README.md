@@ -28,6 +28,7 @@ bootstrap/
 │   ├── execute.py       # Contract execution step
 │   ├── repeat.py        # Loop/repeat step
 │   ├── wait.py          # Wait/delay step
+│   ├── wait_for_sync.py # Wait for node sync verification step
 │   └── script.py        # Script execution step
 └── README.md            # This file
 ```
@@ -87,6 +88,7 @@ Generate a sample workflow configuration file.
 - **call**: Execute contract functions
 - **repeat**: Loop through step sequences
 - **wait**: Add delays between steps
+- **wait_for_sync**: Wait for nodes to reach consensus (root hash verification)
 - **script**: Execute custom scripts
 
 ## Configuration
