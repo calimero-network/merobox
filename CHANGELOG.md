@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2024-11-27
+
+### Added
+- **`--e2e-mode` Flag**: Added optional flag to enable e2e-style test defaults
+  - Only applies aggressive sync settings and test isolation when explicitly requested
+  - Prevents e2e defaults from being applied by default to all workflows
+  - Maintains backward compatibility for existing workflows
+
+### Changed
+- **E2E Defaults**: Made e2e-style configuration optional instead of always applied
+  - `bootstrap.nodes = []` (disable bootstrap nodes)
+  - `discovery.rendezvous.namespace = calimero/merobox-tests/{workflow_id}` (unique namespace)
+  - `sync.timeout_ms = 30000`, `sync.interval_ms = 500`, `sync.frequency_ms = 1000` (aggressive sync)
+  - Only applied when `--e2e-mode` flag is used
+
+### Fixed
+- **Default Behavior**: Restored normal merobox behavior for regular workflows (no forced e2e defaults)
+- **GitHub Workflow**: Updated CI to use `--e2e-mode` flag for proper test isolation
+
 ## [0.2.7] - 2024-11-27
 
 ### Added

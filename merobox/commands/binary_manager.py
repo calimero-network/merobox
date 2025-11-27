@@ -130,6 +130,7 @@ class BinaryManager:
         foreground: bool = False,
         mock_relayer: bool = False,  # Ignored in binary mode
         workflow_id: Optional[str] = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -233,10 +234,11 @@ class BinaryManager:
                         console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                         return False
 
-            # Apply e2e-style configuration for reliable testing
-            # The actual config file is in a nested subdirectory created by merod init
-            actual_config_file = node_data_dir / node_name / "config.toml"
-            self._apply_e2e_defaults(actual_config_file, node_name, workflow_id)
+            # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
+            if e2e_mode:
+                # The actual config file is in a nested subdirectory created by merod init
+                actual_config_file = node_data_dir / node_name / "config.toml"
+                self._apply_e2e_defaults(actual_config_file, node_name, workflow_id)
 
             # Build run command (ports are taken from config created during init)
             cmd = [
@@ -563,6 +565,7 @@ class BinaryManager:
         rust_backtrace: str = "0",
         mock_relayer: bool = False,  # Ignored
         workflow_id: Optional[str] = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -618,6 +621,7 @@ class BinaryManager:
                 rust_backtrace=rust_backtrace,
                 mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
+                e2e_mode=e2e_mode,
             ):
                 success_count += 1
             else:

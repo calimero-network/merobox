@@ -287,6 +287,7 @@ class DockerManager:
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
         workflow_id: str = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -550,9 +551,10 @@ class DockerManager:
                     f"[green]✓ Node {node_name} initialized successfully[/green]"
                 )
 
-                # Apply e2e-style configuration for reliable testing
-                config_file = os.path.join(node_data_dir, "config.toml")
-                self._apply_e2e_defaults(config_file, node_name, workflow_id)
+                # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
+                if e2e_mode:
+                    config_file = os.path.join(node_data_dir, "config.toml")
+                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
 
             except Exception as e:
                 console.print(
@@ -1008,6 +1010,7 @@ class DockerManager:
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
         workflow_id: str = None,  # for test isolation
+        e2e_mode: bool = False,  # enable e2e-style defaults
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1051,6 +1054,7 @@ class DockerManager:
                 rust_backtrace=rust_backtrace,
                 mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
+                e2e_mode=e2e_mode,
             ):
                 success_count += 1
             else:

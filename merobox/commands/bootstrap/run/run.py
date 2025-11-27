@@ -29,6 +29,7 @@ async def run_workflow(
     no_docker: bool = False,
     binary_path: Optional[str] = None,
     mock_relayer: bool = False,
+    e2e_mode: bool = False,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -98,6 +99,7 @@ async def run_workflow(
             log_level,
             rust_backtrace,
             mock_relayer,
+            e2e_mode,
         )
 
         # Execute workflow
@@ -134,6 +136,7 @@ def run_workflow_sync(
     no_docker: bool = False,
     binary_path: Optional[str] = None,
     mock_relayer: bool = False,
+    e2e_mode: bool = False,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -160,5 +163,6 @@ def run_workflow_sync(
             no_docker=no_docker,
             binary_path=binary_path,
             mock_relayer=mock_relayer,
+            e2e_mode=e2e_mode,
         )
     )

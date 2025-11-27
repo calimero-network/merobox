@@ -86,6 +86,11 @@ def bootstrap():
     is_flag=True,
     help="Start a local mock relayer (Docker only) and wire nodes to it",
 )
+@click.option(
+    "--e2e-mode",
+    is_flag=True,
+    help="Enable e2e test mode with aggressive sync settings and test isolation (disables bootstrap nodes, uses unique rendezvous namespaces)",
+)
 def run(
     config_file,
     verbose,
@@ -99,6 +104,7 @@ def run(
     no_docker,
     binary_path,
     mock_relayer,
+    e2e_mode,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -123,6 +129,7 @@ def run(
         no_docker=no_docker,
         binary_path=binary_path,
         mock_relayer=mock_relayer,
+        e2e_mode=e2e_mode,
     )
     if not success:
         sys.exit(1)

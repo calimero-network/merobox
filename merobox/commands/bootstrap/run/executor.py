@@ -34,6 +34,7 @@ class WorkflowExecutor:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
+        e2e_mode: bool = False,
     ):
         self.config = config
         self.manager = manager
@@ -66,6 +67,9 @@ class WorkflowExecutor:
         )
         # Mock relayer can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.mock_relayer = mock_relayer or config.get("mock_relayer", False)
+
+        # E2E mode can be enabled by CLI flag or workflow config (CLI takes precedence)
+        self.e2e_mode = e2e_mode or config.get("e2e_mode", False)
 
         # Generate unique workflow ID for test isolation (like e2e tests)
         import uuid
@@ -412,6 +416,7 @@ class WorkflowExecutor:
                     self.rust_backtrace,
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
+                    e2e_mode=self.e2e_mode,
                 ):
                     return False
             else:
@@ -446,6 +451,7 @@ class WorkflowExecutor:
                         self.rust_backtrace,
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
+                        e2e_mode=self.e2e_mode,
                     ):
                         return False
 
