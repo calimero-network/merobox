@@ -657,6 +657,7 @@ class BinaryManager:
         self, config_file: Path, node_name: str, workflow_id: Optional[str]
     ):
         """Apply e2e-style defaults for reliable testing."""
+        console.print(f"[yellow]DEBUG: _apply_e2e_defaults called for {node_name}, config: {config_file}, workflow_id: {workflow_id}[/yellow]")
         try:
             import uuid
 
