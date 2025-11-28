@@ -168,7 +168,7 @@ class CreateContextStep(BaseStep):
                         # Print last few lines of traceback for context
                         lines = traceback_str.strip().split("\n")
                         if len(lines) > 5:
-                            console.print(f"  Traceback (last 5 lines):")
+                            console.print("  Traceback (last 5 lines):")
                             for line in lines[-5:]:
                                 console.print(f"    {line}")
                         else:
