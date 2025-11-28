@@ -236,6 +236,8 @@ class ExecuteStep(BaseStep):
                         console.print(
                             f"[red]❌ Execution failed: {error_message}[/red]"
                         )
+                        # Print node logs to help with debugging
+                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
                         return False
 
                 # Check if the JSON-RPC response contains an error
@@ -253,6 +255,10 @@ class ExecuteStep(BaseStep):
                             # Exhausted retries for missing state
                             console.print(
                                 "[red]Execution failed: app state not available after retries[/red]"
+                            )
+                            # Print node logs to help with debugging
+                            self._print_node_logs_on_failure(
+                                node_name=node_name, lines=50
                             )
                             return False
 
@@ -277,6 +283,8 @@ class ExecuteStep(BaseStep):
                         console.print(
                             "[red]❌ Unexpected JSON-RPC error detected[/red]"
                         )
+                        # Print node logs to help with debugging
+                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
                         return False
 
                 # Store result for later use

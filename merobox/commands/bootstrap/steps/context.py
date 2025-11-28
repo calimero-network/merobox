@@ -156,13 +156,17 @@ class CreateContextStep(BaseStep):
             if "exception" in result:
                 exception = result["exception"]
                 if isinstance(exception, dict):
-                    console.print(f"  Exception Type: {exception.get('type', 'Unknown')}")
-                    console.print(f"  Exception Message: {exception.get('message', 'No message')}")
+                    console.print(
+                        f"  Exception Type: {exception.get('type', 'Unknown')}"
+                    )
+                    console.print(
+                        f"  Exception Message: {exception.get('message', 'No message')}"
+                    )
                     # Only print traceback in verbose mode or if it's short
-                    traceback_str = exception.get('traceback', '')
+                    traceback_str = exception.get("traceback", "")
                     if traceback_str:
                         # Print last few lines of traceback for context
-                        lines = traceback_str.strip().split('\n')
+                        lines = traceback_str.strip().split("\n")
                         if len(lines) > 5:
                             console.print(f"  Traceback (last 5 lines):")
                             for line in lines[-5:]:
@@ -201,8 +205,12 @@ class CreateContextStep(BaseStep):
                     else:
                         # Only show warning if we really couldn't find it
                         available_keys = list(result["data"].keys())
-                        if "data" in result["data"] and isinstance(result["data"]["data"], dict):
-                            available_keys.extend([f"data.{k}" for k in result["data"]["data"].keys()])
+                        if "data" in result["data"] and isinstance(
+                            result["data"]["data"], dict
+                        ):
+                            available_keys.extend(
+                                [f"data.{k}" for k in result["data"]["data"].keys()]
+                            )
                         console.print(
                             f"[yellow]⚠️  No context ID found in response. Available keys: {available_keys}[/yellow]"
                         )
@@ -216,4 +224,6 @@ class CreateContextStep(BaseStep):
             console.print(
                 f"[red]Context creation failed: {result.get('error', 'Unknown error')}[/red]"
             )
+            # Print node logs to help with debugging
+            self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False
