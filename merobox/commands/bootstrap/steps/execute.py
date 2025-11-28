@@ -565,11 +565,22 @@ class ExecuteStep(BaseStep):
             return False
 
         error_info = result_data.get("error")
+        error_type = ""
         message = ""
 
         if isinstance(error_info, dict):
+            error_type = str(error_info.get("type") or "")
             message = str(error_info.get("data") or error_info.get("message") or "")
         elif error_info:
             message = str(error_info)
 
-        return "Failed to find or read app state" in message
+        # Check for Uninitialized error type (context state not synced yet)
+        if error_type == "Uninitialized":
+            return True
+
+        # Check for missing state error messages
+        return (
+            "Failed to find or read app state" in message
+            or "state not initialized" in message.lower()
+            or "awaiting state sync" in message.lower()
+        )
