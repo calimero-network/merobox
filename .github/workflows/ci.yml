@@ -80,40 +80,15 @@ jobs:
           merod --version
           echo "merod installed successfully!"
 
-      - name: Test merobox CLI and workflow (PR - Essential workflows only)
-        if: github.event_name == 'pull_request'
-        run: |
-          merobox --version
-          merobox --help
-          echo "🧹 Performing initial cleanup..."
-          merobox stop --all --no-docker || true
-          merobox nuke -f || true
-          # Run only essential workflows on PRs for faster feedback
-          ESSENTIAL_WORKFLOWS=(
-            "workflow-examples/workflow-example.yml"
-            "workflow-examples/workflow-auth-example.yml"
-            "workflow-examples/workflow-proposals-example.yml"
-            "workflow-examples/workflow-assert-example.yml"
-            "workflow-examples/workflow-open-invitation-example.yml"
-          )
-          for f in "${ESSENTIAL_WORKFLOWS[@]}"; do \
-            echo "Running workflow: $f"; \
-            merobox bootstrap run "$f" --no-docker --verbose; \
-            echo "Cleaning up after workflow..."; \
-            merobox stop --all --no-docker || true; \
-            merobox nuke -f || true; \
-          done
-
-      - name: Test merobox CLI and workflow (Master - All workflows)
-        if: github.ref == 'refs/heads/master'
+      - name: Test merobox CLI and workflow (All workflows)
         run: |
           merobox --version
           merobox --help
           # Initial cleanup to ensure no leftover data from previous runs
-          echo "Performing initial cleanup..."
+          echo "🧹 Performing initial cleanup..."
           merobox stop --all --no-docker || true
           merobox nuke -f || true
-          # Run all workflows on master for comprehensive testing
+          # Run all workflows for comprehensive testing on both PRs and master
           for f in workflow-examples/*.yml; do \
             echo "Running workflow: $f"; \
             merobox bootstrap run "$f" --no-docker --verbose; \
