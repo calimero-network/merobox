@@ -200,6 +200,8 @@ class InstallApplicationStep(BaseStep):
                         console.print(
                             "[red]Unable to prepare application file inside container data directory[/red]"
                         )
+                        # Print node logs to help with debugging
+                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
                         return False
 
                     console.print(
@@ -239,6 +241,8 @@ class InstallApplicationStep(BaseStep):
         if result["success"]:
             # Check if the JSON-RPC response contains an error
             if self._check_jsonrpc_error(result["data"]):
+                # Print node logs to help with debugging
+                self._print_node_logs_on_failure(node_name=node_name, lines=50)
                 return False
 
             # Store result for later use
@@ -278,4 +282,6 @@ class InstallApplicationStep(BaseStep):
             console.print(
                 f"[red]Installation failed: {result.get('error', 'Unknown error')}[/red]"
             )
+            # Print node logs to help with debugging
+            self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False

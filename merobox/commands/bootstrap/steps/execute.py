@@ -236,6 +236,8 @@ class ExecuteStep(BaseStep):
                         console.print(
                             f"[red]❌ Execution failed: {error_message}[/red]"
                         )
+                        # Print node logs to help with debugging
+                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
                         return False
 
                 # Check if the JSON-RPC response contains an error
@@ -253,6 +255,10 @@ class ExecuteStep(BaseStep):
                             # Exhausted retries for missing state
                             console.print(
                                 "[red]Execution failed: app state not available after retries[/red]"
+                            )
+                            # Print node logs to help with debugging
+                            self._print_node_logs_on_failure(
+                                node_name=node_name, lines=50
                             )
                             return False
 
@@ -277,6 +283,8 @@ class ExecuteStep(BaseStep):
                         console.print(
                             "[red]❌ Unexpected JSON-RPC error detected[/red]"
                         )
+                        # Print node logs to help with debugging
+                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
                         return False
 
                 # Store result for later use
@@ -557,11 +565,22 @@ class ExecuteStep(BaseStep):
             return False
 
         error_info = result_data.get("error")
+        error_type = ""
         message = ""
 
         if isinstance(error_info, dict):
+            error_type = str(error_info.get("type") or "")
             message = str(error_info.get("data") or error_info.get("message") or "")
         elif error_info:
             message = str(error_info)
 
-        return "Failed to find or read app state" in message
+        # Check for Uninitialized error type (context state not synced yet)
+        if error_type == "Uninitialized":
+            return True
+
+        # Check for missing state error messages
+        return (
+            "Failed to find or read app state" in message
+            or "state not initialized" in message.lower()
+            or "awaiting state sync" in message.lower()
+        )

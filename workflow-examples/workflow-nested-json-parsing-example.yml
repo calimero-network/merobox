@@ -129,25 +129,25 @@ steps:
   - name: Verify Deep Value
     type: json_assert
     statements:
-      - statement: "equal('{{deep_value}}', 'deep_value')"
+      - statement: "equal({{deep_value}}, 'deep_value')"
         message: "Deep nested value extracted correctly"
 
   - name: Verify Array Values
     type: json_assert
     statements:
-      - statement: "equal('{{first_id}}', '1')"
+      - statement: "equal({{first_id}}, '1')"
         message: "First item ID is correct"
-      - statement: "equal('{{first_name}}', 'First')"
+      - statement: "equal({{first_name}}, 'First')"
         message: "First item name is correct"
-      - statement: "equal('{{third_name}}', 'Third')"
+      - statement: "equal({{third_name}}, 'Third')"
         message: "Third item name is correct"
 
   - name: Verify Mixed Values
     type: json_assert
     statements:
-      - statement: "equal('{{user_name}}', 'Alice')"
+      - statement: "equal({{user_name}}, 'Alice')"
         message: "User name extracted correctly"
-      - statement: "equal('{{user_theme}}', 'dark')"
+      - statement: "equal({{user_theme}}, 'dark')"
         message: "User theme extracted correctly"
       # Note: Booleans are successfully extracted and can be used in workflow steps
       # They appear as Python True/False values

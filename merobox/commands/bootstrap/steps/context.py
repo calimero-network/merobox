@@ -152,6 +152,27 @@ class CreateContextStep(BaseStep):
 
         if not result.get("success"):
             console.print(f"  Error: {result.get('error')}")
+            # Print exception details if available
+            if "exception" in result:
+                exception = result["exception"]
+                if isinstance(exception, dict):
+                    console.print(
+                        f"  Exception Type: {exception.get('type', 'Unknown')}"
+                    )
+                    console.print(
+                        f"  Exception Message: {exception.get('message', 'No message')}"
+                    )
+                    # Only print traceback in verbose mode or if it's short
+                    traceback_str = exception.get("traceback", "")
+                    if traceback_str:
+                        # Print last few lines of traceback for context
+                        lines = traceback_str.strip().split("\n")
+                        if len(lines) > 5:
+                            console.print("  Traceback (last 5 lines):")
+                            for line in lines[-5:]:
+                                console.print(f"    {line}")
+                        else:
+                            console.print(f"  Traceback:\n{traceback_str}")
 
         if result["success"]:
             # Check if the JSON-RPC response contains an error
@@ -168,10 +189,13 @@ class CreateContextStep(BaseStep):
             # Legacy support: ensure context_id is always available for backward compatibility
             if f"context_id_{node_name}" not in dynamic_values:
                 # Try to extract from the raw response as fallback
+                # Handle nested structure: result["data"] may be {"data": {"contextId": "..."}}
                 if isinstance(result["data"], dict):
-                    context_id = result["data"].get(
+                    # First try to get from nested "data" field
+                    nested_data = result["data"].get("data", result["data"])
+                    context_id = nested_data.get(
                         "id",
-                        result["data"].get("contextId", result["data"].get("name")),
+                        nested_data.get("contextId", nested_data.get("name")),
                     )
                     if context_id:
                         dynamic_values[f"context_id_{node_name}"] = context_id
@@ -179,8 +203,16 @@ class CreateContextStep(BaseStep):
                             f"[blue]📝 Fallback: Captured context ID for {node_name}: {context_id}[/blue]"
                         )
                     else:
+                        # Only show warning if we really couldn't find it
+                        available_keys = list(result["data"].keys())
+                        if "data" in result["data"] and isinstance(
+                            result["data"]["data"], dict
+                        ):
+                            available_keys.extend(
+                                [f"data.{k}" for k in result["data"]["data"].keys()]
+                            )
                         console.print(
-                            f"[yellow]⚠️  No context ID found in response. Available keys: {list(result['data'].keys())}[/yellow]"
+                            f"[yellow]⚠️  No context ID found in response. Available keys: {available_keys}[/yellow]"
                         )
                 else:
                     console.print(
@@ -192,4 +224,6 @@ class CreateContextStep(BaseStep):
             console.print(
                 f"[red]Context creation failed: {result.get('error', 'Unknown error')}[/red]"
             )
+            # Print node logs to help with debugging
+            self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False

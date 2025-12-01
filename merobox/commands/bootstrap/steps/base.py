@@ -547,6 +547,70 @@ class BaseStep:
             return True
         return False
 
+    def _print_node_logs_on_failure(
+        self, node_name: Optional[str] = None, lines: int = 50
+    ) -> None:
+        """
+        Print recent node logs when a step fails to help with debugging.
+
+        Args:
+            node_name: Name of the node to get logs from. If None, tries to extract from step config.
+            lines: Number of log lines to show (default: 50)
+        """
+        # Try to get node name from config if not provided
+        if node_name is None:
+            node_name = self.config.get("node")
+
+        if not node_name:
+            # No node associated with this step, skip log printing
+            return
+
+        if not self.manager:
+            # No manager available, skip log printing
+            return
+
+        try:
+            console.print(
+                f"\n[yellow]📋 Recent logs from node '{node_name}' (last {lines} lines):[/yellow]"
+            )
+            console.print("[dim]" + "=" * 80 + "[/dim]")
+
+            # Check if we're in binary mode
+            is_binary_mode = (
+                hasattr(self.manager, "binary_path")
+                and self.manager.binary_path is not None
+            )
+
+            if is_binary_mode:
+                # Binary mode - use BinaryManager's get_node_logs
+                log_content = self.manager.get_node_logs(node_name, lines=lines)
+                if log_content:
+                    console.print(log_content)
+                else:
+                    console.print(f"[dim]No logs found for {node_name}[/dim]")
+            else:
+                # Docker mode - DockerManager.get_node_logs prints with its own formatting
+                # We'll call it directly, but suppress its header since we have our own
+                try:
+                    # Get the container and logs directly to avoid double formatting
+                    if node_name in self.manager.nodes:
+                        container = self.manager.nodes[node_name]
+                    else:
+                        container = self.manager.client.containers.get(node_name)
+
+                    logs = container.logs(tail=lines, timestamps=True).decode("utf-8")
+                    if logs:
+                        console.print(logs)
+                    else:
+                        console.print(f"[dim]No logs available for {node_name}[/dim]")
+                except Exception as e:
+                    console.print(f"[dim]Could not retrieve logs: {str(e)}[/dim]")
+
+            console.print("[dim]" + "=" * 80 + "[/dim]\n")
+        except Exception as e:
+            # Don't let log printing failures break the workflow
+            console.print(f"[dim]Could not print node logs: {str(e)}[/dim]")
+
     def _resolve_dynamic_value(
         self,
         value: str,
