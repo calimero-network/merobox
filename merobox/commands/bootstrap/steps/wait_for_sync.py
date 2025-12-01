@@ -116,14 +116,15 @@ class WaitForSyncStep(BaseStep):
                 # Optionally trigger sync to ensure root_hash is up-to-date
                 if trigger_sync:
                     try:
-                        # Try sync_all_contexts() which works (correct API path)
-                        # sync_context() has path mismatch and returns 404
-                        client.sync_all_contexts()
-                    except Exception as sync_error:
-                        # If sync fails, continue anyway (root hash still queryable)
-                        console.print(
-                            f"[dim]⚠️  Sync trigger failed for {node_name}: {str(sync_error)}[/dim]"
-                        )
+                        client.sync_context(context_id)
+                    except (RuntimeError, ValueError, AttributeError):
+                        # Fallback to sync_all_contexts if sync_context fails
+                        try:
+                            client.sync_all_contexts()
+                        except (RuntimeError, ValueError) as sync_error:
+                            console.print(
+                                f"[dim]⚠️  Sync trigger failed for {node_name}: {str(sync_error)}[/dim]"
+                            )
 
                 # Get context information which includes root_hash
                 context_data = client.get_context(context_id)
@@ -151,7 +152,13 @@ class WaitForSyncStep(BaseStep):
 
                 return node_name, None
 
-            except Exception as e:
+            except (
+                RuntimeError,
+                ValueError,
+                ConnectionError,
+                TimeoutError,
+                OSError,
+            ) as e:
                 if retry < max_retries - 1:
                     console.print(
                         f"[dim]⚠️  Error fetching from {node_name}: {str(e)}, retrying ({retry + 1}/{max_retries})...[/dim]"
@@ -320,7 +327,7 @@ class WaitForSyncStep(BaseStep):
         timeout = self.config.get("timeout", 30)
         check_interval = self.config.get("check_interval", 1.0)
         retry_attempts = self.config.get("retry_attempts")
-        # Default: enabled now that we use sync_all_contexts()
+        # Default: enabled - uses sync_context(context_id) for targeted sync
         trigger_sync = self.config.get("trigger_sync", True)
 
         console.print("\n[bold cyan]⏳ Waiting for node synchronization...[/bold cyan]")
