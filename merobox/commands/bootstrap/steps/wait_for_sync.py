@@ -51,6 +51,16 @@ class WaitForSyncStep(BaseStep):
                         f"Step '{step_name}': all items in 'nodes' must be strings"
                     )
 
+            unique_nodes = set(self.config["nodes"])
+            if len(unique_nodes) < len(self.config["nodes"]):
+                raise ValueError(
+                    f"Step '{step_name}': 'nodes' must contain unique node names"
+                )
+            if len(unique_nodes) < 2:
+                raise ValueError(
+                    f"Step '{step_name}': 'nodes' must contain at least two unique nodes for consensus verification"
+                )
+
         # Validate timeout is a positive integer if provided
         if "timeout" in self.config:
             if not isinstance(self.config["timeout"], int):
