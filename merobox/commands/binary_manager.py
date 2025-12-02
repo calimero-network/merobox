@@ -47,8 +47,7 @@ class BinaryManager:
 
         binary = which("merod")
         if binary:
-            console.print(
-                f"[green]✓ Found merod binary in PATH: {binary}[/green]")
+            console.print(f"[green]✓ Found merod binary in PATH: {binary}[/green]")
             return binary
 
         # Check common locations
@@ -232,16 +231,14 @@ class BinaryManager:
                         console.print(
                             f"[red]✗ Failed to initialize node {node_name}: {e}[/red]"
                         )
-                        console.print(
-                            f"[yellow]Check logs: {log_file}[/yellow]")
+                        console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                         return False
 
             # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
             if e2e_mode:
                 # The actual config file is in a nested subdirectory created by merod init
                 actual_config_file = node_data_dir / node_name / "config.toml"
-                self._apply_e2e_defaults(
-                    actual_config_file, node_name, workflow_id)
+                self._apply_e2e_defaults(actual_config_file, node_name, workflow_id)
 
             # Build run command (ports are taken from config created during init)
             cmd = [
@@ -317,8 +314,7 @@ class BinaryManager:
                 # Wait a moment to check if process stays alive
                 time.sleep(2)
                 if not self._is_process_running(process.pid):
-                    console.print(
-                        f"[red]✗ Node {node_name} crashed immediately![/red]")
+                    console.print(f"[red]✗ Node {node_name} crashed immediately![/red]")
                     console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                     return False
 
@@ -340,8 +336,7 @@ class BinaryManager:
                 return True
 
         except Exception as e:
-            console.print(
-                f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
+            console.print(f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
             return False
 
     def stop_node(self, node_name: str) -> bool:
@@ -355,8 +350,7 @@ class BinaryManager:
                     process.wait(timeout=5)
                     console.print(f"[green]✓ Stopped node {node_name}[/green]")
                 except subprocess.TimeoutExpired:
-                    console.print(
-                        f"[yellow]Force killing node {node_name}...[/yellow]")
+                    console.print(f"[yellow]Force killing node {node_name}...[/yellow]")
                     process.kill()
                     process.wait()
                 del self.processes[node_name]
@@ -372,8 +366,7 @@ class BinaryManager:
 
                 # Check if still running
                 if self._is_process_running(pid):
-                    console.print(
-                        f"[yellow]Force killing node {node_name}...[/yellow]")
+                    console.print(f"[yellow]Force killing node {node_name}...[/yellow]")
                     os.kill(pid, signal.SIGKILL)
 
                 self._remove_pid_file(node_name)
@@ -381,14 +374,12 @@ class BinaryManager:
                 console.print(f"[green]✓ Stopped node {node_name}[/green]")
                 return True
             else:
-                console.print(
-                    f"[yellow]Node {node_name} is not running[/yellow]")
+                console.print(f"[yellow]Node {node_name} is not running[/yellow]")
                 self._remove_pid_file(node_name)
                 return False
 
         except Exception as e:
-            console.print(
-                f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
+            console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
             return False
 
     def stop_all_nodes(self) -> bool:
@@ -420,12 +411,10 @@ class BinaryManager:
 
         # If no running nodes found
         if not running_nodes:
-            console.print(
-                "[yellow]No Calimero nodes are currently running[/yellow]")
+            console.print("[yellow]No Calimero nodes are currently running[/yellow]")
             return True
 
-        console.print(
-            f"[bold]Stopping {len(running_nodes)} Calimero nodes...[/bold]")
+        console.print(f"[bold]Stopping {len(running_nodes)} Calimero nodes...[/bold]")
 
         # Stop each running node
         for node_name in running_nodes:
@@ -436,16 +425,14 @@ class BinaryManager:
                     try:
                         process.terminate()
                         process.wait(timeout=5)
-                        console.print(
-                            f"[green]✓ Stopped node {node_name}[/green]")
+                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
                     except subprocess.TimeoutExpired:
                         console.print(
                             f"[yellow]Force killing node {node_name}...[/yellow]"
                         )
                         process.kill()
                         process.wait()
-                        console.print(
-                            f"[green]✓ Stopped node {node_name}[/green]")
+                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
                     del self.processes[node_name]
                     self._remove_pid_file(node_name)
                     self.node_rpc_ports.pop(node_name, None)
@@ -464,8 +451,7 @@ class BinaryManager:
                             )
                             os.kill(pid, signal.SIGKILL)
 
-                        console.print(
-                            f"[green]✓ Stopped node {node_name}[/green]")
+                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
                         stopped += 1
                     else:
                         # Process stopped between check and stop attempt (race condition)
@@ -479,8 +465,7 @@ class BinaryManager:
                     self._remove_pid_file(node_name)
                     self.node_rpc_ports.pop(node_name, None)
             except Exception as e:
-                console.print(
-                    f"[red]✗ Failed to stop {node_name}: {str(e)}[/red]")
+                console.print(f"[red]✗ Failed to stop {node_name}: {str(e)}[/red]")
                 failed_nodes.append(node_name)
 
         console.print(
@@ -489,8 +474,7 @@ class BinaryManager:
 
         # Return False only if there were actual failures
         if failed_nodes:
-            console.print(
-                f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]")
+            console.print(f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]")
             return False
 
         return True
@@ -693,16 +677,14 @@ class BinaryManager:
                 "[yellow]⚠ Auth service is not supported in binary mode (--no-docker)[/yellow]"
             )
 
-        console.print(
-            f"[cyan]Starting {count} nodes with prefix '{prefix}'...[/cyan]")
+        console.print(f"[cyan]Starting {count} nodes with prefix '{prefix}'...[/cyan]")
 
         # Generate a single shared workflow_id for all nodes if none provided
         if workflow_id is None:
             import uuid
 
             workflow_id = str(uuid.uuid4())[:8]
-            console.print(
-                f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
+            console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
         success_count = 0
 
@@ -712,8 +694,7 @@ class BinaryManager:
             allocated_ports = self._find_available_ports(
                 count * 2
             )  # Need P2P + RPC for each node
-            console.print(
-                f"[cyan]Allocated dynamic ports: {allocated_ports}[/cyan]")
+            console.print(f"[cyan]Allocated dynamic ports: {allocated_ports}[/cyan]")
         else:
             # Default base ports if None provided (legacy behavior)
             if base_port is None:
@@ -795,8 +776,7 @@ class BinaryManager:
 
             # Check if config file exists
             if not config_file.exists():
-                console.print(
-                    f"[yellow]Config file not found: {config_file}[/yellow]")
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
                 return
 
             # Load existing config
