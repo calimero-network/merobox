@@ -134,7 +134,12 @@ jobs:
           merobox stop --all || true
           merobox nuke -f || true
           # Run all workflows with Docker for comprehensive testing
+          # Skip workflow-example-binary.yml as it has no_docker: true in YAML (tested in test-merobox job)
           for f in workflow-examples/*.yml; do \
+            if [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]]; then \
+              echo "Skipping $f (binary-mode only, requires merod binary)"; \
+              continue; \
+            fi; \
             echo "Running workflow with Docker: $f"; \
             merobox bootstrap run "$f" --verbose; \
             echo "Cleaning up after workflow..."; \
