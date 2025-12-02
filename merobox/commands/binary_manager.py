@@ -438,7 +438,7 @@ class BinaryManager:
                     pid = self._load_pid(node_name)
                     if pid and self._is_process_running(pid):
                         os.kill(pid, signal.SIGTERM)
-                        time.sleep(1)
+                        time.sleep(2)
 
                         # Check if still running
                         if self._is_process_running(pid):
@@ -447,10 +447,19 @@ class BinaryManager:
                             )
                             os.kill(pid, signal.SIGKILL)
 
-                        self._remove_pid_file(node_name)
-                        self.node_rpc_ports.pop(node_name, None)
                         console.print(f"[green]✓ Stopped node {node_name}[/green]")
                         stopped += 1
+                    else:
+                        # Process stopped between check and stop attempt (race condition)
+                        # Still need to clean up resources
+                        console.print(
+                            f"[cyan]Node {node_name} already stopped, cleaning up...[/cyan]"
+                        )
+                        stopped += 1
+
+                    # Always clean up PID file and RPC port for PID-tracked nodes
+                    self._remove_pid_file(node_name)
+                    self.node_rpc_ports.pop(node_name, None)
             except Exception as e:
                 console.print(f"[red]✗ Failed to stop {node_name}: {str(e)}[/red]")
                 failed_nodes.append(node_name)
