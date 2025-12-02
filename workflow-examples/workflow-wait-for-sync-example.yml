@@ -167,5 +167,4 @@ steps:
 
 # Configuration
 stop_all_nodes: true
-restart: true
 wait_timeout: 60
