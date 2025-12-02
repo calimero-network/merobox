@@ -130,8 +130,6 @@ class WaitForSyncStep(BaseStep):
                 context_data = client.get_context(context_id)
 
                 # Extract root hash from response
-                # Based on actual API response, structure is:
-                # {'data': {'rootHash': '...', 'id': '...', 'applicationId': '...', 'dagHeads': [...]}}
                 root_hash = None
 
                 if isinstance(context_data, dict) and "data" in context_data:
