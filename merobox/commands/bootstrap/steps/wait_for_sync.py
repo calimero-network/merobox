@@ -121,7 +121,7 @@ class WaitForSyncStep(BaseStep):
                         # Fallback to sync_all_contexts if sync_context fails
                         try:
                             client.sync_all_contexts()
-                        except (RuntimeError, ValueError) as sync_error:
+                        except (RuntimeError, ValueError, AttributeError) as sync_error:
                             console.print(
                                 f"[dim]⚠️  Sync trigger failed for {node_name}: {str(sync_error)}[/dim]"
                             )
