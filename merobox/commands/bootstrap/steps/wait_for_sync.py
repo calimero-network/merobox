@@ -41,9 +41,9 @@ class WaitForSyncStep(BaseStep):
         if "nodes" in self.config:
             if not isinstance(self.config["nodes"], list):
                 raise ValueError(f"Step '{step_name}': 'nodes' must be a list")
-            if len(self.config["nodes"]) < 1:
+            if len(self.config["nodes"]) < 2:
                 raise ValueError(
-                    f"Step '{step_name}': 'nodes' must contain at least one node"
+                    f"Step '{step_name}': 'nodes' must contain at least two nodes for consensus verification"
                 )
             for node in self.config["nodes"]:
                 if not isinstance(node, str):
