@@ -113,7 +113,15 @@ class WorkflowExecutor:
         self.workflow_results = {}
         self.dynamic_values = {}  # For backward compatibility
         self.global_variables = {}  # Workflow-scope variables
-        self.local_variables = {}  # Step-scope variables (cleared after each step)
+        # Step-scope variables (cleared after each step)
+        self.local_variables = {}
+
+        # Initialize global variables from workflow config
+        if "variables" in config:
+            self.global_variables.update(config["variables"])
+            console.print(
+                f"[cyan]Initialized {len(self.global_variables)} global workflow variable(s)[/cyan]"
+            )
 
         # Node image can be overridden by CLI flag; otherwise from config; else default in manager
         self.image = image
@@ -994,11 +1002,15 @@ class WorkflowExecutor:
         elif step_type == "run_workflow":
             from merobox.commands.bootstrap.steps import RunWorkflowStep
 
-            return RunWorkflowStep(step_config, manager=self.manager)
+            return RunWorkflowStep(
+                step_config, manager=self.manager, parent_executor=self
+            )
         elif step_type == "run_workflows":
             from merobox.commands.bootstrap.steps import RunWorkflowsStep
 
-            return RunWorkflowsStep(step_config, manager=self.manager)
+            return RunWorkflowsStep(
+                step_config, manager=self.manager, parent_executor=self
+            )
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

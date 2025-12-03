@@ -13,10 +13,15 @@ from merobox.commands.utils import console
 class BaseStep:
     """Base class for all workflow steps."""
 
-    def __init__(self, config: dict[str, Any], manager: object | None = None):
+    def __init__(
+        self,
+        config: dict[str, Any],
+        manager: object | None = None,
+        parent_executor: object | None = None,
+    ):
         self.config = config
-
         self.manager = manager
+        self.parent_executor = parent_executor
         # Define which variables this step can export and their mapping
         self.exportable_variables = self._get_exportable_variables()
         # Validate required fields before proceeding

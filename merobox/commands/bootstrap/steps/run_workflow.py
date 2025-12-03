@@ -66,10 +66,8 @@ class RunWorkflowStep(BaseStep):
         on_failure = self.config.get("on_failure", {})
         continue_on_failure = on_failure.get("continue", False)
 
-        # Get parent executor if available
-        parent_executor = (
-            getattr(self.manager, "parent_executor", None) if self.manager else None
-        )
+        # Get parent executor (passed during step creation)
+        parent_executor = self.parent_executor
 
         # Check nesting depth
         current_nesting = 0
