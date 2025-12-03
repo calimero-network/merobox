@@ -934,14 +934,16 @@ class BaseStep:
             if var_name in global_variables:
                 return global_variables[var_name]
             else:
-                return placeholder
+
+                return f"{{{{{placeholder}}}}}"
 
         elif placeholder.startswith("local."):
             var_name = placeholder[6:]  # Remove "local." prefix
             if var_name in local_variables:
                 return local_variables[var_name]
             else:
-                return placeholder
+
+                return f"{{{{{placeholder}}}}}"
 
         # Check local scope first (auto-resolve)
         if placeholder in local_variables:
