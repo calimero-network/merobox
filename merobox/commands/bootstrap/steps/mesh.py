@@ -99,9 +99,19 @@ class CreateMeshStep(BaseStep):
         global_variables: dict[str, Any] = None,
         local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         context_node = self.config["context_node"]
         application_id = self._resolve_dynamic_value(
-            self.config["application_id"], workflow_results, dynamic_values
+            self.config["application_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
         nodes = self.config["nodes"]
         capability = self.config.get("capability", "member")

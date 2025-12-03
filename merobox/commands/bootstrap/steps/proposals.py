@@ -159,13 +159,29 @@ class ListProposalsStep(BaseStep):
         global_variables: dict[str, Any] = None,
         local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
+            self.config["context_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
         args = self.config.get("args", None)
         if args:
-            args = self._resolve_dynamic_value(args, workflow_results, dynamic_values)
+            args = self._resolve_dynamic_value(
+                args,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
 
         if not self._validate_export_config():
             console.print(
@@ -262,12 +278,26 @@ class GetProposalApproversStep(BaseStep):
         global_variables: dict[str, Any] = None,
         local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
+            self.config["context_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
         proposal_id = self._resolve_dynamic_value(
-            self.config["proposal_id"], workflow_results, dynamic_values
+            self.config["proposal_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
 
         if not self._validate_export_config():

@@ -102,6 +102,12 @@ class UploadBlobStep(BaseStep):
         global_variables: dict[str, Any] = None,
         local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         node_name = self.config["node"]
         file_path = self.config["file_path"]
 
@@ -109,7 +115,11 @@ class UploadBlobStep(BaseStep):
         context_id = self.config.get("context_id")
         if context_id:
             context_id = self._resolve_dynamic_value(
-                context_id, workflow_results, dynamic_values
+                context_id,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
             )
 
         # Validate export configuration
@@ -120,7 +130,11 @@ class UploadBlobStep(BaseStep):
 
         # Resolve dynamic values in file_path
         file_path = self._resolve_dynamic_value(
-            file_path, workflow_results, dynamic_values
+            file_path,
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
 
         # Check if file exists
