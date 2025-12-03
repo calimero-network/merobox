@@ -243,6 +243,13 @@ class RunWorkflowsStep(BaseStep):
                     console.print(
                         "[red]❌ Stopping sequential execution due to failure (fail_fast=true)[/red]"
                     )
+                    # Set count variables before early return
+                    global_variables["workflows_success_count"] = success_count
+                    global_variables["workflows_failure_count"] = failure_count
+                    global_variables["workflows_total_count"] = len(workflows)
+                    dynamic_values["workflows_success_count"] = success_count
+                    dynamic_values["workflows_failure_count"] = failure_count
+                    dynamic_values["workflows_total_count"] = len(workflows)
                     return False
                 else:
                     console.print(
@@ -289,8 +296,10 @@ class RunWorkflowsStep(BaseStep):
             "on_failure": workflow_config.get("on_failure", {"continue": False}),
         }
 
-        # Create and execute the run_workflow step
-        run_workflow_step = RunWorkflowStep(step_config, manager=self.manager)
+        # Create and execute the run_workflow step with parent_executor
+        run_workflow_step = RunWorkflowStep(
+            step_config, manager=self.manager, parent_executor=self.parent_executor
+        )
 
         try:
             success = await run_workflow_step.execute(
