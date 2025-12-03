@@ -106,6 +106,9 @@ class RepeatStep(BaseStep):
         repeat_count = self.config.get("count", 1)
         nested_steps = self.config.get("steps", [])
 
+        # Store reference to original dynamic_values for propagating changes
+        original_dynamic_values = dynamic_values
+
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
@@ -153,6 +156,7 @@ class RepeatStep(BaseStep):
                 iteration_dynamic_values,
                 global_variables,
                 iteration_local_variables,
+                original_dynamic_values,  # Pass original for backward compat
             )
 
             # Execute each nested step in sequence
@@ -180,6 +184,7 @@ class RepeatStep(BaseStep):
                             iteration_dynamic_values,
                             global_variables,
                             iteration_local_variables,
+                            original_dynamic_values,  # Pass original for backward compat
                         )
 
                     # Create appropriate step executor for the nested step
@@ -226,8 +231,18 @@ class RepeatStep(BaseStep):
         dynamic_values: dict[str, Any],
         global_variables: dict[str, Any],
         local_variables: dict[str, Any],
+        original_dynamic_values: dict[str, Any],
     ) -> None:
-        """Process inline variables field in nested step configuration."""
+        """Process inline variables field in nested step configuration.
+
+        Args:
+            step_config: Step configuration
+            workflow_results: Workflow results
+            dynamic_values: Iteration-specific dynamic values (copy)
+            global_variables: Global variables
+            local_variables: Local variables
+            original_dynamic_values: Original dynamic_values to update for backward compatibility
+        """
         variables = step_config.get("variables", {})
         if not isinstance(variables, dict):
             return
@@ -257,7 +272,8 @@ class RepeatStep(BaseStep):
                     local_variables,
                 )
                 global_variables[actual_name] = resolved_value
-                dynamic_values[actual_name] = resolved_value  # Backward compatibility
+                # Update ORIGINAL
+                original_dynamic_values[actual_name] = resolved_value
                 console.print(
                     f"    [blue]📝 Set global variable '{actual_name}' = {resolved_value}[/blue]"
                 )
@@ -271,7 +287,8 @@ class RepeatStep(BaseStep):
                     local_variables,
                 )
                 global_variables[var_name] = resolved_value
-                dynamic_values[var_name] = resolved_value  # Backward compatibility
+                # Update ORIGINAL
+                original_dynamic_values[var_name] = resolved_value
                 console.print(
                     f"    [blue]📝 Set global variable '{var_name}' = {resolved_value}[/blue]"
                 )
@@ -282,8 +299,17 @@ class RepeatStep(BaseStep):
         dynamic_values: dict[str, Any],
         global_variables: dict[str, Any],
         local_variables: dict[str, Any],
+        original_dynamic_values: dict[str, Any],
     ) -> None:
-        """Export iteration variables based on custom outputs configuration."""
+        """Export iteration variables based on custom outputs configuration.
+
+        Args:
+            iteration: Current iteration number
+            dynamic_values: Iteration-specific dynamic values (copy)
+            global_variables: Global variables
+            local_variables: Local variables
+            original_dynamic_values: Original dynamic_values to update for backward compatibility
+        """
         outputs_config = self.config.get("outputs", {})
         if not outputs_config:
             return
@@ -300,14 +326,18 @@ class RepeatStep(BaseStep):
                 if source_field in local_variables:
                     source_value = local_variables[source_field]
                     global_variables[export_name] = source_value
-                    dynamic_values[export_name] = source_value  # Backward compatibility
+                    original_dynamic_values[export_name] = (
+                        source_value  # Update ORIGINAL
+                    )
                     console.print(
                         f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
                     )
                 elif source_field in dynamic_values:
                     source_value = dynamic_values[source_field]
                     global_variables[export_name] = source_value
-                    dynamic_values[export_name] = source_value
+                    original_dynamic_values[export_name] = (
+                        source_value  # Update ORIGINAL
+                    )
                     console.print(
                         f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
                     )
@@ -324,8 +354,8 @@ class RepeatStep(BaseStep):
                     if source_field in local_variables:
                         source_value = local_variables[source_field]
                         global_variables[export_name] = source_value
-                        dynamic_values[export_name] = (
-                            source_value  # Backward compatibility
+                        original_dynamic_values[export_name] = (
+                            source_value  # Update ORIGINAL
                         )
                         console.print(
                             f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
@@ -333,7 +363,9 @@ class RepeatStep(BaseStep):
                     elif source_field in dynamic_values:
                         source_value = dynamic_values[source_field]
                         global_variables[export_name] = source_value
-                        dynamic_values[export_name] = source_value
+                        original_dynamic_values[export_name] = (
+                            source_value  # Update ORIGINAL
+                        )
                         console.print(
                             f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
                         )
