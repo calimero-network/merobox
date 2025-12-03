@@ -179,6 +179,13 @@ class RunWorkflowsStep(BaseStep):
                 return True
             except Exception as e:
                 console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
+                # Set count variables even on exception (guaranteed availability)
+                global_variables["workflows_success_count"] = 0
+                global_variables["workflows_failure_count"] = len(workflows)
+                global_variables["workflows_total_count"] = len(workflows)
+                dynamic_values["workflows_success_count"] = 0
+                dynamic_values["workflows_failure_count"] = len(workflows)
+                dynamic_values["workflows_total_count"] = len(workflows)
                 return False
         else:
             # Continue even if some fail
