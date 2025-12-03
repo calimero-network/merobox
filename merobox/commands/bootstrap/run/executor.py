@@ -35,6 +35,8 @@ class WorkflowExecutor:
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
         e2e_mode: bool = False,
+        parent_executor: Optional["WorkflowExecutor"] = None,
+        nesting_level: int = 0,
     ):
         self.config = config
         self.manager = manager
@@ -76,6 +78,12 @@ class WorkflowExecutor:
 
         self.workflow_id = str(uuid.uuid4())[:8]
 
+        # Workflow orchestration support
+        self.parent_executor = parent_executor
+        self.nesting_level = nesting_level
+        self.max_nesting_depth = config.get("max_workflow_nesting", 5)
+        self.workflow_timeout = config.get("workflow_timeout", 3600)
+
         try:
             console.print(
                 f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}', binary_mode={self.is_binary_mode}[/cyan]"
@@ -83,6 +91,10 @@ class WorkflowExecutor:
             console.print(
                 f"[cyan]WorkflowExecutor: workflow_id='{self.workflow_id}' (for test isolation)[/cyan]"
             )
+            if self.nesting_level > 0:
+                console.print(
+                    f"[cyan]WorkflowExecutor: nesting_level={self.nesting_level}, max_depth={self.max_nesting_depth}[/cyan]"
+                )
         except Exception:
             pass
         try:
@@ -96,8 +108,13 @@ class WorkflowExecutor:
                 console.print("[cyan]WorkflowExecutor: mock relayer enabled[/cyan]")
         except Exception:
             pass
+
+        # Variable management with scopes
         self.workflow_results = {}
-        self.dynamic_values = {}  # Store dynamic values for later use
+        self.dynamic_values = {}  # For backward compatibility
+        self.global_variables = {}  # Workflow-scope variables
+        self.local_variables = {}  # Step-scope variables (cleared after each step)
+
         # Node image can be overridden by CLI flag; otherwise from config; else default in manager
         self.image = image
 
@@ -242,11 +259,28 @@ class WorkflowExecutor:
                 f"\n[bold green]🎉 Workflow '{workflow_name}' completed successfully![/bold green]"
             )
 
-            # Display captured dynamic values
-            if self.dynamic_values:
-                console.print("\n[bold]📋 Captured Dynamic Values:[/bold]")
-                for key, value in self.dynamic_values.items():
-                    console.print(f"  {key}: {value}")
+            # Display captured variables
+            if self.global_variables or self.dynamic_values:
+                console.print("\n[bold]📋 Workflow Variables:[/bold]")
+
+                # Show global variables
+                if self.global_variables:
+                    console.print("  [cyan]Global Variables:[/cyan]")
+                    for key, value in self.global_variables.items():
+                        console.print(f"    {key}: {value}")
+
+                # Show dynamic values (backward compatibility)
+                if self.dynamic_values:
+                    # Only show dynamic values that aren't already in global variables
+                    unique_dynamic = {
+                        k: v
+                        for k, v in self.dynamic_values.items()
+                        if k not in self.global_variables
+                    }
+                    if unique_dynamic:
+                        console.print("  [cyan]Captured Values:[/cyan]")
+                        for key, value in unique_dynamic.items():
+                            console.print(f"    {key}: {value}")
 
             return True
 
@@ -269,6 +303,137 @@ class WorkflowExecutor:
             console.print("[red]Failed to stop all nodes[/red]")
         else:
             console.print("[green]✓ All nodes stopped[/green]")
+
+    def _set_global_variable(self, key: str, value: Any) -> None:
+        """
+        Set a global workflow variable.
+
+        Args:
+            key: Variable name
+            value: Variable value
+        """
+        self.global_variables[key] = value
+        # Also update dynamic_values for backward compatibility
+        self.dynamic_values[key] = value
+
+    def _set_local_variable(self, key: str, value: Any) -> None:
+        """
+        Set a local step variable.
+
+        Args:
+            key: Variable name
+            value: Variable value
+        """
+        self.local_variables[key] = value
+
+    def _get_variable(self, key: str) -> Any:
+        """
+        Get a variable value, checking local scope first, then global.
+
+        Args:
+            key: Variable name
+
+        Returns:
+            Variable value or None if not found
+        """
+        # Check local scope first
+        if key in self.local_variables:
+            return self.local_variables[key]
+        # Then check global scope
+        if key in self.global_variables:
+            return self.global_variables[key]
+        # Finally check dynamic_values for backward compatibility
+        if key in self.dynamic_values:
+            return self.dynamic_values[key]
+        return None
+
+    def _clear_local_variables(self) -> None:
+        """Clear all local step variables."""
+        self.local_variables.clear()
+
+    def _process_inline_variables(self, step_config: dict[str, Any]) -> None:
+        """
+        Process inline variables field in step configuration.
+
+        Args:
+            step_config: Step configuration dictionary
+        """
+        if "variables" not in step_config:
+            return
+
+        variables = step_config["variables"]
+        if not isinstance(variables, dict):
+            console.print(
+                "[yellow]⚠️  Step 'variables' field must be a dictionary[/yellow]"
+            )
+            return
+
+        for var_name, var_value in variables.items():
+            # Check if this is a scoped variable (local: or global: prefix)
+            if var_name.startswith("local:"):
+                actual_name = var_name[6:]  # Remove "local:" prefix
+                # Resolve the value if it contains placeholders
+                from merobox.commands.bootstrap.steps.base import BaseStep
+
+                base_step = BaseStep({"type": "dummy"})
+                resolved_value = base_step._resolve_dynamic_value(
+                    str(var_value) if not isinstance(var_value, str) else var_value,
+                    self.workflow_results,
+                    self.dynamic_values,
+                    self.global_variables,
+                    self.local_variables,
+                )
+                self._set_local_variable(actual_name, resolved_value)
+                console.print(
+                    f"[blue]📝 Set local variable '{actual_name}' = {resolved_value}[/blue]"
+                )
+            elif var_name.startswith("global:"):
+                actual_name = var_name[7:]  # Remove "global:" prefix
+                # Resolve the value if it contains placeholders
+                from merobox.commands.bootstrap.steps.base import BaseStep
+
+                base_step = BaseStep({"type": "dummy"})
+                resolved_value = base_step._resolve_dynamic_value(
+                    str(var_value) if not isinstance(var_value, str) else var_value,
+                    self.workflow_results,
+                    self.dynamic_values,
+                    self.global_variables,
+                    self.local_variables,
+                )
+                self._set_global_variable(actual_name, resolved_value)
+                console.print(
+                    f"[blue]📝 Set global variable '{actual_name}' = {resolved_value}[/blue]"
+                )
+            else:
+                # Default: set as global variable
+                from merobox.commands.bootstrap.steps.base import BaseStep
+
+                base_step = BaseStep({"type": "dummy"})
+                resolved_value = base_step._resolve_dynamic_value(
+                    str(var_value) if not isinstance(var_value, str) else var_value,
+                    self.workflow_results,
+                    self.dynamic_values,
+                    self.global_variables,
+                    self.local_variables,
+                )
+                self._set_global_variable(var_name, resolved_value)
+                console.print(
+                    f"[blue]📝 Set global variable '{var_name}' = {resolved_value}[/blue]"
+                )
+
+    def _get_all_variables(self) -> dict[str, Any]:
+        """
+        Get all variables (local and global combined).
+        Local variables take precedence over global.
+
+        Returns:
+            Combined dictionary of all variables
+        """
+        all_vars = {}
+        all_vars.update(self.dynamic_values)  # Backward compatibility
+        all_vars.update(self.global_variables)
+        all_vars.update(self.local_variables)
+        return all_vars
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
@@ -718,15 +883,21 @@ class WorkflowExecutor:
             )
 
             try:
+                # Process inline variables before step execution
+                self._process_inline_variables(step)
+
                 # Create appropriate step executor
                 step_executor = self._create_step_executor(step_type, step)
                 if not step_executor:
                     console.print(f"[red]Unknown step type: {step_type}[/red]")
                     return False
 
-                # Execute the step
+                # Execute the step with both variable scopes
                 success = await step_executor.execute(
-                    self.workflow_results, self.dynamic_values
+                    self.workflow_results,
+                    self.dynamic_values,
+                    self.global_variables,
+                    self.local_variables,
                 )
 
                 if not success:
@@ -735,6 +906,7 @@ class WorkflowExecutor:
 
                 console.print(f"[green]✓ Step '{step_name}' completed[/green]")
 
+                self._clear_local_variables()
             except Exception as e:
                 console.print(
                     f"[red]❌ Step '{step_name}' failed with error: {str(e)}[/red]"
@@ -819,6 +991,14 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 
             return CreateMeshStep(step_config, manager=self.manager)
+        elif step_type == "run_workflow":
+            from merobox.commands.bootstrap.steps import RunWorkflowStep
+
+            return RunWorkflowStep(step_config, manager=self.manager)
+        elif step_type == "run_workflows":
+            from merobox.commands.bootstrap.steps import RunWorkflowsStep
+
+            return RunWorkflowsStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

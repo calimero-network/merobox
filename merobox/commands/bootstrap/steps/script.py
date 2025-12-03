@@ -118,7 +118,11 @@ class ScriptStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         """Execute the script step."""
         if not self.script_path:

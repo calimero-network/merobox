@@ -96,7 +96,11 @@ class UploadBlobStep(BaseStep):
             return fail("upload_blob failed", error=e)
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         node_name = self.config["node"]
         file_path = self.config["file_path"]

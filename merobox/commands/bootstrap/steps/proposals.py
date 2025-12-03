@@ -46,14 +46,32 @@ class GetProposalStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
+            self.config["context_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
         proposal_id = self._resolve_dynamic_value(
-            self.config["proposal_id"], workflow_results, dynamic_values
+            self.config["proposal_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
 
         if not self._validate_export_config():
@@ -135,7 +153,11 @@ class ListProposalsStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(
@@ -234,7 +256,11 @@ class GetProposalApproversStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(

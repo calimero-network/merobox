@@ -1,0 +1,193 @@
+description: Demonstrates workflow orchestration with parent and child workflows
+name: Workflow Orchestration Example
+
+# Parent workflow variables
+variables:
+  test_suite: "integration_tests"
+  orchestrator_version: "1.0"
+
+# Maximum nesting depth for child workflows
+max_workflow_nesting: 5
+
+# Timeout for child workflow execution (in seconds)
+workflow_timeout: 1800
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Step 1: Run setup workflow
+  - name: Run Setup Workflow
+    type: run_workflow
+    workflow_path: ./workflow-examples/orchestration/setup-workflow.yml
+    inputs:
+      # Pass variables from parent to child
+      node_prefix: "calimero-node"
+    inherit_variables: false
+    outputs:
+      # Capture outputs from child workflow
+      child_app_id: app_id
+      child_context_id: context_id
+      child_member_key: member_public_key
+      child_second_key: second_node_key
+      setup_status: setup_complete
+    variables:
+      # Set variables after child workflow completes
+      setup_workflow_executed: true
+    on_failure:
+      continue: false
+
+  # Step 2: Verify setup completed
+  - name: Verify Setup
+    type: assert
+    statements:
+      - "is_set({{child_context_id}})"
+      - "is_set({{child_app_id}})"
+      - "is_set({{setup_status}})"
+
+  # Step 3: Invite second node to context
+  - name: Invite Second Node
+    type: invite_identity
+    node: calimero-node-1
+    context_id: "{{child_context_id}}"
+    grantee_id: "{{child_second_key}}"
+    granter_id: "{{child_member_key}}"
+    capability: member
+    outputs:
+      invitation: invitation
+
+  # Step 4: Join context
+  - name: Join Context
+    type: join_context
+    node: calimero-node-2
+    context_id: "{{child_context_id}}"
+    invitee_id: "{{child_second_key}}"
+    invitation: "{{invitation}}"
+
+  # Step 5: Wait for context to be ready
+  - name: Wait for Context
+    type: wait
+    seconds: 3
+
+  # Step 6: Run test execution workflow with inherit_variables
+  - name: Run Test Execution Workflow
+    type: run_workflow
+    workflow_path: ./workflow-examples/orchestration/test-execution-workflow.yml
+    inputs:
+      # Pass context info to child workflow
+      context_id: "{{child_context_id}}"
+      member_public_key: "{{child_member_key}}"
+      test_key: "orchestrated_test"
+      test_value: "test_from_parent"
+    inherit_variables: true # Child inherits all parent variables
+    outputs:
+      test_execution_result: test_result
+      test_status: test_passed
+    variables:
+      test_workflow_executed: true
+    on_failure:
+      continue: false
+
+  # Step 6b: Run workflow with failure handling
+  - name: Run Workflow with Failure Handling
+    type: run_workflow
+    workflow_path: ./workflow-examples/orchestration/test-execution-workflow.yml
+    inputs:
+      context_id: "{{child_context_id}}"
+      member_public_key: "{{child_member_key}}"
+      test_key: "optional_test"
+      test_value: "optional_value"
+    on_failure:
+      continue: true # Continue even if child fails
+      set_variables:
+        optional_test_failed: true
+
+  # Step 7: Run multiple test workflows in parallel
+  - name: Run Parallel Tests
+    type: run_workflows
+    mode: parallel
+    fail_fast: false # Continue even if some tests fail
+    workflows:
+      # Test 1: Execute with key1
+      - path: ./workflow-examples/orchestration/test-execution-workflow.yml
+        inputs:
+          context_id: "{{child_context_id}}"
+          member_public_key: "{{child_member_key}}"
+          test_key: "parallel_test_1"
+          test_value: "value_1"
+        outputs:
+          result_1: test_result
+
+      # Test 2: Execute with key2
+      - path: ./workflow-examples/orchestration/test-execution-workflow.yml
+        inputs:
+          context_id: "{{child_context_id}}"
+          member_public_key: "{{child_member_key}}"
+          test_key: "parallel_test_2"
+          test_value: "value_2"
+        outputs:
+          result_2: test_result
+    variables:
+      parallel_tests_completed: true
+
+  # Step 8: Verify parallel execution results
+  - name: Check Parallel Results
+    type: assert
+    statements:
+      - "is_set({{parallel_tests_completed}})"
+      - "is_set({{workflows_success_count}})"
+      - "is_set({{workflows_total_count}})"
+
+  # Step 9: Verify parallel workflow results with actual data
+  - name: Verify Parallel Execution Results
+    type: call
+    node: calimero-node-1
+    context_id: "{{child_context_id}}"
+    executor_public_key: "{{child_member_key}}"
+    method: get
+    args:
+      key: "parallel_test_1"
+    outputs:
+      parallel_1_verify: result
+
+  - name: Verify Parallel Test 2
+    type: call
+    node: calimero-node-2
+    context_id: "{{child_context_id}}"
+    executor_public_key: "{{child_second_key}}"
+    method: get
+    args:
+      key: "parallel_test_2"
+    outputs:
+      parallel_2_verify: result
+
+  # Step 10: Final comprehensive verification
+  - name: Final Verification
+    type: assert
+    statements:
+      # Verify orchestration flags (use is_set for booleans)
+      - "is_set({{setup_workflow_executed}})"
+      - "is_set({{test_workflow_executed}})"
+      - "is_set({{parallel_tests_completed}})"
+      # Verify top-level variables persisted
+      - "{{test_suite}} == integration_tests"
+      - "{{orchestrator_version}} == 1.0"
+      # Verify child workflow outputs were captured
+      - "is_set({{child_context_id}})"
+      - "is_set({{child_app_id}})"
+      - "is_set({{child_member_key}})"
+      # Verify parallel execution stats (numeric comparison)
+      - "{{workflows_success_count}} == 2"
+      - "{{workflows_failure_count}} == 0"
+      - "{{workflows_total_count}} == 2"
+      # Verify actual data from parallel tests
+      - "is_set({{parallel_1_verify}})"
+      - "is_set({{parallel_2_verify}})"
+
+# Workflow configuration
+stop_all_nodes: true
+restart: false
+wait_timeout: 120

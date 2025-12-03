@@ -53,8 +53,18 @@ class AssertStep(BaseStep):
                 raise ValueError(f"Statement #{idx+1} missing 'statement'")
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         # Statement-only mode
         statements = self.config.get("statements", [])
         all_ok = True
@@ -68,7 +78,11 @@ class AssertStep(BaseStep):
                 all_ok = False
                 continue
             passed, detail = self._eval_statement(
-                stmt, workflow_results, dynamic_values
+                stmt,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
             )
             description = message or f"Assertion #{idx}: {stmt}"
             if passed:
@@ -111,7 +125,14 @@ class AssertStep(BaseStep):
         statement: str,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> tuple[bool, str]:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
         """Evaluate a single statement string.
 
         Supported forms:
@@ -132,8 +153,20 @@ class AssertStep(BaseStep):
             args = _arg_list(body)
             if len(args) != 2:
                 return False, "(invalid contains arg count)"
-            a = self._resolve_dynamic_value(args[0], workflow_results, dynamic_values)
-            b = self._resolve_dynamic_value(args[1], workflow_results, dynamic_values)
+            a = self._resolve_dynamic_value(
+                args[0],
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
+            b = self._resolve_dynamic_value(
+                args[1],
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
             return (str(b) in str(a), f"(left={a!r}, right={b!r})")
 
         if expr.lower().startswith("not_contains(") and expr.endswith(")"):
@@ -141,8 +174,20 @@ class AssertStep(BaseStep):
             args = _arg_list(body)
             if len(args) != 2:
                 return False, "(invalid not_contains arg count)"
-            a = self._resolve_dynamic_value(args[0], workflow_results, dynamic_values)
-            b = self._resolve_dynamic_value(args[1], workflow_results, dynamic_values)
+            a = self._resolve_dynamic_value(
+                args[0],
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
+            b = self._resolve_dynamic_value(
+                args[1],
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
             return (str(b) not in str(a), f"(left={a!r}, right={b!r})")
 
         if expr.lower().startswith("regex(") and expr.endswith(")"):
@@ -150,22 +195,44 @@ class AssertStep(BaseStep):
             args = _arg_list(body)
             if len(args) != 2:
                 return False, "(invalid regex arg count)"
-            a = self._resolve_dynamic_value(args[0], workflow_results, dynamic_values)
+            a = self._resolve_dynamic_value(
+                args[0],
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
             pattern = self._resolve_dynamic_value(
-                args[1], workflow_results, dynamic_values
+                args[1],
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
             )
             ok = re.search(str(pattern), str(a)) is not None
             return (ok, f"(left={a!r}, pattern={pattern!r})")
 
         if expr.lower().startswith("is_set(") and expr.endswith(")"):
             body = expr[len("is_set(") : -1].strip()
-            a = self._resolve_dynamic_value(body, workflow_results, dynamic_values)
+            a = self._resolve_dynamic_value(
+                body,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
             ok = a is not None and a != "" and a != [] and a != {}
             return (ok, f"(value={a!r})")
 
         if expr.lower().startswith("is_empty(") and expr.endswith(")"):
             body = expr[len("is_empty(") : -1].strip()
-            a = self._resolve_dynamic_value(body, workflow_results, dynamic_values)
+            a = self._resolve_dynamic_value(
+                body,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
 
             # Handle string literals that represent empty values
             if a == "''" or a == '""':
@@ -198,10 +265,18 @@ class AssertStep(BaseStep):
                     return False, "(invalid equality arg count)"
                 a_raw, b_raw = args[0], args[1]
                 a_val = self._resolve_dynamic_value(
-                    a_raw, workflow_results, dynamic_values
+                    a_raw,
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 )
                 b_val = self._resolve_dynamic_value(
-                    b_raw, workflow_results, dynamic_values
+                    b_raw,
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 )
                 passed = a_val == b_val
                 if negate:
@@ -218,10 +293,18 @@ class AssertStep(BaseStep):
             left_str = expr[: m.start()].strip()
             right_str = expr[m.end() :].strip()
             left_val = self._resolve_dynamic_value(
-                left_str, workflow_results, dynamic_values
+                left_str,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
             )
             right_val = self._resolve_dynamic_value(
-                right_str, workflow_results, dynamic_values
+                right_str,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
             )
 
             # Try numeric comparison when feasible

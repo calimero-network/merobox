@@ -616,10 +616,29 @@ class BaseStep:
         value: str,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> str:
-        """Resolve dynamic values using placeholders and captured results."""
+        """Resolve dynamic values using placeholders and captured results.
+
+        Args:
+            value: The value to resolve
+            workflow_results: Legacy workflow results
+            dynamic_values: Legacy dynamic values (for backward compatibility)
+            global_variables: Global workflow variables
+            local_variables: Local step variables
+
+        Returns:
+            Resolved value
+        """
         if not isinstance(value, str):
             return value
+
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
 
         # Strip quotes from simple string literals (e.g., 'value' or "value" -> value)
         # This helps with assertions where string literals are quoted
@@ -637,7 +656,36 @@ class BaseStep:
             if value.startswith("{{") and value.endswith("}}"):
                 placeholder = value[2:-2].strip()
 
-                # First, check if this is a simple custom output variable name
+                # Handle explicit scope access
+                if placeholder.startswith("global."):
+                    var_name = placeholder[7:]  # Remove "global." prefix
+                    if var_name in global_variables:
+                        return global_variables[var_name]
+                    else:
+                        console.print(
+                            f"[yellow]Warning: Global variable '{var_name}' not found[/yellow]"
+                        )
+                        return value
+
+                elif placeholder.startswith("local."):
+                    var_name = placeholder[6:]  # Remove "local." prefix
+                    if var_name in local_variables:
+                        return local_variables[var_name]
+                    else:
+                        console.print(
+                            f"[yellow]Warning: Local variable '{var_name}' not found[/yellow]"
+                        )
+                        return value
+
+                # Check local scope first (auto-resolve)
+                if placeholder in local_variables:
+                    return local_variables[placeholder]
+
+                # Then check global scope
+                if placeholder in global_variables:
+                    return global_variables[placeholder]
+
+                # Then check dynamic_values for backward compatibility
                 if placeholder in dynamic_values:
                     return dynamic_values[placeholder]
 
@@ -764,7 +812,11 @@ class BaseStep:
                             # First resolve the identity to get the actual public key
                             identity_placeholder = f"{{{{identity.{identity_node}}}}}"
                             actual_identity = self._resolve_dynamic_value(
-                                identity_placeholder, workflow_results, dynamic_values
+                                identity_placeholder,
+                                workflow_results,
+                                dynamic_values,
+                                global_variables,
+                                local_variables,
                             )
 
                             # Now construct the invite key using the actual identity
@@ -835,7 +887,11 @@ class BaseStep:
 
                     # Resolve the placeholder
                     resolved_value = self._resolve_single_placeholder(
-                        placeholder, workflow_results, dynamic_values
+                        placeholder,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
                     )
 
                     # Replace the placeholder in the result string
@@ -857,9 +913,40 @@ class BaseStep:
         placeholder: str,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> str:
         """Resolve a single placeholder without the {{}} wrapper."""
-        # First, check if this is a simple custom output variable name
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
+        # Handle explicit scope access
+        if placeholder.startswith("global."):
+            var_name = placeholder[7:]  # Remove "global." prefix
+            if var_name in global_variables:
+                return global_variables[var_name]
+            else:
+                return placeholder
+
+        elif placeholder.startswith("local."):
+            var_name = placeholder[6:]  # Remove "local." prefix
+            if var_name in local_variables:
+                return local_variables[var_name]
+            else:
+                return placeholder
+
+        # Check local scope first (auto-resolve)
+        if placeholder in local_variables:
+            return local_variables[placeholder]
+
+        # Then check global scope
+        if placeholder in global_variables:
+            return global_variables[placeholder]
+
+        # Then check dynamic_values for backward compatibility
         if placeholder in dynamic_values:
             return dynamic_values[placeholder]
 
@@ -982,7 +1069,11 @@ class BaseStep:
                     # First resolve the identity to get the actual public key
                     identity_placeholder = f"{{{{identity.{identity_node}}}}}"
                     actual_identity = self._resolve_dynamic_value(
-                        identity_placeholder, workflow_results, dynamic_values
+                        identity_placeholder,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
                     )
 
                     # Now construct the invite key using the actual identity

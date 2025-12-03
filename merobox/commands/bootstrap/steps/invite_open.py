@@ -90,7 +90,11 @@ class InviteOpenStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(

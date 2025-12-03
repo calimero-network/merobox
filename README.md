@@ -417,15 +417,106 @@ Uploads files to blob storage and captures blob IDs for E2E testing.
 - Full binary file support
 - Automatic error handling and validation
 
+#### Workflow Orchestration
+
+Execute child workflows for modular, reusable test suites.
+
+**Run Single Workflow:**
+
+```yaml
+- name: "Run Setup Workflow"
+  type: "run_workflow"
+  workflow_path: "./tests/setup-workflow.yml"
+  inputs:
+    app_id: "{{parent_app_id}}"
+    node_count: 2
+  inherit_variables: false  # Optional: inherit all parent variables
+  outputs:
+    child_context_id: "context_id"
+    child_result: "test_result"
+  variables:
+    workflow_status: "completed"
+  on_failure:
+    continue: false  # Stop parent on child failure
+```
+
+**Run Multiple Workflows (Parallel/Sequential):**
+
+```yaml
+- name: "Run Test Suite"
+  type: "run_workflows"
+  mode: "parallel"  # or 'sequential'
+  fail_fast: true   # Stop on first failure
+  workflows:
+    - path: "./tests/test-1.yml"
+      inputs: {test_id: 1}
+      outputs: {result_1: test_result}
+    - path: "./tests/test-2.yml"
+      inputs: {test_id: 2}
+      outputs: {result_2: test_result}
+  variables:
+    all_tests_count: 2
+```
+
+**Features:**
+
+- Execute child workflows from parent workflows
+- Pass variables between parent and child via `inputs`/`outputs`
+- Support for nested workflows (configurable depth limit)
+- Parallel or sequential execution modes
+- Error handling with `on_failure` configuration
+- Variable inheritance with `inherit_variables` flag
+
 ### Dynamic Variables
 
-Workflows support dynamic variable substitution using `{{variable_name}}` syntax.
+Workflows support flexible variable management with scoped variables and dynamic substitution using `{{variable_name}}` syntax.
+
+#### Variable Scopes
+
+1. **Global Variables**: Accessible across all steps, defined at workflow level or set inline
+2. **Local Variables**: Step-scoped, automatically cleared after step completes
+
+#### Top-Level Variables
+
+Define global variables at the workflow level:
+
+```yaml
+name: My Workflow
+variables:
+  environment: "staging"
+  timeout: 30
+  
+steps:
+  - type: call
+    node: node-1
+    args:
+      env: "{{environment}}"
+```
+
+#### Inline Variables
+
+Set variables during workflow execution:
+
+```yaml
+steps:
+  - type: call
+    node: node-1
+    method: "get_config"
+    variables:
+      config_version: "1.0.0"           # Global variable
+      local:temp_data: "processing"     # Local variable
+      global:status: "in_progress"      # Explicit global
+    outputs:
+      config: result
+```
 
 #### Variable Sources
 
-- **Step Outputs**: Variables exported by previous steps
-- **Workflow Context**: Global workflow variables
-- **Environment**: System environment variables
+- **Top-level variables**: Defined in workflow YAML
+- **Step outputs**: Captured from execution results
+- **Inline variables**: Set during step execution
+- **Environment**: System environment variables `{{env.VAR}}`
+- **Iteration**: In repeat loops `{{iteration}}`
 
 #### Embedded Variables
 
@@ -438,9 +529,10 @@ args:
 
 #### Variable Resolution
 
-- Variables are resolved at execution time
+- Resolution priority: Local → Global → Step Outputs
+- Variables resolved at execution time
+- Explicit scope access: `{{global.var}}`, `{{local.var}}`
 - Missing variables cause workflow failures
-- Use `outputs` sections to export variables for later use
 
 ### Output Configuration
 

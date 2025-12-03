@@ -40,7 +40,11 @@ class WaitStep(BaseStep):
             )
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         wait_seconds = self.config.get("seconds", 5)
         console.print(f"Waiting {wait_seconds} seconds...")

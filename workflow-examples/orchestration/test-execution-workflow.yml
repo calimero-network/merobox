@@ -1,0 +1,60 @@
+description: Child workflow for testing contract execution
+name: Test Execution Workflow
+
+# Variables that can be passed from parent workflow
+variables:
+  test_key: "default_key"
+  test_value: "default_value"
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Set a value
+  - name: Set Test Value
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: "{{test_key}}"
+      value: "{{test_value}}"
+    variables:
+      set_operation: "completed"
+    outputs:
+      set_result: result
+
+  # Wait for propagation
+  - name: Wait for Propagation
+    type: wait
+    seconds: 2
+
+  # Get the value back
+  - name: Get Test Value
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: "{{test_key}}"
+    variables:
+      get_operation: "completed"
+      test_passed: true
+    outputs:
+      test_result: result
+
+  # Assert success
+  - name: Verify Test
+    type: assert
+    statements:
+      - "is_set({{test_result}})"
+      - "is_set({{test_passed}})"
+
+stop_all_nodes: false
+restart: false
+wait_timeout: 60

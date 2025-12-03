@@ -2,11 +2,81 @@
 Configuration management for bootstrap workflows.
 """
 
+import re
 from typing import Any
 
 import yaml
 
 from merobox.commands.utils import console
+
+
+def validate_variable_name(name: str) -> bool:
+    """
+    Validate variable name follows conventions.
+
+    Rules:
+    - Alphanumeric and underscore only
+    - No reserved keywords
+    - Must start with letter or underscore
+
+    Args:
+        name: Variable name to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    # Reserved keywords that cannot be used as variable names
+    reserved = {
+        "env",
+        "iteration",
+        "current_iteration",
+        "workflow_results",
+        "dynamic_values",
+        "global_variables",
+        "local_variables",
+        "true",
+        "false",
+        "null",
+        "none",
+    }
+
+    # Check if name is reserved
+    if name.lower() in reserved:
+        return False
+
+    # Check pattern: must start with letter or underscore, then alphanumeric or underscore
+    pattern = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
+    return bool(re.match(pattern, name))
+
+
+def validate_workflow_variables(variables: dict[str, Any]) -> None:
+    """
+    Validate workflow variables structure and names.
+
+    Args:
+        variables: Dictionary of variables to validate
+
+    Raises:
+        ValueError: If validation fails
+    """
+    if not isinstance(variables, dict):
+        raise ValueError("Workflow 'variables' must be a dictionary")
+
+    for var_name, var_value in variables.items():
+        if not validate_variable_name(var_name):
+            raise ValueError(
+                f"Invalid variable name '{var_name}'. "
+                "Variable names must start with a letter or underscore, "
+                "contain only alphanumeric characters and underscores, "
+                "and not be reserved keywords."
+            )
+
+        # Variables can be strings, numbers, booleans, or null
+        if not isinstance(var_value, (str, int, float, bool, type(None))):
+            raise ValueError(
+                f"Variable '{var_name}' has invalid type. "
+                "Variables must be strings, numbers, booleans, or null."
+            )
 
 
 def load_workflow_config(
@@ -24,6 +94,17 @@ def load_workflow_config(
             for field in required_fields:
                 if field not in config:
                     raise ValueError(f"Missing required field: {field}")
+
+        # Validate top-level variables if present
+        if "variables" in config:
+            validate_workflow_variables(config["variables"])
+
+        # Set default values for orchestration configuration
+        if "max_workflow_nesting" not in config:
+            config["max_workflow_nesting"] = 5
+
+        if "workflow_timeout" not in config:
+            config["workflow_timeout"] = 3600  # 1 hour default timeout
 
         return config
 
@@ -56,6 +137,15 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "log_level": "debug",
         # Set the RUST_BACKTRACE level for Calimero nodes (0, 1, full)
         "rust_backtrace": "0",
+        # Global workflow variables accessible to all steps
+        "variables": {
+            "environment": "development",
+            "test_mode": True,
+        },
+        # Maximum nesting depth for workflow orchestration (default: 5)
+        "max_workflow_nesting": 5,
+        # Timeout for child workflow execution in seconds (default: 3600)
+        "workflow_timeout": 3600,
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",
