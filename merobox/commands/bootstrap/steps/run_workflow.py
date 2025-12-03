@@ -111,18 +111,18 @@ class RunWorkflowStep(BaseStep):
 
             # Add/override with explicit inputs
             for input_name, input_value in inputs.items():
-                # Resolve input value from parent variables
-                resolved_value = self._resolve_dynamic_value(
-                    (
-                        str(input_value)
-                        if not isinstance(input_value, str)
-                        else input_value
-                    ),
-                    workflow_results,
-                    dynamic_values,
-                    global_variables,
-                    local_variables,
-                )
+                # Only resolve if it's a string with placeholders, otherwise preserve type
+                if isinstance(input_value, str):
+                    resolved_value = self._resolve_dynamic_value(
+                        input_value,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = input_value
                 child_variables[input_name] = resolved_value
                 console.print(
                     f"[blue]📝 Input variable '{input_name}' = {resolved_value}[/blue]"
