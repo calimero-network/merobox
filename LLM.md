@@ -459,6 +459,14 @@ Execute child workflows from parent workflows for modular, reusable test suites.
 - Parallel or sequential execution modes
 - Error handling and failure propagation
 - Outputs capture from child workflows
+- Automatic workflow statistics: `workflows_success_count`, `workflows_failure_count`, `workflows_total_count`
+
+**Important Implementation Notes**:
+- Nesting depth is strictly enforced to prevent infinite recursion
+- Duplicate output names in parallel execution trigger warnings
+- All workflow count variables are guaranteed to be set
+- Type preservation: numbers stay numbers, booleans stay booleans
+- Variables from repeat loops properly propagate to parent scope
 
 ## Variable Management
 

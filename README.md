@@ -462,10 +462,19 @@ Execute child workflows for modular, reusable test suites.
 
 - Execute child workflows from parent workflows
 - Pass variables between parent and child via `inputs`/`outputs`
-- Support for nested workflows (configurable depth limit)
+- Support for nested workflows (configurable depth limit, default: 5)
 - Parallel or sequential execution modes
 - Error handling with `on_failure` configuration
 - Variable inheritance with `inherit_variables` flag
+- Automatic workflow count variables: `workflows_success_count`, `workflows_failure_count`, `workflows_total_count`
+
+**Important Notes:**
+
+- Nesting depth is enforced to prevent infinite recursion
+- In parallel mode, duplicate output names will trigger warnings (last writer wins)
+- All workflow count variables are always set, even on early failure
+- Child workflows can access parent variables via `inherit_variables: true`
+- Variables set in child workflows must be explicitly exported via `outputs`
 
 ### Dynamic Variables
 
@@ -533,6 +542,17 @@ args:
 - Variables resolved at execution time
 - Explicit scope access: `{{global.var}}`, `{{local.var}}`
 - Missing variables cause workflow failures
+
+#### Nesting Depth Limits
+
+Workflow orchestration prevents infinite recursion:
+
+```yaml
+max_workflow_nesting: 5  # Default: 5 levels deep (0-5)
+
+# main.yml (0) → child.yml (1) → grandchild.yml (2) → ... → level 5 ✓
+# Level 6 → ❌ "Maximum workflow nesting depth (5) exceeded"
+```
 
 ### Output Configuration
 
