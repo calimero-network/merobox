@@ -251,26 +251,36 @@ class RepeatStep(BaseStep):
             # Check if this is a scoped variable (local: or global: prefix)
             if var_name.startswith("local:"):
                 actual_name = var_name[6:]  # Remove "local:" prefix
-                resolved_value = self._resolve_dynamic_value(
-                    str(var_value) if not isinstance(var_value, str) else var_value,
-                    workflow_results,
-                    dynamic_values,
-                    global_variables,
-                    local_variables,
-                )
+                # Only resolve if it's a string with placeholders, otherwise preserve type
+                if isinstance(var_value, str):
+                    resolved_value = self._resolve_dynamic_value(
+                        var_value,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
                 local_variables[actual_name] = resolved_value
                 console.print(
                     f"    [blue]📝 Set local variable '{actual_name}' = {resolved_value}[/blue]"
                 )
             elif var_name.startswith("global:"):
                 actual_name = var_name[7:]  # Remove "global:" prefix
-                resolved_value = self._resolve_dynamic_value(
-                    str(var_value) if not isinstance(var_value, str) else var_value,
-                    workflow_results,
-                    dynamic_values,
-                    global_variables,
-                    local_variables,
-                )
+                # Only resolve if it's a string with placeholders, otherwise preserve type
+                if isinstance(var_value, str):
+                    resolved_value = self._resolve_dynamic_value(
+                        var_value,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
                 global_variables[actual_name] = resolved_value
                 # Update ORIGINAL
                 original_dynamic_values[actual_name] = resolved_value
@@ -279,13 +289,18 @@ class RepeatStep(BaseStep):
                 )
             else:
                 # Default: set as global variable
-                resolved_value = self._resolve_dynamic_value(
-                    str(var_value) if not isinstance(var_value, str) else var_value,
-                    workflow_results,
-                    dynamic_values,
-                    global_variables,
-                    local_variables,
-                )
+                # Only resolve if it's a string with placeholders, otherwise preserve type
+                if isinstance(var_value, str):
+                    resolved_value = self._resolve_dynamic_value(
+                        var_value,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
                 global_variables[var_name] = resolved_value
                 # Update ORIGINAL
                 original_dynamic_values[var_name] = resolved_value

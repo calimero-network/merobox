@@ -380,50 +380,63 @@ class WorkflowExecutor:
             # Check if this is a scoped variable (local: or global: prefix)
             if var_name.startswith("local:"):
                 actual_name = var_name[6:]  # Remove "local:" prefix
-                # Resolve the value if it contains placeholders
-                from merobox.commands.bootstrap.steps.base import BaseStep
+                # Only resolve if it's a string with placeholders, otherwise use value as-is
+                if isinstance(var_value, str):
+                    from merobox.commands.bootstrap.steps.base import BaseStep
 
-                base_step = BaseStep({"type": "dummy"})
-                resolved_value = base_step._resolve_dynamic_value(
-                    str(var_value) if not isinstance(var_value, str) else var_value,
-                    self.workflow_results,
-                    self.dynamic_values,
-                    self.global_variables,
-                    self.local_variables,
-                )
+                    base_step = BaseStep({"type": "dummy"})
+                    resolved_value = base_step._resolve_dynamic_value(
+                        var_value,
+                        self.workflow_results,
+                        self.dynamic_values,
+                        self.global_variables,
+                        self.local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
                 self._set_local_variable(actual_name, resolved_value)
                 console.print(
                     f"[blue]📝 Set local variable '{actual_name}' = {resolved_value}[/blue]"
                 )
             elif var_name.startswith("global:"):
                 actual_name = var_name[7:]  # Remove "global:" prefix
-                # Resolve the value if it contains placeholders
-                from merobox.commands.bootstrap.steps.base import BaseStep
+                # Only resolve if it's a string with placeholders, otherwise use value as-is
+                if isinstance(var_value, str):
+                    from merobox.commands.bootstrap.steps.base import BaseStep
 
-                base_step = BaseStep({"type": "dummy"})
-                resolved_value = base_step._resolve_dynamic_value(
-                    str(var_value) if not isinstance(var_value, str) else var_value,
-                    self.workflow_results,
-                    self.dynamic_values,
-                    self.global_variables,
-                    self.local_variables,
-                )
+                    base_step = BaseStep({"type": "dummy"})
+                    resolved_value = base_step._resolve_dynamic_value(
+                        var_value,
+                        self.workflow_results,
+                        self.dynamic_values,
+                        self.global_variables,
+                        self.local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
                 self._set_global_variable(actual_name, resolved_value)
                 console.print(
                     f"[blue]📝 Set global variable '{actual_name}' = {resolved_value}[/blue]"
                 )
             else:
                 # Default: set as global variable
-                from merobox.commands.bootstrap.steps.base import BaseStep
+                # Only resolve if it's a string with placeholders, otherwise use value as-is
+                if isinstance(var_value, str):
+                    from merobox.commands.bootstrap.steps.base import BaseStep
 
-                base_step = BaseStep({"type": "dummy"})
-                resolved_value = base_step._resolve_dynamic_value(
-                    str(var_value) if not isinstance(var_value, str) else var_value,
-                    self.workflow_results,
-                    self.dynamic_values,
-                    self.global_variables,
-                    self.local_variables,
-                )
+                    base_step = BaseStep({"type": "dummy"})
+                    resolved_value = base_step._resolve_dynamic_value(
+                        var_value,
+                        self.workflow_results,
+                        self.dynamic_values,
+                        self.global_variables,
+                        self.local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
                 self._set_global_variable(var_name, resolved_value)
                 console.print(
                     f"[blue]📝 Set global variable '{var_name}' = {resolved_value}[/blue]"
