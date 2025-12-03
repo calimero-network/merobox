@@ -99,6 +99,17 @@ class RunWorkflowsStep(BaseStep):
             f"[cyan]🚀 Starting {len(workflows)} workflows in parallel...[/cyan]"
         )
 
+        # Check for duplicate output names across workflows
+        all_output_names = set()
+        for workflow_config in workflows:
+            outputs = workflow_config.get("outputs", {})
+            for output_name in outputs.keys():
+                if output_name in all_output_names:
+                    console.print(
+                        f"[yellow]⚠️  Warning: Multiple workflows export to '{output_name}' - last one wins[/yellow]"
+                    )
+                all_output_names.add(output_name)
+
         # Create tasks for all workflows
         tasks = []
         for idx, workflow_config in enumerate(workflows, 1):
@@ -113,6 +124,8 @@ class RunWorkflowsStep(BaseStep):
             tasks.append(task)
 
         # Execute all workflows concurrently
+        # Note: asyncio is single-threaded, so dictionary writes are atomic
+        # However, if multiple workflows export to the same variable, last writer wins
         if fail_fast:
             # Stop on first failure
             try:

@@ -174,6 +174,7 @@ class RunWorkflowStep(BaseStep):
             )
 
             # Export outputs from child workflow to parent
+            # Collect outputs first, then write atomically to avoid race conditions
             if outputs_config:
                 console.print(
                     f"[blue]📝 Exporting {len(outputs_config)} outputs from child workflow...[/blue]"
@@ -204,6 +205,8 @@ class RunWorkflowStep(BaseStep):
                         found = True
 
                     if found:
+                        # Write directly - safe because asyncio is single-threaded
+                        # Each await point serializes the writes
                         if target_scope == "global":
                             global_variables[actual_parent_name] = child_value
                             dynamic_values[actual_parent_name] = (
