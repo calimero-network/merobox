@@ -15,6 +15,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console
 
@@ -386,6 +387,7 @@ class WorkflowExecutor:
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
+        config_path = nodes_config.get("config_path")
 
         # Ensure nodes are restarted when mock relayer is requested so wiring is fresh
         if self.mock_relayer and not restart:
@@ -460,10 +462,15 @@ class WorkflowExecutor:
 
         # Otherwise handle individually defined nodes (dict or list)
         if isinstance(nodes_config, dict):
-            items = nodes_config.items()
+            # Filter out reserved configuration keys from node definitions
+            items = [
+                (k, v)
+                for k, v in nodes_config.items()
+                if k not in RESERVED_NODE_CONFIG_KEYS
+            ]
         else:
             # list of node names
-            items = ((n, None) for n in nodes_config)
+            items = [(n, None) for n in nodes_config]
 
         for node_name, node_cfg in items:
             # Resolve per-node settings
@@ -477,12 +484,14 @@ class WorkflowExecutor:
                     else node_cfg.get("image", image)
                 )
                 data_dir = node_cfg.get("data_dir")
+                node_config_path = node_cfg.get("config_path", config_path)
             else:
                 port = base_port
                 rpc_port = base_rpc_port
                 node_chain_id = chain_id
                 node_image = image
                 data_dir = None
+                node_config_path = config_path
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
@@ -522,6 +531,7 @@ class WorkflowExecutor:
                         self.rust_backtrace,
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
+                        config_path=node_config_path,
                     ):
                         return False
                 else:
@@ -546,6 +556,7 @@ class WorkflowExecutor:
                     self.rust_backtrace,
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
+                    config_path=node_config_path,
                 ):
                     return False
 
@@ -554,19 +565,10 @@ class WorkflowExecutor:
 
     async def _wait_for_nodes_ready(self) -> bool:
         """Wait for all nodes to be ready and accessible."""
-        nodes_config = self.config.get("nodes", {})
         wait_timeout = self.config.get("wait_timeout", 60)  # Default 60 seconds
 
-        if "count" in nodes_config:
-            count = nodes_config["count"]
-            prefix = nodes_config.get("prefix", "calimero-node")
-            node_names = [f"{prefix}-{i+1}" for i in range(count)]
-        else:
-            node_names = (
-                list(nodes_config.keys())
-                if isinstance(nodes_config, dict)
-                else list(nodes_config)
-            )
+        # Use the validated node names (filters out reserved config keys)
+        node_names = list(self._get_valid_node_names())
 
         console.print(
             f"Waiting up to {wait_timeout} seconds for {len(node_names)} nodes to be ready..."
@@ -631,7 +633,10 @@ class WorkflowExecutor:
                 return set()
         else:
             if isinstance(nodes_config, dict):
-                return set(nodes_config.keys())
+                # Filter out reserved configuration keys
+                return {
+                    k for k in nodes_config.keys() if k not in RESERVED_NODE_CONFIG_KEYS
+                }
             elif isinstance(nodes_config, list):
                 return set(nodes_config)
             else:

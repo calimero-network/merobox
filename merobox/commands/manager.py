@@ -288,6 +288,7 @@ class DockerManager:
         mock_relayer: bool = False,
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
+        config_path: str = None,  # custom config.toml path
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -373,6 +374,32 @@ class DockerManager:
             # Set permissions to be world-writable since container runs as root
             os.chmod(data_dir, 0o777)
             os.chmod(node_data_dir, 0o777)
+
+            # Handle custom config if provided
+            skip_init = False
+            if config_path is not None:
+                import shutil
+                from pathlib import Path
+
+                config_source = Path(config_path)
+                if not config_source.exists():
+                    console.print(
+                        f"[red]✗ Custom config file not found: {config_path}[/red]"
+                    )
+                    return False
+
+                config_dest = os.path.join(node_data_dir, "config.toml")
+                try:
+                    shutil.copy2(config_source, config_dest)
+                    console.print(
+                        f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
+                    )
+                    skip_init = True
+                except Exception as e:
+                    console.print(
+                        f"[red]✗ Failed to copy custom config: {str(e)}[/red]"
+                    )
+                    return False
 
             # Prepare container configuration
             # Prepare environment variables for node
@@ -518,55 +545,60 @@ class DockerManager:
                 # Try to ensure the auth service networks exist and connect to them
                 self._ensure_auth_networks()
 
-            # First, initialize the node
-            console.print(f"[yellow]Initializing node {node_name}...[/yellow]")
+            # Initialize the node (unless using custom config)
+            if not skip_init:
+                console.print(f"[yellow]Initializing node {node_name}...[/yellow]")
 
-            # Create a temporary container for initialization
-            init_config = container_config.copy()
-            init_config["name"] = init_container_name
-            init_config["entrypoint"] = ""
-            init_config["command"] = [
-                "merod",
-                "--home",
-                "/app/data",
-                "--node-name",
-                node_name,
-                "init",
-                "--server-host",
-                "0.0.0.0",
-                "--server-port",
-                str(2528),
-                "--swarm-port",
-                str(2428),
-            ]
-            if mock_relayer and relayer_url:
-                init_config["command"].extend(
-                    ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
-                )
-            init_config["detach"] = False
+                # Create a temporary container for initialization
+                init_config = container_config.copy()
+                init_config["name"] = init_container_name
+                init_config["entrypoint"] = ""
+                init_config["command"] = [
+                    "merod",
+                    "--home",
+                    "/app/data",
+                    "--node-name",
+                    node_name,
+                    "init",
+                    "--server-host",
+                    "0.0.0.0",
+                    "--server-port",
+                    str(2528),
+                    "--swarm-port",
+                    str(2428),
+                ]
+                if mock_relayer and relayer_url:
+                    init_config["command"].extend(
+                        ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
+                    )
+                init_config["detach"] = False
 
-            try:
-                init_container = self.client.containers.run(**init_config)
-                console.print(
-                    f"[green]✓ Node {node_name} initialized successfully[/green]"
-                )
-
-                # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
-                if e2e_mode:
-                    config_file = os.path.join(node_data_dir, "config.toml")
-                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
-
-            except Exception as e:
-                console.print(
-                    f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
-                )
-                return False
-            finally:
-                # Clean up init container
                 try:
-                    init_container.remove()
-                except Exception:
-                    pass
+                    init_container = self.client.containers.run(**init_config)
+                    console.print(
+                        f"[green]✓ Node {node_name} initialized successfully[/green]"
+                    )
+
+                    # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
+                    if e2e_mode:
+                        config_file = os.path.join(node_data_dir, "config.toml")
+                        self._apply_e2e_defaults(config_file, node_name, workflow_id)
+
+                except Exception as e:
+                    console.print(
+                        f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
+                    )
+                    return False
+                finally:
+                    # Clean up init container
+                    try:
+                        init_container.remove()
+                    except Exception:
+                        pass
+            else:
+                console.print(
+                    f"[cyan]Skipping initialization for {node_name} (using custom config)[/cyan]"
+                )
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")

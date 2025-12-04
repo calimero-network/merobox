@@ -33,6 +33,18 @@ DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:edge"
 DEFAULT_NODE_PREFIX = "calimero-node"
 DEFAULT_DATA_DIR_PREFIX = "data"
 
+# Workflow node configuration - reserved keys
+# These keys in the nodes config dict are configuration parameters, not node names
+RESERVED_NODE_CONFIG_KEYS = {
+    "count",
+    "prefix",
+    "base_port",
+    "base_rpc_port",
+    "chain_id",
+    "image",
+    "config_path",
+}
+
 # Response field names (from API responses)
 FIELD_APPLICATION_ID = "applicationId"
 FIELD_CONTEXT_ID = "contextId"

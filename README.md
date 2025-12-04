@@ -823,6 +823,7 @@ steps:
 - `nuke_on_end`: When `true`, performs complete data cleanup after workflow completes. Useful for CI/CD and testing.
 - `force_pull_image`: When set to `true`, forces Docker to pull fresh images from registries, even if they exist locally. Useful for ensuring latest versions or during development.
 - `auth_service`: When set to `true`, enables authentication service integration with Traefik proxy. Nodes will be configured with authentication middleware and proper routing.
+- `config_path`: Specify custom `config.toml` path for nodes. Supports both shared config for all nodes and per-node overrides. Skips node initialization when custom config is provided. See [Custom Config Path](#custom-config-path) for details.
 
 ### Docker Image Management
 
@@ -867,6 +868,56 @@ Merobox provides automatic Docker image management to ensure your workflows alwa
 - `RUST_BACKTRACE`: RUST_BACKTRACE level (0, 1, full)
 - `CALIMERO_AUTH_FRONTEND_FETCH`: Set to `0` to use cached auth frontend (default is `1` for fresh fetch)
 - `CALIMERO_WEBUI_FETCH`: Set to `0` to use cached WebUI frontend (default is `1` for fresh fetch)
+
+### Custom Config Path
+
+Merobox allows you to specify custom `config.toml` files for workflow nodes, enabling you to reuse existing node configurations without relying on Docker image initialization.
+
+#### **Usage in Workflows**
+
+You can specify a custom config path at two levels:
+
+**Shared config for all nodes:**
+
+```yaml
+nodes:
+  config_path: ./custom-config.toml  # All nodes use this config
+  calimero-node-1:
+    port: 2428
+    rpc_port: 2528
+  calimero-node-2:
+    port: 2429
+    rpc_port: 2529
+```
+
+**Per-node config override:**
+
+```yaml
+nodes:
+  config_path: ./default-config.toml  # Default for all nodes
+  calimero-node-1:
+    port: 2428
+    rpc_port: 2528
+    # Uses default config
+  calimero-node-2:
+    port: 2429
+    rpc_port: 2529
+    config_path: ./special-config.toml  # Override for this node
+```
+
+#### **Features**
+
+- **Shared or Per-Node**: Specify a default config for all nodes or override per-node
+- **Skip Initialization**: When custom config is provided, node initialization is skipped
+- **Docker & Binary Mode**: Works with both Docker containers and native binary (`--no-docker`) mode
+- **Path Resolution**: Supports both absolute and relative paths
+- **Validation**: Validates config file existence before attempting to use it
+
+#### **Example**
+
+See `workflow-examples/workflow-custom-config-example.yml` and `workflow-examples/custom-config.toml` for a complete example.
+
+**Note:** Custom config path is not supported with `count` mode (bulk node creation).
 
 ### Log Level Configuration
 
