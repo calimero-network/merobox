@@ -1,0 +1,277 @@
+description: Network-focused workflow monitoring DAG propagation reliability over 5 minutes
+name: DAG Propagation Monitoring Test
+
+force_pull_image: true
+nuke_on_start: true
+e2e_mode: true
+
+nodes:
+  chain_id: testnet-1
+  count: 5
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: dag-node
+
+steps:
+  # =============================================================================
+  # PHASE 1: Setup - Install application and create 5-node mesh
+  # =============================================================================
+
+  - name: Install Application on Node 1
+    type: install_application
+    node: dag-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create 5-Node Mesh
+    type: create_mesh
+    context_node: dag-node-1
+    application_id: "{{app_id}}"
+    nodes:
+      - dag-node-2
+      - dag-node-3
+      - dag-node-4
+      - dag-node-5
+    capability: member
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  - name: Assert Mesh Setup
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+      - "is_set({{member_public_key}})"
+      - "is_set({{public_key_dag-node-2}})"
+      - "is_set({{public_key_dag-node-3}})"
+      - "is_set({{public_key_dag-node-4}})"
+      - "is_set({{public_key_dag-node-5}})"
+
+  # =============================================================================
+  # PHASE 2: Initial Propagation Verification
+  # Write a key and verify all nodes see it before starting monitoring
+  # =============================================================================
+
+  - name: "[Setup] Write initial verification key from Node 1"
+    type: call
+    node: dag-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: set
+    args:
+      key: setup_verification_key
+      value: "initial_value_from_node_1"
+
+  - name: Wait for initial propagation
+    type: wait
+    seconds: 15
+
+  - name: "[Setup] Verify initial propagation to Node 2"
+    type: call
+    node: dag-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-2}}"
+    method: get
+    args:
+      key: setup_verification_key
+    outputs:
+      initial_check_n2: result
+
+  - name: "[Setup] Verify initial propagation to Node 3"
+    type: call
+    node: dag-node-3
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-3}}"
+    method: get
+    args:
+      key: setup_verification_key
+    outputs:
+      initial_check_n3: result
+
+  - name: "[Setup] Verify initial propagation to Node 4"
+    type: call
+    node: dag-node-4
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-4}}"
+    method: get
+    args:
+      key: setup_verification_key
+    outputs:
+      initial_check_n4: result
+
+  - name: "[Setup] Verify initial propagation to Node 5"
+    type: call
+    node: dag-node-5
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-5}}"
+    method: get
+    args:
+      key: setup_verification_key
+    outputs:
+      initial_check_n5: result
+
+  - name: Assert initial propagation succeeded
+    type: json_assert
+    statements:
+      - 'json_subset({{initial_check_n2}}, {"output": "initial_value_from_node_1"})'
+      - 'json_subset({{initial_check_n3}}, {"output": "initial_value_from_node_1"})'
+      - 'json_subset({{initial_check_n4}}, {"output": "initial_value_from_node_1"})'
+      - 'json_subset({{initial_check_n5}}, {"output": "initial_value_from_node_1"})'
+
+  # =============================================================================
+  # PHASE 3: Continuous Monitoring - Write NEW key each iteration, check propagation
+  # Each iteration:
+  #   1. Node 1 writes a new unique key (propagation_key_1, propagation_key_2, etc.)
+  #   2. Wait 5 seconds for propagation
+  #   3. Other nodes check if they can read that specific key
+  # This tests continuous write propagation over 5 minutes (60 iterations)
+  # =============================================================================
+
+  - name: "[Monitoring] Continuous write and check loop (5 minutes)"
+    type: repeat
+    count: 60
+    outputs:
+      iteration: iteration
+    steps:
+      # Node 1 writes a NEW key for this iteration
+      - name: "[Write {{iteration}}] Node 1 writes new key"
+        type: call
+        node: dag-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: set
+        args:
+          key: "propagation_key_{{iteration}}"
+          value: "value_from_iteration_{{iteration}}"
+
+      # Wait for propagation
+      - name: "Wait for propagation (iteration {{iteration}})"
+        type: wait
+        seconds: 5
+
+      # Check Node 2 - use expected_failure to not crash on missing key
+      - name: "[Check {{iteration}}] Node 2 reads key"
+        type: call
+        node: dag-node-2
+        context_id: "{{context_id}}"
+        executor_public_key: "{{public_key_dag-node-2}}"
+        method: get
+        args:
+          key: "propagation_key_{{iteration}}"
+        expected_failure: true
+        outputs:
+          check_n2_result: result
+          check_n2_error: error_type
+
+      # Check Node 3
+      - name: "[Check {{iteration}}] Node 3 reads key"
+        type: call
+        node: dag-node-3
+        context_id: "{{context_id}}"
+        executor_public_key: "{{public_key_dag-node-3}}"
+        method: get
+        args:
+          key: "propagation_key_{{iteration}}"
+        expected_failure: true
+        outputs:
+          check_n3_result: result
+          check_n3_error: error_type
+
+      # Check Node 4
+      - name: "[Check {{iteration}}] Node 4 reads key"
+        type: call
+        node: dag-node-4
+        context_id: "{{context_id}}"
+        executor_public_key: "{{public_key_dag-node-4}}"
+        method: get
+        args:
+          key: "propagation_key_{{iteration}}"
+        expected_failure: true
+        outputs:
+          check_n4_result: result
+          check_n4_error: error_type
+
+      # Check Node 5
+      - name: "[Check {{iteration}}] Node 5 reads key"
+        type: call
+        node: dag-node-5
+        context_id: "{{context_id}}"
+        executor_public_key: "{{public_key_dag-node-5}}"
+        method: get
+        args:
+          key: "propagation_key_{{iteration}}"
+        expected_failure: true
+        outputs:
+          check_n5_result: result
+          check_n5_error: error_type
+
+  # =============================================================================
+  # PHASE 4: Final Verification - Check the last key propagated successfully
+  # These final checks do NOT use expected_failure - we want to fail if
+  # the final key never propagated after 5 minutes
+  # =============================================================================
+
+  - name: "[Final] Node 2 reads last key"
+    type: call
+    node: dag-node-2
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-2}}"
+    method: get
+    args:
+      key: "propagation_key_60"
+    outputs:
+      final_n2: result
+
+  - name: "[Final] Node 3 reads last key"
+    type: call
+    node: dag-node-3
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-3}}"
+    method: get
+    args:
+      key: "propagation_key_60"
+    outputs:
+      final_n3: result
+
+  - name: "[Final] Node 4 reads last key"
+    type: call
+    node: dag-node-4
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-4}}"
+    method: get
+    args:
+      key: "propagation_key_60"
+    outputs:
+      final_n4: result
+
+  - name: "[Final] Node 5 reads last key"
+    type: call
+    node: dag-node-5
+    context_id: "{{context_id}}"
+    executor_public_key: "{{public_key_dag-node-5}}"
+    method: get
+    args:
+      key: "propagation_key_60"
+    outputs:
+      final_n5: result
+
+  - name: Assert final propagation state
+    type: json_assert
+    statements:
+      - 'json_subset({{final_n2}}, {"output": "value_from_iteration_60"})'
+      - 'json_subset({{final_n3}}, {"output": "value_from_iteration_60"})'
+      - 'json_subset({{final_n4}}, {"output": "value_from_iteration_60"})'
+      - 'json_subset({{final_n5}}, {"output": "value_from_iteration_60"})'
+
+  - name: Final Summary
+    type: assert
+    statements:
+      - statement: "is_set({{context_id}})"
+        message: "Context was created successfully"
+      - statement: "is_set({{final_n5}})"
+        message: "5-minute monitoring completed - check logs for propagation failure counts"
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 600
