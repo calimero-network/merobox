@@ -531,6 +531,7 @@ class WorkflowExecutor:
                         self.rust_backtrace,
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
+                        e2e_mode=self.e2e_mode,
                         config_path=node_config_path,
                     ):
                         return False
@@ -556,6 +557,7 @@ class WorkflowExecutor:
                     self.rust_backtrace,
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
+                    e2e_mode=self.e2e_mode,
                     config_path=node_config_path,
                 ):
                     return False
