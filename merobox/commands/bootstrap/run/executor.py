@@ -977,7 +977,7 @@ class WorkflowExecutor:
         elif step_type == "repeat":
             from merobox.commands.bootstrap.steps import RepeatStep
 
-            return RepeatStep(step_config, manager=self.manager)
+            return RepeatStep(step_config, manager=self.manager, parent_executor=self)
         elif step_type == "script":
             from merobox.commands.bootstrap.steps import ScriptStep
 
