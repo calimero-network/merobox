@@ -421,6 +421,34 @@ class RepeatStep(BaseStep):
             return ListProposalsStep(step_config, manager=self.manager)
         elif step_type == "get_proposal_approvers":
             return GetProposalApproversStep(step_config, manager=self.manager)
+        elif step_type == "upload_blob":
+            from merobox.commands.bootstrap.steps.blob import UploadBlobStep
+
+            return UploadBlobStep(step_config, manager=self.manager)
+        elif step_type == "assert":
+            from merobox.commands.bootstrap.steps.assertion import AssertStep
+
+            return AssertStep(step_config, manager=self.manager)
+        elif step_type == "json_assert":
+            from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+
+            return JsonAssertStep(step_config, manager=self.manager)
+        elif step_type == "create_mesh":
+            from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+
+            return CreateMeshStep(step_config, manager=self.manager)
+        elif step_type == "run_workflow":
+            from merobox.commands.bootstrap.steps.run_workflow import RunWorkflowStep
+
+            return RunWorkflowStep(
+                step_config, manager=self.manager, parent_executor=self.parent_executor
+            )
+        elif step_type == "run_workflows":
+            from merobox.commands.bootstrap.steps.run_workflows import RunWorkflowsStep
+
+            return RunWorkflowsStep(
+                step_config, manager=self.manager, parent_executor=self.parent_executor
+            )
         else:
             console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None
