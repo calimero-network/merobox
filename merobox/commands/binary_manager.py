@@ -382,23 +382,103 @@ class BinaryManager:
             console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
             return False
 
-    def stop_all_nodes(self) -> int:
-        """Stop all running nodes. Returns count of stopped nodes."""
+    def stop_all_nodes(self) -> bool:
+        """Stop all running nodes. Returns True on success, False on failure."""
         stopped = 0
+        failed_nodes = []
 
-        # Stop tracked processes
+        # Collect all running nodes (from tracked processes and PID files)
+        running_nodes = []
+
+        # Check tracked processes
         for node_name in list(self.processes.keys()):
-            if self.stop_node(node_name):
-                stopped += 1
+            running_nodes.append(node_name)
 
-        # Also check PID files
+        # Check PID files for nodes not already in tracked processes
         for pid_file in self.pid_file_dir.glob("*.pid"):
             node_name = pid_file.stem
             if node_name not in self.processes:
-                if self.stop_node(node_name):
-                    stopped += 1
+                pid = self._load_pid(node_name)
+                if pid and self._is_process_running(pid):
+                    running_nodes.append(node_name)
+                else:
+                    # Clean up stale PID file silently (with exception handling)
+                    try:
+                        self._remove_pid_file(node_name)
+                    except Exception:
+                        # Silently ignore cleanup failures (permissions, locked files, etc.)
+                        pass
 
-        return stopped
+        # If no running nodes found
+        if not running_nodes:
+            console.print("[yellow]No Calimero nodes are currently running[/yellow]")
+            return True
+
+        console.print(f"[bold]Stopping {len(running_nodes)} Calimero nodes...[/bold]")
+
+        # Stop each running node
+        for node_name in running_nodes:
+            try:
+                # Try tracked process first
+                if node_name in self.processes:
+                    process = self.processes[node_name]
+                    try:
+                        process.terminate()
+                        process.wait(timeout=5)
+                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                    except subprocess.TimeoutExpired:
+                        console.print(
+                            f"[yellow]Force killing node {node_name}...[/yellow]"
+                        )
+                        process.kill()
+                        process.wait()
+                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                    del self.processes[node_name]
+                    self._remove_pid_file(node_name)
+                    self.node_rpc_ports.pop(node_name, None)
+                    stopped += 1
+                else:
+                    # Stop by PID file
+                    pid = self._load_pid(node_name)
+                    if pid and self._is_process_running(pid):
+                        os.kill(pid, signal.SIGTERM)
+                        time.sleep(2)
+
+                        # Check if still running
+                        if self._is_process_running(pid):
+                            console.print(
+                                f"[yellow]Force killing node {node_name}...[/yellow]"
+                            )
+                            os.kill(pid, signal.SIGKILL)
+
+                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                    else:
+                        # Process stopped between check and stop attempt (race condition)
+                        # Still need to clean up resources
+                        console.print(
+                            f"[cyan]Node {node_name} already stopped, cleaning up...[/cyan]"
+                        )
+
+                    # Always clean up PID file and RPC port for PID-tracked nodes
+                    self._remove_pid_file(node_name)
+                    self.node_rpc_ports.pop(node_name, None)
+
+                    # Increment counter only after successful cleanup
+                    stopped += 1
+            except Exception as e:
+                console.print(f"[red]✗ Failed to stop {node_name}: {str(e)}[/red]")
+                failed_nodes.append(node_name)
+
+        console.print(
+            f"\n[bold]Stop Summary: {stopped}/{len(running_nodes)} nodes stopped successfully[/bold]"
+        )
+
+        # Return False only if there were actual failures
+        if failed_nodes:
+            console.print(f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]")
+            return False
+
+        return True
 
     def list_nodes(self) -> list:
         """List all running nodes."""
@@ -714,8 +794,10 @@ class BinaryManager:
                 "discovery.mdns": True,
                 # Aggressive sync settings from e2e tests for reliable testing
                 "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-                "sync.interval_ms": 500,  # 500ms between syncs (very aggressive for tests)
-                "sync.frequency_ms": 1000,  # 1s periodic checks (ensures rapid sync in tests)
+                # 500ms between syncs (very aggressive for tests)
+                "sync.interval_ms": 500,
+                # 1s periodic checks (ensures rapid sync in tests)
+                "sync.frequency_ms": 1000,
                 # Ethereum local devnet configuration (same as e2e tests)
                 "context.config.ethereum.network": "sepolia",
                 "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
