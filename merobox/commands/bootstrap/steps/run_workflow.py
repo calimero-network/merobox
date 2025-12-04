@@ -162,6 +162,7 @@ class RunWorkflowStep(BaseStep):
                     if "set_variables" in on_failure:
                         for var_name, var_value in on_failure["set_variables"].items():
                             global_variables[var_name] = var_value
+                            dynamic_values[var_name] = var_value
                             console.print(
                                 f"[blue]📝 Set failure variable '{var_name}' = {var_value}[/blue]"
                             )
@@ -229,5 +230,13 @@ class RunWorkflowStep(BaseStep):
                 console.print(
                     "[yellow]⚠️  Continuing despite error (continue_on_failure=true)[/yellow]"
                 )
+                # Set failure variables if configured
+                if "set_variables" in on_failure:
+                    for var_name, var_value in on_failure["set_variables"].items():
+                        global_variables[var_name] = var_value
+                        dynamic_values[var_name] = var_value
+                        console.print(
+                            f"[blue]📝 Set failure variable '{var_name}' = {var_value}[/blue]"
+                        )
                 return True
             return False
