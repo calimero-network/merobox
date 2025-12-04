@@ -131,6 +131,7 @@ class BinaryManager:
         mock_relayer: bool = False,  # Ignored in binary mode
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
+        config_path: Optional[str] = None,  # custom config.toml path
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -178,6 +179,31 @@ class BinaryManager:
             node_data_dir = data_path / node_name
             node_data_dir.mkdir(parents=True, exist_ok=True)
 
+            # Handle custom config if provided
+            skip_init = False
+            if config_path is not None:
+                import shutil
+
+                config_source = Path(config_path)
+                if not config_source.exists():
+                    console.print(
+                        f"[red]✗ Custom config file not found: {config_path}[/red]"
+                    )
+                    return False
+
+                config_dest = node_data_dir / "config.toml"
+                try:
+                    shutil.copy2(config_source, config_dest)
+                    console.print(
+                        f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
+                    )
+                    skip_init = True
+                except Exception as e:
+                    console.print(
+                        f"[red]✗ Failed to copy custom config: {str(e)}[/red]"
+                    )
+                    return False
+
             # Prepare log file (not used when foreground)
             log_dir = data_path / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
@@ -197,42 +223,47 @@ class BinaryManager:
             env["RUST_LOG"] = log_level
             env["RUST_BACKTRACE"] = rust_backtrace
 
-            # First-time init if needed (config.toml not present)
-            config_file = node_data_dir / "config.toml"
-            if not config_file.exists():
+            # Initialize node if needed (unless using custom config)
+            if not skip_init:
+                config_file = node_data_dir / "config.toml"
+                if not config_file.exists():
+                    console.print(
+                        f"[yellow]Initializing node {node_name} (first run)...[/yellow]"
+                    )
+                    init_cmd = [
+                        self.binary_path,
+                        "--home",
+                        str(node_data_dir.absolute()),
+                        "--node-name",
+                        node_name,
+                        "init",
+                        "--server-port",
+                        str(rpc_port),
+                        "--swarm-port",
+                        str(port),
+                    ]
+                    with open(log_file, "a") as log_f:
+                        try:
+                            subprocess.run(
+                                init_cmd,
+                                check=True,
+                                env=env,
+                                stdout=log_f,
+                                stderr=subprocess.STDOUT,
+                            )
+                            console.print(
+                                f"[green]✓ Node {node_name} initialized successfully[/green]"
+                            )
+                        except subprocess.CalledProcessError as e:
+                            console.print(
+                                f"[red]✗ Failed to initialize node {node_name}: {e}[/red]"
+                            )
+                            console.print(f"[yellow]Check logs: {log_file}[/yellow]")
+                            return False
+            else:
                 console.print(
-                    f"[yellow]Initializing node {node_name} (first run)...[/yellow]"
+                    f"[cyan]Skipping initialization for {node_name} (using custom config)[/cyan]"
                 )
-                init_cmd = [
-                    self.binary_path,
-                    "--home",
-                    str(node_data_dir.absolute()),
-                    "--node-name",
-                    node_name,
-                    "init",
-                    "--server-port",
-                    str(rpc_port),
-                    "--swarm-port",
-                    str(port),
-                ]
-                with open(log_file, "a") as log_f:
-                    try:
-                        subprocess.run(
-                            init_cmd,
-                            check=True,
-                            env=env,
-                            stdout=log_f,
-                            stderr=subprocess.STDOUT,
-                        )
-                        console.print(
-                            f"[green]✓ Node {node_name} initialized successfully[/green]"
-                        )
-                    except subprocess.CalledProcessError as e:
-                        console.print(
-                            f"[red]✗ Failed to initialize node {node_name}: {e}[/red]"
-                        )
-                        console.print(f"[yellow]Check logs: {log_file}[/yellow]")
-                        return False
 
             # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
             if e2e_mode:
