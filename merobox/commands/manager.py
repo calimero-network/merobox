@@ -5,11 +5,14 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Optional
 
 import docker
 from rich.console import Console
 from rich.table import Table
+
+from merobox.commands.config_utils import apply_near_devnet_config_to_file
 
 console = Console()
 
@@ -288,6 +291,7 @@ class DockerManager:
         mock_relayer: bool = False,
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
+        near_devnet_config: dict = None,
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -444,6 +448,13 @@ class DockerManager:
                 },
             }
 
+            # Near Devnet support
+            if near_devnet_config:
+                # Add host gateway so container can talk to the sandbox process running on host
+                if "extra_hosts" not in container_config:
+                    container_config["extra_hosts"] = {}
+                container_config["extra_hosts"]["host.docker.internal"] = "host-gateway"
+
             if mock_relayer:
                 container_config["extra_hosts"] = {
                     "host.docker.internal": "host-gateway"
@@ -550,6 +561,19 @@ class DockerManager:
                 console.print(
                     f"[green]✓ Node {node_name} initialized successfully[/green]"
                 )
+
+                if near_devnet_config:
+                    console.print(
+                        "[green]✓ Applying Near Devnet config for the node [/green]"
+                    )
+                    self._apply_near_devnet_config(
+                        node_name,
+                        near_devnet_config["rpc_url"],
+                        near_devnet_config["contract_id"],
+                        near_devnet_config["account_id"],
+                        near_devnet_config["public_key"],
+                        near_devnet_config["secret_key"],
+                    )
 
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
@@ -1011,6 +1035,7 @@ class DockerManager:
         mock_relayer: bool = False,
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
+        near_devnet_config: dict = None,
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1055,6 +1080,7 @@ class DockerManager:
                 mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
+                near_devnet_config=near_devnet_config,
             ):
                 success_count += 1
             else:
@@ -1454,3 +1480,22 @@ class DockerManager:
 
         current[keys[-1]] = value
         console.print(f"[cyan]  {key} = {value}[/cyan]")
+
+    def _apply_near_devnet_config(
+        self, node_name, rpc_url, contract_id, account_id, pub_key, secret_key
+    ):
+        """Wrapper for shared config utility."""
+
+        # Docker mode path structure on host
+        node_data_dir = f"./data/{node_name}/{node_name}"
+        config_file = Path(f"{node_data_dir}/config.toml")
+
+        apply_near_devnet_config_to_file(
+            config_file,
+            node_name,
+            rpc_url,
+            contract_id,
+            account_id,
+            pub_key,
+            secret_key,
+        )

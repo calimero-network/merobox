@@ -8,6 +8,7 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 - [✨ Features](#-features)
 - [🔐 Auth Service Integration](#-auth-service-integration)
 - [📖 Workflow Guide](#-workflow-guide)
+- [🧪 Local NEAR Development](#-local-near-development)
 - [🔧 API Reference](#-api-reference)
 - [🛠️ Development Guide](#️-development-guide)
 - [❓ Troubleshooting](#-troubleshooting)
@@ -51,6 +52,11 @@ merobox health
 # Execute a workflow
 merobox bootstrap run workflow.yml
 
+# Run workflow against local NEAR Devnet (no testnet URL and no testnet tokens required)
+merobox bootstrap run workflow.yml \
+  --near-devnet \
+  --contracts-dir ./contracts/res
+
 # Run everything against the local mock relayer
 merobox bootstrap run workflow.yml --mock-relayer
 
@@ -67,6 +73,7 @@ merobox stop --all
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
 - **Dynamic Variables**: Advanced placeholder resolution with embedded support
+- **Local NEAR Devnet**: Use local instance of NEAR blockchain (Sandbox) for zero-cost and quick local testing
 - **Mock Relayer Support**: One flag (`--mock-relayer`) spins up ghcr.io/calimero-network/mero-relayer:8ee178e and wires nodes to it
 
 ---
@@ -698,6 +705,8 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 
 - `--auth-service`: Enable authentication service with Traefik proxy
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
+- `--near-devnet`: Spin up a local NEAR sandbox and configure nodes to use it.
+- `--contracts-dir PATH`: Directory containing Near Context Config and Near Context Proxy contracts (required if using `--near-devnet`).
 - `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
 - `--rust-backtrace TEXT`: Set the RUST_BACKTRACE level for Calimero nodes (default: 0).
 - `--verbose, -v`: Enable verbose output
@@ -823,6 +832,8 @@ steps:
 - `nuke_on_end`: When `true`, performs complete data cleanup after workflow completes. Useful for CI/CD and testing.
 - `force_pull_image`: When set to `true`, forces Docker to pull fresh images from registries, even if they exist locally. Useful for ensuring latest versions or during development.
 - `auth_service`: When set to `true`, enables authentication service integration with Traefik proxy. Nodes will be configured with authentication middleware and proper routing.
+- `near_devnet`: When set to `true`, spins up a local NEAR Sandbox that is used for context management during the workflow running.
+- `contracts_dir`: Path to directory containing required WASM contracts (required when `near_devnet` is true).
 
 ### Docker Image Management
 
@@ -1588,9 +1599,13 @@ merobox/
 
 ## 📋 Requirements
 
-- **Python**: 3.8+
+- **Python**: 3.9 - 3.11
+  - **Note**: Python 3.12+ is currently not supported. The Near Sandbox feature uses `py-near` dependency relies
+  on `ed25519` package (that uses `SafeConfigParser`, which was removed in Python 3.12) that is limited by Python 3.11.
+  Please use Python 3.11 or older.
 - **Docker**: 20.10+ for Calimero nodes
 - **OS**: Linux, macOS, Windows
+  - **Note**: Linux/macOS required for near-sandbox local devnet. Windows platform is not currently supported (you may try using WSL).
 
 ## 🚀 Releases & Publishing
 
