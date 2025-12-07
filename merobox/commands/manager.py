@@ -448,17 +448,12 @@ class DockerManager:
                 },
             }
 
-            # Near Devnet support
-            if near_devnet_config:
+            # Near Devnet and Mock relayer support
+            if near_devnet_config or mock_relayer:
                 # Add host gateway so container can talk to the sandbox process running on host
                 if "extra_hosts" not in container_config:
                     container_config["extra_hosts"] = {}
                 container_config["extra_hosts"]["host.docker.internal"] = "host-gateway"
-
-            if mock_relayer:
-                container_config["extra_hosts"] = {
-                    "host.docker.internal": "host-gateway"
-                }
 
             # Add auth service configuration if enabled
             if auth_service:
@@ -1065,6 +1060,12 @@ class DockerManager:
             port = p2p_ports[i]
             rpc_port = rpc_ports[i]
 
+            # Resolve specific config for this node if a map is provided
+            node_specific_near_config = None
+            if near_devnet_config:
+                if node_name in near_devnet_config:
+                    node_specific_near_config = near_devnet_config[node_name]
+
             if self.run_node(
                 node_name,
                 port,
@@ -1080,7 +1081,7 @@ class DockerManager:
                 mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
-                near_devnet_config=near_devnet_config,
+                near_devnet_config=node_specific_near_config,
             ):
                 success_count += 1
             else:

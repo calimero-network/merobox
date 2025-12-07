@@ -89,7 +89,7 @@ class WorkflowExecutor:
         self.near_devnet = near_devnet or config.get("near_devnet", False)
         self.contracts_dir = contracts_dir or config.get("contracts_dir", False)
 
-        if near_devnet and not contracts_dir:
+        if self.near_devnet and not self.contracts_dir:
             console.print(
                 "[red] Config Error: near_devnet requires contracts_dir to be specified[/red]"
             )
@@ -464,7 +464,7 @@ class WorkflowExecutor:
                 )
 
                 # NEAR Devnet Config Logic
-                node_near_config = None
+                node_near_config = {}
                 if self.near_devnet:
                     console.print("[green]✓ Using Near Devnet config [/green]")
                     for i in range(count):
@@ -473,7 +473,7 @@ class WorkflowExecutor:
                             f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
                         )
                         creds = await self.sandbox.create_node_account(node_name)
-                        node_near_config = {
+                        node_near_config[node_name] = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
                             **creds,
@@ -513,10 +513,10 @@ class WorkflowExecutor:
                         continue
 
                     # NEAR Devnet Config Logic
-                    node_near_config = None
+                    node_near_config = {}
                     if self.near_devnet:
                         creds = await self.sandbox.create_node_account(node_name)
-                        node_near_config = {
+                        node_near_config[node_name] = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
                             **creds,
@@ -648,6 +648,7 @@ class WorkflowExecutor:
                     self.rust_backtrace,
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
+                    near_devnet_config=node_near_config,
                 ):
                     return False
 

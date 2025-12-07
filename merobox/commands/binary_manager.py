@@ -245,8 +245,9 @@ class BinaryManager:
 
             # Apply NEAR Devnet config if provided
             if near_devnet_config:
+                actual_config_file = node_data_dir / node_name / "config.toml"
                 self._apply_near_devnet_config(
-                    config_file,
+                    actual_config_file,
                     node_name,
                     near_devnet_config["rpc_url"],
                     near_devnet_config["contract_id"],
@@ -731,6 +732,12 @@ class BinaryManager:
                 port = base_port + (i * 100)  # Space out ports
                 rpc_port = base_rpc_port + (i * 100)
 
+            # Resolve specific config for this node if a map is provided
+            node_specific_near_config = None
+            if near_devnet_config:
+                if node_name in near_devnet_config:
+                    node_specific_near_config = near_devnet_config[node_name]
+
             if self.run_node(
                 node_name=node_name,
                 port=port,
@@ -741,7 +748,7 @@ class BinaryManager:
                 mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
-                near_devnet_config=near_devnet_config,
+                near_devnet_config=node_specific_near_config,
             ):
                 success_count += 1
             else:
