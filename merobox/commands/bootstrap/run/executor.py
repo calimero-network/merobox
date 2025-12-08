@@ -89,6 +89,13 @@ class WorkflowExecutor:
         self.near_devnet = near_devnet or config.get("near_devnet", False)
         self.contracts_dir = contracts_dir or config.get("contracts_dir", False)
 
+        # Forbid having Near Devnet (sandbox) configuration and mock relayer at the same time
+        if self.mock_relayer and self.near_devnet:
+            console.print(
+                "[red]Configuration Error: --mock-relayer and --near-devnet cannot be enabled simultaneously.[/red]"
+            )
+            sys.exit(1)
+
         if self.near_devnet and not self.contracts_dir:
             console.print(
                 "[red] Config Error: near_devnet requires contracts_dir to be specified[/red]"

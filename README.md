@@ -8,7 +8,7 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 - [✨ Features](#-features)
 - [🔐 Auth Service Integration](#-auth-service-integration)
 - [📖 Workflow Guide](#-workflow-guide)
-- [🧪 Local NEAR Development](#-local-near-development)
+- [🎯 Local Blockchain Environments](#-local-blockchain-environments)
 - [🔧 API Reference](#-api-reference)
 - [🛠️ Development Guide](#️-development-guide)
 - [❓ Troubleshooting](#-troubleshooting)
@@ -596,6 +596,50 @@ Example:
   statements:
     - "json_equal({{get_result}}, {'output': 'assert_value'})"
 ```
+
+---
+
+## 🎯 Local Blockchain Environments
+
+Merobox offers two ways to run isolated tests without connecting to public networks. **These options are mutually exclusive.**
+
+1. **Local NEAR Sandbox** (`--near-devnet`)
+A real, ephemeral NEAR blockchain instance running locally.
+- **Best for:** Full E2E testing and contract logic verification.
+- **Behavior:** Executes actual WASM smart contracts and state transitions.
+
+2. **Mock Relayer** (`--mock-relayer`)
+A lightweight service that mimics the Relayer API.
+- **Best for:** Fast connectivity checks and node startup validation.
+- **Behavior:** Returns successful responses without executing real logic.
+
+> **❌ Restriction**: You cannot use `--mock-relayer` and `--near-devnet` simultaneously. The workflow will fail if both are enabled.
+
+### Local NEAR Sandbox
+
+Merobox allows you to run workflows against a local ephemeral NEAR blockchain (Sandbox) instead of the public Testnet.
+This enables faster E2E testing without needing testnet tokens or RPC access.
+
+#### Requirements
+You need the compiled WebAssembly (`.wasm`) files for the Calimero context contracts:
+1. `calimero_context_config_near.wasm`
+2. `calimero_context_proxy_near.wasm`
+
+#### How to Run
+Use the `--near-devnet` flag and point to your contracts directory:
+
+```bash
+merobox bootstrap run workflows/my-test.yml \
+  --near-devnet \
+  --contracts-dir ./path/to/wasm/files
+```
+
+**What happens during the run:**
+1. **Sandbox Start**: Merobox downloads and starts `near-sandbox` locally on port 3030.
+2. **Contract Deployment**: It creates a root account (`calimero.test.near`) and deploys the registry contracts.
+3. **Node Configuration**: It generates funded NEAR accounts for every node in your workflow (e.g., `node-1.test.near`).
+4. **Config Injection**: It overrides the node's `config.toml` to point to the local sandbox RPC (`http://host.docker.internal:3030` for Docker nodes).
+5. **Cleanup**: The sandbox and all chain data are destroyed when the workflow finishes.
 
 ---
 
