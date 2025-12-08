@@ -129,12 +129,6 @@ def run(
     5. Export results and captured values
     """
 
-    if near_devnet and not contracts_dir:
-        console.print(
-            "[red]Error: --near-devnet requires --contracts-dir to be specified[/red]"
-        )
-        sys.exit(1)
-
     success = run_workflow_sync(
         config_file,
         verbose,
