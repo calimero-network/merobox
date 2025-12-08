@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -45,3 +46,40 @@ def test_run_node_calls_shared_config_utils(mock_run, mock_popen, mock_apply_con
         assert args[1] == "node1"
         assert args[2] == near_config["rpc_url"]
         assert args[6] == near_config["secret_key"]
+
+
+def test_binary_manager_path_fix():
+    """Ensure BinaryManager uses the correct nested path for config.toml."""
+    bm = BinaryManager(binary_path="merod", require_binary=False)
+
+    with patch(
+        "merobox.commands.binary_manager.apply_near_devnet_config_to_file"
+    ) as mock_apply:
+        # Mock filesystem/subprocess interactions
+        with (
+            patch("pathlib.Path.mkdir"),
+            patch("pathlib.Path.exists", return_value=False),
+            patch("subprocess.run"),
+            patch("subprocess.Popen"),
+            patch("builtins.open"),
+        ):
+
+            bm.run_node(
+                "node1",
+                near_devnet_config={
+                    "rpc_url": "u",
+                    "contract_id": "c",
+                    "account_id": "a",
+                    "public_key": "p",
+                    "secret_key": "s",
+                },
+            )
+
+    # Verify the path argument to apply_near_devnet_config_to_file
+    mock_apply.assert_called_once()
+    args, _ = mock_apply.call_args
+    config_path = str(args[0])
+
+    # Expect: .../data/node1/node1/config.toml
+    expected_suffix = os.path.join("node1", "node1", "config.toml")
+    assert config_path.endswith(expected_suffix)
