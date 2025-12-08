@@ -31,7 +31,7 @@ async def run_workflow(
     mock_relayer: bool = False,
     e2e_mode: bool = False,
     near_devnet: bool = False,
-    contracts_dir: bool = None,
+    contracts_dir: Optional[str] = None,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -142,7 +142,7 @@ def run_workflow_sync(
     mock_relayer: bool = False,
     e2e_mode: bool = False,
     near_devnet: bool = False,
-    contracts_dir: bool = None,
+    contracts_dir: Optional[str] = None,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.

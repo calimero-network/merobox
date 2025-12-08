@@ -49,8 +49,10 @@ class SandboxManager:
             return "Darwin-arm64"
         # Linux
         elif system == "linux":
-            arch = "x86_64" if machine == "x86_64" else "aarch64"
-            return f"Linux-{arch}"
+            if machine == "x86_64":
+                return "Linux-x86_64"
+            elif machine in ["aarch64", "arm64"]:
+                return "Linux-aarch64"
 
         raise Exception(f"Unsupported platform: {system} {machine}")
 

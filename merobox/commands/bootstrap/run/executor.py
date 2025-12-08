@@ -87,7 +87,7 @@ class WorkflowExecutor:
         self.workflow_id = str(uuid.uuid4())[:8]
 
         self.near_devnet = near_devnet or config.get("near_devnet", False)
-        self.contracts_dir = contracts_dir or config.get("contracts_dir", False)
+        self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 
         # Forbid having Near Devnet (sandbox) configuration and mock relayer at the same time
         if self.mock_relayer and self.near_devnet:
@@ -520,10 +520,10 @@ class WorkflowExecutor:
                         continue
 
                     # NEAR Devnet Config Logic
-                    node_near_config = {}
+                    node_near_config = None
                     if self.near_devnet:
                         creds = await self.sandbox.create_node_account(node_name)
-                        node_near_config[node_name] = {
+                        node_near_config = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
                             **creds,
