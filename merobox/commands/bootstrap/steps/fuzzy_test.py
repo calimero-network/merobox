@@ -595,7 +595,13 @@ class FuzzyTestStep(BaseStep):
         summary = tracker.get_summary()
         elapsed_str = self._format_duration(elapsed)
         pass_rate = summary["pass_rate"]
-        passed = pass_rate >= success_threshold and not had_exception
+
+        if had_exception:
+            passed = False
+        elif summary["total_assertions"] == 0:
+            passed = False
+        else:
+            passed = pass_rate >= success_threshold
 
         console.print(f"\n[bold magenta]{'=' * 60}[/bold magenta]")
         console.print(
