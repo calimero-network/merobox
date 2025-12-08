@@ -318,17 +318,17 @@ Both simple and complex output syntax are supported for error fields:
   expected_failure: true
   outputs:
     # Simple string assignment
-    error_code: error_code      # JSON-RPC error code
-    error_type: error_type      # Error type (e.g., "FunctionCallError")
+    error_code: error_code # JSON-RPC error code
+    error_type: error_type # Error type (e.g., "FunctionCallError")
     error_message: error_message # Error message
-    error: error                 # Full error object
+    error: error # Full error object
 
     # Complex dict-based assignment (also supported)
     custom_error:
       field: error_type
     custom_error_code:
       field: error_code
-      target: error_code_{node_name}  # Optional: custom target with node name
+      target: error_code_{node_name} # Optional: custom target with node name
 
 - name: "Assert Error Occurred"
   type: assert
@@ -391,56 +391,57 @@ Runs long-duration randomized load tests with weighted operation patterns and as
 ```yaml
 - name: "Fuzzy Load Test"
   type: "fuzzy_test"
-  duration_minutes: 30  # Run for 30 minutes
+  duration_minutes: 30 # Run for 30 minutes
   context_id: "{{context_id}}"
-  success_threshold: 95.0  # Pass if 95%+ assertions succeed
-  
+  success_threshold: 95.0 # Pass if 95%+ assertions succeed
+
   nodes:
     - name: calimero-node-1
       executor_key: "{{member_public_key}}"
     - name: calimero-node-2
       executor_key: "{{public_key_node2}}"
-  
+
   operations:
     # Pattern 1: Write and verify (40% of operations)
     - name: "set_and_verify"
       weight: 40
       steps:
+        # Resolved args auto-captured as {{fuzzy_key}}, {{fuzzy_value}}
         - type: call
-          node: "{{random_node}}"  # Random node selection
+          node: "{{random_node}}" # Random node selection
           method: set
           context_id: "{{context_id}}"
           executor_public_key: "{{random_executor}}"
           args:
-            key: "test_{{random_int(1, 1000)}}"  # Random generators
+            key: "test_{{random_int(1, 1000)}}" # Random generators
             value: "{{uuid}}_{{timestamp}}"
-          outputs:
-            test_key: args.key
-            test_value: args.value
-        
+
         - type: wait
           seconds: 1
-        
+
+        # Use auto-captured {{fuzzy_key}}
         - type: call
           node: "{{random_node}}"
           method: get
           context_id: "{{context_id}}"
           executor_public_key: "{{random_executor}}"
           args:
-            key: "{{test_key}}"
+            key: "{{fuzzy_key}}"
           outputs:
             retrieved: result
-        
+
+        # Use auto-captured {{fuzzy_value}}
         - type: assert
-          non_blocking: true  # Failures don't stop the test
+          non_blocking: true # Failures don't stop the test
           statements:
-            - statement: "contains({{retrieved}}, {{test_value}})"
+            - statement: "contains({{retrieved}}, {{fuzzy_value}})"
               message: "Value should match"
-    
+
     # Pattern 2: Cross-node propagation test (30% of operations)
     - name: "cross_node_sync"
       weight: 30
       steps:
+        # Args auto-captured as {{fuzzy_key}}, {{fuzzy_value}}
         - type: call
           node: calimero-node-1
           method: set
@@ -449,29 +450,28 @@ Runs long-duration randomized load tests with weighted operation patterns and as
           args:
             key: "sync_{{random_int(1, 500)}}"
             value: "{{timestamp}}"
-          outputs:
-            sync_key: args.key
-            sync_value: args.value
-        
+
         - type: wait
-          seconds: 2  # Wait for propagation
-        
+          seconds: 2 # Wait for propagation
+
+        # Use auto-captured {{fuzzy_key}}
         - type: call
           node: calimero-node-2
           method: get
           context_id: "{{context_id}}"
           executor_public_key: "{{public_key_node2}}"
           args:
-            key: "{{sync_key}}"
+            key: "{{fuzzy_key}}"
           outputs:
             synced_value: result
-        
+
+        # Use auto-captured {{fuzzy_value}}
         - type: assert
           non_blocking: true
           statements:
-            - statement: "contains({{synced_value}}, {{sync_value}})"
+            - statement: "contains({{synced_value}}, {{fuzzy_value}})"
               message: "Data should propagate across nodes"
-    
+
     # Pattern 3: Random reads (30% of operations)
     - name: "random_read"
       weight: 30
@@ -486,6 +486,7 @@ Runs long-duration randomized load tests with weighted operation patterns and as
 ```
 
 **Random Value Generators:**
+
 - `{{random_int(min, max)}}` - Random integer
 - `{{random_string(length)}}` - Random alphanumeric string
 - `{{random_float(min, max)}}` - Random float
@@ -495,7 +496,19 @@ Runs long-duration randomized load tests with weighted operation patterns and as
 - `{{random_node}}` - Random node from nodes list
 - `{{random_executor}}` - Random executor key
 
+**Auto-Captured Arguments:**
+
+When a `call` step executes, its resolved arguments are automatically captured with a `fuzzy_` prefix:
+
+- `args.key` → `{{fuzzy_key}}`
+- `args.value` → `{{fuzzy_value}}`
+- `args.amount` → `{{fuzzy_amount}}`
+
+This allows subsequent steps to reference the exact values used in previous calls for verification.
+
 **Features:**
+
+- **Application-agnostic**: Works with any smart contract
 - **Weighted patterns**: Control operation frequency
 - **Non-blocking assertions**: Track failures without stopping
 - **Live progress**: Periodic summaries every 60 seconds
