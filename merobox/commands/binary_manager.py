@@ -245,8 +245,12 @@ class BinaryManager:
 
             # Apply NEAR Devnet config if provided
             if near_devnet_config:
+                console.print(
+                    "[green]✓ Applying Near Devnet config for the node [/green]"
+                )
+
                 actual_config_file = node_data_dir / node_name / "config.toml"
-                self._apply_near_devnet_config(
+                if not self._apply_near_devnet_config(
                     actual_config_file,
                     node_name,
                     near_devnet_config["rpc_url"],
@@ -254,7 +258,9 @@ class BinaryManager:
                     near_devnet_config["account_id"],
                     near_devnet_config["public_key"],
                     near_devnet_config["secret_key"],
-                )
+                ):
+                    console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
+                    return False
 
             # Build run command (ports are taken from config created during init)
             cmd = [
@@ -907,7 +913,7 @@ class BinaryManager:
         secret_key: str,
     ):
         """Wrapper for shared config utility."""
-        apply_near_devnet_config_to_file(
+        return apply_near_devnet_config_to_file(
             config_file,
             node_name,
             rpc_url,

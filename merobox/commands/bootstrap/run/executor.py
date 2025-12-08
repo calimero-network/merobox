@@ -455,10 +455,11 @@ class WorkflowExecutor:
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
 
-        # Ensure nodes are restarted when mock relayer is requested so wiring is fresh
-        if self.mock_relayer and not restart:
+        # Ensure nodes are restarted when Near Devnet or Mock Relayer is requested so wiring is fresh
+        if (self.near_devnet or self.mock_relayer) and not restart:
+            feature = "NEAR Devnet" if self.near_devnet else "Mock Relayer"
             console.print(
-                "[yellow]Mock relayer requested; forcing restart to wire nodes to the relayer[/yellow]"
+                f"[yellow]{feature} requested; forcing restart to wire nodes to the relayer[/yellow]"
             )
             restart = True
 

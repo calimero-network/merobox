@@ -561,14 +561,16 @@ class DockerManager:
                     console.print(
                         "[green]✓ Applying Near Devnet config for the node [/green]"
                     )
-                    self._apply_near_devnet_config(
+                    if not self._apply_near_devnet_config(
                         node_name,
                         near_devnet_config["rpc_url"],
                         near_devnet_config["contract_id"],
                         near_devnet_config["account_id"],
                         near_devnet_config["public_key"],
                         near_devnet_config["secret_key"],
-                    )
+                    ):
+                        console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
+                        return False
 
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
@@ -1491,7 +1493,7 @@ class DockerManager:
         node_data_dir = f"./data/{node_name}/{node_name}"
         config_file = Path(f"{node_data_dir}/config.toml")
 
-        apply_near_devnet_config_to_file(
+        return apply_near_devnet_config_to_file(
             config_file,
             node_name,
             rpc_url,
