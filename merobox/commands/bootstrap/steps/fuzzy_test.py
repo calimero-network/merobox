@@ -154,6 +154,11 @@ class FuzzyTestStep(BaseStep):
                 "fuzzy_test_pass_rate",
                 "Overall pass rate percentage",
             ),
+            (
+                "fuzzy_test_had_exception",
+                "fuzzy_test_had_exception",
+                "Whether an exception occurred during execution",
+            ),
         ]
 
     async def execute(
@@ -211,6 +216,7 @@ class FuzzyTestStep(BaseStep):
         start_time = time.time()
         last_summary_time = start_time
         iteration = 0
+        had_exception = False
 
         try:
             while (time.time() - start_time) < duration_seconds:
@@ -250,13 +256,17 @@ class FuzzyTestStep(BaseStep):
 
         except KeyboardInterrupt:
             console.print("\n[yellow]⚠️  Fuzzy test interrupted by user[/yellow]")
+            had_exception = True
         except Exception as e:
             console.print(f"\n[red]❌ Fuzzy test error: {str(e)}[/red]")
+            had_exception = True
             # Continue to print final report even on error
 
         # Print final report
         elapsed = time.time() - start_time
-        self._print_final_report(results_tracker, elapsed, success_threshold)
+        self._print_final_report(
+            results_tracker, elapsed, success_threshold, had_exception
+        )
 
         # Export results to dynamic values
         summary = results_tracker.get_summary()
@@ -265,9 +275,15 @@ class FuzzyTestStep(BaseStep):
         dynamic_values["fuzzy_test_assertions_passed"] = summary["assertions_passed"]
         dynamic_values["fuzzy_test_assertions_failed"] = summary["assertions_failed"]
         dynamic_values["fuzzy_test_pass_rate"] = summary["pass_rate"]
+        dynamic_values["fuzzy_test_had_exception"] = had_exception
 
-        # Determine success based on threshold
-        passed = summary["pass_rate"] >= success_threshold
+        # Determine success based on threshold AND exception status
+        # If an exception occurred, the test fails regardless of pass rate
+        if had_exception:
+            passed = False
+        else:
+            passed = summary["pass_rate"] >= success_threshold
+
         return passed
 
     def _select_weighted_operation(self) -> dict:
@@ -550,12 +566,13 @@ class FuzzyTestStep(BaseStep):
         tracker: FuzzyTestResultsTracker,
         elapsed: float,
         success_threshold: float,
+        had_exception: bool = False,
     ) -> None:
         """Print comprehensive final report."""
         summary = tracker.get_summary()
         elapsed_str = self._format_duration(elapsed)
         pass_rate = summary["pass_rate"]
-        passed = pass_rate >= success_threshold
+        passed = pass_rate >= success_threshold and not had_exception
 
         console.print(f"\n[bold magenta]{'=' * 60}[/bold magenta]")
         console.print(
@@ -624,8 +641,23 @@ class FuzzyTestStep(BaseStep):
                 f"({pass_rate:.1f}% success rate >= {success_threshold}% threshold)[/bold green]"
             )
         else:
-            console.print(
-                f"[bold red]Test Conclusion: FAILED "
-                f"({pass_rate:.1f}% success rate < {success_threshold}% threshold)[/bold red]"
-            )
+            if had_exception:
+                console.print(
+                    "[bold red]Test Conclusion: FAILED "
+                    "(Exception occurred during execution)[/bold red]"
+                )
+                if summary["total_assertions"] == 0:
+                    console.print(
+                        "[red]Note: No assertions were executed before the exception[/red]"
+                    )
+                else:
+                    console.print(
+                        f"[red]Partial results: {pass_rate:.1f}% pass rate "
+                        f"from {summary['total_assertions']} assertions before failure[/red]"
+                    )
+            else:
+                console.print(
+                    f"[bold red]Test Conclusion: FAILED "
+                    f"({pass_rate:.1f}% success rate < {success_threshold}% threshold)[/bold red]"
+                )
         console.print(f"[bold magenta]{'=' * 60}[/bold magenta]\n")
