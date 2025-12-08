@@ -125,6 +125,22 @@ class FuzzyTestStep(BaseStep):
                 raise ValueError(
                     f"Step '{step_name}': 'operations[{idx}]' must have a 'steps' list"
                 )
+            # Validate each step in the steps list is a dict
+            if len(op["steps"]) == 0:
+                raise ValueError(
+                    f"Step '{step_name}': 'operations[{idx}]' steps list cannot be empty"
+                )
+            for step_idx, step in enumerate(op["steps"]):
+                if not isinstance(step, dict):
+                    raise ValueError(
+                        f"Step '{step_name}': 'operations[{idx}]' step {step_idx} must be a "
+                        f"dictionary, got {type(step).__name__}"
+                    )
+                if "type" not in step:
+                    raise ValueError(
+                        f"Step '{step_name}': 'operations[{idx}]' step {step_idx} "
+                        f"must have a 'type' field"
+                    )
 
     def _get_exportable_variables(self):
         """Define exportable variables."""
@@ -329,7 +345,22 @@ class FuzzyTestStep(BaseStep):
         pattern_dynamic_values["random_executor"] = random_node["executor_key"]
 
         for step_idx, step_config in enumerate(steps):
+            # Validate step is a dict (extra safety check)
+            if not isinstance(step_config, dict):
+                console.print(
+                    f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                    f"is not a dictionary (got {type(step_config).__name__}), "
+                    f"skipping (iteration {iteration})[/yellow]"
+                )
+                continue
+
             step_type = step_config.get("type")
+            if not step_type:
+                console.print(
+                    f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                    f"missing 'type' field, skipping (iteration {iteration})[/yellow]"
+                )
+                continue
 
             # Deep copy step config to avoid mutation
             resolved_step_config = self._resolve_step_config(
