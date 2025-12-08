@@ -3,7 +3,9 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 """
 
 import asyncio
+import os
 import time
+import uuid
 from typing import Any, Optional
 
 import docker
@@ -36,9 +38,11 @@ class WorkflowExecutor:
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
         e2e_mode: bool = False,
+        workflow_dir: str = None,
     ):
         self.config = config
         self.manager = manager
+        self.workflow_dir = workflow_dir or "."
         # Determine if we're in binary mode
         self.is_binary_mode = (
             hasattr(manager, "binary_path") and manager.binary_path is not None
@@ -73,8 +77,6 @@ class WorkflowExecutor:
         self.e2e_mode = e2e_mode or config.get("e2e_mode", False)
 
         # Generate unique workflow ID for test isolation (like e2e tests)
-        import uuid
-
         self.workflow_id = str(uuid.uuid4())[:8]
 
         try:
@@ -373,6 +375,22 @@ class WorkflowExecutor:
         except Exception:
             return False
 
+    def _resolve_config_path(self, config_path: Optional[str]) -> Optional[str]:
+        """
+        Resolve config path relative to workflow YAML file location.
+
+        Args:
+            config_path: Path to config file (can be relative or absolute)
+
+        Returns:
+            Absolute path to config file, or None if config_path is None
+        """
+        if config_path is None:
+            return None
+        if os.path.isabs(config_path):
+            return config_path
+        resolved = os.path.join(self.workflow_dir, config_path)
+        return os.path.abspath(resolved)
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get("nodes", {})
@@ -387,7 +405,7 @@ class WorkflowExecutor:
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
-        config_path = nodes_config.get("config_path")
+        config_path = self._resolve_config_path(nodes_config.get("config_path"))
 
         # Ensure nodes are restarted when mock relayer is requested so wiring is fresh
         if self.mock_relayer and not restart:
@@ -494,7 +512,9 @@ class WorkflowExecutor:
                     else node_cfg.get("image", image)
                 )
                 data_dir = node_cfg.get("data_dir")
-                node_config_path = node_cfg.get("config_path", config_path)
+                node_config_path = self._resolve_config_path(
+                    node_cfg.get("config_path", nodes_config.get("config_path"))
+                )
             else:
                 port = base_port
                 rpc_port = base_rpc_port

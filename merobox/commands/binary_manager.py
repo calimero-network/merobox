@@ -3,13 +3,19 @@ Binary Manager - Manages Calimero nodes as native processes (no Docker).
 """
 
 import os
+import re
+import shutil
 import signal
+import socket
+import stat
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
+import toml
 from rich.console import Console
 
 console = Console()
@@ -182,8 +188,6 @@ class BinaryManager:
             # Handle custom config if provided
             skip_init = False
             if config_path is not None:
-                import shutil
-
                 config_source = Path(config_path)
                 if not config_source.exists():
                     console.print(
@@ -353,8 +357,6 @@ class BinaryManager:
 
                 # Quick bind check for admin port
                 try:
-                    import socket
-
                     with socket.create_connection(
                         ("127.0.0.1", int(rpc_port)), timeout=1.5
                     ):
@@ -548,7 +550,6 @@ class BinaryManager:
             config_path = node_dir / "config.toml"
             if not config_path.exists():
                 return None
-            import re
 
             with open(config_path) as f:
                 content = f.read()
@@ -715,8 +716,6 @@ class BinaryManager:
 
         # Generate a single shared workflow_id for all nodes if none provided
         if workflow_id is None:
-            import uuid
-
             workflow_id = str(uuid.uuid4())[:8]
             console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
@@ -800,10 +799,6 @@ class BinaryManager:
     ):
         """Apply e2e-style defaults for reliable testing."""
         try:
-            import uuid
-
-            import toml
-
             # Generate unique workflow ID if not provided
             if not workflow_id:
                 workflow_id = str(uuid.uuid4())[:8]
@@ -845,8 +840,6 @@ class BinaryManager:
                 self._set_nested_config(config, key, value)
 
             # Write back to file (ensure it's writable first)
-            import stat
-
             if config_file.exists():
                 config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
 
@@ -868,8 +861,6 @@ class BinaryManager:
 
     def _find_available_ports(self, count: int) -> list[int]:
         """Find available ports for dynamic allocation."""
-        import socket
-
         ports = []
         start_port = 3000  # Start from a higher range to avoid common conflicts
 

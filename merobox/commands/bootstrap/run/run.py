@@ -9,6 +9,7 @@ This module handles the execution of Calimero workflows including:
 """
 
 import asyncio
+import os
 from typing import Optional
 
 from merobox.commands.bootstrap.config import load_workflow_config
@@ -45,6 +46,7 @@ async def run_workflow(
     try:
         # Load configuration
         config = load_workflow_config(config_file)
+        workflow_dir = os.path.dirname(os.path.abspath(config_file))
 
         # Allow workflow YAML to opt into no-docker mode
         yaml_no_docker = bool(config.get("no_docker", False))
@@ -100,6 +102,7 @@ async def run_workflow(
             rust_backtrace,
             mock_relayer,
             e2e_mode,
+            workflow_dir=workflow_dir,
         )
 
         # Execute workflow

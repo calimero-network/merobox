@@ -3,11 +3,15 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 """
 
 import os
+import shutil
 import sys
 import time
+import uuid
+from pathlib import Path
 from typing import Optional
 
 import docker
+import toml
 from rich.console import Console
 from rich.table import Table
 
@@ -378,9 +382,6 @@ class DockerManager:
             # Handle custom config if provided
             skip_init = False
             if config_path is not None:
-                import shutil
-                from pathlib import Path
-
                 config_source = Path(config_path)
                 if not config_source.exists():
                     console.print(
@@ -1052,8 +1053,6 @@ class DockerManager:
 
         # Generate a single shared workflow_id for all nodes if none provided
         if workflow_id is None:
-            import uuid
-
             workflow_id = str(uuid.uuid4())[:8]
             console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
@@ -1418,11 +1417,6 @@ class DockerManager:
     def _apply_e2e_defaults(self, config_file: str, node_name: str, workflow_id: str):
         """Apply e2e-style defaults for reliable testing."""
         try:
-            import uuid
-            from pathlib import Path
-
-            import toml
-
             # Generate unique workflow ID if not provided
             if not workflow_id:
                 workflow_id = str(uuid.uuid4())[:8]
