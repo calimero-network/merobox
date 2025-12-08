@@ -277,9 +277,17 @@ class FuzzyTestStep(BaseStep):
         dynamic_values["fuzzy_test_pass_rate"] = summary["pass_rate"]
         dynamic_values["fuzzy_test_had_exception"] = had_exception
 
-        # Determine success based on threshold AND exception status
-        # If an exception occurred, the test fails regardless of pass rate
+        # Test fails if: exception occurred, no assertions ran, or pass rate below threshold
         if had_exception:
+            passed = False
+        elif summary["total_assertions"] == 0:
+            # No assertions ran - nothing was validated, test must fail
+            console.print(
+                "[yellow]⚠️  Warning: No assertions were executed during fuzzy test![/yellow]"
+            )
+            console.print(
+                "[yellow]   The test cannot pass without validating any results.[/yellow]"
+            )
             passed = False
         else:
             passed = summary["pass_rate"] >= success_threshold
@@ -655,6 +663,15 @@ class FuzzyTestStep(BaseStep):
                         f"[red]Partial results: {pass_rate:.1f}% pass rate "
                         f"from {summary['total_assertions']} assertions before failure[/red]"
                     )
+            elif summary["total_assertions"] == 0:
+                console.print(
+                    "[bold red]Test Conclusion: FAILED "
+                    "(No assertions were executed - nothing validated)[/bold red]"
+                )
+                console.print(
+                    "[red]The test ran but no validation occurred. "
+                    "Add assertion steps to your patterns.[/red]"
+                )
             else:
                 console.print(
                     f"[bold red]Test Conclusion: FAILED "
