@@ -57,6 +57,13 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
                 if field not in nodes:
                     errors.append(f"Missing required node field: {field}")
 
+            # Validate config_path and count compatibility
+            if "config_path" in nodes and "count" in nodes:
+                errors.append(
+                    "config_path is not supported with 'count' mode. "
+                    "Please define nodes individually or remove config_path."
+                )
+
     # Validate steps configuration
     if "steps" in config:
         steps = config["steps"]

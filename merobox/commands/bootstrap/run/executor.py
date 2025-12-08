@@ -398,6 +398,16 @@ class WorkflowExecutor:
 
         # If workflow declares a count, delegate to manager to handle bulk creation
         if "count" in nodes_config:
+            # Check for incompatible config_path option
+            if config_path is not None:
+                console.print(
+                    "[red]❌ config_path is not supported with 'count' mode[/red]"
+                )
+                console.print(
+                    "[yellow]Please define nodes individually to use custom config paths[/yellow]"
+                )
+                return False
+
             count = nodes_config["count"]
             if restart:
                 console.print(
