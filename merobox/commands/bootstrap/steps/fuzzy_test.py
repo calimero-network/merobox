@@ -351,13 +351,28 @@ class FuzzyTestStep(BaseStep):
             if step_type == "assert":
                 resolved_step_config["non_blocking"] = True
 
-            # Create and execute step
-            step_executor = self._create_pattern_step_executor(
-                step_type, resolved_step_config
-            )
-            if step_executor is None:
+            # Create and execute step (wrap creation to handle validation errors)
+            try:
+                step_executor = self._create_pattern_step_executor(
+                    step_type, resolved_step_config
+                )
+                if step_executor is None:
+                    console.print(
+                        f"[yellow]⚠️  Unknown step type in pattern: {step_type}[/yellow]"
+                    )
+                    continue
+            except ValueError as e:
+                # Step configuration validation failed - log and skip this step
                 console.print(
-                    f"[yellow]⚠️  Unknown step type in pattern: {step_type}[/yellow]"
+                    f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                    f"has invalid configuration: {str(e)} (iteration {iteration})[/yellow]"
+                )
+                continue
+            except Exception as e:
+                # Unexpected error during step creation - log and skip
+                console.print(
+                    f"[yellow]⚠️  Failed to create step {step_idx + 1} in pattern '{pattern_name}': "
+                    f"{str(e)} (iteration {iteration})[/yellow]"
                 )
                 continue
 
@@ -374,7 +389,7 @@ class FuzzyTestStep(BaseStep):
             except Exception as e:
                 console.print(
                     f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
-                    f"raised exception: {str(e)} (iteration {iteration})[/yellow]"
+                    f"raised exception during execution: {str(e)} (iteration {iteration})[/yellow]"
                 )
 
         return True
