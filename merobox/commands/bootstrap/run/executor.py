@@ -391,6 +391,7 @@ class WorkflowExecutor:
             return config_path
         resolved = os.path.join(self.workflow_dir, config_path)
         return os.path.abspath(resolved)
+
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get("nodes", {})
