@@ -579,11 +579,6 @@ class DockerManager:
                         f"[green]✓ Node {node_name} initialized successfully[/green]"
                     )
 
-                    # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
-                    if e2e_mode:
-                        config_file = os.path.join(node_data_dir, "config.toml")
-                        self._apply_e2e_defaults(config_file, node_name, workflow_id)
-
                 except Exception as e:
                     console.print(
                         f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
@@ -599,6 +594,14 @@ class DockerManager:
                 console.print(
                     f"[cyan]Skipping initialization for {node_name} (using custom config)[/cyan]"
                 )
+
+            # Apply e2e-style configuration for reliable testing (regardless of config source)
+            if e2e_mode:
+                config_file = os.path.join(node_data_dir, "config.toml")
+                console.print(
+                    f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
+                )
+                self._apply_e2e_defaults(config_file, node_name, workflow_id)
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
@@ -1443,8 +1446,10 @@ class DockerManager:
                 "discovery.mdns": True,
                 # Aggressive sync settings from e2e tests for reliable testing
                 "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-                "sync.interval_ms": 500,  # 500ms between syncs (very aggressive for tests)
-                "sync.frequency_ms": 1000,  # 1s periodic checks (ensures rapid sync in tests)
+                # 500ms between syncs (very aggressive for tests)
+                "sync.interval_ms": 500,
+                # 1s periodic checks (ensures rapid sync in tests)
+                "sync.frequency_ms": 1000,
                 # Ethereum local devnet configuration (same as e2e tests)
                 "context.config.ethereum.network": "sepolia",
                 "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
