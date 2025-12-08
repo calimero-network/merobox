@@ -191,7 +191,9 @@ class BinaryManager:
                     )
                     return False
 
-                config_dest = node_data_dir / "config.toml"
+                config_dest_dir = node_data_dir / node_name
+                config_dest_dir.mkdir(parents=True, exist_ok=True)
+                config_dest = config_dest_dir / "config.toml"
                 try:
                     shutil.copy2(config_source, config_dest)
                     console.print(
