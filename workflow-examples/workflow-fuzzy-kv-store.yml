@@ -1,0 +1,260 @@
+description: Fuzzy load testing example with kv_store application
+name: Fuzzy KV Store Load Test
+
+# This workflow demonstrates fuzzy load testing with the kv_store application.
+# It runs randomized operations for a configurable duration to test node behavior
+# under sustained load, with assertion-based validation.
+
+nodes:
+  chain_id: testnet-1
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the kv_store application
+  - name: Install KV Store Application
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Step 2: Create a context for the application
+  - name: Create Context
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Step 3: Create identity on node 2
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      public_key_node2: publicKey
+
+  # Step 4: Create identity on node 3
+  - name: Create Identity on Node 3
+    type: create_identity
+    node: calimero-node-3
+    outputs:
+      public_key_node3: publicKey
+
+  # Step 5: Wait for identities to propagate
+  - name: Wait for Identity Propagation
+    type: wait
+    seconds: 3
+
+  # Step 6: Invite node 2 to context
+  - name: Invite Node 2
+    type: invite_identity
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    grantee_id: '{{public_key_node2}}'
+    granter_id: '{{member_public_key}}'
+    capability: member
+    outputs:
+      invitation_node2: invitation
+
+  # Step 7: Join context from node 2
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+    invitee_id: '{{public_key_node2}}'
+    invitation: '{{invitation_node2}}'
+
+  # Step 8: Invite node 3 to context
+  - name: Invite Node 3
+    type: invite_identity
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    grantee_id: '{{public_key_node3}}'
+    granter_id: '{{member_public_key}}'
+    capability: member
+    outputs:
+      invitation_node3: invitation
+
+  # Step 9: Join context from node 3
+  - name: Join Context from Node 3
+    type: join_context
+    node: calimero-node-3
+    context_id: '{{context_id}}'
+    invitee_id: '{{public_key_node3}}'
+    invitation: '{{invitation_node3}}'
+
+  # Step 10: Wait for context to propagate
+  - name: Wait for Context Propagation
+    type: wait
+    seconds: 5
+
+  # Step 11: Run fuzzy load test for 5 minutes (for demo purposes)
+  # In production, use 30-60 minutes for comprehensive testing
+  - name: Fuzzy Load Test - KV Store Operations
+    type: fuzzy_test
+    duration_minutes: 5  # Change to 30 or 60 for real load testing
+    context_id: '{{context_id}}'
+    summary_interval_seconds: 30  # Print progress every 30 seconds
+    operation_delay_ms: 50  # 50ms between operations
+    success_threshold: 95.0  # Pass if 95%+ assertions succeed
+    
+    # Configure nodes that can be used in operations
+    nodes:
+      - name: calimero-node-1
+        executor_key: '{{member_public_key}}'
+      - name: calimero-node-2
+        executor_key: '{{public_key_node2}}'
+      - name: calimero-node-3
+        executor_key: '{{public_key_node3}}'
+    
+    # Define operation patterns with weights
+    operations:
+      # Pattern 1: Set and immediately verify (tests write + read consistency)
+      - name: set_and_verify
+        weight: 40  # 40% of operations
+        steps:
+          # Set a random key-value pair
+          - type: call
+            node: '{{random_node}}'
+            context_id: '{{context_id}}'
+            executor_public_key: '{{random_executor}}'
+            method: set
+            args:
+              key: 'fuzzy_key_{{random_int(1, 10000)}}'
+              value: 'value_{{uuid}}'
+            outputs:
+              fuzzy_set_key: args.key
+              fuzzy_set_value: args.value
+          
+          # Small delay for state sync
+          - type: wait
+            seconds: 1
+          
+          # Verify the value was set correctly
+          - type: call
+            node: '{{random_node}}'
+            context_id: '{{context_id}}'
+            executor_public_key: '{{random_executor}}'
+            method: get
+            args:
+              key: '{{fuzzy_set_key}}'
+            outputs:
+              fuzzy_get_result: result
+          
+          # Assert the retrieved value matches what was set
+          - type: assert
+            non_blocking: true
+            statements:
+              - statement: 'contains({{fuzzy_get_result}}, {{fuzzy_set_value}})'
+                message: 'Retrieved value should contain the set value'
+
+      # Pattern 2: Cross-node write and verify (tests data propagation)
+      - name: cross_node_propagation
+        weight: 30  # 30% of operations
+        steps:
+          # Set value on node 1
+          - type: call
+            node: calimero-node-1
+            context_id: '{{context_id}}'
+            executor_public_key: '{{member_public_key}}'
+            method: set
+            args:
+              key: 'cross_{{random_int(1, 5000)}}'
+              value: '{{timestamp}}_{{random_string(12)}}'
+            outputs:
+              cross_key: args.key
+              cross_value: args.value
+          
+          # Wait for propagation
+          - type: wait
+            seconds: 2
+          
+          # Read from node 2
+          - type: call
+            node: calimero-node-2
+            context_id: '{{context_id}}'
+            executor_public_key: '{{public_key_node2}}'
+            method: get
+            args:
+              key: '{{cross_key}}'
+            outputs:
+              cross_result_node2: result
+          
+          # Read from node 3
+          - type: call
+            node: calimero-node-3
+            context_id: '{{context_id}}'
+            executor_public_key: '{{public_key_node3}}'
+            method: get
+            args:
+              key: '{{cross_key}}'
+            outputs:
+              cross_result_node3: result
+          
+          # Assert both nodes have the correct value
+          - type: assert
+            non_blocking: true
+            statements:
+              - statement: 'contains({{cross_result_node2}}, {{cross_value}})'
+                message: 'Node 2 should have the propagated value'
+              - statement: 'contains({{cross_result_node3}}, {{cross_value}})'
+                message: 'Node 3 should have the propagated value'
+
+      # Pattern 3: Simple read operations (tests read performance under load)
+      - name: random_read
+        weight: 20  # 20% of operations
+        steps:
+          # Read a potentially non-existent key (tests error handling)
+          - type: call
+            node: '{{random_node}}'
+            context_id: '{{context_id}}'
+            executor_public_key: '{{random_executor}}'
+            method: get
+            args:
+              key: 'random_read_{{random_int(1, 20000)}}'
+            outputs:
+              random_read_result: result
+          
+          # No assertion - just testing read throughput
+
+      # Pattern 4: Burst writes (tests write performance under load)
+      - name: burst_write
+        weight: 10  # 10% of operations
+        steps:
+          # Write 3 key-value pairs in quick succession
+          - type: call
+            node: '{{random_node}}'
+            context_id: '{{context_id}}'
+            executor_public_key: '{{random_executor}}'
+            method: set
+            args:
+              key: 'burst_a_{{random_int(1, 10000)}}'
+              value: 'burst_value_a_{{uuid}}'
+          
+          - type: call
+            node: '{{random_node}}'
+            context_id: '{{context_id}}'
+            executor_public_key: '{{random_executor}}'
+            method: set
+            args:
+              key: 'burst_b_{{random_int(1, 10000)}}'
+              value: 'burst_value_b_{{uuid}}'
+          
+          - type: call
+            node: '{{random_node}}'
+            context_id: '{{context_id}}'
+            executor_public_key: '{{random_executor}}'
+            method: set
+            args:
+              key: 'burst_c_{{random_int(1, 10000)}}'
+              value: 'burst_value_c_{{uuid}}'
+
+# Workflow configuration
+stop_all_nodes: false  # Keep nodes running for inspection
+restart: false
+wait_timeout: 120
+

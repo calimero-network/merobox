@@ -309,6 +309,87 @@ Loop through a sequence of steps multiple times.
       value: "output"
 ```
 
+#### 14. Fuzzy Test Step
+Run long-duration randomized load tests (30-60+ minutes) with weighted operation patterns and assertion-based validation.
+
+```yaml
+- type: fuzzy_test
+  duration_minutes: 30
+  context_id: "{{context_id}}"
+  success_threshold: 95.0  # Pass if 95%+ assertions succeed
+  
+  nodes:
+    - name: calimero-node-1
+      executor_key: "{{member_public_key}}"
+    - name: calimero-node-2
+      executor_key: "{{public_key_node2}}"
+  
+  operations:
+    # Pattern with 40% frequency
+    - name: "set_and_verify"
+      weight: 40
+      steps:
+        - type: call
+          node: "{{random_node}}"  # Random node
+          method: set
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "test_{{random_int(1, 1000)}}"  # Random values
+            value: "{{uuid}}_{{timestamp}}"
+          outputs:
+            test_key: args.key
+            test_value: args.value
+        
+        - type: wait
+          seconds: 1
+        
+        - type: call
+          node: "{{random_node}}"
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "{{test_key}}"
+          outputs:
+            retrieved: result
+        
+        - type: assert
+          non_blocking: true  # Don't stop on failure
+          statements:
+            - statement: "contains({{retrieved}}, {{test_value}})"
+              message: "Value should match"
+    
+    # Cross-node test with 30% frequency
+    - name: "cross_node_sync"
+      weight: 30
+      steps:
+        - type: call
+          node: calimero-node-1
+          method: set
+          args:
+            key: "sync_{{random_int(1, 500)}}"
+            value: "{{timestamp}}"
+          # ... rest of pattern
+```
+
+**Random Generators Available:**
+- `{{random_int(min, max)}}` - Random integer
+- `{{random_string(length)}}` - Random string
+- `{{random_float(min, max)}}` - Random float
+- `{{random_choice([a, b, c])}}` - Random choice
+- `{{timestamp}}` - Unix timestamp
+- `{{uuid}}` - Random UUID
+- `{{random_node}}` - Random node from list
+- `{{random_executor}}` - Random executor key
+
+**Why Use Fuzzy Testing:**
+- Discover memory leaks over time
+- Find race conditions under load
+- Test data propagation reliability
+- Validate performance degradation
+- Stress test with realistic patterns
+
 #### 8. Script Step
 Execute shell scripts or commands.
 
@@ -916,11 +997,60 @@ When asking an LLM to help with Merobox:
 - Has node-2 read and verify that value
 - Should include proper wait times for sync"
 
+## Fuzzy Load Testing
+
+Fuzzy load testing runs randomized operations for extended periods (30-60+ minutes) to discover issues that only appear under sustained load.
+
+### Quick Example
+
+```yaml
+- type: fuzzy_test
+  duration_minutes: 30
+  context_id: "{{context_id}}"
+  nodes:
+    - name: node-1
+      executor_key: "{{key1}}"
+    - name: node-2
+      executor_key: "{{key2}}"
+  operations:
+    - name: "write_and_read"
+      weight: 70  # 70% of operations
+      steps:
+        - type: call
+          node: "{{random_node}}"
+          method: set
+          args:
+            key: "k_{{random_int(1, 1000)}}"
+            value: "v_{{uuid}}"
+        - type: assert
+          non_blocking: true
+          statements:
+            - "is_set({{result}})"
+```
+
+### What Gets Tested
+- Memory leaks over time
+- Race conditions under load
+- Data propagation reliability
+- Performance degradation
+- Cross-node consistency
+
+### Key Features
+- **Application-agnostic**: Works with any contract
+- **Weighted patterns**: Control operation frequency (e.g., 70% reads, 30% writes)
+- **Non-blocking assertions**: Failures tracked but don't stop test
+- **Random generators**: `{{random_int()}}`, `{{uuid}}`, `{{timestamp}}`, etc.
+- **Live reporting**: Progress summaries every 60 seconds
+- **Final analysis**: Detailed report with pass rates and failure patterns
+
+See `workflow-examples/FUZZY-LOAD-TESTING.md` for complete guide.
+
 ## Resources
 
 - **GitHub**: https://github.com/calimero-network/merobox
 - **PyPI**: https://pypi.org/project/merobox/
 - **Examples**: Check `workflow-examples/` directory in the repository
+- **Fuzzy Testing**: `workflow-examples/workflow-fuzzy-kv-store.yml` and `FUZZY-LOAD-TESTING.md`
 - **Issues**: Report bugs or request features on GitHub
 
 ## Quick Reference
@@ -944,6 +1074,6 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
 install_application, create_context, create_identity, join_context, call, wait, 
-repeat, script, assert, json_assert, upload_blob, invite_open, join_open
+repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test
 ```
 

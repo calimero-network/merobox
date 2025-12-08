@@ -384,6 +384,123 @@ Executes steps multiple times.
     iteration: "current_iteration"
 ```
 
+#### Fuzzy Test Step
+
+Runs long-duration randomized load tests with weighted operation patterns and assertion-based validation.
+
+```yaml
+- name: "Fuzzy Load Test"
+  type: "fuzzy_test"
+  duration_minutes: 30  # Run for 30 minutes
+  context_id: "{{context_id}}"
+  success_threshold: 95.0  # Pass if 95%+ assertions succeed
+  
+  nodes:
+    - name: calimero-node-1
+      executor_key: "{{member_public_key}}"
+    - name: calimero-node-2
+      executor_key: "{{public_key_node2}}"
+  
+  operations:
+    # Pattern 1: Write and verify (40% of operations)
+    - name: "set_and_verify"
+      weight: 40
+      steps:
+        - type: call
+          node: "{{random_node}}"  # Random node selection
+          method: set
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "test_{{random_int(1, 1000)}}"  # Random generators
+            value: "{{uuid}}_{{timestamp}}"
+          outputs:
+            test_key: args.key
+            test_value: args.value
+        
+        - type: wait
+          seconds: 1
+        
+        - type: call
+          node: "{{random_node}}"
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "{{test_key}}"
+          outputs:
+            retrieved: result
+        
+        - type: assert
+          non_blocking: true  # Failures don't stop the test
+          statements:
+            - statement: "contains({{retrieved}}, {{test_value}})"
+              message: "Value should match"
+    
+    # Pattern 2: Cross-node propagation test (30% of operations)
+    - name: "cross_node_sync"
+      weight: 30
+      steps:
+        - type: call
+          node: calimero-node-1
+          method: set
+          context_id: "{{context_id}}"
+          executor_public_key: "{{member_public_key}}"
+          args:
+            key: "sync_{{random_int(1, 500)}}"
+            value: "{{timestamp}}"
+          outputs:
+            sync_key: args.key
+            sync_value: args.value
+        
+        - type: wait
+          seconds: 2  # Wait for propagation
+        
+        - type: call
+          node: calimero-node-2
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{public_key_node2}}"
+          args:
+            key: "{{sync_key}}"
+          outputs:
+            synced_value: result
+        
+        - type: assert
+          non_blocking: true
+          statements:
+            - statement: "contains({{synced_value}}, {{sync_value}})"
+              message: "Data should propagate across nodes"
+    
+    # Pattern 3: Random reads (30% of operations)
+    - name: "random_read"
+      weight: 30
+      steps:
+        - type: call
+          node: "{{random_node}}"
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "test_{{random_int(1, 1000)}}"
+```
+
+**Random Value Generators:**
+- `{{random_int(min, max)}}` - Random integer
+- `{{random_string(length)}}` - Random alphanumeric string
+- `{{random_float(min, max)}}` - Random float
+- `{{random_choice([a, b, c])}}` - Random choice from list
+- `{{timestamp}}` - Current Unix timestamp
+- `{{uuid}}` - Random UUID
+- `{{random_node}}` - Random node from nodes list
+- `{{random_executor}}` - Random executor key
+
+**Features:**
+- **Weighted patterns**: Control operation frequency
+- **Non-blocking assertions**: Track failures without stopping
+- **Live progress**: Periodic summaries every 60 seconds
+- **Detailed reporting**: Final report with pass rates and failure analysis
+
 #### Upload Blob Step
 
 Uploads files to blob storage and captures blob IDs for E2E testing.
@@ -456,6 +573,7 @@ outputs:
 - **Basic Workflow**: `workflow-examples/workflow-example.yml` - Complete example with dynamic variables
 - **Negative Testing**: `workflow-examples/workflow-negative-testing-example.yml` - Testing error scenarios with expected failures
 - **Assertions**: `workflow-examples/workflow-assert-example.yml` - Assertion and JSON assertion examples
+- **Fuzzy Load Testing**: `workflow-examples/workflow-fuzzy-kv-store.yml` - Long-running load test with randomized operations
 
 ### Export variables from execute (call) steps
 
