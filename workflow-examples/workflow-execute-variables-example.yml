@@ -1,7 +1,10 @@
 description: Demonstrates exporting variables from an execute (call) step and reusing them
 name: Execute Variables Example Workflow
 
-nodes:
+near_devnet: true
+contracts_dir: contracts/near
+
+node:
   chain_id: testnet-1
   count: 2
   image: ghcr.io/calimero-network/merod:edge
