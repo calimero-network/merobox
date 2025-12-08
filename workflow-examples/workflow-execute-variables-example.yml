@@ -4,7 +4,7 @@ name: Execute Variables Example Workflow
 near_devnet: true
 contracts_dir: contracts/near
 
-node:
+nodes:
   chain_id: testnet-1
   count: 2
   image: ghcr.io/calimero-network/merod:edge
