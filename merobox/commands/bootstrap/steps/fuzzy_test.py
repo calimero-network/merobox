@@ -75,14 +75,12 @@ class FuzzyTestStep(BaseStep):
 
         # Validate context_id
         if not isinstance(self.config.get("context_id"), str):
-            raise ValueError(
-                f"Step '{step_name}': 'context_id' must be a string")
+            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
 
         # Validate nodes
         nodes = self.config.get("nodes", [])
         if not isinstance(nodes, list) or len(nodes) == 0:
-            raise ValueError(
-                f"Step '{step_name}': 'nodes' must be a non-empty list")
+            raise ValueError(f"Step '{step_name}': 'nodes' must be a non-empty list")
         for idx, node in enumerate(nodes):
             if not isinstance(node, dict):
                 raise ValueError(
@@ -111,6 +109,17 @@ class FuzzyTestStep(BaseStep):
             if "weight" not in op:
                 raise ValueError(
                     f"Step '{step_name}': 'operations[{idx}]' must have a 'weight'"
+                )
+            # Validate weight is numeric and positive
+            if not isinstance(op["weight"], (int, float)):
+                raise ValueError(
+                    f"Step '{step_name}': 'operations[{idx}]' weight must be a number, "
+                    f"got {type(op['weight']).__name__}"
+                )
+            if op["weight"] <= 0:
+                raise ValueError(
+                    f"Step '{step_name}': 'operations[{idx}]' weight must be positive, "
+                    f"got {op['weight']}"
                 )
             if "steps" not in op or not isinstance(op["steps"], list):
                 raise ValueError(
@@ -190,13 +199,11 @@ class FuzzyTestStep(BaseStep):
         self._total_weight = total_weight
 
         console.print(f"\n[bold magenta]{'=' * 60}[/bold magenta]")
-        console.print(
-            "[bold magenta]🔬 Starting Fuzzy Load Test[/bold magenta]")
+        console.print("[bold magenta]🔬 Starting Fuzzy Load Test[/bold magenta]")
         console.print(f"[bold magenta]{'=' * 60}[/bold magenta]")
         console.print(f"[cyan]Duration: {duration_minutes} minutes[/cyan]")
         console.print(f"[cyan]Context ID: {context_id}[/cyan]")
-        console.print(
-            f"[cyan]Nodes: {', '.join(n['name'] for n in nodes)}[/cyan]")
+        console.print(f"[cyan]Nodes: {', '.join(n['name'] for n in nodes)}[/cyan]")
         console.print(f"[cyan]Operation patterns: {len(operations)}[/cyan]")
         console.print(f"[cyan]Success threshold: {success_threshold}%[/cyan]")
         console.print(f"[bold magenta]{'=' * 60}[/bold magenta]\n")
@@ -242,8 +249,7 @@ class FuzzyTestStep(BaseStep):
                     await asyncio.sleep(operation_delay_ms / 1000)
 
         except KeyboardInterrupt:
-            console.print(
-                "\n[yellow]⚠️  Fuzzy test interrupted by user[/yellow]")
+            console.print("\n[yellow]⚠️  Fuzzy test interrupted by user[/yellow]")
         except Exception as e:
             console.print(f"\n[red]❌ Fuzzy test error: {str(e)}[/red]")
             # Continue to print final report even on error
@@ -504,8 +510,7 @@ class FuzzyTestStep(BaseStep):
             f"[bold cyan]Fuzzy Test Progress - {elapsed_str} / {total_str} elapsed[/bold cyan]"
         )
         console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
-        console.print(
-            f"Patterns Executed: {summary['total_patterns_executed']}")
+        console.print(f"Patterns Executed: {summary['total_patterns_executed']}")
         console.print(f"Total Assertions: {summary['total_assertions']}")
         console.print(
             f"  [green]Passed: {summary['assertions_passed']} "
@@ -521,8 +526,7 @@ class FuzzyTestStep(BaseStep):
         if summary["patterns_by_name"]:
             console.print("\n[bold]Pattern Breakdown:[/bold]")
             for name, data in summary["patterns_by_name"].items():
-                total_asserts = data["assertions_passed"] + \
-                    data["assertions_failed"]
+                total_asserts = data["assertions_passed"] + data["assertions_failed"]
                 pattern_pass_rate = (
                     (data["assertions_passed"] / total_asserts * 100)
                     if total_asserts > 0
@@ -559,8 +563,7 @@ class FuzzyTestStep(BaseStep):
         )
         console.print(f"[bold magenta]{'=' * 60}[/bold magenta]")
 
-        console.print(
-            f"Total Patterns Executed: {summary['total_patterns_executed']}")
+        console.print(f"Total Patterns Executed: {summary['total_patterns_executed']}")
         console.print(f"Total Assertions: {summary['total_assertions']}")
         console.print(
             f"  [green]✓ Passed: {summary['assertions_passed']} "
@@ -576,8 +579,7 @@ class FuzzyTestStep(BaseStep):
         if summary["patterns_by_name"]:
             console.print("\n[bold]Pattern Results:[/bold]")
             for name, data in summary["patterns_by_name"].items():
-                total_asserts = data["assertions_passed"] + \
-                    data["assertions_failed"]
+                total_asserts = data["assertions_passed"] + data["assertions_failed"]
                 pattern_pass_rate = (
                     (data["assertions_passed"] / total_asserts * 100)
                     if total_asserts > 0
@@ -610,8 +612,7 @@ class FuzzyTestStep(BaseStep):
                 )
 
         # Node log locations
-        console.print(
-            "\n[bold]For detailed debugging, check node logs in:[/bold]")
+        console.print("\n[bold]For detailed debugging, check node logs in:[/bold]")
         for node in self._nodes:
             console.print(f"  data/{node['name']}/logs/")
 
