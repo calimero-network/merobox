@@ -561,7 +561,11 @@ class DockerManager:
                     console.print(
                         "[green]✓ Applying Near Devnet config for the node [/green]"
                     )
+                    # Calculate the config path here, using the resolved data_dir/node_data_dir
+                    actual_config_file = Path(node_data_dir) / "config.toml"
+
                     if not self._apply_near_devnet_config(
+                        actual_config_file,
                         node_name,
                         near_devnet_config["rpc_url"],
                         near_devnet_config["contract_id"],
@@ -1485,13 +1489,16 @@ class DockerManager:
         console.print(f"[cyan]  {key} = {value}[/cyan]")
 
     def _apply_near_devnet_config(
-        self, node_name, rpc_url, contract_id, account_id, pub_key, secret_key
+        self,
+        config_file: Path,
+        node_name: str,
+        rpc_url: str,
+        contract_id: str,
+        account_id: str,
+        pub_key: str,
+        secret_key: str,
     ):
         """Wrapper for shared config utility."""
-
-        # Docker mode path structure on host
-        node_data_dir = f"./data/{node_name}/{node_name}"
-        config_file = Path(f"{node_data_dir}/config.toml")
 
         return apply_near_devnet_config_to_file(
             config_file,
