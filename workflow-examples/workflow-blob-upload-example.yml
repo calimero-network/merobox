@@ -96,8 +96,14 @@ steps:
       file_0_id: result
 
   - name: Wait for blob announcement to propagate
-    type: wait
-    seconds: 2
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 7a: Upload real image file to blob storage
   - name: Upload PNG to Blob Storage
@@ -160,8 +166,14 @@ steps:
       files_list_node1: result
 
   - name: Wait for file list to settle
-    type: wait
-    seconds: 1
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 10: Verify blobs are accessible from Node 2 (blob announcement worked)
   - name: List All Files (Node 2)
@@ -174,8 +186,14 @@ steps:
       files_list_node2: result
 
   - name: Wait for blob sync verification
-    type: wait
-    seconds: 1
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 11: Get specific file metadata
   - name: Get PDF File Metadata
@@ -250,8 +268,14 @@ steps:
       delete_result: result
 
   - name: Wait for deletion to propagate
-    type: wait
-    seconds: 2
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 17: Verify file was deleted
   - name: List Files After Delete
@@ -264,8 +288,14 @@ steps:
       files_after_delete: result
 
   - name: Wait for delete to propagate
-    type: wait
-    seconds: 1
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 18: Verify deletion is visible on Node 2
   - name: Verify Delete on Node 2
@@ -278,8 +308,14 @@ steps:
       files_node2_after_delete: result
 
   - name: Verify Node 2 sees deletion
-    type: wait
-    seconds: 1
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
 # Configuration
 stop_all_nodes: false

@@ -95,8 +95,15 @@ steps:
 
   # Step 10: Wait for consensus after join
   - name: Wait for Consensus After Join
-    type: wait
-    seconds: 5
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # ============================================================================
   # Create Multiple Proposals for Testing
@@ -122,8 +129,15 @@ steps:
 
   # Step 12: Wait for proposal 1 to propagate
   - name: Wait After Proposal 1
-    type: wait
-    seconds: 2
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 13: Create second proposal - SetContextValue
   - name: Create Proposal 2 - SetContextValue
@@ -145,8 +159,15 @@ steps:
 
   # Step 14: Wait for proposal 2 to propagate
   - name: Wait After Proposal 2
-    type: wait
-    seconds: 2
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 15: Create third proposal - SetNumApprovals (changes approval requirement)
   - name: Create Proposal 3 - SetNumApprovals
@@ -167,8 +188,15 @@ steps:
 
   # Step 16: Wait for proposal 3 to propagate
   - name: Wait After Proposal 3
-    type: wait
-    seconds: 2
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 17: Approve proposal 3 to activate the num_approvals setting
   # This is critical - proposal 3 must execute before creating proposal 4
@@ -185,8 +213,15 @@ steps:
 
   # Step 18: Wait for proposal 3 to execute
   - name: Wait for Proposal 3 Execution
-    type: wait
-    seconds: 5
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 19: Create fourth proposal - will require 2 approvals (for testing approvers)
   - name: Create Proposal 4 - SetContextValue
@@ -208,8 +243,15 @@ steps:
 
   # Step 20: Wait for all proposals to propagate
   - name: Wait for All Proposals to Propagate
-    type: wait
-    seconds: 5
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # ============================================================================
   # Test Proposals API Method 1: list_proposals (cross-node consistency)
@@ -300,8 +342,15 @@ steps:
 
   # Step 30: Wait for message to broadcast
   - name: Wait for Message Broadcast
-    type: wait
-    seconds: 5
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 31: Get proposal messages from node 2
   - name: Get Proposal Messages from Node 2
@@ -369,8 +418,15 @@ steps:
 
   # Step 36: Wait for first approval to propagate
   - name: Wait for First Approval to Propagate
-    type: wait
-    seconds: 3
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # ============================================================================
   # Verify Approvers After Approval (Before Proposal Execution)
@@ -405,8 +461,15 @@ steps:
 
   # Step 40: Wait for proposal 4 to execute
   - name: Wait for Proposal 4 Execution
-    type: wait
-    seconds: 5
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - prop-test-1
+      - prop-test-2
+      - prop-test-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # ============================================================================
   # Test Repeat Step with Proposal API Methods
@@ -441,8 +504,15 @@ steps:
 
       # Wait for proposal to propagate
       - name: Wait After Creation
-        type: wait
-        seconds: 2
+        type: wait_for_sync
+        context_id: "{{context_id}}"
+        nodes:
+          - prop-test-1
+          - prop-test-2
+          - prop-test-3
+        timeout: 60
+        check_interval: 2
+        trigger_sync: true
 
       # Test get_proposal inside repeat block
       - name: Get Proposal Details

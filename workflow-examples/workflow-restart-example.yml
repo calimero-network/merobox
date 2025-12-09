@@ -74,8 +74,14 @@ steps:
 
   # Step 8: Wait for the set operation to complete and propagate
   - name: Wait for Set Operation
-    type: wait
-    seconds: 3
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 9: Execute a view call to retrieve the stored value
   - name: Execute View Call - Get Value
