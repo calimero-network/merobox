@@ -557,6 +557,9 @@ class DockerManager:
                     f"[green]✓ Node {node_name} initialized successfully[/green]"
                 )
 
+                # Docker might creates files as root; we need to own them to modify config.toml
+                self._fix_permissions(node_data_dir)
+
                 if near_devnet_config:
                     console.print(
                         "[green]✓ Applying Near Devnet config for the node [/green]"
@@ -1509,3 +1512,25 @@ class DockerManager:
             pub_key,
             secret_key,
         )
+
+    def _fix_permissions(self, path: str):
+        """Fix ownership and write permissions of files created by Docker."""
+        if not hasattr(os, "getuid"):
+            return
+
+        try:
+            uid = os.getuid()
+            gid = os.getgid()
+
+            # Use Alpine to chown AND chmod the directory
+            # We add 'chmod -R u+w' to ensure we can write to the files even if they were created read-only
+            self.client.containers.run(
+                "alpine:latest",
+                command=f"sh -c 'chown -R {uid}:{gid} /data && chmod -R u+w /data'",
+                volumes={os.path.abspath(path): {"bind": "/data", "mode": "rw"}},
+                remove=True,
+            )
+        except Exception as e:
+            console.print(
+                f"[yellow]⚠️  Warning: Failed to fix permissions for {path}: {e}[/yellow]"
+            )

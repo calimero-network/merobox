@@ -166,7 +166,7 @@ class SandboxManager:
 
     def _wait_for_rpc(self, timeout=10):
         # Sleep a little bit to wait for a RPC spin up.
-        time.sleep(0.5)
+        time.sleep(1.0)
         start = time.time()
 
         while time.time() - start < timeout:
