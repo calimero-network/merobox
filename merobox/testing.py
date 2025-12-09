@@ -175,7 +175,12 @@ def workflow(
 
         config = load_workflow_config(str(workflow_path))
 
-        executor = WorkflowExecutor(config, manager)
+        executor = WorkflowExecutor(
+            config,
+            manager,
+            near_devnet=near_devnet,
+            contracts_dir=contracts_dir,
+        )
         workflow_result = asyncio.run(executor.execute_workflow())
 
         if not workflow_result:
@@ -432,7 +437,7 @@ def _setup_near_devnet(
         )
 
         # Get RPC URL
-        rpc_url = sandbox.get_rpc_url(for_docker=False)
+        rpc_url = sandbox.get_rpc_url(for_docker=True)
 
         # Generate configs for each node
         for i in range(count):

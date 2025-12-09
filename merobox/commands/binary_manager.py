@@ -735,8 +735,8 @@ class BinaryManager:
                 rpc_port = allocated_ports[i * 2 + 1]  # RPC port
             else:
                 # Use fixed port ranges (legacy behavior)
-                port = base_port + (i * 100)  # Space out ports
-                rpc_port = base_rpc_port + (i * 100)
+                port = base_port + i
+                rpc_port = base_rpc_port + i
 
             # Resolve specific config for this node if a map is provided
             node_specific_near_config = None
