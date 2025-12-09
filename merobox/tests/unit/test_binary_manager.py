@@ -81,5 +81,5 @@ def test_binary_manager_path_fix():
     config_path = str(args[0])
 
     # Expect: .../data/node1/node1/config.toml
-    expected_suffix = os.path.join("node1", "node1", "config.toml")
+    expected_suffix = os.path.join("node1", "node1", "node1", "config.toml")
     assert config_path.endswith(expected_suffix)

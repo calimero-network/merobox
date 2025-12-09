@@ -242,6 +242,11 @@ jobs:
           cd example-project
           pip install -r requirements.txt
 
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
+          ./workflow-examples/scripts/download_contracts.sh
+
       - name: Run merobox integration tests
         run: |
           # Initial cleanup to ensure no containers from previous runs

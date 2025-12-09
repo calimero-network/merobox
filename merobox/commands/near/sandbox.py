@@ -102,6 +102,9 @@ class SandboxManager:
     def start(self):
         self.ensure_binary()
 
+        # Ensure no stale processes are holding the port/state
+        self._cleanup_stale_sandbox()
+
         # Reset data dir for clean state
         data_dir = self.home_dir / "data"
         if data_dir.exists():
@@ -146,12 +149,30 @@ class SandboxManager:
             f"[green]✓ NEAR Sandbox running. Root: {self.root_client.account.account_id}[/green]"
         )
 
+    def _cleanup_stale_sandbox(self):
+        """Kill any existing near-sandbox processes to prevent state conflicts."""
+        try:
+            # Force kill existing sandbox processes
+            # This ensures we don't connect to a stale process with old state
+            subprocess.run(
+                ["pkill", "-9", "near-sandbox"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            # Wait for OS to release the port
+            time.sleep(0.5)
+        except Exception:
+            # pkill might fail or not be present, which is fine if no process exists
+            pass
+
     async def stop(self):
         """Async stop that closes clients and process."""
-        if self.root_client:
-            await self.root_client.close()
-
-        self.stop_process()
+        try:
+            if self.root_client:
+                await self.root_client.close()
+        finally:
+            # Ensure process is stopped even if client close fails
+            self.stop_process()
 
     def stop_process(self):
         """Synchronously stop the sandbox process."""

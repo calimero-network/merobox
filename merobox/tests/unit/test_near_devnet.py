@@ -97,7 +97,11 @@ async def test_unique_credentials_generation(mock_manager):
 
         # Mock create_node_account to return unique values per node
         executor.sandbox.create_node_account = AsyncMock(
-            side_effect=lambda n: {"account_id": f"{n}.near", "secret_key": "sk"}
+            side_effect=lambda n: {
+                "account_id": f"{n}.near",
+                "secret_key": "sk",
+                "public_key": "pk",
+            }
         )
         executor.near_config = {"rpc_url": "u", "contract_id": "c"}
 
@@ -128,7 +132,12 @@ async def test_non_restart_node_config_passing(mock_manager):
         executor.sandbox.create_node_account = AsyncMock(
             return_value={"account_id": "acc"}
         )
-        executor.near_config = {"rpc_url": "u", "contract_id": "c"}
+        executor.near_config = {
+            "rpc_url": "u",
+            "contract_id": "c",
+            "public_key": "pk",
+            "secret_key": "sk",
+        }
 
         # Simulate node NOT running to trigger start path
         executor._is_node_running = MagicMock(return_value=False)
