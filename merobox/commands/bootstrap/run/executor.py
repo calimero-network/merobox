@@ -48,7 +48,11 @@ class WorkflowExecutor:
         self.near_devnet = near_devnet
         self.contracts_dir = contracts_dir
         self.sandbox = None
+        self.sandbox_is_shared = False  # Track if sandbox is shared from parent
         self.near_config = {}
+        self.created_node_accounts = (
+            {}
+        )  # Track created node accounts: {node_name: creds}
 
         # Determine if we're in binary mode
         self.is_binary_mode = (
@@ -203,48 +207,82 @@ class WorkflowExecutor:
 
             # Start NEAR Devnet if requested
             if self.near_devnet:
-                console.print(
-                    "\n[bold yellow]Step 0: Initializing NEAR Sandbox...[/bold yellow]"
-                )
-                self.sandbox = SandboxManager()
-                try:
-                    self.sandbox.start()
-
-                    ctx_path = os.path.join(
-                        self.contracts_dir, "calimero_context_config_near.wasm"
-                    )
-                    proxy_path = os.path.join(
-                        self.contracts_dir, "calimero_context_proxy_near.wasm"
-                    )
-
+                # Check if parent executor already has a sandbox (share it)
+                if (
+                    self.parent_executor
+                    and hasattr(self.parent_executor, "sandbox")
+                    and self.parent_executor.sandbox
+                ):
                     console.print(
-                        f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
+                        "\n[bold yellow]Step 0: Reusing parent NEAR Sandbox...[/bold yellow]"
                     )
+                    self.sandbox = self.parent_executor.sandbox
+                    self.sandbox_is_shared = True  # Mark as shared
+                    # Reuse parent's near_config
+                    if (
+                        hasattr(self.parent_executor, "near_config")
+                        and self.parent_executor.near_config
+                    ):
+                        self.near_config = self.parent_executor.near_config
+                        console.print(
+                            "[green]✓ Using parent's NEAR Sandbox configuration[/green]"
+                        )
+                    # Reuse parent's created node accounts
+                    if hasattr(self.parent_executor, "created_node_accounts"):
+                        self.created_node_accounts = (
+                            self.parent_executor.created_node_accounts
+                        )
+                        console.print(
+                            f"[green]✓ Reusing {len(self.created_node_accounts)} node account(s) from parent[/green]"
+                        )
+                else:
                     console.print(
-                        f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
+                        "\n[bold yellow]Step 0: Initializing NEAR Sandbox...[/bold yellow]"
                     )
+                    self.sandbox = SandboxManager()
+                    try:
+                        self.sandbox.start()
 
-                    if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
-                        raise Exception(
-                            f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
+                        ctx_path = os.path.join(
+                            self.contracts_dir, "calimero_context_config_near.wasm"
+                        )
+                        proxy_path = os.path.join(
+                            self.contracts_dir, "calimero_context_proxy_near.wasm"
                         )
 
-                    contract_id = await self.sandbox.setup_calimero(
-                        ctx_path, proxy_path
-                    )
+                        console.print(
+                            f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
+                        )
+                        console.print(
+                            f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
+                        )
 
-                    # Determine RPC URL accessible from Docker containers
-                    # Not applicable in binary mode, but kept generic
-                    rpc_url = self.sandbox.get_rpc_url(
-                        for_docker=(not self.is_binary_mode)
-                    )
+                        if not os.path.exists(ctx_path) or not os.path.exists(
+                            proxy_path
+                        ):
+                            raise Exception(
+                                f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
+                            )
 
-                    self.near_config = {"contract_id": contract_id, "rpc_url": rpc_url}
-                except Exception as e:
-                    console.print(f"[red]Sandbox setup failed: {e}[/red]")
-                    if self.sandbox:
-                        await self.sandbox.stop()
-                    return False
+                        contract_id = await self.sandbox.setup_calimero(
+                            ctx_path, proxy_path
+                        )
+
+                        # Determine RPC URL accessible from Docker containers
+                        # Not applicable in binary mode, but kept generic
+                        rpc_url = self.sandbox.get_rpc_url(
+                            for_docker=(not self.is_binary_mode)
+                        )
+
+                        self.near_config = {
+                            "contract_id": contract_id,
+                            "rpc_url": rpc_url,
+                        }
+                    except Exception as e:
+                        console.print(f"[red]Sandbox setup failed: {e}[/red]")
+                        if self.sandbox:
+                            await self.sandbox.stop()
+                        return False
 
             # Check if we should restart nodes at the beginning
             restart_nodes = self.config.get("restart", False)
@@ -369,7 +407,8 @@ class WorkflowExecutor:
                 self._stop_nodes_on_failure()
             return False
         finally:
-            if self.sandbox:
+            # Only stop sandbox if we own it (not shared from parent)
+            if self.sandbox and not self.sandbox_is_shared:
                 await self.sandbox.stop()
 
     def _stop_nodes_on_failure(self) -> None:
@@ -668,10 +707,19 @@ class WorkflowExecutor:
                     console.print("[green]✓ Using Near Devnet config [/green]")
                     for i in range(count):
                         node_name = f"{prefix}-{i+1}"
-                        console.print(
-                            f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
-                        )
-                        creds = await self.sandbox.create_node_account(node_name)
+                        # Check if account already exists (from parent or previous creation)
+                        if node_name in self.created_node_accounts:
+                            console.print(
+                                f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                            )
+                            creds = self.created_node_accounts[node_name]
+                        else:
+                            console.print(
+                                f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
+                            )
+                            creds = await self.sandbox.create_node_account(node_name)
+                            # Store for reuse by child workflows
+                            self.created_node_accounts[node_name] = creds
                         node_near_config[node_name] = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
@@ -714,7 +762,16 @@ class WorkflowExecutor:
                     # NEAR Devnet Config Logic
                     node_near_config = None
                     if self.near_devnet:
-                        creds = await self.sandbox.create_node_account(node_name)
+                        # Check if account already exists
+                        if node_name in self.created_node_accounts:
+                            console.print(
+                                f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                            )
+                            creds = self.created_node_accounts[node_name]
+                        else:
+                            creds = await self.sandbox.create_node_account(node_name)
+                            # Store for reuse by child workflows
+                            self.created_node_accounts[node_name] = creds
                         node_near_config = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
@@ -778,8 +835,17 @@ class WorkflowExecutor:
 
             node_near_config = None
             if self.near_devnet:
-                # Create unique account for this node
-                creds = await self.sandbox.create_node_account(node_name)
+                # Check if account already exists
+                if node_name in self.created_node_accounts:
+                    console.print(
+                        f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                    )
+                    creds = self.created_node_accounts[node_name]
+                else:
+                    # Create unique account for this node
+                    creds = await self.sandbox.create_node_account(node_name)
+                    # Store for reuse by child workflows
+                    self.created_node_accounts[node_name] = creds
 
                 node_near_config = {
                     "rpc_url": self.near_config["rpc_url"],

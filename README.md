@@ -516,6 +516,7 @@ Execute child workflows for modular, reusable test suites.
 - All workflow count variables are always set, even on early failure
 - Child workflows can access parent variables via `inherit_variables: true`
 - Variables set in child workflows must be explicitly exported via `outputs`
+- **NEAR Devnet Integration**: When using `--near-devnet`, child workflows automatically share the parent's sandbox instance and reuse node accounts created by the parent, ensuring consistent blockchain state across nested workflows
 
 ### Dynamic Variables
 
@@ -786,6 +787,12 @@ merobox bootstrap run workflows/my-test.yml \
 3. **Node Configuration**: It generates funded NEAR accounts for every node in your workflow (e.g., `node-1.test.near`).
 4. **Config Injection**: It overrides the node's `config.toml` to point to the local sandbox RPC (`http://host.docker.internal:3030` for Docker nodes).
 5. **Cleanup**: The sandbox and all chain data are destroyed when the workflow finishes.
+
+**With Workflow Orchestration:**
+
+- Child workflows automatically reuse the parent's sandbox instance (no duplicate sandboxes)
+- Node accounts created by the parent are automatically reused by child workflows
+- This ensures all workflows in the hierarchy share the same blockchain state
 
 ---
 

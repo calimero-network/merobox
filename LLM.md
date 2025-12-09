@@ -3,6 +3,7 @@
 ## What is Merobox?
 
 Merobox is a Python CLI tool for managing Calimero nodes in Docker containers. It provides:
+
 - Easy node lifecycle management (start, stop, list, health checks)
 - Application installation and execution on nodes
 - Identity and context management
@@ -129,6 +130,7 @@ merobox blob delete --node my-node --blob-id <blob-id> --yes
 ## Workflow System
 
 Merobox's most powerful feature is YAML-based workflow automation. Workflows allow you to:
+
 - Orchestrate multiple nodes
 - Automate complex testing scenarios
 - Manage multi-step deployments
@@ -201,6 +203,7 @@ steps:
 ```
 
 **What gets enabled:**
+
 - **Traefik Proxy**: Routes traffic and applies authentication middleware
 - **Auth Service**: Handles authentication and authorization
 - **Protected Routes**: `/admin-api/`, `/jsonrpc`, `/ws` require authentication
@@ -208,11 +211,13 @@ steps:
 - **Auth Routes**: `/auth/login` for authentication
 
 **URL Access with Auth Service:**
+
 - Node URLs: `http://node1.127.0.0.1.nip.io`
 - Auth Login: `http://node1.127.0.0.1.nip.io/auth/login`
 - Admin Dashboard: `http://node1.127.0.0.1.nip.io/admin-dashboard`
 
 **Note:** Auth service can also be enabled via CLI flag:
+
 ```bash
 merobox bootstrap run workflow.yml --auth-service
 ```
@@ -222,6 +227,7 @@ merobox bootstrap run workflow.yml --auth-service
 ### Available Step Types
 
 #### 1. Install Application Step
+
 Install a WASM application on a node.
 
 ```yaml
@@ -233,6 +239,7 @@ Install a WASM application on a node.
 ```
 
 #### 2. Create Context Step
+
 Create a new context on a node.
 
 ```yaml
@@ -245,6 +252,7 @@ Create a new context on a node.
 ```
 
 #### 3. Create Identity Step
+
 Create a new identity for a node.
 
 ```yaml
@@ -256,6 +264,7 @@ Create a new identity for a node.
 ```
 
 #### 4. Join Context Step
+
 Join a node to a context using an invitation.
 
 ```yaml
@@ -268,6 +277,7 @@ Join a node to a context using an invitation.
 ```
 
 #### 5. Call Step
+
 Call a method on an application.
 
 ```yaml
@@ -284,6 +294,7 @@ Call a method on an application.
 ```
 
 #### 6. Wait Step
+
 Pause execution for a specified duration.
 
 ```yaml
@@ -292,6 +303,7 @@ Pause execution for a specified duration.
 ```
 
 #### 7. Repeat Step
+
 Loop through a sequence of steps multiple times.
 
 ```yaml
@@ -310,16 +322,18 @@ Loop through a sequence of steps multiple times.
 ```
 
 #### 8. Script Step
+
 Execute shell scripts or commands.
 
 ```yaml
 - type: script
   description: "Execute setup script"
   script: "./scripts/setup.sh"
-  target: "image"  # or "nodes"
+  target: "image" # or "nodes"
 ```
 
 #### 9. Assertion Steps
+
 Validate execution results.
 
 ```yaml
@@ -338,6 +352,7 @@ Validate execution results.
 ```
 
 #### 10. Proposals
+
 Create and vote on proposals in a context.
 
 ```yaml
@@ -371,19 +386,21 @@ Create and vote on proposals in a context.
 ```
 
 #### 11. Blob Upload Step
+
 Upload files to blob storage in workflows.
 
 ```yaml
 - type: upload_blob
   node: node-1
   file_path: ./data/file.txt
-  context_id: "{{context_id}}"  # Optional
+  context_id: "{{context_id}}" # Optional
   outputs:
     blob_id: "blob_id"
     blob_size: "size"
 ```
 
 #### 12. Invite Open Step
+
 Create open invitations for contexts (allows anyone to join without prior approval).
 
 ```yaml
@@ -391,12 +408,13 @@ Create open invitations for contexts (allows anyone to join without prior approv
   node: node-1
   context_id: "{{context_id}}"
   granter_id: "{{admin_public_key}}"
-  valid_for_blocks: 1000  # Optional, defaults to 1000
+  valid_for_blocks: 1000 # Optional, defaults to 1000
   outputs:
     invitation: "invitation"
 ```
 
 #### 13. Join Open Step
+
 Join a context using an open invitation.
 
 ```yaml
@@ -422,7 +440,7 @@ Execute child workflows from parent workflows for modular, reusable test suites.
     # Pass variables from parent to child
     app_id: "{{parent_app_id}}"
     node_count: 2
-  inherit_variables: false  # Optional: inherit all parent variables
+  inherit_variables: false # Optional: inherit all parent variables
   outputs:
     # Capture child workflow variables back to parent
     child_context_id: context_id
@@ -431,7 +449,7 @@ Execute child workflows from parent workflows for modular, reusable test suites.
     # Set variables after workflow execution
     workflow_status: "completed"
   on_failure:
-    continue: false  # Stop parent on child failure (default)
+    continue: false # Stop parent on child failure (default)
     set_variables:
       test_failed: true
 ```
@@ -440,20 +458,21 @@ Execute child workflows from parent workflows for modular, reusable test suites.
 
 ```yaml
 - type: run_workflows
-  mode: parallel  # or 'sequential'
-  fail_fast: true  # Stop on first failure
+  mode: parallel # or 'sequential'
+  fail_fast: true # Stop on first failure
   workflows:
     - path: ./tests/test-context.yml
-      inputs: {test_id: 1}
-      outputs: {result_1: test_result}
+      inputs: { test_id: 1 }
+      outputs: { result_1: test_result }
     - path: ./tests/test-execution.yml
-      inputs: {test_id: 2}
-      outputs: {result_2: test_result}
+      inputs: { test_id: 2 }
+      outputs: { result_2: test_result }
   variables:
     all_tests_count: 2
 ```
 
 **Orchestration Features**:
+
 - Variable passing between parent and child workflows
 - Support for nested workflows (configurable depth limit, default: 5)
 - Parallel or sequential execution modes
@@ -462,11 +481,13 @@ Execute child workflows from parent workflows for modular, reusable test suites.
 - Automatic workflow statistics: `workflows_success_count`, `workflows_failure_count`, `workflows_total_count`
 
 **Important Implementation Notes**:
+
 - Nesting depth is strictly enforced to prevent infinite recursion
 - Duplicate output names in parallel execution trigger warnings
 - All workflow count variables are guaranteed to be set
 - Type preservation: numbers stay numbers, booleans stay booleans
 - Variables from repeat loops properly propagate to parent scope
+- **NEAR Devnet Integration**: Child workflows automatically share the parent's sandbox instance and reuse node accounts, ensuring consistent blockchain state across nested workflows
 
 ## Variable Management
 
@@ -477,6 +498,7 @@ Workflows support flexible variable management with scoped variables and dynamic
 Merobox supports two variable scopes:
 
 1. **Global Variables**: Accessible across all steps in the workflow
+
    - Defined at workflow level or set via inline `variables` field
    - Persist throughout workflow execution
    - Can be passed between parent and child workflows
@@ -489,6 +511,7 @@ Merobox supports two variable scopes:
 ### Variable Resolution Priority
 
 When resolving `{{variable_name}}`, the system checks in this order:
+
 1. Local variables (step-scoped)
 2. Global variables (workflow-scoped)
 3. Step outputs (backward compatibility)
@@ -539,7 +562,7 @@ steps:
     context_id: "{{context_id}}"
     method: "apply_config"
     args:
-      version: "{{config_version}}"  # Uses variable set in previous step
+      version: "{{config_version}}" # Uses variable set in previous step
 ```
 
 ### Scoped Variable Syntax
@@ -555,7 +578,7 @@ steps:
     variables:
       # Set local variable (cleared after step)
       local:temp_result: "processing"
-      
+
       # Set global variable (persists across steps)
       global:final_status: "in_progress"
     outputs:
@@ -575,10 +598,10 @@ steps:
     args:
       # Explicitly access global scope
       status: "{{global.final_status}}"
-      
+
       # Explicitly access local scope
       temp: "{{local.temp_result}}"
-      
+
       # Auto-resolve (checks local first, then global)
       value: "{{some_variable}}"
 ```
@@ -919,6 +942,7 @@ steps:
 ## Workflow Best Practices
 
 ### 1. Use Descriptive Output Variables
+
 ```yaml
 # Good
 outputs:
@@ -932,6 +956,7 @@ outputs:
 ```
 
 ### 2. Add Wait Steps After Node Operations
+
 ```yaml
 - name: Join Context from Node 2
   type: join_context
@@ -941,10 +966,11 @@ outputs:
   invitation: "{{invitation}}"
 
 - type: wait
-  seconds: 2  # Allow node to fully sync
+  seconds: 2 # Allow node to fully sync
 ```
 
 ### 3. Use Assertions to Validate State
+
 ```yaml
 - type: call
   node: node-1
@@ -964,6 +990,7 @@ outputs:
 ```
 
 ### 4. Organize Complex Workflows with Scripts
+
 ```yaml
 - type: script
   description: "Setup environment"
@@ -974,6 +1001,7 @@ outputs:
 ## Troubleshooting
 
 ### Node Won't Start
+
 ```bash
 # Check if ports are in use
 merobox list
@@ -986,6 +1014,7 @@ docker ps
 ```
 
 ### Application Installation Fails
+
 ```bash
 # Verify WASM file exists
 ls -lh /path/to/app.wasm
@@ -998,6 +1027,7 @@ merobox logs my-node --follow
 ```
 
 ### Workflow Execution Issues
+
 ```bash
 # Validate workflow syntax first
 merobox bootstrap validate workflow.yml
@@ -1012,6 +1042,7 @@ merobox bootstrap validate workflow.yml
 ### Common Workflow Errors
 
 **Missing Variable**: Variable not defined in outputs
+
 ```yaml
 # Fix: Ensure variable is captured
 outputs:
@@ -1019,6 +1050,7 @@ outputs:
 ```
 
 **Node Not Found**: Node name doesn't match running node
+
 ```bash
 # Check running nodes
 merobox list
@@ -1027,6 +1059,7 @@ merobox list
 ```
 
 **Context Sync Issues**: Nodes not synchronized
+
 ```yaml
 # Add wait steps after join operations
 - type: wait
@@ -1036,6 +1069,7 @@ merobox list
 ## Advanced Features
 
 ### Environment Variables in Workflows
+
 ```yaml
 - type: call
   node: "{{env.NODE_NAME}}"
@@ -1045,6 +1079,7 @@ merobox list
 ```
 
 ### JSON Assertions
+
 ```yaml
 - type: json_assert
   statements:
@@ -1053,6 +1088,7 @@ merobox list
 ```
 
 ### Proposal-Based Governance
+
 ```yaml
 # Create proposal
 - type: call
@@ -1094,7 +1130,9 @@ When asking an LLM to help with Merobox:
 5. **Include relevant YAML**: Share existing workflow snippets
 
 ### Example Request
+
 "I need a Merobox workflow that:
+
 - Starts 2 nodes
 - Installs a key-value store app
 - Has node-1 write a value
@@ -1128,7 +1166,6 @@ merobox blob info --node <node> --blob-id <id>     # Get metadata
 merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
-install_application, create_context, create_identity, join_context, call, wait, 
+install_application, create_context, create_identity, join_context, call, wait,
 repeat, script, assert, json_assert, upload_blob, invite_open, join_open
 ```
-
