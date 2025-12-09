@@ -315,7 +315,11 @@ class WaitForSyncStep(BaseStep):
         }
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         """
         Execute the wait for sync step.
@@ -323,13 +327,25 @@ class WaitForSyncStep(BaseStep):
         Args:
             workflow_results: Results from previous workflow steps
             dynamic_values: Dynamic values captured from previous steps
+            global_variables: Global workflow-scope variables
+            local_variables: Local step-scope variables
 
         Returns:
             True if all nodes synced successfully, False otherwise
         """
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         # Resolve dynamic values
         context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
+            self.config["context_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
         nodes = self.config["nodes"]
         timeout = self.config.get("timeout", 30)
