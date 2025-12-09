@@ -131,7 +131,7 @@ class RunWorkflowsStep(BaseStep):
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Check for failures
+                # Count ALL results first
                 success_count = 0
                 failure_count = 0
 
@@ -141,41 +141,30 @@ class RunWorkflowsStep(BaseStep):
                             f"[red]❌ Workflow {idx} failed with exception: {str(result)}[/red]"
                         )
                         failure_count += 1
-                        # Set count variables before returning
-                        global_variables["workflows_success_count"] = success_count
-                        global_variables["workflows_failure_count"] = failure_count
-                        global_variables["workflows_total_count"] = len(workflows)
-                        dynamic_values["workflows_success_count"] = success_count
-                        dynamic_values["workflows_failure_count"] = failure_count
-                        dynamic_values["workflows_total_count"] = len(workflows)
-                        return False
                     elif not result:
                         console.print(f"[red]❌ Workflow {idx} failed[/red]")
                         failure_count += 1
-                        # Set count variables before returning
-                        global_variables["workflows_success_count"] = success_count
-                        global_variables["workflows_failure_count"] = failure_count
-                        global_variables["workflows_total_count"] = len(workflows)
-                        dynamic_values["workflows_success_count"] = success_count
-                        dynamic_values["workflows_failure_count"] = failure_count
-                        dynamic_values["workflows_total_count"] = len(workflows)
-                        return False
                     else:
                         success_count += 1
 
-                console.print(
-                    f"[green]✓ All {len(workflows)} workflows completed successfully[/green]"
-                )
-
-                # Set count variables for successful completion
+                # Set count variables with accurate totals (all results counted)
                 global_variables["workflows_success_count"] = success_count
                 global_variables["workflows_failure_count"] = failure_count
                 global_variables["workflows_total_count"] = len(workflows)
-                # Also set in dynamic_values for backward compatibility
                 dynamic_values["workflows_success_count"] = success_count
                 dynamic_values["workflows_failure_count"] = failure_count
                 dynamic_values["workflows_total_count"] = len(workflows)
 
+                # Return False if any workflow failed (fail_fast behavior)
+                if failure_count > 0:
+                    console.print(
+                        f"[red]❌ {failure_count} workflow(s) failed (fail_fast enabled)[/red]"
+                    )
+                    return False
+
+                console.print(
+                    f"[green]✓ All {len(workflows)} workflows completed successfully[/green]"
+                )
                 return True
             except Exception as e:
                 console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
