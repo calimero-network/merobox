@@ -898,6 +898,10 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import WaitStep
 
             return WaitStep(step_config, manager=self.manager)
+        elif step_type == "wait_for_sync":
+            from merobox.commands.bootstrap.steps import WaitForSyncStep
+
+            return WaitForSyncStep(step_config, manager=self.manager)
         elif step_type == "repeat":
             from merobox.commands.bootstrap.steps import RepeatStep
 
