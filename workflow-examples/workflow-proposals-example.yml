@@ -3,6 +3,8 @@ name: Proposals API Comprehensive Test
 
 # Force pull Docker images even if they exist locally
 force_pull_image: true
+near_devnet: true
+contracts_dir: contracts/near
 
 nodes:
   chain_id: calimero-testnet

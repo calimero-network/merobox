@@ -1,6 +1,8 @@
 description: A workflow example demonstrating the restart flag functionality
 name: Restart Flag Example Workflow
 
+near_devnet: true
+contracts_dir: contracts/near
 nodes:
   chain_id: testnet-1
   count: 2

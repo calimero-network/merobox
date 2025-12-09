@@ -86,6 +86,51 @@ def test_client_instance_uniqueness(single_node):
     # But they should have the same base_url
     assert client1.base_url == client2.base_url
 
+def test_node_network_configuration(single_node):
+    """
+    Verify that the node is configured to use the local NEAR devnet.
+
+    This inspects the actual config.toml on the running node to ensure
+    the 'near_devnet' injection logic worked correctly.
+    """
+    manager = single_node.manager
+    node_name = single_node.nodes[0]
+    config_content = ""
+
+    # Strategy: Read config.toml based on the manager mode (Docker vs Binary)
+    if hasattr(manager, "client"):
+        # Docker Mode: Execute cat inside the container
+        # Note: merod stores config at /app/data/<node_name>/config.toml
+        container = manager.client.containers.get(node_name)
+        exit_code, output = container.exec_run(f"cat /app/data/{node_name}/config.toml")
+        assert exit_code == 0, "Failed to read config file from container"
+        config_content = output.decode("utf-8")
+    else:
+        # Binary Mode: Read from local filesystem
+        from pathlib import Path
+        # Note: BinaryManager stores data at ./data/<node_name>/<node_name>/config.toml
+        config_path = Path(f"./data/{node_name}/{node_name}/config.toml")
+        assert config_path.exists(), "Config file not found on host"
+        config_content = config_path.read_text()
+
+    # Verify Network is set to Local
+    # We look for: network = "local" inside the [context.config.near] block
+    assert 'network = "local"' in config_content, \
+        "Node is not configured for 'local' network"
+
+    # Verify Sandbox RPC URL injection
+    # We look for the sandbox port (3030) in the RPC URL
+    # Docker mode uses: http://host.docker.internal:3030
+    # Binary mode uses: http://localhost:3030
+    assert ":3030" in config_content, \
+        "Node config does not point to Sandbox RPC port 3030"
+
+    # Verify Contract ID matches the Sandbox setup
+    assert 'contract_id = "' in config_content
+
+    # Verify Signer is configured
+    assert 'signer = "self"' in config_content
+
 
 def test_client_attributes(single_node):
     """Test that client has the expected attributes."""

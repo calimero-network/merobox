@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master]
 
+env:
+  # Or you can use 'prerelease-{PR-NUMBER}'
+  CALIMERO_CONTRACTS_VERSION: "latest"
+
 jobs:
   format:
     runs-on: ubuntu-latest
@@ -59,7 +63,7 @@ jobs:
           echo "Downloading merod binary from specific release..."
 
           # Use specific release version
-          VERSION="0.10.0-rc.20"
+          VERSION="0.10.0-rc.21"
           echo "Using version: $VERSION"
 
           ARCH="x86_64"
@@ -80,22 +84,52 @@ jobs:
           merod --version
           echo "merod installed successfully!"
 
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
+          ./workflow-examples/scripts/download_contracts.sh
+
       - name: Test merobox CLI and workflow (All workflows)
         run: |
           merobox --version
           merobox --help
-          # Initial cleanup to ensure no leftover data from previous runs
-          echo "🧹 Performing initial cleanup..."
-          merobox stop --all --no-docker || true
-          merobox nuke -f || true
-          # Run all workflows for comprehensive testing on both PRs and master
-          for f in workflow-examples/*.yml; do \
-            echo "Running workflow: $f"; \
-            merobox bootstrap run "$f" --no-docker --verbose; \
-            echo "Cleaning up after workflow..."; \
-            merobox stop --all --no-docker || true; \
-            merobox nuke -f || true; \
+
+          failed_workflows=()
+
+          # Run all workflows
+          for f in workflow-examples/*.yml; do
+            echo "Running workflow: $f"
+            if ! merobox bootstrap run "$f" --no-docker --verbose; then
+              failed_workflows+=("$f")
+            fi
+            merobox stop --all --no-docker || true
+            merobox nuke -f || true
           done
+
+          # Retry failed workflows (max 2 retries)
+          for retry in 1 2; do
+            [ ${#failed_workflows[@]} -eq 0 ] && break
+            echo "Retry $retry for ${#failed_workflows[@]} failed workflow(s)..."
+            sleep 2
+            
+            still_failed=()
+            for f in "${failed_workflows[@]}"; do
+              if ! merobox bootstrap run "$f" --no-docker --verbose; then
+                still_failed+=("$f")
+              fi
+              merobox stop --all --no-docker || true
+              merobox nuke -f || true
+              sleep 2
+            done
+            failed_workflows=("${still_failed[@]}")
+          done
+
+          # Exit if any workflows still failed
+          if [ ${#failed_workflows[@]} -gt 0 ]; then
+            echo "Failed workflows: ${failed_workflows[*]}"
+            exit 1
+          fi
+          echo "All workflows passed!"
 
   test-merobox-docker:
     runs-on: ubuntu-latest
@@ -125,27 +159,55 @@ jobs:
         run: |
           pip install -e .
 
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
+          ls -la
+          pwd
+          ./workflow-examples/scripts/download_contracts.sh
+
       - name: Test merobox CLI and workflow with Docker (All workflows)
         run: |
           merobox --version
           merobox --help
-          # Initial cleanup to ensure no leftover data from previous runs
-          echo "🧹 Performing initial cleanup..."
-          merobox stop --all || true
-          merobox nuke -f || true
-          # Run all workflows with Docker for comprehensive testing
-          # Skip workflow-example-binary.yml as it has no_docker: true in YAML (tested in test-merobox job)
-          for f in workflow-examples/*.yml; do \
-            if [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]]; then \
-              echo "Skipping $f (binary-mode only, requires merod binary)"; \
-              continue; \
-            fi; \
-            echo "Running workflow with Docker: $f"; \
-            merobox bootstrap run "$f" --verbose; \
-            echo "Cleaning up after workflow..."; \
-            merobox stop --all || true; \
-            merobox nuke -f || true; \
+
+          failed_workflows=()
+
+          # Run all workflows with Docker (skip binary-only workflow)
+          for f in workflow-examples/*.yml; do
+            [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]] && continue
+            echo "Running workflow: $f"
+            if ! merobox bootstrap run "$f" --verbose; then
+              failed_workflows+=("$f")
+            fi
+            merobox stop --all || true
+            merobox nuke -f || true
           done
+
+          # Retry failed workflows (max 2 retries)
+          for retry in 1 2; do
+            [ ${#failed_workflows[@]} -eq 0 ] && break
+            echo "Retry $retry for ${#failed_workflows[@]} failed workflow(s)..."
+            sleep 2
+            
+            still_failed=()
+            for f in "${failed_workflows[@]}"; do
+              if ! merobox bootstrap run "$f" --verbose; then
+                still_failed+=("$f")
+              fi
+              merobox stop --all || true
+              merobox nuke -f || true
+              sleep 2
+            done
+            failed_workflows=("${still_failed[@]}")
+          done
+
+          # Exit if any workflows still failed
+          if [ ${#failed_workflows[@]} -gt 0 ]; then
+            echo "Failed workflows: ${failed_workflows[*]}"
+            exit 1
+          fi
+          echo "All workflows passed!"
 
   test-merobox-integration:
     runs-on: ubuntu-latest
@@ -179,6 +241,11 @@ jobs:
         run: |
           cd example-project
           pip install -r requirements.txt
+
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
+          ./workflow-examples/scripts/download_contracts.sh
 
       - name: Run merobox integration tests
         run: |

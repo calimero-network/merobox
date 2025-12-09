@@ -15,6 +15,8 @@ import toml
 from rich.console import Console
 from rich.table import Table
 
+from merobox.commands.config_utils import apply_near_devnet_config_to_file
+
 console = Console()
 
 MOCK_RELAYER_IMAGE = "ghcr.io/calimero-network/mero-relayer:8ee178e"
@@ -293,6 +295,7 @@ class DockerManager:
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         config_path: str = None,  # custom config.toml path
+        near_devnet_config: dict = None,
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -472,10 +475,12 @@ class DockerManager:
                 },
             }
 
-            if mock_relayer:
-                container_config["extra_hosts"] = {
-                    "host.docker.internal": "host-gateway"
-                }
+            # Near Devnet and Mock relayer support
+            if near_devnet_config or mock_relayer:
+                # Add host gateway so container can talk to the sandbox process running on host
+                if "extra_hosts" not in container_config:
+                    container_config["extra_hosts"] = {}
+                container_config["extra_hosts"]["host.docker.internal"] = "host-gateway"
 
             # Add auth service configuration if enabled
             if auth_service:
@@ -599,6 +604,34 @@ class DockerManager:
             # Apply e2e-style configuration for reliable testing (regardless of config source)
             if e2e_mode:
                 config_file = os.path.join(node_data_dir, "config.toml")
+                # Docker might creates files as root; we need to own them to modify config.toml
+                self._fix_permissions(node_data_dir)
+
+                if near_devnet_config:
+                    console.print(
+                        "[green]✓ Applying Near Devnet config for the node [/green]"
+                    )
+                    # Calculate the config path here, using the resolved data_dir/node_data_dir
+                    actual_config_file = Path(node_data_dir) / "config.toml"
+
+                    if not self._apply_near_devnet_config(
+                        actual_config_file,
+                        node_name,
+                        near_devnet_config["rpc_url"],
+                        near_devnet_config["contract_id"],
+                        near_devnet_config["account_id"],
+                        near_devnet_config["public_key"],
+                        near_devnet_config["secret_key"],
+                    ):
+                        console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
+                        return False
+
+                # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
+                if e2e_mode:
+                    config_file = os.path.join(node_data_dir, "config.toml")
+                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+
+            except Exception as e:
                 console.print(
                     f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
                 )
@@ -1047,6 +1080,7 @@ class DockerManager:
         mock_relayer: bool = False,
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
+        near_devnet_config: dict = None,
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1074,6 +1108,12 @@ class DockerManager:
             port = p2p_ports[i]
             rpc_port = rpc_ports[i]
 
+            # Resolve specific config for this node if a map is provided
+            node_specific_near_config = None
+            if near_devnet_config:
+                if node_name in near_devnet_config:
+                    node_specific_near_config = near_devnet_config[node_name]
+
             if self.run_node(
                 node_name,
                 port,
@@ -1089,6 +1129,7 @@ class DockerManager:
                 mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
+                near_devnet_config=node_specific_near_config,
             ):
                 success_count += 1
             else:
@@ -1485,3 +1526,47 @@ class DockerManager:
 
         current[keys[-1]] = value
         console.print(f"[cyan]  {key} = {value}[/cyan]")
+
+    def _apply_near_devnet_config(
+        self,
+        config_file: Path,
+        node_name: str,
+        rpc_url: str,
+        contract_id: str,
+        account_id: str,
+        pub_key: str,
+        secret_key: str,
+    ):
+        """Wrapper for shared config utility."""
+
+        return apply_near_devnet_config_to_file(
+            config_file,
+            node_name,
+            rpc_url,
+            contract_id,
+            account_id,
+            pub_key,
+            secret_key,
+        )
+
+    def _fix_permissions(self, path: str):
+        """Fix ownership and write permissions of files created by Docker."""
+        if not hasattr(os, "getuid"):
+            return
+
+        try:
+            uid = os.getuid()
+            gid = os.getgid()
+
+            # Use Alpine to chown AND chmod the directory
+            # We add 'chmod -R u+w' to ensure we can write to the files even if they were created read-only
+            self.client.containers.run(
+                "alpine:latest",
+                command=f"sh -c 'chown -R {uid}:{gid} /data && chmod -R u+w /data'",
+                volumes={os.path.abspath(path): {"bind": "/data", "mode": "rw"}},
+                remove=True,
+            )
+        except Exception as e:
+            console.print(
+                f"[yellow]⚠️  Warning: Failed to fix permissions for {path}: {e}[/yellow]"
+            )
