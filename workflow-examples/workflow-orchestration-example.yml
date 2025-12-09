@@ -191,3 +191,5 @@ steps:
 stop_all_nodes: true
 restart: false
 wait_timeout: 120
+near_devnet: true
+contracts_dir: contracts/near
