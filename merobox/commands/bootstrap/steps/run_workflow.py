@@ -2,6 +2,7 @@
 Run Workflow step - Execute child workflows from parent workflows.
 """
 
+import asyncio
 import os
 from typing import Any
 
@@ -143,12 +144,40 @@ class RunWorkflowStep(BaseStep):
                 nesting_level=current_nesting + 1,
             )
 
+            # Determine timeout: child config overrides parent, otherwise use parent or default
+            timeout_seconds = child_config.get("workflow_timeout")
+            if timeout_seconds is None and parent_executor:
+                timeout_seconds = getattr(parent_executor, "workflow_timeout", 3600)
+            if timeout_seconds is None:
+                timeout_seconds = 3600  # Default 1 hour
+
             console.print(
-                f"[cyan]🚀 Executing child workflow (nesting level {current_nesting + 1})...[/cyan]"
+                f"[cyan]🚀 Executing child workflow (nesting level {current_nesting + 1}, timeout: {timeout_seconds}s)...[/cyan]"
             )
 
-            # Execute child workflow
-            success = await child_executor.execute_workflow()
+            # Execute child workflow with timeout enforcement
+            try:
+                success = await asyncio.wait_for(
+                    child_executor.execute_workflow(), timeout=timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                console.print(
+                    f"[red]❌ Child workflow timed out after {timeout_seconds} seconds: {workflow_path}[/red]"
+                )
+                if continue_on_failure:
+                    console.print(
+                        "[yellow]⚠️  Continuing despite timeout (continue_on_failure=true)[/yellow]"
+                    )
+                    # Set failure variables if configured
+                    if "set_variables" in on_failure:
+                        for var_name, var_value in on_failure["set_variables"].items():
+                            global_variables[var_name] = var_value
+                            dynamic_values[var_name] = var_value
+                            console.print(
+                                f"[blue]📝 Set failure variable '{var_name}' = {var_value}[/blue]"
+                            )
+                    return True
+                return False
 
             if not success:
                 console.print(f"[red]❌ Child workflow failed: {workflow_path}[/red]")
