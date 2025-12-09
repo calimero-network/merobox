@@ -5,8 +5,13 @@ This file demonstrates the new, cleaner Merobox testing API.
 """
 
 import pytest
+import os
+
 from pathlib import Path
 from merobox.testing import nodes, run_workflow
+
+# Requires downloading the contracts, this is usually done in CI. For local development, match the path.
+CONTRACTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../contracts/near"))
 
 
 # ============================================================================
@@ -14,7 +19,7 @@ from merobox.testing import nodes, run_workflow
 # ============================================================================
 
 
-@nodes(count=3, prefix="shared-test", scope="session")
+@nodes(count=3, prefix="shared-test", scope="session", near_devnet=True, contracts_dir=CONTRACTS_DIR)
 def shared_cluster():
     """Main shared cluster with 3 nodes for all tests - session scoped for maximum reuse"""
     pass
@@ -27,7 +32,7 @@ def multi_test_nodes():
 
 
 @run_workflow(
-    "./workflows/workflow-example.yml", prefix="shared-workflow", scope="session"
+    "./workflows/workflow-example.yml", prefix="shared-workflow", scope="session", near_devnet=True, contracts_dir=CONTRACTS_DIR
 )
 def shared_workflow():
     """Shared workflow setup for advanced testing - session scoped for reuse"""
