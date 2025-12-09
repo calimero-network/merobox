@@ -25,6 +25,7 @@ from merobox.commands.bootstrap.steps.proposals import (
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
+from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 
 
 def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
@@ -52,16 +53,32 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
         if not isinstance(nodes, dict):
             errors.append("'nodes' must be a dictionary")
         else:
-            required_node_fields = ["chain_id", "count", "image", "prefix"]
-            for field in required_node_fields:
-                if field not in nodes:
-                    errors.append(f"Missing required node field: {field}")
+            # Validate count mode vs individual node mode
+            has_count = "count" in nodes
+            has_individual_nodes = any(
+                key not in RESERVED_NODE_CONFIG_KEYS for key in nodes.keys()
+            )
 
-            # Validate config_path and count compatibility
-            if "config_path" in nodes and "count" in nodes:
+            if has_count:
+                # Count mode: require chain_id, image, prefix
+                required_count_fields = ["chain_id", "image", "prefix"]
+                for field in required_count_fields:
+                    if field not in nodes:
+                        errors.append(
+                            f"Missing required node field for 'count' mode: {field}"
+                        )
+
+                # Validate config_path and count compatibility
+                if "config_path" in nodes:
+                    errors.append(
+                        "config_path is not supported with 'count' mode. "
+                        "Please define nodes individually or remove config_path."
+                    )
+            elif not has_individual_nodes:
+                # Neither count mode nor individual nodes defined
                 errors.append(
-                    "config_path is not supported with 'count' mode. "
-                    "Please define nodes individually or remove config_path."
+                    "Nodes configuration must either use 'count' mode (with chain_id, image, prefix) "
+                    "or define individual nodes."
                 )
 
     # Validate steps configuration
