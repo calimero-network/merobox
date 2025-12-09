@@ -40,12 +40,11 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: System :: Systems Administration",
         "Topic :: Utilities",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.9,<3.12",
     install_requires=[
         "click>=8.0.0",
         "docker>=6.0.0",
@@ -53,6 +52,12 @@ setup(
         "PyYAML>=6.0.0",
         "calimero-client-py==0.2.7",
         "aiohttp>=3.8.0",
+        "toml>=0.10.2",
+        "base58>=2.1.0",
+        "ed25519>=1.5",
+        "py-near>=1.1.0",
+        "requests>=2.31.0",
+        "tqdm>=4.65.0",
     ],
     extras_require={
         "dev": [
