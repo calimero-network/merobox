@@ -940,6 +940,10 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 
             return CreateMeshStep(step_config, manager=self.manager)
+        elif step_type == "fuzzy_test":
+            from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+
+            return FuzzyTestStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None
