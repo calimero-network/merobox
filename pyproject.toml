@@ -7,7 +7,7 @@ name = "merobox"
 dynamic = ["version"]
 description = "A Python CLI tool for managing Calimero nodes in Docker containers"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Calimero Ltd.", email = "engineering@calimero.network"}
@@ -29,6 +29,11 @@ dependencies = [
     "calimero-client-py==0.2.7",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
+    "base58>=2.1.0",
+    "ed25519>=1.5",
+    "py-near>=1.1.0",
+    "requests>=2.31.0",
+    "tqdm>=4.65.0",
 ]
 
 [project.optional-dependencies]
