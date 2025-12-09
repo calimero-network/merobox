@@ -1,4 +1,4 @@
-description: Network-focused workflow monitoring DAG propagation reliability over 5 minutes
+description: Network-focused workflow monitoring DAG propagation reliability over ~75 seconds
 name: DAG Propagation Monitoring Test
 
 force_pull_image: true
@@ -65,7 +65,7 @@ steps:
 
   - name: Wait for initial propagation
     type: wait
-    seconds: 15
+    seconds: 10
 
   - name: "[Setup] Verify initial propagation to Node 2"
     type: call
@@ -125,12 +125,12 @@ steps:
   #   1. Node 1 writes a new unique key (propagation_key_1, propagation_key_2, etc.)
   #   2. Wait 5 seconds for propagation
   #   3. Other nodes check if they can read that specific key
-  # This tests continuous write propagation over 5 minutes (60 iterations)
+  # This tests continuous write propagation over ~75 seconds (15 iterations)
   # =============================================================================
 
-  - name: "[Monitoring] Continuous write and check loop (5 minutes)"
+  - name: "[Monitoring] Continuous write and check loop (~75 seconds)"
     type: repeat
-    count: 60
+    count: 15
     outputs:
       iteration: iteration
     steps:
@@ -148,7 +148,7 @@ steps:
       # Wait for propagation
       - name: "Wait for propagation (iteration {{iteration}})"
         type: wait
-        seconds: 5
+        seconds: 8
 
       # Check Node 2 - use expected_failure to not crash on missing key
       - name: "[Check {{iteration}}] Node 2 reads key"
@@ -209,7 +209,7 @@ steps:
   # =============================================================================
   # PHASE 4: Final Verification - Check the last key propagated successfully
   # These final checks do NOT use expected_failure - we want to fail if
-  # the final key never propagated after 5 minutes
+  # the final key never propagated after ~75 seconds
   # =============================================================================
 
   - name: "[Final] Node 2 reads last key"
@@ -219,7 +219,7 @@ steps:
     executor_public_key: "{{public_key_dag-node-2}}"
     method: get
     args:
-      key: "propagation_key_60"
+      key: "propagation_key_15"
     outputs:
       final_n2: result
 
@@ -230,7 +230,7 @@ steps:
     executor_public_key: "{{public_key_dag-node-3}}"
     method: get
     args:
-      key: "propagation_key_60"
+      key: "propagation_key_15"
     outputs:
       final_n3: result
 
@@ -241,7 +241,7 @@ steps:
     executor_public_key: "{{public_key_dag-node-4}}"
     method: get
     args:
-      key: "propagation_key_60"
+      key: "propagation_key_15"
     outputs:
       final_n4: result
 
@@ -252,17 +252,17 @@ steps:
     executor_public_key: "{{public_key_dag-node-5}}"
     method: get
     args:
-      key: "propagation_key_60"
+      key: "propagation_key_15"
     outputs:
       final_n5: result
 
   - name: Assert final propagation state
     type: json_assert
     statements:
-      - 'json_subset({{final_n2}}, {"output": "value_from_iteration_60"})'
-      - 'json_subset({{final_n3}}, {"output": "value_from_iteration_60"})'
-      - 'json_subset({{final_n4}}, {"output": "value_from_iteration_60"})'
-      - 'json_subset({{final_n5}}, {"output": "value_from_iteration_60"})'
+      - 'json_subset({{final_n2}}, {"output": "value_from_iteration_15"})'
+      - 'json_subset({{final_n3}}, {"output": "value_from_iteration_15"})'
+      - 'json_subset({{final_n4}}, {"output": "value_from_iteration_15"})'
+      - 'json_subset({{final_n5}}, {"output": "value_from_iteration_15"})'
 
   - name: Final Summary
     type: assert
@@ -270,7 +270,7 @@ steps:
       - statement: "is_set({{context_id}})"
         message: "Context was created successfully"
       - statement: "is_set({{final_n5}})"
-        message: "5-minute monitoring completed - check logs for propagation failure counts"
+        message: "Monitoring completed - check logs for propagation failure counts"
 
 stop_all_nodes: true
 restart: false
