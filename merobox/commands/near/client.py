@@ -69,3 +69,14 @@ class NearDevnetClient:
         action = create_function_call_action(method_name, args, gas, deposit)
 
         return await self.account.sign_and_submit_tx(contract_id, [action])
+
+    async def close(self):
+        """Close the underlying aiohttp session."""
+        # py-near stores the provider in '_provider'
+        provider = getattr(self.account, "_provider", None)
+
+        if provider:
+            # py-near stores the session in '_client'
+            session = getattr(provider, "_client", None)
+            if session and not session.closed:
+                await session.close()

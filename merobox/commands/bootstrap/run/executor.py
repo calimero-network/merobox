@@ -193,7 +193,13 @@ class WorkflowExecutor:
                         self.contracts_dir, "calimero_context_proxy_near.wasm"
                     )
 
-                    console.log(ctx_path)
+                    console.print(
+                        f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
+                    )
+                    console.print(
+                        f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
+                    )
+
                     if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
                         raise Exception(
                             f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
@@ -213,7 +219,7 @@ class WorkflowExecutor:
                 except Exception as e:
                     console.print(f"[red]Sandbox setup failed: {e}[/red]")
                     if self.sandbox:
-                        self.sandbox.stop()
+                        await self.sandbox.stop()
                     return False
 
             # Check if we should restart nodes at the beginning
@@ -323,7 +329,7 @@ class WorkflowExecutor:
             return False
         finally:
             if self.sandbox:
-                self.sandbox.stop()
+                await self.sandbox.stop()
 
     def _stop_nodes_on_failure(self) -> None:
         """

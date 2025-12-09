@@ -130,7 +130,7 @@ class SandboxManager:
         )
 
         if not self._wait_for_rpc():
-            self.stop()
+            self.stop_process()
             raise Exception("Sandbox failed to start")
 
         # Initialize Root Client (test.near) using generated key
@@ -146,7 +146,15 @@ class SandboxManager:
             f"[green]✓ NEAR Sandbox running. Root: {self.root_client.account.account_id}[/green]"
         )
 
-    def stop(self):
+    async def stop(self):
+        """Async stop that closes clients and process."""
+        if self.root_client:
+            await self.root_client.close()
+
+        self.stop_process()
+
+    def stop_process(self):
+        """Synchronously stop the sandbox process."""
         if self.process:
             self.process.terminate()
             try:
@@ -154,6 +162,7 @@ class SandboxManager:
             except subprocess.TimeoutExpired:
                 self.process.kill()
             console.print("[yellow]NEAR Sandbox stopped[/yellow]")
+            self.process = None
 
     def _wait_for_rpc(self, timeout=10):
         # Sleep a little bit to wait for a RPC spin up.
@@ -202,19 +211,22 @@ class SandboxManager:
             self.get_rpc_url(), creds["account_id"], creds["secret_key"]
         )
 
-        await calimero_client.deploy_contract(ctx_wasm)
+        try:
+            await calimero_client.deploy_contract(ctx_wasm)
 
-        # Set Proxy Code
-        # The contract expects raw bytes for `set_proxy_code()`
-        console.print("[cyan]Setting Proxy Code...[/cyan]")
-        with open(proxy_wasm, "rb") as f:
-            proxy_code = f.read()
+            # Set Proxy Code
+            # The contract expects raw bytes for `set_proxy_code()`
+            console.print("[cyan]Setting Proxy Code...[/cyan]")
+            with open(proxy_wasm, "rb") as f:
+                proxy_code = f.read()
 
-        # The proxy code is passed as raw bytes argument to the method
-        await calimero_client.call(acc_id, "set_proxy_code", proxy_code)
+            # The proxy code is passed as raw bytes argument to the method
+            await calimero_client.call(acc_id, "set_proxy_code", proxy_code)
 
-        console.print(f"[green]✓ Contracts deployed to {acc_id}[/green]")
-        return acc_id
+            console.print(f"[green]✓ Contracts deployed to {acc_id}[/green]")
+            return acc_id
+        finally:
+            await calimero_client.close()
 
     async def create_node_account(self, node_name):
         """Creates nodeX.test.near funded account."""
