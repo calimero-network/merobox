@@ -80,8 +80,14 @@ steps:
           simple_set_result: result  # Export 'result' as 'simple_set_result'
       
       - name: Wait for Set Operation
-        type: wait
-        seconds: 1
+        type: wait_for_sync
+        context_id: "{{context_id}}"
+        nodes:
+          - calimero-node-1
+          - calimero-node-2
+        timeout: 60
+        check_interval: 2
+        trigger_sync: true
 
   # Step 8: Example 2 - Repeat with multiple nested steps and different operations
   - name: Complex Repeat Example
@@ -115,8 +121,14 @@ steps:
           complex_set_b_result: result  # Export 'result' as 'complex_set_b_result'
       
       - name: Wait Between Operations
-        type: wait
-        seconds: 2
+        type: wait_for_sync
+        context_id: "{{context_id}}"
+        nodes:
+          - calimero-node-1
+          - calimero-node-2
+        timeout: 60
+        check_interval: 2
+        trigger_sync: true
       
       - name: Retrieve First Key-Value Pair
         type: call
@@ -160,8 +172,14 @@ steps:
           iteration_set_result: result  # Export 'result' as 'iteration_set_result'
       
       - name: Wait for Propagation
-        type: wait
-        seconds: 1
+        type: wait_for_sync
+        context_id: "{{context_id}}"
+        nodes:
+          - calimero-node-1
+          - calimero-node-2
+        timeout: 60
+        check_interval: 2
+        trigger_sync: true
       
       - name: Verify Data from Different Node
         type: call
