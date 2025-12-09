@@ -601,37 +601,34 @@ class DockerManager:
                     f"[cyan]Skipping initialization for {node_name} (using custom config)[/cyan]"
                 )
 
-            # Apply e2e-style configuration for reliable testing (regardless of config source)
-            if e2e_mode:
+            if near_devnet_config:
                 config_file = os.path.join(node_data_dir, "config.toml")
                 # Docker might creates files as root; we need to own them to modify config.toml
                 self._fix_permissions(node_data_dir)
 
-                if near_devnet_config:
-                    console.print(
-                        "[green]✓ Applying Near Devnet config for the node [/green]"
-                    )
-                    # Calculate the config path here, using the resolved data_dir/node_data_dir
-                    actual_config_file = Path(node_data_dir) / "config.toml"
+                console.print(
+                    "[green]✓ Applying Near Devnet config for the node [/green]"
+                )
+                # Calculate the config path here, using the resolved data_dir/node_data_dir
+                actual_config_file = Path(node_data_dir) / "config.toml"
 
-                    if not self._apply_near_devnet_config(
-                        actual_config_file,
-                        node_name,
-                        near_devnet_config["rpc_url"],
-                        near_devnet_config["contract_id"],
-                        near_devnet_config["account_id"],
-                        near_devnet_config["public_key"],
-                        near_devnet_config["secret_key"],
-                    ):
-                        console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
-                        return False
+                if not self._apply_near_devnet_config(
+                    actual_config_file,
+                    node_name,
+                    near_devnet_config["rpc_url"],
+                    near_devnet_config["contract_id"],
+                    near_devnet_config["account_id"],
+                    near_devnet_config["public_key"],
+                    near_devnet_config["secret_key"],
+                ):
+                    console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
+                    return False
 
-                # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
-                if e2e_mode:
-                    config_file = os.path.join(node_data_dir, "config.toml")
-                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+            # Apply e2e-style configuration for reliable testing
+            if e2e_mode:
+                config_file = os.path.join(node_data_dir, "config.toml")
+                self._fix_permissions(node_data_dir)
 
-            except Exception as e:
                 console.print(
                     f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
                 )

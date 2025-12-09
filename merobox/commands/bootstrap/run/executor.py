@@ -41,17 +41,12 @@ class WorkflowExecutor:
         mock_relayer: bool = False,
         e2e_mode: bool = False,
         workflow_dir: str = None,
-    ):
-        self.config = config
-        self.manager = manager
-        self.workflow_dir = workflow_dir or "."
         near_devnet: bool = False,
         contracts_dir: str = None,
     ):
         self.config = config
         self.manager = manager
-        self.near_devnet = near_devnet
-        self.contracts_dir = contracts_dir
+        self.workflow_dir = workflow_dir or "."
         self.sandbox = None
         self.near_config = {}
 

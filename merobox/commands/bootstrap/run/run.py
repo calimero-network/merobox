@@ -105,8 +105,8 @@ async def run_workflow(
             mock_relayer,
             e2e_mode,
             workflow_dir=workflow_dir,
-            near_devnet,
-            contracts_dir,
+            near_devnet=near_devnet,
+            contracts_dir=contracts_dir,
         )
 
         # Execute workflow
