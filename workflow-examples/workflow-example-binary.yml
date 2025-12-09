@@ -137,8 +137,15 @@ steps:
 
   # Step 11: Wait for the set operation to complete and propagate
   - name: Wait for Set Operation
-    type: wait
-    seconds: 3
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 12: Execute a view call to retrieve the stored value from node 2
   # Demonstrates cross-node execution using the joined context
@@ -181,8 +188,15 @@ steps:
 
   # Step 15: Wait for propagation
   - name: Wait for Node 3 Set Operation
-    type: wait
-    seconds: 3
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Step 16: Verify the node 3 value can be read from other nodes
   - name: Verify Node 3 Value from Node 1
@@ -217,8 +231,15 @@ steps:
           iteration_set_result: result # Export 'result' as 'iteration_set_result'
 
       - name: Wait for Set Operation
-        type: wait
-        seconds: 2
+        type: wait_for_sync
+        context_id: "{{context_id}}"
+        nodes:
+          - calimero-node-1
+          - calimero-node-2
+          - calimero-node-3
+        timeout: 60
+        check_interval: 2
+        trigger_sync: true
 
       - name: Get Key-Value Pair from Node 2
         type: call

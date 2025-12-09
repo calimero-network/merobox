@@ -81,8 +81,14 @@ steps:
 
   # Wait for operation to propagate
   - name: Wait for Set Operation
-    type: wait
-    seconds: 3
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
 
   # Test contract call - get value
   - name: Get Value from KV Store
