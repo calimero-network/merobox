@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master]
 
+env:
+  # Or you can use 'prerelease-{PR-NUMBER}'
+  CALIMERO_CONTRACTS_VERSION: "latest"
+
 jobs:
   format:
     runs-on: ubuntu-latest
@@ -80,6 +84,11 @@ jobs:
           merod --version
           echo "merod installed successfully!"
 
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
+          ./workflow-examples/scripts/download_contracts.sh
+
       - name: Test merobox CLI and workflow (All workflows)
         run: |
           merobox --version
@@ -149,6 +158,13 @@ jobs:
       - name: Install merobox in development mode
         run: |
           pip install -e .
+
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
+          ls -la
+          pwd
+          ./workflow-examples/scripts/download_contracts.sh
 
       - name: Test merobox CLI and workflow with Docker (All workflows)
         run: |
@@ -225,6 +241,11 @@ jobs:
         run: |
           cd example-project
           pip install -r requirements.txt
+
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
+          ./workflow-examples/scripts/download_contracts.sh
 
       - name: Run merobox integration tests
         run: |

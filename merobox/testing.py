@@ -8,6 +8,7 @@ Calimero nodes, including cluster management and workflow execution.
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypedDict
@@ -55,6 +56,8 @@ def cluster(
     base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
+    near_devnet: bool = False,
+    contracts_dir: str | None = None,
 ) -> ClusterEnv:
     """Run a cluster of Calimero nodes as pretest setup and tear down automatically.
 
@@ -72,8 +75,15 @@ def cluster(
         ClusterEnv with node names, endpoints map, and manager.
     """
     manager = DockerManager()
+    sandbox = None
+    near_devnet_configs = None
 
     try:
+        if near_devnet:
+            sandbox, near_devnet_configs = _setup_near_devnet(
+                contracts_dir, count, prefix
+            )
+
         # Use the efficient run_multiple_nodes method instead of manual loop
         success = manager.run_multiple_nodes(
             count=count,
@@ -82,6 +92,7 @@ def cluster(
             chain_id=chain_id,
             base_port=base_port,
             base_rpc_port=base_rpc_port,
+            near_devnet_config=near_devnet_configs if near_devnet else None,
         )
 
         if not success:
@@ -112,6 +123,9 @@ def cluster(
                     manager.stop_node(node_name)
                 except Exception:
                     pass
+        if sandbox:
+            # Stop Sandobox
+            sandbox.stop_process()
 
 
 @contextmanager
@@ -125,6 +139,8 @@ def workflow(
     base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
+    near_devnet: bool = False,
+    contracts_dir: str | None = None,
 ) -> WorkflowEnv:
     """Run a Merobox workflow as pretest setup and tear down automatically.
 
@@ -159,7 +175,12 @@ def workflow(
 
         config = load_workflow_config(str(workflow_path))
 
-        executor = WorkflowExecutor(config, manager)
+        executor = WorkflowExecutor(
+            config,
+            manager,
+            near_devnet=near_devnet,
+            contracts_dir=contracts_dir,
+        )
         workflow_result = asyncio.run(executor.execute_workflow())
 
         if not workflow_result:
@@ -383,3 +404,57 @@ def using(*fixtures):
         return test_func
 
     return wrapper
+
+
+def _setup_near_devnet(
+    contracts_dir: str | None, count: int, prefix: str
+) -> tuple[Any, dict[str, Any]]:
+    """
+    Helper to spin up NEAR Sandbox, deploy contracts, and generate node accounts.
+    Returns the sandbox instance and the configuration dictionary.
+    """
+    if not contracts_dir:
+        raise ValueError("contracts_dir is required when near_devnet is True")
+
+    from merobox.commands.near.sandbox import SandboxManager
+
+    # Start Sandbox
+    sandbox = SandboxManager()
+    sandbox.start()
+
+    # Paths to contracts
+    ctx_path = os.path.join(contracts_dir, "calimero_context_config_near.wasm")
+    proxy_path = os.path.join(contracts_dir, "calimero_context_proxy_near.wasm")
+
+    configs = {}
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        # Deploy Contracts
+        contract_id = loop.run_until_complete(
+            sandbox.setup_calimero(ctx_path, proxy_path)
+        )
+
+        # Get RPC URL
+        rpc_url = sandbox.get_rpc_url(for_docker=True)
+
+        # Generate configs for each node
+        for i in range(count):
+            node_name = f"{prefix}-{i+1}"
+            creds = loop.run_until_complete(sandbox.create_node_account(node_name))
+            configs[node_name] = {
+                "rpc_url": rpc_url,
+                "contract_id": contract_id,
+                **creds,
+            }
+    except Exception:
+        # Ensure sandbox is stopped if setup fails
+        sandbox.stop_process()
+        loop.close()
+        raise
+    finally:
+        if not loop.is_closed():
+            loop.close()
+
+    return sandbox, configs
