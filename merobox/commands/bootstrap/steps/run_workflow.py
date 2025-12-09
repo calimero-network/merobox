@@ -137,11 +137,78 @@ class RunWorkflowStep(BaseStep):
             # Create child workflow executor
             from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 
+            # Inherit runtime options from parent executor (CLI flags, etc.)
+            # This ensures child workflows run with the same settings as parent
+            parent_image = (
+                getattr(parent_executor, "image", None) if parent_executor else None
+            )
+            parent_auth_service = (
+                getattr(parent_executor, "auth_service", False)
+                if parent_executor
+                else False
+            )
+            parent_auth_image = (
+                getattr(parent_executor, "auth_image", None)
+                if parent_executor
+                else None
+            )
+            parent_auth_use_cached = (
+                getattr(parent_executor, "auth_use_cached", False)
+                if parent_executor
+                else False
+            )
+            parent_webui_use_cached = (
+                getattr(parent_executor, "webui_use_cached", False)
+                if parent_executor
+                else False
+            )
+            parent_log_level = (
+                getattr(parent_executor, "log_level", "debug")
+                if parent_executor
+                else "debug"
+            )
+            parent_rust_backtrace = (
+                getattr(parent_executor, "rust_backtrace", "0")
+                if parent_executor
+                else "0"
+            )
+            parent_mock_relayer = (
+                getattr(parent_executor, "mock_relayer", False)
+                if parent_executor
+                else False
+            )
+            parent_e2e_mode = (
+                getattr(parent_executor, "e2e_mode", False)
+                if parent_executor
+                else False
+            )
+            parent_near_devnet = (
+                getattr(parent_executor, "near_devnet", False)
+                if parent_executor
+                else False
+            )
+            parent_contracts_dir = (
+                getattr(parent_executor, "contracts_dir", None)
+                if parent_executor
+                else None
+            )
+
             child_executor = WorkflowExecutor(
                 config=child_config,
                 manager=self.manager,
+                image=parent_image,
+                auth_service=parent_auth_service,
+                auth_image=parent_auth_image,
+                auth_use_cached=parent_auth_use_cached,
+                webui_use_cached=parent_webui_use_cached,
+                log_level=parent_log_level,
+                rust_backtrace=parent_rust_backtrace,
+                mock_relayer=parent_mock_relayer,
+                e2e_mode=parent_e2e_mode,
                 parent_executor=parent_executor,
                 nesting_level=current_nesting + 1,
+                near_devnet=parent_near_devnet,
+                contracts_dir=parent_contracts_dir,
             )
 
             # Determine timeout: child config overrides parent, otherwise use parent or default
