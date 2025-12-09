@@ -50,6 +50,7 @@ logs/
 
 # Data directories (can be large)
 data/
+contracts/
 *.db
 *.sqlite
 
