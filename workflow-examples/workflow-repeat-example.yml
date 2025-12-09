@@ -1,6 +1,9 @@
 description: A comprehensive example workflow demonstrating the repeat step functionality
 name: Repeat Step Example Workflow
 
+near_devnet: true
+contracts_dir: contracts/near
+
 nodes:
   chain_id: testnet-1
   count: 2

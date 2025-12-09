@@ -2,6 +2,8 @@ description: A workflow demonstrating the create_mesh step that creates a contex
 name: Create Mesh Workflow Example
 
 force_pull_image: true
+near_devnet: true
+contracts_dir: contracts/near
 
 nodes:
   chain_id: testnet-1

@@ -91,6 +91,16 @@ def bootstrap():
     is_flag=True,
     help="Enable e2e test mode with aggressive sync settings and test isolation (disables bootstrap nodes, uses unique rendezvous namespaces)",
 )
+@click.option(
+    "--near-devnet",
+    is_flag=True,
+    help="Spin up a local NEAR sandbox and configure nodes to use it. Requires --contracts-dir.",
+)
+@click.option(
+    "--contracts-dir",
+    type=click.Path(exists=True),
+    help="Directory containing context_config_near.wasm and context_proxy_near.wasm",
+)
 def run(
     config_file,
     verbose,
@@ -105,6 +115,8 @@ def run(
     binary_path,
     mock_relayer,
     e2e_mode,
+    near_devnet,
+    contracts_dir,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -116,6 +128,7 @@ def run(
     4. Handle dynamic variable resolution
     5. Export results and captured values
     """
+
     success = run_workflow_sync(
         config_file,
         verbose,
@@ -130,6 +143,8 @@ def run(
         binary_path=binary_path,
         mock_relayer=mock_relayer,
         e2e_mode=e2e_mode,
+        near_devnet=near_devnet,
+        contracts_dir=contracts_dir,
     )
     if not success:
         sys.exit(1)

@@ -3,6 +3,8 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 """
 
 import asyncio
+import os
+import sys
 import time
 from typing import Any, Optional
 
@@ -16,6 +18,7 @@ from rich.progress import (
 )
 
 from merobox.commands.manager import DockerManager
+from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.utils import console
 
 
@@ -37,9 +40,16 @@ class WorkflowExecutor:
         e2e_mode: bool = False,
         parent_executor: Optional["WorkflowExecutor"] = None,
         nesting_level: int = 0,
+        near_devnet: bool = False,
+        contracts_dir: str = None,
     ):
         self.config = config
         self.manager = manager
+        self.near_devnet = near_devnet
+        self.contracts_dir = contracts_dir
+        self.sandbox = None
+        self.near_config = {}
+
         # Determine if we're in binary mode
         self.is_binary_mode = (
             hasattr(manager, "binary_path") and manager.binary_path is not None
@@ -83,6 +93,21 @@ class WorkflowExecutor:
         self.nesting_level = nesting_level
         self.max_nesting_depth = config.get("max_workflow_nesting", 5)
         self.workflow_timeout = config.get("workflow_timeout", 3600)
+        self.near_devnet = near_devnet or config.get("near_devnet", False)
+        self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
+
+        # Forbid having Near Devnet (sandbox) configuration and mock relayer at the same time
+        if self.mock_relayer and self.near_devnet:
+            console.print(
+                "[red]Configuration Error: --mock-relayer and --near-devnet cannot be enabled simultaneously.[/red]"
+            )
+            sys.exit(1)
+
+        if self.near_devnet and not self.contracts_dir:
+            console.print(
+                "[red] Config Error: near_devnet requires contracts_dir to be specified[/red]"
+            )
+            sys.exit(1)
 
         try:
             console.print(
@@ -175,6 +200,51 @@ class WorkflowExecutor:
                     )
                     await self._force_pull_workflow_images()
                     console.print("[green]✓ Image force pull completed[/green]")
+
+            # Start NEAR Devnet if requested
+            if self.near_devnet:
+                console.print(
+                    "\n[bold yellow]Step 0: Initializing NEAR Sandbox...[/bold yellow]"
+                )
+                self.sandbox = SandboxManager()
+                try:
+                    self.sandbox.start()
+
+                    ctx_path = os.path.join(
+                        self.contracts_dir, "calimero_context_config_near.wasm"
+                    )
+                    proxy_path = os.path.join(
+                        self.contracts_dir, "calimero_context_proxy_near.wasm"
+                    )
+
+                    console.print(
+                        f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
+                    )
+                    console.print(
+                        f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
+                    )
+
+                    if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
+                        raise Exception(
+                            f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
+                        )
+
+                    contract_id = await self.sandbox.setup_calimero(
+                        ctx_path, proxy_path
+                    )
+
+                    # Determine RPC URL accessible from Docker containers
+                    # Not applicable in binary mode, but kept generic
+                    rpc_url = self.sandbox.get_rpc_url(
+                        for_docker=(not self.is_binary_mode)
+                    )
+
+                    self.near_config = {"contract_id": contract_id, "rpc_url": rpc_url}
+                except Exception as e:
+                    console.print(f"[red]Sandbox setup failed: {e}[/red]")
+                    if self.sandbox:
+                        await self.sandbox.stop()
+                    return False
 
             # Check if we should restart nodes at the beginning
             restart_nodes = self.config.get("restart", False)
@@ -298,6 +368,9 @@ class WorkflowExecutor:
             if stop_all_nodes:
                 self._stop_nodes_on_failure()
             return False
+        finally:
+            if self.sandbox:
+                await self.sandbox.stop()
 
     def _stop_nodes_on_failure(self) -> None:
         """
@@ -573,10 +646,11 @@ class WorkflowExecutor:
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
 
-        # Ensure nodes are restarted when mock relayer is requested so wiring is fresh
-        if self.mock_relayer and not restart:
+        # Ensure nodes are restarted when Near Devnet or Mock Relayer is requested so wiring is fresh
+        if (self.near_devnet or self.mock_relayer) and not restart:
+            feature = "NEAR Devnet" if self.near_devnet else "Mock Relayer"
             console.print(
-                "[yellow]Mock relayer requested; forcing restart to wire nodes to the relayer[/yellow]"
+                f"[yellow]{feature} requested; forcing restart to wire nodes to the relayer[/yellow]"
             )
             restart = True
 
@@ -587,6 +661,23 @@ class WorkflowExecutor:
                 console.print(
                     f"Starting {count} nodes with prefix '{prefix}' (restart mode)..."
                 )
+
+                # NEAR Devnet Config Logic
+                node_near_config = {}
+                if self.near_devnet:
+                    console.print("[green]✓ Using Near Devnet config [/green]")
+                    for i in range(count):
+                        node_name = f"{prefix}-{i+1}"
+                        console.print(
+                            f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
+                        )
+                        creds = await self.sandbox.create_node_account(node_name)
+                        node_near_config[node_name] = {
+                            "rpc_url": self.near_config["rpc_url"],
+                            "contract_id": self.near_config["contract_id"],
+                            **creds,
+                        }
+
                 if not self.manager.run_multiple_nodes(
                     count,
                     base_port,
@@ -603,6 +694,7 @@ class WorkflowExecutor:
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
                     e2e_mode=self.e2e_mode,
+                    near_devnet_config=node_near_config,
                 ):
                     return False
             else:
@@ -618,6 +710,16 @@ class WorkflowExecutor:
                             f"[green]✓ Node '{node_name}' is already running[/green]"
                         )
                         continue
+
+                    # NEAR Devnet Config Logic
+                    node_near_config = None
+                    if self.near_devnet:
+                        creds = await self.sandbox.create_node_account(node_name)
+                        node_near_config = {
+                            "rpc_url": self.near_config["rpc_url"],
+                            "contract_id": self.near_config["contract_id"],
+                            **creds,
+                        }
 
                     # Not running -> start (allow manager to allocate ports if base_* is None)
                     port = base_port + i if base_port is not None else None
@@ -638,6 +740,7 @@ class WorkflowExecutor:
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
                         e2e_mode=self.e2e_mode,
+                        near_devnet_config=node_near_config,
                     ):
                         return False
 
@@ -672,6 +775,17 @@ class WorkflowExecutor:
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
+
+            node_near_config = None
+            if self.near_devnet:
+                # Create unique account for this node
+                creds = await self.sandbox.create_node_account(node_name)
+
+                node_near_config = {
+                    "rpc_url": self.near_config["rpc_url"],
+                    "contract_id": self.near_config["contract_id"],
+                    **creds,
+                }
 
             if is_running:
                 if restart:
@@ -708,6 +822,7 @@ class WorkflowExecutor:
                         self.rust_backtrace,
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
+                        near_devnet_config=node_near_config,
                     ):
                         return False
                 else:
@@ -732,6 +847,7 @@ class WorkflowExecutor:
                     self.rust_backtrace,
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
+                    near_devnet_config=node_near_config,
                 ):
                     return False
 
