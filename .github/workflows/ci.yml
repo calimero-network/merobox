@@ -63,7 +63,7 @@ jobs:
           echo "Downloading merod binary from specific release..."
 
           # Use specific release version
-          VERSION="0.10.0-rc.21"
+          VERSION="0.10.0-rc.25"
           echo "Using version: $VERSION"
 
           ARCH="x86_64"
@@ -102,7 +102,6 @@ jobs:
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
               --no-docker \
-              --binary-path ../../target/debug/merod \
               --e2e-mode \
               --near-devnet \
               --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
