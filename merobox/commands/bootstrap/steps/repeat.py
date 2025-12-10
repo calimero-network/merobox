@@ -219,10 +219,39 @@ class RepeatStep(BaseStep):
                     )
                     return False
 
+            self._clear_nested_local_variables(iteration_local_variables)
+
         console.print(
             f"[green]✓ All {repeat_count} iterations completed successfully[/green]"
         )
         return True
+
+    def _clear_nested_local_variables(self, local_variables: dict[str, Any]) -> None:
+        """
+        Clear local variables after iteration completes, preserving iteration-specific variables.
+
+        Local variables persist across nested steps within the same iteration but are cleared
+        when the iteration completes to prevent them from leaking into the next iteration.
+
+        Args:
+            local_variables: Dictionary of local variables to clear
+        """
+        iteration_vars = {
+            "iteration",
+            "iteration_index",
+            "iteration_zero_based",
+            "iteration_one_based",
+            "current_step",
+            "current_step_index",
+        }
+
+        preserved_values = {
+            key: local_variables[key]
+            for key in iteration_vars
+            if key in local_variables
+        }
+        local_variables.clear()
+        local_variables.update(preserved_values)
 
     def _process_nested_inline_variables(
         self,
