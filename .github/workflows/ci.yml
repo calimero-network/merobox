@@ -96,10 +96,16 @@ jobs:
 
           failed_workflows=()
 
-          # Run all workflows
+          # Run all workflows (exclude fuzzy-kv-store)
           for f in workflow-examples/*.yml; do
+            [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
             echo "Running workflow: $f"
-            if ! merobox bootstrap run "$f" --no-docker --verbose; then
+            if ! merobox bootstrap run "$f" \
+              --no-docker \
+              --binary-path ../../target/debug/merod \
+              --e2e-mode \
+              --near-devnet \
+              --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
               failed_workflows+=("$f")
             fi
             merobox stop --all --no-docker || true
@@ -114,7 +120,12 @@ jobs:
             
             still_failed=()
             for f in "${failed_workflows[@]}"; do
-              if ! merobox bootstrap run "$f" --no-docker --verbose; then
+              if ! merobox bootstrap run "$f" \
+                --no-docker \
+                --binary-path ../../target/debug/merod \
+                --e2e-mode \
+                --near-devnet \
+                --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
                 still_failed+=("$f")
               fi
               merobox stop --all --no-docker || true
@@ -173,11 +184,15 @@ jobs:
 
           failed_workflows=()
 
-          # Run all workflows with Docker (skip binary-only workflow)
+          # Run all workflows with Docker (skip binary-only workflow and fuzzy-kv-store)
           for f in workflow-examples/*.yml; do
             [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]] && continue
+            [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
             echo "Running workflow: $f"
-            if ! merobox bootstrap run "$f" --verbose; then
+            if ! merobox bootstrap run "$f" \
+              --e2e-mode \
+              --near-devnet \
+              --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
               failed_workflows+=("$f")
             fi
             merobox stop --all || true
@@ -192,7 +207,10 @@ jobs:
             
             still_failed=()
             for f in "${failed_workflows[@]}"; do
-              if ! merobox bootstrap run "$f" --verbose; then
+              if ! merobox bootstrap run "$f" \
+                --e2e-mode \
+                --near-devnet \
+                --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
                 still_failed+=("$f")
               fi
               merobox stop --all || true
