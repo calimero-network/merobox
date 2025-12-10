@@ -8,6 +8,7 @@ without requiring full workflow execution.
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
+from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 from merobox.commands.bootstrap.steps.identity import (
     CreateIdentityStep,
     InviteIdentityStep,
@@ -204,6 +205,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             from merobox.commands.bootstrap.steps import RunWorkflowsStep
 
             step_class = RunWorkflowsStep
+        elif step_type == "fuzzy_test":
+            step_class = FuzzyTestStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

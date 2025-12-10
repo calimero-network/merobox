@@ -7,15 +7,123 @@ Examples:
 - "{{count}} >= 1"
 - "regex({{value}}, '^abc')"
 - "equal({{a}}, {{b}})" / "not_equal({{a}}, 'x')"
+
+Non-blocking mode (for fuzzy testing):
+- Set non_blocking: true to record failures without stopping the workflow
+- Results are tracked in dynamic_values["_fuzzy_test_results"] if present
 """
 
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
+
+
+class FuzzyTestResultsTracker:
+    """Tracks assertion results during fuzzy load testing.
+
+    This tracker accumulates pass/fail counts and stores recent failures
+    for reporting at the end of a fuzzy test run.
+    """
+
+    def __init__(self, max_failure_history: int = 100):
+        self.start_time = time.time()
+        self.total_assertions = 0
+        self.assertions_passed = 0
+        self.assertions_failed = 0
+        self.total_patterns_executed = 0
+        self.patterns_by_name: dict[str, dict] = {}
+        self.failed_assertions: list[dict] = []
+        self.max_failure_history = max_failure_history
+        self.current_pattern_name: str | None = None
+
+    def set_current_pattern(self, pattern_name: str) -> None:
+        """Set the current pattern being executed."""
+        self.current_pattern_name = pattern_name
+        if pattern_name not in self.patterns_by_name:
+            self.patterns_by_name[pattern_name] = {
+                "count": 0,
+                "assertions_passed": 0,
+                "assertions_failed": 0,
+                "failure_messages": {},
+            }
+
+    def increment_pattern_count(self) -> None:
+        """Increment the count for the current pattern."""
+        if self.current_pattern_name:
+            self.patterns_by_name[self.current_pattern_name]["count"] += 1
+        self.total_patterns_executed += 1
+
+    def record_assertion(
+        self,
+        passed: bool,
+        description: str,
+        detail: str = "",
+        pattern_name: str | None = None,
+    ) -> None:
+        """Record an assertion result.
+
+        Args:
+            passed: Whether the assertion passed
+            description: Human-readable description of the assertion
+            detail: Additional detail about the assertion result
+            pattern_name: Name of the pattern this assertion belongs to
+        """
+        self.total_assertions += 1
+        pattern = pattern_name or self.current_pattern_name
+
+        if passed:
+            self.assertions_passed += 1
+            if pattern and pattern in self.patterns_by_name:
+                self.patterns_by_name[pattern]["assertions_passed"] += 1
+        else:
+            self.assertions_failed += 1
+            if pattern and pattern in self.patterns_by_name:
+                self.patterns_by_name[pattern]["assertions_failed"] += 1
+                # Track failure message frequency
+                failure_key = description[:80]  # Truncate for grouping
+                failure_msgs = self.patterns_by_name[pattern]["failure_messages"]
+                failure_msgs[failure_key] = failure_msgs.get(failure_key, 0) + 1
+
+            # Store recent failures for detailed reporting
+            if len(self.failed_assertions) < self.max_failure_history:
+                self.failed_assertions.append(
+                    {
+                        "pattern": pattern,
+                        "description": description,
+                        "detail": detail,
+                        "time": time.time() - self.start_time,
+                        "timestamp": time.strftime("%H:%M:%S"),
+                    }
+                )
+
+    def get_elapsed_time(self) -> float:
+        """Get elapsed time in seconds since tracking started."""
+        return time.time() - self.start_time
+
+    def get_pass_rate(self) -> float:
+        """Get overall assertion pass rate as a percentage."""
+        if self.total_assertions == 0:
+            return 100.0
+        return (self.assertions_passed / self.total_assertions) * 100
+
+    def get_summary(self) -> dict:
+        """Get a summary of all tracked results."""
+        return {
+            "elapsed_seconds": self.get_elapsed_time(),
+            "total_patterns_executed": self.total_patterns_executed,
+            "total_assertions": self.total_assertions,
+            "assertions_passed": self.assertions_passed,
+            "assertions_failed": self.assertions_failed,
+            "pass_rate": self.get_pass_rate(),
+            "patterns_by_name": self.patterns_by_name,
+            # Last 20 failures
+            "recent_failures": self.failed_assertions[-20:],
+        }
 
 
 class AssertStep(BaseStep):
@@ -34,6 +142,15 @@ class AssertStep(BaseStep):
         - left: "{{count}}"
           op: ">="
           right: 1
+
+    Non-blocking mode (for fuzzy testing):
+
+    - name: Assert values (non-blocking)
+      type: assert
+      non_blocking: true  # Don't stop workflow on failure
+      statements:
+        - statement: "is_set({{value}})"
+          message: "Value should be set"
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -52,6 +169,11 @@ class AssertStep(BaseStep):
             if isinstance(stmt, dict) and "statement" not in stmt:
                 raise ValueError(f"Statement #{idx+1} missing 'statement'")
 
+        # Validate non_blocking is boolean if provided
+        if "non_blocking" in self.config:
+            if not isinstance(self.config["non_blocking"], bool):
+                raise ValueError("'non_blocking' must be a boolean")
+
     async def execute(
         self,
         workflow_results: dict[str, Any],
@@ -64,10 +186,18 @@ class AssertStep(BaseStep):
             global_variables = {}
         if local_variables is None:
             local_variables = {}
+        # Check for non-blocking mode (used in fuzzy testing)
+        non_blocking = self.config.get("non_blocking", False)
+
+        # Get results tracker if available (for fuzzy test result aggregation)
+        results_tracker: FuzzyTestResultsTracker | None = dynamic_values.get(
+            "_fuzzy_test_results", None
+        )
 
         # Statement-only mode
         statements = self.config.get("statements", [])
         all_ok = True
+
         for idx, stmt in enumerate(statements, start=1):
             message = None
             if isinstance(stmt, dict):
@@ -76,7 +206,15 @@ class AssertStep(BaseStep):
             if not isinstance(stmt, str):
                 console.print(f"[red]✗ Invalid statement at #{idx}[/red]")
                 all_ok = False
+                # Record invalid statement as failure in tracker
+                if results_tracker is not None:
+                    results_tracker.record_assertion(
+                        passed=False,
+                        description=f"Invalid statement at #{idx}",
+                        detail="Statement must be a string",
+                    )
                 continue
+
             passed, detail = self._eval_statement(
                 stmt,
                 workflow_results,
@@ -85,11 +223,25 @@ class AssertStep(BaseStep):
                 local_variables,
             )
             description = message or f"Assertion #{idx}: {stmt}"
+
+            # Record result in tracker if available
+            if results_tracker is not None:
+                results_tracker.record_assertion(
+                    passed=passed,
+                    description=description,
+                    detail=detail,
+                )
+
             if passed:
                 console.print(f"[green]✓ {description}[/green]")
             else:
                 console.print(f"[red]✗ {description} failed[/red] {detail}")
                 all_ok = False
+
+        # In non-blocking mode, always return True to continue workflow
+        if non_blocking:
+            return True
+
         return all_ok
 
     def _evaluate(self, left: Any, op: str, right: Any) -> bool:

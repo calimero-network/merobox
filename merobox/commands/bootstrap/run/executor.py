@@ -1210,6 +1210,10 @@ class WorkflowExecutor:
             return RunWorkflowsStep(
                 step_config, manager=self.manager, parent_executor=self
             )
+        elif step_type == "fuzzy_test":
+            from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+
+            return FuzzyTestStep(step_config, manager=self.manager)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None
