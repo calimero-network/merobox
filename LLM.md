@@ -3,6 +3,7 @@
 ## What is Merobox?
 
 Merobox is a Python CLI tool for managing Calimero nodes in Docker containers. It provides:
+
 - Easy node lifecycle management (start, stop, list, health checks)
 - Application installation and execution on nodes
 - Identity and context management
@@ -129,6 +130,7 @@ merobox blob delete --node my-node --blob-id <blob-id> --yes
 ## Workflow System
 
 Merobox's most powerful feature is YAML-based workflow automation. Workflows allow you to:
+
 - Orchestrate multiple nodes
 - Automate complex testing scenarios
 - Manage multi-step deployments
@@ -235,6 +237,7 @@ steps:
 - Not supported with `count` mode
 
 **What gets enabled:**
+
 - **Traefik Proxy**: Routes traffic and applies authentication middleware
 - **Auth Service**: Handles authentication and authorization
 - **Protected Routes**: `/admin-api/`, `/jsonrpc`, `/ws` require authentication
@@ -242,11 +245,13 @@ steps:
 - **Auth Routes**: `/auth/login` for authentication
 
 **URL Access with Auth Service:**
+
 - Node URLs: `http://node1.127.0.0.1.nip.io`
 - Auth Login: `http://node1.127.0.0.1.nip.io/auth/login`
 - Admin Dashboard: `http://node1.127.0.0.1.nip.io/admin-dashboard`
 
 **Note:** Auth service can also be enabled via CLI flag:
+
 ```bash
 merobox bootstrap run workflow.yml --auth-service
 ```
@@ -256,6 +261,7 @@ merobox bootstrap run workflow.yml --auth-service
 ### Available Step Types
 
 #### 1. Install Application Step
+
 Install a WASM application on a node.
 
 ```yaml
@@ -267,6 +273,7 @@ Install a WASM application on a node.
 ```
 
 #### 2. Create Context Step
+
 Create a new context on a node.
 
 ```yaml
@@ -279,6 +286,7 @@ Create a new context on a node.
 ```
 
 #### 3. Create Identity Step
+
 Create a new identity for a node.
 
 ```yaml
@@ -290,6 +298,7 @@ Create a new identity for a node.
 ```
 
 #### 4. Join Context Step
+
 Join a node to a context using an invitation.
 
 ```yaml
@@ -302,6 +311,7 @@ Join a node to a context using an invitation.
 ```
 
 #### 5. Call Step
+
 Call a method on an application.
 
 ```yaml
@@ -318,6 +328,7 @@ Call a method on an application.
 ```
 
 #### 6. Wait Step
+
 Pause execution for a specified duration.
 
 ```yaml
@@ -326,6 +337,7 @@ Pause execution for a specified duration.
 ```
 
 #### 7. Repeat Step
+
 Loop through a sequence of steps multiple times.
 
 ```yaml
@@ -343,17 +355,111 @@ Loop through a sequence of steps multiple times.
       value: "output"
 ```
 
+#### 14. Fuzzy Test Step
+
+Run long-duration randomized load tests (30-60+ minutes) with weighted operation patterns and assertion-based validation.
+
+```yaml
+- type: fuzzy_test
+  duration_minutes: 30
+  context_id: "{{context_id}}"
+  success_threshold: 95.0 # Pass if 95%+ assertions succeed
+
+  nodes:
+    - name: calimero-node-1
+      executor_key: "{{member_public_key}}"
+    - name: calimero-node-2
+      executor_key: "{{public_key_node2}}"
+
+  operations:
+    # Pattern with 40% frequency
+    - name: "set_and_verify"
+      weight: 40
+      steps:
+        # Args auto-captured as {{fuzzy_key}}, {{fuzzy_value}}
+        - type: call
+          node: "{{random_node}}" # Random node
+          method: set
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "test_{{random_int(1, 1000)}}" # Random values
+            value: "{{uuid}}_{{timestamp}}"
+
+        - type: wait
+          seconds: 1
+
+        # Use auto-captured {{fuzzy_key}}
+        - type: call
+          node: "{{random_node}}"
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "{{fuzzy_key}}"
+          outputs:
+            retrieved: result
+
+        # Use auto-captured {{fuzzy_value}}
+        - type: assert
+          non_blocking: true # Don't stop on failure
+          statements:
+            - statement: "contains({{retrieved}}, {{fuzzy_value}})"
+              message: "Value should match"
+
+    # Cross-node test with 30% frequency
+    - name: "cross_node_sync"
+      weight: 30
+      steps:
+        - type: call
+          node: calimero-node-1
+          method: set
+          args:
+            key: "sync_{{random_int(1, 500)}}"
+            value: "{{timestamp}}"
+          # ... rest of pattern
+```
+
+**Random Generators Available:**
+
+- `{{random_int(min, max)}}` - Random integer
+- `{{random_string(length)}}` - Random string
+- `{{random_float(min, max)}}` - Random float
+- `{{random_choice([a, b, c])}}` - Random choice
+- `{{timestamp}}` - Unix timestamp
+- `{{uuid}}` - Random UUID
+- `{{random_node}}` - Random node from list
+- `{{random_executor}}` - Random executor key
+
+**Auto-Captured Arguments:**
+
+Call step arguments are automatically captured with `fuzzy_` prefix for use in subsequent steps:
+
+- `args.key` → `{{fuzzy_key}}`
+- `args.value` → `{{fuzzy_value}}`
+- `args.amount` → `{{fuzzy_amount}}`
+
+**Why Use Fuzzy Testing:**
+
+- Discover memory leaks over time
+- Find race conditions under load
+- Test data propagation reliability
+- Validate performance degradation
+- Stress test with realistic patterns
+
 #### 8. Script Step
+
 Execute shell scripts or commands.
 
 ```yaml
 - type: script
   description: "Execute setup script"
   script: "./scripts/setup.sh"
-  target: "image"  # or "nodes"
+  target: "image" # or "nodes"
 ```
 
 #### 9. Assertion Steps
+
 Validate execution results.
 
 ```yaml
@@ -372,6 +478,7 @@ Validate execution results.
 ```
 
 #### 10. Proposals
+
 Create and vote on proposals in a context.
 
 ```yaml
@@ -405,19 +512,21 @@ Create and vote on proposals in a context.
 ```
 
 #### 11. Blob Upload Step
+
 Upload files to blob storage in workflows.
 
 ```yaml
 - type: upload_blob
   node: node-1
   file_path: ./data/file.txt
-  context_id: "{{context_id}}"  # Optional
+  context_id: "{{context_id}}" # Optional
   outputs:
     blob_id: "blob_id"
     blob_size: "size"
 ```
 
 #### 12. Invite Open Step
+
 Create open invitations for contexts (allows anyone to join without prior approval).
 
 ```yaml
@@ -425,12 +534,13 @@ Create open invitations for contexts (allows anyone to join without prior approv
   node: node-1
   context_id: "{{context_id}}"
   granter_id: "{{admin_public_key}}"
-  valid_for_blocks: 1000  # Optional, defaults to 1000
+  valid_for_blocks: 1000 # Optional, defaults to 1000
   outputs:
     invitation: "invitation"
 ```
 
 #### 13. Join Open Step
+
 Join a context using an open invitation.
 
 ```yaml
@@ -448,6 +558,7 @@ Join a context using an open invitation.
 Workflows support dynamic variable substitution using `{{variable_name}}` syntax.
 
 ### Variable Sources
+
 1. **Step outputs**: Capture values from previous steps
 2. **Environment variables**: `{{env.MY_VAR}}`
 3. **Iteration variables**: In repeat loops `{{iteration}}`
@@ -768,6 +879,7 @@ steps:
 ## Workflow Best Practices
 
 ### 1. Use Descriptive Output Variables
+
 ```yaml
 # Good
 outputs:
@@ -781,6 +893,7 @@ outputs:
 ```
 
 ### 2. Add Wait Steps After Node Operations
+
 ```yaml
 - name: Join Context from Node 2
   type: join_context
@@ -790,10 +903,11 @@ outputs:
   invitation: "{{invitation}}"
 
 - type: wait
-  seconds: 2  # Allow node to fully sync
+  seconds: 2 # Allow node to fully sync
 ```
 
 ### 3. Use Assertions to Validate State
+
 ```yaml
 - type: call
   node: node-1
@@ -813,6 +927,7 @@ outputs:
 ```
 
 ### 4. Organize Complex Workflows with Scripts
+
 ```yaml
 - type: script
   description: "Setup environment"
@@ -823,6 +938,7 @@ outputs:
 ## Troubleshooting
 
 ### Node Won't Start
+
 ```bash
 # Check if ports are in use
 merobox list
@@ -835,6 +951,7 @@ docker ps
 ```
 
 ### Application Installation Fails
+
 ```bash
 # Verify WASM file exists
 ls -lh /path/to/app.wasm
@@ -847,6 +964,7 @@ merobox logs my-node --follow
 ```
 
 ### Workflow Execution Issues
+
 ```bash
 # Validate workflow syntax first
 merobox bootstrap validate workflow.yml
@@ -861,6 +979,7 @@ merobox bootstrap validate workflow.yml
 ### Common Workflow Errors
 
 **Missing Variable**: Variable not defined in outputs
+
 ```yaml
 # Fix: Ensure variable is captured
 outputs:
@@ -868,6 +987,7 @@ outputs:
 ```
 
 **Node Not Found**: Node name doesn't match running node
+
 ```bash
 # Check running nodes
 merobox list
@@ -876,6 +996,7 @@ merobox list
 ```
 
 **Context Sync Issues**: Nodes not synchronized
+
 ```yaml
 # Add wait steps after join operations
 - type: wait
@@ -885,6 +1006,7 @@ merobox list
 ## Advanced Features
 
 ### Environment Variables in Workflows
+
 ```yaml
 - type: call
   node: "{{env.NODE_NAME}}"
@@ -894,6 +1016,7 @@ merobox list
 ```
 
 ### JSON Assertions
+
 ```yaml
 - type: json_assert
   statements:
@@ -902,6 +1025,7 @@ merobox list
 ```
 
 ### Proposal-Based Governance
+
 ```yaml
 # Create proposal
 - type: call
@@ -943,18 +1067,71 @@ When asking an LLM to help with Merobox:
 5. **Include relevant YAML**: Share existing workflow snippets
 
 ### Example Request
+
 "I need a Merobox workflow that:
+
 - Starts 2 nodes
 - Installs a key-value store app
 - Has node-1 write a value
 - Has node-2 read and verify that value
 - Should include proper wait times for sync"
 
+## Fuzzy Load Testing
+
+Fuzzy load testing runs randomized operations for extended periods (30-60+ minutes) to discover issues that only appear under sustained load.
+
+### Quick Example
+
+```yaml
+- type: fuzzy_test
+  duration_minutes: 30
+  context_id: "{{context_id}}"
+  nodes:
+    - name: node-1
+      executor_key: "{{key1}}"
+    - name: node-2
+      executor_key: "{{key2}}"
+  operations:
+    - name: "write_and_read"
+      weight: 70 # 70% of operations
+      steps:
+        - type: call
+          node: "{{random_node}}"
+          method: set
+          args:
+            key: "k_{{random_int(1, 1000)}}"
+            value: "v_{{uuid}}"
+        - type: assert
+          non_blocking: true
+          statements:
+            - "is_set({{result}})"
+```
+
+### What Gets Tested
+
+- Memory leaks over time
+- Race conditions under load
+- Data propagation reliability
+- Performance degradation
+- Cross-node consistency
+
+### Key Features
+
+- **Application-agnostic**: Works with any contract
+- **Weighted patterns**: Control operation frequency (e.g., 70% reads, 30% writes)
+- **Non-blocking assertions**: Failures tracked but don't stop test
+- **Random generators**: `{{random_int()}}`, `{{uuid}}`, `{{timestamp}}`, etc.
+- **Live reporting**: Progress summaries every 60 seconds
+- **Final analysis**: Detailed report with pass rates and failure patterns
+
+See `workflow-examples/FUZZY-LOAD-TESTING.md` for complete guide.
+
 ## Resources
 
 - **GitHub**: https://github.com/calimero-network/merobox
 - **PyPI**: https://pypi.org/project/merobox/
 - **Examples**: Check `workflow-examples/` directory in the repository
+- **Fuzzy Testing**: `workflow-examples/workflow-fuzzy-kv-store.yml` and `FUZZY-LOAD-TESTING.md`
 - **Issues**: Report bugs or request features on GitHub
 
 ## Quick Reference
@@ -983,5 +1160,6 @@ repeat, script, assert, json_assert, upload_blob, invite_open, join_open
 # Workflow configuration options
 auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image, 
 restart, stop_all_nodes, log_level, rust_backtrace
+install_application, create_context, create_identity, join_context, call, wait,
+repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test
 ```
-

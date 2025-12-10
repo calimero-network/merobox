@@ -325,17 +325,17 @@ Both simple and complex output syntax are supported for error fields:
   expected_failure: true
   outputs:
     # Simple string assignment
-    error_code: error_code      # JSON-RPC error code
-    error_type: error_type      # Error type (e.g., "FunctionCallError")
+    error_code: error_code # JSON-RPC error code
+    error_type: error_type # Error type (e.g., "FunctionCallError")
     error_message: error_message # Error message
-    error: error                 # Full error object
+    error: error # Full error object
 
     # Complex dict-based assignment (also supported)
     custom_error:
       field: error_type
     custom_error_code:
       field: error_code
-      target: error_code_{node_name}  # Optional: custom target with node name
+      target: error_code_{node_name} # Optional: custom target with node name
 
 - name: "Assert Error Occurred"
   type: assert
@@ -425,6 +425,136 @@ Executes steps multiple times.
     iteration: "current_iteration"
 ```
 
+#### Fuzzy Test Step
+
+Runs long-duration randomized load tests with weighted operation patterns and assertion-based validation.
+
+```yaml
+- name: "Fuzzy Load Test"
+  type: "fuzzy_test"
+  duration_minutes: 30 # Run for 30 minutes
+  context_id: "{{context_id}}"
+  success_threshold: 95.0 # Pass if 95%+ assertions succeed
+
+  nodes:
+    - name: calimero-node-1
+      executor_key: "{{member_public_key}}"
+    - name: calimero-node-2
+      executor_key: "{{public_key_node2}}"
+
+  operations:
+    # Pattern 1: Write and verify (40% of operations)
+    - name: "set_and_verify"
+      weight: 40
+      steps:
+        # Resolved args auto-captured as {{fuzzy_key}}, {{fuzzy_value}}
+        - type: call
+          node: "{{random_node}}" # Random node selection
+          method: set
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "test_{{random_int(1, 1000)}}" # Random generators
+            value: "{{uuid}}_{{timestamp}}"
+
+        - type: wait
+          seconds: 1
+
+        # Use auto-captured {{fuzzy_key}}
+        - type: call
+          node: "{{random_node}}"
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "{{fuzzy_key}}"
+          outputs:
+            retrieved: result
+
+        # Use auto-captured {{fuzzy_value}}
+        - type: assert
+          non_blocking: true # Failures don't stop the test
+          statements:
+            - statement: "contains({{retrieved}}, {{fuzzy_value}})"
+              message: "Value should match"
+
+    # Pattern 2: Cross-node propagation test (30% of operations)
+    - name: "cross_node_sync"
+      weight: 30
+      steps:
+        # Args auto-captured as {{fuzzy_key}}, {{fuzzy_value}}
+        - type: call
+          node: calimero-node-1
+          method: set
+          context_id: "{{context_id}}"
+          executor_public_key: "{{member_public_key}}"
+          args:
+            key: "sync_{{random_int(1, 500)}}"
+            value: "{{timestamp}}"
+
+        - type: wait
+          seconds: 2 # Wait for propagation
+
+        # Use auto-captured {{fuzzy_key}}
+        - type: call
+          node: calimero-node-2
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{public_key_node2}}"
+          args:
+            key: "{{fuzzy_key}}"
+          outputs:
+            synced_value: result
+
+        # Use auto-captured {{fuzzy_value}}
+        - type: assert
+          non_blocking: true
+          statements:
+            - statement: "contains({{synced_value}}, {{fuzzy_value}})"
+              message: "Data should propagate across nodes"
+
+    # Pattern 3: Random reads (30% of operations)
+    - name: "random_read"
+      weight: 30
+      steps:
+        - type: call
+          node: "{{random_node}}"
+          method: get
+          context_id: "{{context_id}}"
+          executor_public_key: "{{random_executor}}"
+          args:
+            key: "test_{{random_int(1, 1000)}}"
+```
+
+**Random Value Generators:**
+
+- `{{random_int(min, max)}}` - Random integer
+- `{{random_string(length)}}` - Random alphanumeric string
+- `{{random_float(min, max)}}` - Random float
+- `{{random_choice([a, b, c])}}` - Random choice from list
+- `{{timestamp}}` - Current Unix timestamp
+- `{{uuid}}` - Random UUID
+- `{{random_node}}` - Random node from nodes list
+- `{{random_executor}}` - Random executor key
+
+**Auto-Captured Arguments:**
+
+When a `call` step executes, its resolved arguments are automatically captured with a `fuzzy_` prefix:
+
+- `args.key` → `{{fuzzy_key}}`
+- `args.value` → `{{fuzzy_value}}`
+- `args.amount` → `{{fuzzy_amount}}`
+
+This allows subsequent steps to reference the exact values used in previous calls for verification.
+
+**Features:**
+
+- **Application-agnostic**: Works with any smart contract
+- **Weighted patterns**: Control operation frequency
+- **Non-blocking assertions**: Track failures without stopping
+- **Live progress**: Periodic summaries every 60 seconds
+- **Detailed reporting**: Final report with pass rates and failure analysis
+
 #### Upload Blob Step
 
 Uploads files to blob storage and captures blob IDs for E2E testing.
@@ -497,6 +627,7 @@ outputs:
 - **Basic Workflow**: `workflow-examples/workflow-example.yml` - Complete example with dynamic variables
 - **Negative Testing**: `workflow-examples/workflow-negative-testing-example.yml` - Testing error scenarios with expected failures
 - **Assertions**: `workflow-examples/workflow-assert-example.yml` - Assertion and JSON assertion examples
+- **Fuzzy Load Testing**: `workflow-examples/workflow-fuzzy-kv-store.yml` - Long-running load test with randomized operations
 
 ### Export variables from execute (call) steps
 
