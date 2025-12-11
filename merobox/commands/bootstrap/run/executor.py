@@ -101,8 +101,24 @@ class WorkflowExecutor:
         # Workflow orchestration support
         self.parent_executor = parent_executor
         self.nesting_level = nesting_level
-        self.max_nesting_depth = config.get("max_workflow_nesting", 5)
-        self.workflow_timeout = config.get("workflow_timeout", 3600)
+        # Ensure max_nesting_depth is an integer (YAML might parse as string)
+        max_nesting_raw = config.get("max_workflow_nesting", 5)
+        try:
+            self.max_nesting_depth = int(max_nesting_raw)
+        except (ValueError, TypeError):
+            console.print(
+                f"[yellow]⚠️  Invalid max_workflow_nesting value '{max_nesting_raw}', using default 5[/yellow]"
+            )
+            self.max_nesting_depth = 5
+        # Ensure workflow_timeout is an integer (YAML might parse as string)
+        timeout_raw = config.get("workflow_timeout", 3600)
+        try:
+            self.workflow_timeout = int(timeout_raw)
+        except (ValueError, TypeError):
+            console.print(
+                f"[yellow]⚠️  Invalid workflow_timeout value '{timeout_raw}', using default 3600[/yellow]"
+            )
+            self.workflow_timeout = 3600
         self.near_devnet = near_devnet or config.get("near_devnet", False)
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 

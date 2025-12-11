@@ -73,11 +73,19 @@ class RunWorkflowStep(BaseStep):
         # Check nesting depth
         current_nesting = 0
         if parent_executor:
-            current_nesting = getattr(parent_executor, "nesting_level", 0) or 0
+            current_nesting_raw = getattr(parent_executor, "nesting_level", 0) or 0
+            try:
+                current_nesting = int(current_nesting_raw)
+            except (ValueError, TypeError):
+                current_nesting = 0
 
         max_nesting = 5  # Default
         if parent_executor:
-            max_nesting = getattr(parent_executor, "max_nesting_depth", 5) or 5
+            max_nesting_raw = getattr(parent_executor, "max_nesting_depth", 5) or 5
+            try:
+                max_nesting = int(max_nesting_raw)
+            except (ValueError, TypeError):
+                max_nesting = 5
 
         if current_nesting >= max_nesting:
             console.print(
@@ -214,11 +222,22 @@ class RunWorkflowStep(BaseStep):
             # Determine timeout: child config overrides parent, otherwise use parent or default
             timeout_seconds = child_config.get("workflow_timeout")
             if timeout_seconds is None and parent_executor:
-                timeout_seconds = (
-                    getattr(parent_executor, "workflow_timeout", 3600) or 3600
-                )
-            if timeout_seconds is None:
+                timeout_raw = getattr(parent_executor, "workflow_timeout", 3600) or 3600
+                try:
+                    timeout_seconds = int(timeout_raw)
+                except (ValueError, TypeError):
+                    timeout_seconds = 3600
+            elif timeout_seconds is None:
                 timeout_seconds = 3600  # Default 1 hour
+            else:
+                # Ensure timeout_seconds from child config is an integer (YAML might parse as string)
+                try:
+                    timeout_seconds = int(timeout_seconds)
+                except (ValueError, TypeError):
+                    console.print(
+                        f"[yellow]⚠️  Invalid workflow_timeout value '{timeout_seconds}', using default 3600s[/yellow]"
+                    )
+                    timeout_seconds = 3600
 
             console.print(
                 f"[cyan]🚀 Executing child workflow (nesting level {current_nesting + 1}, timeout: {timeout_seconds}s)...[/cyan]"
