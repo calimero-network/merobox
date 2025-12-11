@@ -53,6 +53,12 @@ class WorkflowExecutor:
         self.created_node_accounts = (
             {}
         )  # Track created node accounts: {node_name: creds}
+        # Lock to protect created_node_accounts from race conditions in parallel workflows
+        self._accounts_lock = (
+            parent_executor._accounts_lock
+            if parent_executor and hasattr(parent_executor, "_accounts_lock")
+            else asyncio.Lock()
+        )
 
         # Determine if we're in binary mode
         self.is_binary_mode = (
@@ -227,11 +233,14 @@ class WorkflowExecutor:
                         console.print(
                             "[green]✓ Using parent's NEAR Sandbox configuration[/green]"
                         )
-                    # Reuse parent's created node accounts
+                    # Reuse parent's created node accounts and lock
                     if hasattr(self.parent_executor, "created_node_accounts"):
                         self.created_node_accounts = (
                             self.parent_executor.created_node_accounts
                         )
+                        # Share the parent's lock to protect against race conditions
+                        if hasattr(self.parent_executor, "_accounts_lock"):
+                            self._accounts_lock = self.parent_executor._accounts_lock
                         console.print(
                             f"[green]✓ Reusing {len(self.created_node_accounts)} node account(s) from parent[/green]"
                         )
@@ -707,19 +716,24 @@ class WorkflowExecutor:
                     console.print("[green]✓ Using Near Devnet config [/green]")
                     for i in range(count):
                         node_name = f"{prefix}-{i+1}"
-                        # Check if account already exists (from parent or previous creation)
-                        if node_name in self.created_node_accounts:
-                            console.print(
-                                f"[green]✓ Reusing existing account '{node_name}'[/green]"
-                            )
-                            creds = self.created_node_accounts[node_name]
-                        else:
-                            console.print(
-                                f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
-                            )
-                            creds = await self.sandbox.create_node_account(node_name)
-                            # Store for reuse by child workflows
-                            self.created_node_accounts[node_name] = creds
+                        # Atomically check and create account to prevent race conditions
+                        async with self._accounts_lock:
+                            # Check if account already exists (from parent or previous creation)
+                            if node_name in self.created_node_accounts:
+                                console.print(
+                                    f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                                )
+                                creds = self.created_node_accounts[node_name]
+                            else:
+                                console.print(
+                                    f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
+                                )
+                                # Create account while holding lock to prevent duplicates
+                                creds = await self.sandbox.create_node_account(
+                                    node_name
+                                )
+                                # Store for reuse by child workflows
+                                self.created_node_accounts[node_name] = creds
                         node_near_config[node_name] = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
@@ -762,16 +776,21 @@ class WorkflowExecutor:
                     # NEAR Devnet Config Logic
                     node_near_config = None
                     if self.near_devnet:
-                        # Check if account already exists
-                        if node_name in self.created_node_accounts:
-                            console.print(
-                                f"[green]✓ Reusing existing account '{node_name}'[/green]"
-                            )
-                            creds = self.created_node_accounts[node_name]
-                        else:
-                            creds = await self.sandbox.create_node_account(node_name)
-                            # Store for reuse by child workflows
-                            self.created_node_accounts[node_name] = creds
+                        # Atomically check and create account to prevent race conditions
+                        async with self._accounts_lock:
+                            # Check if account already exists
+                            if node_name in self.created_node_accounts:
+                                console.print(
+                                    f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                                )
+                                creds = self.created_node_accounts[node_name]
+                            else:
+                                # Create account while holding lock to prevent duplicates
+                                creds = await self.sandbox.create_node_account(
+                                    node_name
+                                )
+                                # Store for reuse by child workflows
+                                self.created_node_accounts[node_name] = creds
                         node_near_config = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
@@ -835,17 +854,19 @@ class WorkflowExecutor:
 
             node_near_config = None
             if self.near_devnet:
-                # Check if account already exists
-                if node_name in self.created_node_accounts:
-                    console.print(
-                        f"[green]✓ Reusing existing account '{node_name}'[/green]"
-                    )
-                    creds = self.created_node_accounts[node_name]
-                else:
-                    # Create unique account for this node
-                    creds = await self.sandbox.create_node_account(node_name)
-                    # Store for reuse by child workflows
-                    self.created_node_accounts[node_name] = creds
+                # Atomically check and create account to prevent race conditions
+                async with self._accounts_lock:
+                    # Check if account already exists
+                    if node_name in self.created_node_accounts:
+                        console.print(
+                            f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                        )
+                        creds = self.created_node_accounts[node_name]
+                    else:
+                        # Create unique account for this node while holding lock
+                        creds = await self.sandbox.create_node_account(node_name)
+                        # Store for reuse by child workflows
+                        self.created_node_accounts[node_name] = creds
 
                 node_near_config = {
                     "rpc_url": self.near_config["rpc_url"],
