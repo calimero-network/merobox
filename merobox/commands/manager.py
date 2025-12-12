@@ -580,12 +580,15 @@ class DockerManager:
                         console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
                         return False
 
+                config_file = os.path.join(node_data_dir, "config.toml")
+
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
-                    config_file = os.path.join(node_data_dir, "config.toml")
-                    self._apply_e2e_defaults(
-                        config_file, node_name, workflow_id, bootstrap_nodes
-                    )
+                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+
+                # Apply bootstrap nodes configuration (works regardless of e2e_mode)
+                if bootstrap_nodes:
+                    self._apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
 
             except Exception as e:
                 console.print(
@@ -1421,12 +1424,49 @@ class DockerManager:
             )
             return False
 
+    def _apply_bootstrap_nodes(
+        self,
+        config_file: str,
+        node_name: str,
+        bootstrap_nodes: list[str],
+    ):
+        """Apply bootstrap nodes configuration."""
+        try:
+            from pathlib import Path
+
+            import toml
+
+            config_path = Path(config_file)
+            if not config_path.exists():
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+                return
+
+            with open(config_path) as f:
+                config = toml.load(f)
+
+            self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
+
+            with open(config_path, "w") as f:
+                toml.dump(config, f)
+
+            console.print(
+                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
+            )
+
+        except ImportError:
+            console.print(
+                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+            )
+        except Exception as e:
+            console.print(
+                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
+            )
+
     def _apply_e2e_defaults(
         self,
         config_file: str,
         node_name: str,
         workflow_id: str,
-        bootstrap_nodes: list[str] = None,
     ):
         """Apply e2e-style defaults for reliable testing."""
         try:
@@ -1450,8 +1490,8 @@ class DockerManager:
 
             # Apply e2e-style defaults for reliable testing
             e2e_config = {
-                # Use provided bootstrap nodes or empty list for test isolation
-                "bootstrap.nodes": bootstrap_nodes if bootstrap_nodes else [],
+                # Disable bootstrap nodes for test isolation
+                "bootstrap.nodes": [],
                 # Use unique rendezvous namespace per workflow (like e2e tests)
                 "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
                 # Keep mDNS as backup (like e2e tests)
