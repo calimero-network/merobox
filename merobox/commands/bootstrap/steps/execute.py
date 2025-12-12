@@ -78,11 +78,25 @@ class ExecuteStep(BaseStep):
         return []
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         node_name = self.config["node"]
         context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
+            self.config["context_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
         exec_type = self.config.get(
             "exec_type"
@@ -92,7 +106,7 @@ class ExecuteStep(BaseStep):
 
         # Resolve dynamic values in args recursively
         resolved_args = self._resolve_args_dynamic_values(
-            args, workflow_results, dynamic_values
+            args, workflow_results, dynamic_values, global_variables, local_variables
         )
 
         # Validate export configuration
@@ -104,7 +118,11 @@ class ExecuteStep(BaseStep):
         # Get executor public key from config or extract from context
         executor_public_key = (
             self._resolve_dynamic_value(
-                self.config.get("executor_public_key"), workflow_results, dynamic_values
+                self.config.get("executor_public_key"),
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
             )
             if self.config.get("executor_public_key")
             else None
@@ -538,24 +556,40 @@ class ExecuteStep(BaseStep):
         args: Any,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> Any:
         """Recursively resolve dynamic values in args dictionary or other data structures."""
         if isinstance(args, dict):
             resolved_args = {}
             for key, value in args.items():
                 resolved_args[key] = self._resolve_args_dynamic_values(
-                    value, workflow_results, dynamic_values
+                    value,
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 )
             return resolved_args
         elif isinstance(args, list):
             return [
                 self._resolve_args_dynamic_values(
-                    item, workflow_results, dynamic_values
+                    item,
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 )
                 for item in args
             ]
         elif isinstance(args, str):
-            return self._resolve_dynamic_value(args, workflow_results, dynamic_values)
+            return self._resolve_dynamic_value(
+                args,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
+            )
         else:
             return args
 

@@ -71,8 +71,18 @@ class JsonAssertStep(BaseStep):
                 raise ValueError(f"Statement #{idx+1} missing 'statement'")
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         # Statement-only mode
         statements = self.config.get("statements", [])
         all_ok = True
@@ -86,7 +96,11 @@ class JsonAssertStep(BaseStep):
                 all_ok = False
                 continue
             passed, desc, left_val, right_val = self._eval_statement(
-                stmt, workflow_results, dynamic_values
+                stmt,
+                workflow_results,
+                dynamic_values,
+                global_variables,
+                local_variables,
             )
             description = message or desc
             if passed:
@@ -121,7 +135,14 @@ class JsonAssertStep(BaseStep):
         statement: str,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> tuple[bool, str, Any, Any]:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
         """Evaluate a single JSON assertion statement.
 
         Supported forms:
@@ -151,14 +172,22 @@ class JsonAssertStep(BaseStep):
                 left_raw, right_raw = parts[0], parts[1]
                 left_val = (
                     self._resolve_dynamic_value(
-                        left_raw, workflow_results, dynamic_values
+                        left_raw,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
                     )
                     if isinstance(left_raw, str)
                     else left_raw
                 )
                 right_val = (
                     self._resolve_dynamic_value(
-                        right_raw, workflow_results, dynamic_values
+                        right_raw,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
                     )
                     if isinstance(right_raw, str)
                     else right_raw

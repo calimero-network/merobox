@@ -178,9 +178,19 @@ class FuzzyTestStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         """Execute the fuzzy load test."""
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         duration_minutes = self.config.get("duration_minutes", 30)
         duration_seconds = duration_minutes * 60
         summary_interval = self.config.get("summary_interval_seconds", 60)
@@ -189,7 +199,11 @@ class FuzzyTestStep(BaseStep):
 
         # Resolve context_id
         context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
+            self.config["context_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
 
         # Resolve node configurations
@@ -197,10 +211,18 @@ class FuzzyTestStep(BaseStep):
         for node_config in self.config["nodes"]:
             resolved_node = {
                 "name": self._resolve_dynamic_value(
-                    node_config["name"], workflow_results, dynamic_values
+                    node_config["name"],
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 ),
                 "executor_key": self._resolve_dynamic_value(
-                    node_config["executor_key"], workflow_results, dynamic_values
+                    node_config["executor_key"],
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 ),
             }
             nodes.append(resolved_node)
@@ -250,6 +272,8 @@ class FuzzyTestStep(BaseStep):
                     operation,
                     workflow_results,
                     dynamic_values,
+                    global_variables,
+                    local_variables,
                     iteration,
                 )
 
@@ -328,6 +352,8 @@ class FuzzyTestStep(BaseStep):
         operation: dict,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any],
+        local_variables: dict[str, Any],
         iteration: int,
     ) -> bool:
         """Execute a single operation pattern."""
@@ -364,7 +390,11 @@ class FuzzyTestStep(BaseStep):
 
             # Deep copy step config to avoid mutation
             resolved_step_config = self._resolve_step_config(
-                step_config, workflow_results, pattern_dynamic_values
+                step_config,
+                workflow_results,
+                pattern_dynamic_values,
+                global_variables,
+                local_variables,
             )
 
             # For call steps, capture resolved args for use in assertions
@@ -409,7 +439,10 @@ class FuzzyTestStep(BaseStep):
 
             try:
                 success = await step_executor.execute(
-                    workflow_results, pattern_dynamic_values
+                    workflow_results,
+                    pattern_dynamic_values,
+                    global_variables,
+                    local_variables,
                 )
                 if not success and step_type != "assert":
                     # Non-assertion step failed - log but continue
@@ -430,6 +463,8 @@ class FuzzyTestStep(BaseStep):
         step_config: dict,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any],
+        local_variables: dict[str, Any],
     ) -> dict:
         """Recursively resolve dynamic values and random generators in step config."""
         resolved = {}
@@ -439,18 +474,30 @@ class FuzzyTestStep(BaseStep):
                 # First resolve random generators, then dynamic values
                 resolved_value = self._resolve_random_generators(value)
                 resolved_value = self._resolve_dynamic_value(
-                    resolved_value, workflow_results, dynamic_values
+                    resolved_value,
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 )
                 resolved[key] = resolved_value
             elif isinstance(value, dict):
                 resolved[key] = self._resolve_step_config(
-                    value, workflow_results, dynamic_values
+                    value,
+                    workflow_results,
+                    dynamic_values,
+                    global_variables,
+                    local_variables,
                 )
             elif isinstance(value, list):
                 resolved[key] = [
                     (
                         self._resolve_step_config(
-                            item, workflow_results, dynamic_values
+                            item,
+                            workflow_results,
+                            dynamic_values,
+                            global_variables,
+                            local_variables,
                         )
                         if isinstance(item, dict)
                         else (
@@ -458,6 +505,8 @@ class FuzzyTestStep(BaseStep):
                                 self._resolve_random_generators(item),
                                 workflow_results,
                                 dynamic_values,
+                                global_variables,
+                                local_variables,
                             )
                             if isinstance(item, str)
                             else item

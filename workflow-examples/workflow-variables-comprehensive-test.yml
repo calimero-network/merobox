@@ -1,0 +1,218 @@
+description: Comprehensive test of all variable management and workflow orchestration features
+name: Variables and Orchestration Complete Test
+
+# Test: Top-level variables with all supported types
+variables:
+  string_var: "test_string"
+  number_var: 42
+  float_var: 3.14
+  bool_var: true
+  environment: "staging"
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Test 1: Install and setup
+  - name: Install App
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    variables:
+      inline_global: "set_at_runtime"
+      local:inline_local: "cleared_after_step"
+    outputs:
+      app_id: applicationId
+
+  # Test 2: Variable overwrite
+  - name: Create Context
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    variables:
+      string_var: "overwritten" # Overwrite top-level variable
+      new_var: "{{string_var}}_suffix" # Use variable in setting
+    outputs:
+      ctx_id: contextId
+      member_key: memberPublicKey
+
+  # Test 3: Explicit scope access and local variable usage
+  - name: Test Scope Access
+    type: create_identity
+    node: calimero-node-2
+    variables:
+      local:local_test: "local_value"
+      global:global_test: "{{global.string_var}}" # Explicit global access
+      scoped_combo: "env={{global.environment}},var={{global.string_var}}"
+    outputs:
+      node2_key: publicKey
+
+  # Test 4: Verify scopes and persistence
+  - name: Verify Scopes
+    type: assert
+    statements:
+      - "{{string_var}} == overwritten" # Overwrite worked
+      - "{{global.string_var}} == overwritten" # Explicit global access
+      - "is_set({{inline_global}})" # Global persists
+      - "is_set({{global_test}})" # Global from previous step
+      - "contains({{scoped_combo}}, staging)" # Explicit scope in value
+      - "{{environment}} == staging" # Top-level still accessible
+
+  # Test 5: Invite and join node-2 for testing
+  - name: Wait Before Invite
+    type: wait
+    seconds: 2
+
+  - name: Invite Node 2
+    type: invite_identity
+    node: calimero-node-1
+    context_id: "{{ctx_id}}"
+    grantee_id: "{{node2_key}}"
+    granter_id: "{{member_key}}"
+    capability: member
+    outputs:
+      invitation: invitation
+
+  - name: Join Context
+    type: join_context
+    node: calimero-node-2
+    context_id: "{{ctx_id}}"
+    invitee_id: "{{node2_key}}"
+    invitation: "{{invitation}}"
+
+  - name: Wait After Join
+    type: wait
+    seconds: 2
+
+  # Test 6: Repeat with local/global variables and actual data
+  - name: Repeat Test with Contract Calls
+    type: repeat
+    count: 2
+    outputs:
+      iter: iteration
+    steps:
+      - name: Set in Loop
+        type: call
+        node: calimero-node-1
+        context_id: "{{ctx_id}}"
+        executor_public_key: "{{member_key}}"
+        method: set
+        args:
+          key: "repeat_{{iter}}"
+          value: "iteration_{{iter}}_data"
+        variables:
+          local:loop_local: "{{iter}}"
+          global:loop_global: "{{iter}}"
+        outputs:
+          loop_result: result
+
+      - name: Wait in Loop
+        type: wait
+        seconds: 1
+
+  # Test 7: Verify repeat variables and data persistence
+  - name: Verify Repeat
+    type: call
+    node: calimero-node-2
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{node2_key}}"
+    method: get
+    args:
+      key: "repeat_{{loop_global}}" # Use global var set in loop
+    outputs:
+      repeat_verify: result
+
+  - name: Assert Repeat Results
+    type: assert
+    statements:
+      - "{{loop_global}} == 2" # Global persists outside loop
+      - "{{iter}} == 2"
+      - "is_set({{repeat_verify}})" # Data was actually written
+
+  # Test 9: run_workflow with inputs/outputs
+  - name: Test Run Workflow
+    type: run_workflow
+    workflow_path: ./workflow-examples/orchestration/test-execution-workflow.yml
+    inputs:
+      context_id: "{{ctx_id}}"
+      member_public_key: "{{member_key}}"
+      test_key: "orchestration_test"
+      test_value: "orchestrated"
+    outputs:
+      child_test_result: test_result
+    variables:
+      workflow_run_completed: true
+
+  # Test 10: run_workflows parallel
+  - name: Test Parallel Workflows
+    type: run_workflows
+    mode: parallel
+    fail_fast: false
+    workflows:
+      - path: ./workflow-examples/orchestration/test-execution-workflow.yml
+        inputs:
+          context_id: "{{ctx_id}}"
+          member_public_key: "{{member_key}}"
+          test_key: "parallel_1"
+          test_value: "p1"
+      - path: ./workflow-examples/orchestration/test-execution-workflow.yml
+        inputs:
+          context_id: "{{ctx_id}}"
+          member_public_key: "{{member_key}}"
+          test_key: "parallel_2"
+          test_value: "p2"
+
+  # Test 11: Verify parallel workflow data was written
+  - name: Verify Parallel Data
+    type: call
+    node: calimero-node-1
+    context_id: "{{ctx_id}}"
+    executor_public_key: "{{member_key}}"
+    method: get
+    args:
+      key: "parallel_1"
+    outputs:
+      parallel_1_data: result
+
+  # Test 12: Verify workflow counts and results
+  - name: Verify Workflow Execution Stats
+    type: assert
+    statements:
+      - "{{workflows_success_count}} == 2"
+      - "{{workflows_failure_count}} == 0"
+      - "{{workflows_total_count}} == 2"
+      - "is_set({{parallel_1_data}})"
+
+  # Test 13: Final comprehensive verification
+  - name: Final Comprehensive Verification
+    type: assert
+    statements:
+      # Top-level variables (all types)
+      - "{{number_var}} == 42"
+      - "{{float_var}} == 3.14"
+      - "is_set({{bool_var}})"
+      - "{{environment}} == staging"
+      # Inline variables persist
+      - "{{inline_global}} == set_at_runtime"
+      - "contains({{new_var}}, overwritten_suffix)"
+      # Variable overwrites work
+      - "{{string_var}} == overwritten"
+      - "is_set({{global_test}})"
+      # Repeat variables persist globally
+      - "{{loop_global}} == 2"
+      - "{{iter}} == 2"
+      # Orchestration outputs captured
+      - "is_set({{workflow_run_completed}})"
+      - "is_set({{child_test_result}})"
+      # Parallel execution verified with actual data
+      - "is_set({{parallel_1_data}})"
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 90
+near_devnet: true
+contracts_dir: contracts/near

@@ -27,14 +27,24 @@ class ScriptStep(BaseStep):
         self.script_args = config.get("args", [])
 
     def _resolve_script_args(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> list[str]:
         """Resolve placeholders in script arguments using BaseStep resolver."""
         resolved: list[str] = []
         for arg in self.script_args:
             if isinstance(arg, str):
                 resolved.append(
-                    self._resolve_dynamic_value(arg, workflow_results, dynamic_values)
+                    self._resolve_dynamic_value(
+                        arg,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
                 )
         return resolved
 
@@ -118,9 +128,19 @@ class ScriptStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         """Execute the script step."""
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         if not self.script_path:
             console.print("[red]❌ Script path not specified[/red]")
             return False
@@ -138,7 +158,9 @@ class ScriptStep(BaseStep):
         console.print(f"\n[bold blue]📜 {self.description}[/bold blue]")
 
         # Resolve script args now so all execution targets use the same values
-        resolved_args = self._resolve_script_args(workflow_results, dynamic_values)
+        resolved_args = self._resolve_script_args(
+            workflow_results, dynamic_values, global_variables, local_variables
+        )
 
         if self.target == "image":
             return await self._execute_on_image(

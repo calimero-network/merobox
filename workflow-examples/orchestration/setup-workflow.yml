@@ -1,0 +1,61 @@
+description: Child workflow for setting up application and context
+name: Setup Workflow
+
+# Variables can be passed from parent or defined here
+variables:
+  node_prefix: calimero-node
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Install application
+  - name: Install Application
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    variables:
+      install_status: "completed"
+    outputs:
+      app_id: applicationId
+
+  # Create context
+  - name: Create Context
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    variables:
+      context_created: true
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Create identity on second node
+  - name: Create Identity
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      second_node_key: publicKey
+
+  # Wait for identity
+  - name: Wait for Identity
+    type: wait
+    seconds: 2
+
+  # Set success flag
+  - name: Mark Setup Complete
+    type: wait
+    seconds: 1
+    variables:
+      setup_complete: true
+      setup_timestamp: "2024-12-03"
+
+stop_all_nodes: false
+restart: false
+wait_timeout: 60
+near_devnet: true
+contracts_dir: contracts/near
