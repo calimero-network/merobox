@@ -81,6 +81,9 @@ class WorkflowExecutor:
         # E2E mode can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.e2e_mode = e2e_mode or config.get("e2e_mode", False)
 
+        # Bootstrap nodes can be specified in workflow config to override e2e_mode's empty default
+        self.bootstrap_nodes = config.get("bootstrap_nodes", None)
+
         # Generate unique workflow ID for test isolation (like e2e tests)
         import uuid
 
@@ -510,6 +513,7 @@ class WorkflowExecutor:
                     workflow_id=self.workflow_id,
                     e2e_mode=self.e2e_mode,
                     near_devnet_config=node_near_config,
+                    bootstrap_nodes=self.bootstrap_nodes,
                 ):
                     return False
             else:
@@ -556,6 +560,7 @@ class WorkflowExecutor:
                         workflow_id=self.workflow_id,
                         e2e_mode=self.e2e_mode,
                         near_devnet_config=node_near_config,
+                        bootstrap_nodes=self.bootstrap_nodes,
                     ):
                         return False
 
@@ -637,7 +642,9 @@ class WorkflowExecutor:
                         self.rust_backtrace,
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
+                        e2e_mode=self.e2e_mode,
                         near_devnet_config=node_near_config,
+                        bootstrap_nodes=self.bootstrap_nodes,
                     ):
                         return False
                 else:
@@ -662,7 +669,9 @@ class WorkflowExecutor:
                     self.rust_backtrace,
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
+                    e2e_mode=self.e2e_mode,
                     near_devnet_config=node_near_config,
+                    bootstrap_nodes=self.bootstrap_nodes,
                 ):
                     return False
 

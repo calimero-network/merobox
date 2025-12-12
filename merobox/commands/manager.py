@@ -292,6 +292,7 @@ class DockerManager:
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,
+        bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -582,7 +583,9 @@ class DockerManager:
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
                     config_file = os.path.join(node_data_dir, "config.toml")
-                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+                    self._apply_e2e_defaults(
+                        config_file, node_name, workflow_id, bootstrap_nodes
+                    )
 
             except Exception as e:
                 console.print(
@@ -1040,6 +1043,7 @@ class DockerManager:
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,
+        bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1091,6 +1095,7 @@ class DockerManager:
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
                 near_devnet_config=node_specific_near_config,
+                bootstrap_nodes=bootstrap_nodes,
             ):
                 success_count += 1
             else:
@@ -1416,7 +1421,13 @@ class DockerManager:
             )
             return False
 
-    def _apply_e2e_defaults(self, config_file: str, node_name: str, workflow_id: str):
+    def _apply_e2e_defaults(
+        self,
+        config_file: str,
+        node_name: str,
+        workflow_id: str,
+        bootstrap_nodes: list[str] = None,
+    ):
         """Apply e2e-style defaults for reliable testing."""
         try:
             import uuid
@@ -1439,8 +1450,8 @@ class DockerManager:
 
             # Apply e2e-style defaults for reliable testing
             e2e_config = {
-                # Disable bootstrap nodes for test isolation (like e2e tests)
-                "bootstrap.nodes": [],
+                # Use provided bootstrap nodes or empty list for test isolation
+                "bootstrap.nodes": bootstrap_nodes if bootstrap_nodes else [],
                 # Use unique rendezvous namespace per workflow (like e2e tests)
                 "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
                 # Keep mDNS as backup (like e2e tests)
