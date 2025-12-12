@@ -293,43 +293,59 @@ class RepeatStep(BaseStep):
                         )
 
     def _export_timing_variables(self, dynamic_values: dict[str, Any]) -> None:
-        """Export timing variables based on custom outputs configuration."""
+        """Export variables based on custom outputs configuration."""
         outputs_config = self.config.get("outputs", {})
         if not outputs_config:
             return
 
-        timing_variables = [
+        timing_variables = {
             "duration_seconds",
             "duration_ms",
             "duration_ns",
             "throughput_ops_per_sec",
             "avg_time_per_op_ms",
-        ]
+        }
 
         for export_name, export_config in outputs_config.items():
             if isinstance(export_config, str):
                 # Simple field assignment (e.g., duration: duration_seconds)
                 source_field = export_config
-                if source_field in timing_variables and source_field in dynamic_values:
+                if source_field in dynamic_values:
                     source_value = dynamic_values[source_field]
                     dynamic_values[export_name] = source_value
+                    # Use "Timing export" label for known timing variables, "Export" for others
+                    label = (
+                        "Timing export"
+                        if source_field in timing_variables
+                        else "Export"
+                    )
                     console.print(
-                        f"  📝 Timing export: {source_field} → {export_name}: {source_value}"
+                        f"  📝 {label}: {source_field} → {export_name}: {source_value}"
+                    )
+                else:
+                    console.print(
+                        f"[yellow]⚠️  Warning: Source field '{source_field}' not found in dynamic values for export '{export_name}'[/yellow]"
                     )
             elif isinstance(export_config, dict):
                 # Complex field assignment with node name replacement
                 source_field = export_config.get("field")
                 target_template = export_config.get("target")
                 if source_field and target_template and "node_name" in target_template:
-                    if (
-                        source_field in timing_variables
-                        and source_field in dynamic_values
-                    ):
+                    if source_field in dynamic_values:
                         source_value = dynamic_values[source_field]
                         # For repeat steps, we don't have node names, so just use the source value
                         dynamic_values[export_name] = source_value
+                        label = (
+                            "Timing export"
+                            if source_field in timing_variables
+                            else "Export"
+                        )
                         console.print(
-                            f"  📝 Timing export: {source_field} → {export_name}: {source_value}"
+                            f"  📝 {label}: {source_field} → {export_name}: {source_value}"
+                        )
+                    else:
+                        console.print(
+                            f"[yellow]⚠️  Warning: Source field '{source_field}' not found in dynamic values for export '{export_name}'[/yellow]"
                         )
 
     def _create_nested_step_executor(self, step_type: str, step_config: dict[str, Any]):
