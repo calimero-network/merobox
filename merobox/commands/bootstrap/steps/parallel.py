@@ -72,6 +72,18 @@ class ParallelStep(BaseStep):
                     f"Step '{step_name}': Group {i+1} 'steps' list cannot be empty"
                 )
 
+            # Validate count field if provided (optional, defaults to 1)
+            if "count" in group:
+                count = group.get("count")
+                if not isinstance(count, int):
+                    raise ValueError(
+                        f"Step '{step_name}': Group {i+1} 'count' must be an integer"
+                    )
+                if count <= 0:
+                    raise ValueError(
+                        f"Step '{step_name}': Group {i+1} 'count' must be a positive integer"
+                    )
+
     def _get_exportable_variables(self):
         """
         Define which variables this step can export.
