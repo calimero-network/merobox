@@ -1123,9 +1123,6 @@ class WorkflowExecutor:
             )
 
             try:
-                # Process inline variables before step execution
-                self._process_inline_variables(step)
-
                 # Create appropriate step executor
                 step_executor = self._create_step_executor(step_type, step)
                 if not step_executor:
@@ -1145,6 +1142,9 @@ class WorkflowExecutor:
                     return False
 
                 console.print(f"[green]✓ Step '{step_name}' completed[/green]")
+
+                # Process inline variables after successful step execution
+                self._process_inline_variables(step)
 
                 self._clear_local_variables()
             except Exception as e:
