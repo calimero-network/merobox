@@ -2,6 +2,7 @@
 Repeat step executor for executing nested steps multiple times.
 """
 
+import time
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -71,6 +72,11 @@ class RepeatStep(BaseStep):
         - total_iterations: Total number of iterations
         - current_step: Current step being executed
         - step_count: Total number of nested steps
+        - duration_seconds: Total execution time in seconds (float)
+        - duration_ms: Total execution time in milliseconds (float)
+        - duration_ns: Total execution time in nanoseconds (int)
+        - throughput_ops_per_sec: Operations per second (count / duration_seconds)
+        - avg_time_per_op_ms: Average time per operation in milliseconds
         """
         return [
             ("iteration", "iteration", "Current iteration number (1-based)"),
@@ -88,6 +94,27 @@ class RepeatStep(BaseStep):
             ("total_iterations", "total_iterations", "Total number of iterations"),
             ("current_step", "current_step", "Current step being executed"),
             ("step_count", "step_count", "Total number of nested steps"),
+            (
+                "duration_seconds",
+                "duration_seconds",
+                "Total execution time in seconds (float)",
+            ),
+            (
+                "duration_ms",
+                "duration_ms",
+                "Total execution time in milliseconds (float)",
+            ),
+            ("duration_ns", "duration_ns", "Total execution time in nanoseconds (int)"),
+            (
+                "throughput_ops_per_sec",
+                "throughput_ops_per_sec",
+                "Operations per second (count / duration_seconds)",
+            ),
+            (
+                "avg_time_per_op_ms",
+                "avg_time_per_op_ms",
+                "Average time per operation in milliseconds",
+            ),
         ]
 
     async def execute(
@@ -116,6 +143,9 @@ class RepeatStep(BaseStep):
         console.print(
             f"[blue]📝 Exported repeat configuration: total_iterations={repeat_count}, step_count={len(nested_steps)}[/blue]"
         )
+
+        # Track timing for throughput calculation
+        start_time = time.perf_counter()  # Use perf_counter for better precision
 
         for iteration in range(repeat_count):
             console.print(
@@ -179,9 +209,44 @@ class RepeatStep(BaseStep):
                     )
                     return False
 
+        # Calculate duration and throughput
+        end_time = time.perf_counter()
+        duration_seconds = end_time - start_time
+        duration_ms = duration_seconds * 1000.0
+        duration_ns = int(duration_seconds * 1_000_000_000)
+
+        if duration_seconds > 0:
+            throughput_ops_per_sec = repeat_count / duration_seconds
+            avg_time_per_op_ms = duration_ms / repeat_count
+        else:
+            throughput_ops_per_sec = 0.0
+            avg_time_per_op_ms = 0.0
+
+        # Export timing metrics to dynamic_values
+        dynamic_values["duration_seconds"] = round(duration_seconds, 6)
+        dynamic_values["duration_ms"] = round(duration_ms, 3)
+        dynamic_values["duration_ns"] = duration_ns
+        dynamic_values["throughput_ops_per_sec"] = round(throughput_ops_per_sec, 2)
+        dynamic_values["avg_time_per_op_ms"] = round(avg_time_per_op_ms, 3)
+
+        # Export timing variables based on custom outputs configuration
+        self._export_timing_variables(dynamic_values)
+
+        # Log timing information
         console.print(
             f"[green]✓ All {repeat_count} iterations completed successfully[/green]"
         )
+        console.print("[blue]⏱️  Timing Metrics:[/blue]")
+        console.print(
+            f"  [cyan]Duration:[/cyan] {duration_seconds:.3f} seconds ({duration_ms:.2f} ms, {duration_ns:,} ns)"
+        )
+        console.print(
+            f"  [cyan]Throughput:[/cyan] {throughput_ops_per_sec:.2f} operations/second"
+        )
+        console.print(
+            f"  [cyan]Average Latency:[/cyan] {avg_time_per_op_ms:.3f} milliseconds/operation"
+        )
+
         return True
 
     def _export_iteration_variables(
@@ -225,6 +290,46 @@ class RepeatStep(BaseStep):
                     else:
                         console.print(
                             f"[yellow]Warning: Source field {source_field} not found in dynamic values[/yellow]"
+                        )
+
+    def _export_timing_variables(self, dynamic_values: dict[str, Any]) -> None:
+        """Export timing variables based on custom outputs configuration."""
+        outputs_config = self.config.get("outputs", {})
+        if not outputs_config:
+            return
+
+        timing_variables = [
+            "duration_seconds",
+            "duration_ms",
+            "duration_ns",
+            "throughput_ops_per_sec",
+            "avg_time_per_op_ms",
+        ]
+
+        for export_name, export_config in outputs_config.items():
+            if isinstance(export_config, str):
+                # Simple field assignment (e.g., duration: duration_seconds)
+                source_field = export_config
+                if source_field in timing_variables and source_field in dynamic_values:
+                    source_value = dynamic_values[source_field]
+                    dynamic_values[export_name] = source_value
+                    console.print(
+                        f"  📝 Timing export: {source_field} → {export_name}: {source_value}"
+                    )
+            elif isinstance(export_config, dict):
+                # Complex field assignment with node name replacement
+                source_field = export_config.get("field")
+                target_template = export_config.get("target")
+                if source_field and target_template and "node_name" in target_template:
+                    if (
+                        source_field in timing_variables
+                        and source_field in dynamic_values
+                    ):
+                        source_value = dynamic_values[source_field]
+                        # For repeat steps, we don't have node names, so just use the source value
+                        dynamic_values[export_name] = source_value
+                        console.print(
+                            f"  📝 Timing export: {source_field} → {export_name}: {source_value}"
                         )
 
     def _create_nested_step_executor(self, step_type: str, step_config: dict[str, Any]):

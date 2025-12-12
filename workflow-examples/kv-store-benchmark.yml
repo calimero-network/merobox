@@ -1,0 +1,305 @@
+name: KV Store Benchmark - Throughput Testing
+description: Throughput testing for KV Store operations using timing metrics
+
+force_pull_image: true
+near_devnet: true
+contracts_dir: contracts/near
+
+nodes:
+  chain_id: testnet-1
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: benchmark-node
+
+steps:
+  # SETUP
+
+  - name: Install KV Store Application
+    type: install_application
+    node: benchmark-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Context
+    type: create_context
+    node: benchmark-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # BASIC SET/GET BENCHMARKS
+
+  - name: KV Store Set Throughput Test (100 ops)
+    type: repeat
+    count: 100
+    outputs:
+      iteration: iteration
+      kv_set_duration: duration_seconds
+      kv_set_throughput: throughput_ops_per_sec
+      kv_set_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: Set Key-Value
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: set
+        args:
+          key: "benchmark_key_{{iteration}}"
+          value: "benchmark_value_{{iteration}}"
+        outputs:
+          set_result: result
+
+  - name: KV Store Get Throughput Test (100 ops)
+    type: repeat
+    count: 100
+    outputs:
+      iteration: iteration
+      kv_get_duration: duration_seconds
+      kv_get_throughput: throughput_ops_per_sec
+      kv_get_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: Get Key-Value
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: get
+        args:
+          key: "benchmark_key_{{iteration}}"
+        outputs:
+          get_result: result
+
+  # LARGE VALUE BENCHMARKS
+
+  - name: KV Store Set Large Value Throughput Test (50 ops)
+    type: repeat
+    count: 50
+    outputs:
+      iteration: iteration
+      kv_set_large_duration: duration_seconds
+      kv_set_large_throughput: throughput_ops_per_sec
+      kv_set_large_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: Set Large Value
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: set
+        args:
+          key: "large_key_{{iteration}}"
+          value: "This is a large value for benchmarking purposes. It contains multiple words and should test the system's ability to handle larger data sizes. Iteration number {{iteration}} with some additional padding text to make it even larger."
+        outputs:
+          set_large_result: result
+
+  - name: KV Store Get Large Value Throughput Test (50 ops)
+    type: repeat
+    count: 50
+    outputs:
+      iteration: iteration
+      kv_get_large_duration: duration_seconds
+      kv_get_large_throughput: throughput_ops_per_sec
+      kv_get_large_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: Get Large Value
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: get
+        args:
+          key: "large_key_{{iteration}}"
+        outputs:
+          get_large_result: result
+
+  # MIXED OPERATIONS BENCHMARKS
+
+  - name: KV Store Mixed Operations Test (100 ops)
+    type: repeat
+    count: 100
+    outputs:
+      iteration: iteration
+      kv_mixed_duration: duration_seconds
+      kv_mixed_throughput: throughput_ops_per_sec
+      kv_mixed_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: Set in Mixed Test
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: set
+        args:
+          key: "mixed_key_{{iteration}}"
+          value: "mixed_value_{{iteration}}"
+        outputs:
+          mixed_set_result: result
+
+      - name: Get in Mixed Test
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: get
+        args:
+          key: "mixed_key_{{iteration}}"
+        outputs:
+          mixed_get_result: result
+
+  # SEQUENTIAL SET/GET PATTERN BENCHMARKS
+
+  - name: KV Store Sequential Pattern Test (75 ops)
+    type: repeat
+    count: 75
+    outputs:
+      iteration: iteration
+      kv_sequential_duration: duration_seconds
+      kv_sequential_throughput: throughput_ops_per_sec
+      kv_sequential_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: Sequential Set
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: set
+        args:
+          key: "seq_key_{{iteration}}"
+          value: "seq_value_{{iteration}}"
+
+      - name: Wait Between Operations
+        type: wait
+        seconds: 1
+
+      - name: Sequential Get
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: get
+        args:
+          key: "seq_key_{{iteration}}"
+
+  # HIGH-FREQUENCY BENCHMARKS
+
+  - name: KV Store High Frequency Set Test (200 ops)
+    type: repeat
+    count: 200
+    outputs:
+      iteration: iteration
+      kv_high_freq_set_duration: duration_seconds
+      kv_high_freq_set_throughput: throughput_ops_per_sec
+      kv_high_freq_set_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: High Frequency Set
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: set
+        args:
+          key: "hf_key_{{iteration}}"
+          value: "hf_val_{{iteration}}"
+        outputs:
+          hf_set_result: result
+
+  - name: KV Store High Frequency Get Test (200 ops)
+    type: repeat
+    count: 200
+    outputs:
+      iteration: iteration
+      kv_high_freq_get_duration: duration_seconds
+      kv_high_freq_get_throughput: throughput_ops_per_sec
+      kv_high_freq_get_avg_latency: avg_time_per_op_ms
+    steps:
+      - name: High Frequency Get
+        type: call
+        node: benchmark-node-1
+        context_id: "{{context_id}}"
+        executor_public_key: "{{member_public_key}}"
+        method: get
+        args:
+          key: "hf_key_{{iteration}}"
+        outputs:
+          hf_get_result: result
+
+  # PARALLEL LOAD TEST - Demonstrates concurrent execution of multiple operations
+  - name: Parallel Load Test - KV Store Set + Get
+    type: parallel
+    mode: burst
+    groups:
+      - name: Parallel_Set_Operations
+        count: 50
+        steps:
+          - name: Parallel Set
+            type: call
+            node: benchmark-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "parallel_set_key_{{iteration}}"
+              value: "parallel_set_value_{{iteration}}"
+      - name: Parallel_Get_Operations
+        count: 50
+        steps:
+          - name: Parallel Get
+            type: call
+            node: benchmark-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: get
+            args:
+              key: "benchmark_key_{{iteration}}"
+    outputs:
+      parallel_set_duration: Parallel_Set_Operations_duration_seconds
+      parallel_get_duration: Parallel_Get_Operations_duration_seconds
+      overall_parallel_duration: overall_duration_seconds
+
+  # GENERATE BENCHMARK REPORT (after all benchmarks including parallel)
+
+  - name: Generate Benchmark Timing Report
+    type: script
+    target: local
+    description: Generate formatted benchmark timing report
+    script: ./workflow-examples/scripts/generate-benchmark-report.sh
+    args:
+      - "--output-file"
+      - "./kv-store-benchmark-report.txt"
+
+  # VERIFY RESULTS
+
+  - name: Verify Benchmark Completed
+    type: call
+    node: benchmark-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: get
+    args:
+      key: "benchmark_key_1"
+    outputs:
+      verify_result: result
+
+  - name: Assert Benchmarks Completed
+    type: assert
+    statements:
+      - "is_set({{verify_result}})"
+      - "is_set({{kv_set_throughput}})"
+      - "is_set({{kv_get_throughput}})"
+      - "is_set({{kv_set_large_throughput}})"
+      - "is_set({{kv_get_large_throughput}})"
+      - "is_set({{kv_mixed_throughput}})"
+      - "is_set({{kv_sequential_throughput}})"
+      - "is_set({{kv_high_freq_set_throughput}})"
+      - "is_set({{kv_high_freq_get_throughput}})"
+      - "is_set({{parallel_set_duration}})"
+      - "is_set({{parallel_get_duration}})"
+      - "is_set({{overall_parallel_duration}})"
+
+stop_all_nodes: true
+restart: true
+wait_timeout: 300

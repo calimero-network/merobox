@@ -18,6 +18,7 @@ from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
     GetProposalStep,
@@ -122,6 +123,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = WaitStep
         elif step_type == "repeat":
             step_class = RepeatStep
+        elif step_type == "parallel":
+            step_class = ParallelStep
         elif step_type == "script":
             step_class = ScriptStep
         elif step_type == "assert":
