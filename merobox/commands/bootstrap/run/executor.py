@@ -779,6 +779,12 @@ class WorkflowExecutor:
         if step.get("type") == "repeat":
             for nested_step in step.get("steps") or []:
                 node_refs.update(self._extract_node_references_from_step(nested_step))
+        elif step.get("type") == "parallel":
+            for group in step.get("groups") or []:
+                for nested_step in group.get("steps") or []:
+                    node_refs.update(
+                        self._extract_node_references_from_step(nested_step)
+                    )
 
         return node_refs
 
@@ -915,6 +921,10 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import RepeatStep
 
             return RepeatStep(step_config, manager=self.manager)
+        elif step_type == "parallel":
+            from merobox.commands.bootstrap.steps import ParallelStep
+
+            return ParallelStep(step_config, manager=self.manager)
         elif step_type == "script":
             from merobox.commands.bootstrap.steps import ScriptStep
 
