@@ -206,17 +206,6 @@ class RepeatStep(BaseStep):
                 )
 
                 try:
-                    # Process inline variables for nested step before execution
-                    if "variables" in step:
-                        self._process_nested_inline_variables(
-                            step,
-                            workflow_results,
-                            iteration_dynamic_values,
-                            global_variables,
-                            iteration_local_variables,
-                            original_dynamic_values,  # Pass original for backward compat
-                        )
-
                     # Create appropriate step executor for the nested step
                     step_executor = self._create_nested_step_executor(step_type, step)
                     if not step_executor:
@@ -242,6 +231,17 @@ class RepeatStep(BaseStep):
                     console.print(
                         f"  [green]✓ Nested step '{nested_step_name}' completed in iteration {iteration + 1}[/green]"
                     )
+
+                    # Process inline variables for nested step after successful execution
+                    if "variables" in step:
+                        self._process_nested_inline_variables(
+                            step,
+                            workflow_results,
+                            iteration_dynamic_values,
+                            global_variables,
+                            iteration_local_variables,
+                            original_dynamic_values,  # Pass original for backward compat
+                        )
 
                 except Exception as e:
                     console.print(
