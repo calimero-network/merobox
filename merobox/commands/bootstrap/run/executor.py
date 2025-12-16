@@ -1216,7 +1216,6 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import RepeatStep
 
             return RepeatStep(step_config, manager=self.manager, parent_executor=self)
-            return RepeatStep(step_config, manager=self.manager)
         elif step_type == "parallel":
             from merobox.commands.bootstrap.steps import ParallelStep
 
