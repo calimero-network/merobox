@@ -134,6 +134,7 @@ class BinaryManager:
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,  # Enable NEAR Devnet
+        bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -237,11 +238,18 @@ class BinaryManager:
                         console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                         return False
 
+            # The actual config file is in a nested subdirectory created by merod init
+            actual_config_file = node_data_dir / node_name / "config.toml"
+
             # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
             if e2e_mode:
-                # The actual config file is in a nested subdirectory created by merod init
-                actual_config_file = node_data_dir / node_name / "config.toml"
                 self._apply_e2e_defaults(actual_config_file, node_name, workflow_id)
+
+            # Apply bootstrap nodes configuration (works regardless of e2e_mode)
+            if bootstrap_nodes:
+                self._apply_bootstrap_nodes(
+                    actual_config_file, node_name, bootstrap_nodes
+                )
 
             # Apply NEAR Devnet config if provided
             if near_devnet_config:
@@ -676,6 +684,7 @@ class BinaryManager:
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,  # Enable NEAR Devnet
+        bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -755,6 +764,7 @@ class BinaryManager:
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
                 near_devnet_config=node_specific_near_config,
+                bootstrap_nodes=bootstrap_nodes,
             ):
                 success_count += 1
             else:
@@ -792,8 +802,51 @@ class BinaryManager:
         # For binary mode, just check if the process is running
         return self.is_node_running(node_name)
 
+    def _apply_bootstrap_nodes(
+        self,
+        config_file: Path,
+        node_name: str,
+        bootstrap_nodes: list[str],
+    ):
+        """Apply bootstrap nodes configuration."""
+        try:
+            import toml
+
+            if not config_file.exists():
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+                return
+
+            with open(config_file) as f:
+                config = toml.load(f)
+
+            self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
+
+            import stat
+
+            if config_file.exists():
+                config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
+
+            with open(config_file, "w") as f:
+                toml.dump(config, f)
+
+            console.print(
+                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
+            )
+
+        except ImportError:
+            console.print(
+                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+            )
+        except Exception as e:
+            console.print(
+                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
+            )
+
     def _apply_e2e_defaults(
-        self, config_file: Path, node_name: str, workflow_id: Optional[str]
+        self,
+        config_file: Path,
+        node_name: str,
+        workflow_id: Optional[str],
     ):
         """Apply e2e-style defaults for reliable testing."""
         try:
@@ -816,7 +869,7 @@ class BinaryManager:
 
             # Apply e2e-style defaults for reliable testing
             e2e_config = {
-                # Disable bootstrap nodes for test isolation (like e2e tests)
+                # Disable bootstrap nodes for test isolation
                 "bootstrap.nodes": [],
                 # Use unique rendezvous namespace per workflow (like e2e tests)
                 "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",

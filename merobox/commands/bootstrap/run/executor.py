@@ -93,6 +93,9 @@ class WorkflowExecutor:
         # E2E mode can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.e2e_mode = e2e_mode or config.get("e2e_mode", False)
 
+        # Bootstrap nodes can be specified in workflow config to override e2e_mode's empty default
+        self.bootstrap_nodes = config.get("bootstrap_nodes", None)
+
         # Generate unique workflow ID for test isolation (like e2e tests)
         import uuid
 
@@ -773,6 +776,7 @@ class WorkflowExecutor:
                     workflow_id=self.workflow_id,
                     e2e_mode=self.e2e_mode,
                     near_devnet_config=node_near_config,
+                    bootstrap_nodes=self.bootstrap_nodes,
                 ):
                     return False
             else:
@@ -833,6 +837,7 @@ class WorkflowExecutor:
                         workflow_id=self.workflow_id,
                         e2e_mode=self.e2e_mode,
                         near_devnet_config=node_near_config,
+                        bootstrap_nodes=self.bootstrap_nodes,
                     ):
                         return False
 
@@ -925,7 +930,9 @@ class WorkflowExecutor:
                         self.rust_backtrace,
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
+                        e2e_mode=self.e2e_mode,
                         near_devnet_config=node_near_config,
+                        bootstrap_nodes=self.bootstrap_nodes,
                     ):
                         return False
                 else:
@@ -950,7 +957,9 @@ class WorkflowExecutor:
                     self.rust_backtrace,
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
+                    e2e_mode=self.e2e_mode,
                     near_devnet_config=node_near_config,
+                    bootstrap_nodes=self.bootstrap_nodes,
                 ):
                     return False
 
@@ -1058,6 +1067,12 @@ class WorkflowExecutor:
         if step.get("type") == "repeat":
             for nested_step in step.get("steps") or []:
                 node_refs.update(self._extract_node_references_from_step(nested_step))
+        elif step.get("type") == "parallel":
+            for group in step.get("groups") or []:
+                for nested_step in group.get("steps") or []:
+                    node_refs.update(
+                        self._extract_node_references_from_step(nested_step)
+                    )
 
         return node_refs
 
@@ -1201,6 +1216,11 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps import RepeatStep
 
             return RepeatStep(step_config, manager=self.manager, parent_executor=self)
+            return RepeatStep(step_config, manager=self.manager)
+        elif step_type == "parallel":
+            from merobox.commands.bootstrap.steps import ParallelStep
+
+            return ParallelStep(step_config, manager=self.manager)
         elif step_type == "script":
             from merobox.commands.bootstrap.steps import ScriptStep
 

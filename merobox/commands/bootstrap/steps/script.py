@@ -204,6 +204,16 @@ class ScriptStep(BaseStep):
                 console.print(f"[red]Failed to read script file: {str(e)}[/red]")
                 return False
 
+            # Prepare environment variables from dynamic_values
+            # This allows scripts to access workflow variables via $VAR_NAME
+            env = os.environ.copy()
+
+            # Add dynamic values as environment variables (with uppercase conversion)
+            for key, value in dynamic_values.items():
+                # Convert to uppercase and replace special chars with underscores
+                env_key = key.upper().replace("-", "_").replace(".", "_")
+                env[env_key] = str(value) if value is not None else ""
+
             # Run the script using /bin/sh
             start_time = time.time()
             try:
@@ -213,6 +223,7 @@ class ScriptStep(BaseStep):
                     stderr=subprocess.STDOUT,
                     text=True,
                     check=False,
+                    env=env,
                 )
             except Exception as e:
                 console.print(f"[red]Failed to execute local script: {str(e)}[/red]")

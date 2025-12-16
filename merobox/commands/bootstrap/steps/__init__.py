@@ -18,6 +18,7 @@ from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.run_workflow import RunWorkflowStep
 from merobox.commands.bootstrap.steps.run_workflows import RunWorkflowsStep
@@ -38,6 +39,7 @@ __all__ = [
     "WaitStep",
     "WaitForSyncStep",
     "RepeatStep",
+    "ParallelStep",
     "ScriptStep",
     "AssertStep",
     "JsonAssertStep",
