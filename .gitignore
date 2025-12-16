@@ -73,3 +73,4 @@ externals/
 .pypirc
 *.pypirc
 .pypirc.*
+kv-store-benchmark-report.txt

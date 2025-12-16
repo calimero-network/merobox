@@ -296,6 +296,7 @@ class DockerManager:
         e2e_mode: bool = False,  # enable e2e-style defaults
         config_path: str = None,  # custom config.toml path
         near_devnet_config: dict = None,
+        bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -606,29 +607,36 @@ class DockerManager:
                 # Docker might creates files as root; we need to own them to modify config.toml
                 self._fix_permissions(node_data_dir)
 
-                console.print(
-                    "[green]✓ Applying Near Devnet config for the node [/green]"
-                )
-                # Calculate the config path here, using the resolved data_dir/node_data_dir
-                actual_config_file = Path(node_data_dir) / "config.toml"
+                if near_devnet_config:
+                    console.print(
+                        "[green]✓ Applying Near Devnet config for the node [/green]"
+                    )
+                    # Calculate the config path here, using the resolved data_dir/node_data_dir
+                    actual_config_file = Path(node_data_dir) / "config.toml"
 
-                if not self._apply_near_devnet_config(
-                    actual_config_file,
-                    node_name,
-                    near_devnet_config["rpc_url"],
-                    near_devnet_config["contract_id"],
-                    near_devnet_config["account_id"],
-                    near_devnet_config["public_key"],
-                    near_devnet_config["secret_key"],
-                ):
-                    console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
-                    return False
+                    if not self._apply_near_devnet_config(
+                        actual_config_file,
+                        node_name,
+                        near_devnet_config["rpc_url"],
+                        near_devnet_config["contract_id"],
+                        near_devnet_config["account_id"],
+                        near_devnet_config["public_key"],
+                        near_devnet_config["secret_key"],
+                    ):
+                        console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
+                        return False
 
-            # Apply e2e-style configuration for reliable testing
-            if e2e_mode:
                 config_file = os.path.join(node_data_dir, "config.toml")
-                self._fix_permissions(node_data_dir)
 
+                # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
+                if e2e_mode:
+                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+
+                # Apply bootstrap nodes configuration (works regardless of e2e_mode)
+                if bootstrap_nodes:
+                    self._apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
+
+            except Exception as e:
                 console.print(
                     f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
                 )
@@ -1078,6 +1086,7 @@ class DockerManager:
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,
+        bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1127,6 +1136,7 @@ class DockerManager:
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
                 near_devnet_config=node_specific_near_config,
+                bootstrap_nodes=bootstrap_nodes,
             ):
                 success_count += 1
             else:
@@ -1452,7 +1462,50 @@ class DockerManager:
             )
             return False
 
-    def _apply_e2e_defaults(self, config_file: str, node_name: str, workflow_id: str):
+    def _apply_bootstrap_nodes(
+        self,
+        config_file: str,
+        node_name: str,
+        bootstrap_nodes: list[str],
+    ):
+        """Apply bootstrap nodes configuration."""
+        try:
+            from pathlib import Path
+
+            import toml
+
+            config_path = Path(config_file)
+            if not config_path.exists():
+                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+                return
+
+            with open(config_path) as f:
+                config = toml.load(f)
+
+            self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
+
+            with open(config_path, "w") as f:
+                toml.dump(config, f)
+
+            console.print(
+                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
+            )
+
+        except ImportError:
+            console.print(
+                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+            )
+        except Exception as e:
+            console.print(
+                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
+            )
+
+    def _apply_e2e_defaults(
+        self,
+        config_file: str,
+        node_name: str,
+        workflow_id: str,
+    ):
         """Apply e2e-style defaults for reliable testing."""
         try:
             # Generate unique workflow ID if not provided
@@ -1470,7 +1523,7 @@ class DockerManager:
 
             # Apply e2e-style defaults for reliable testing
             e2e_config = {
-                # Disable bootstrap nodes for test isolation (like e2e tests)
+                # Disable bootstrap nodes for test isolation
                 "bootstrap.nodes": [],
                 # Use unique rendezvous namespace per workflow (like e2e tests)
                 "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",

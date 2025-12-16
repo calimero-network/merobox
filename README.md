@@ -1024,6 +1024,11 @@ force_pull_image: false # Force pull Docker images even if they exist locally
 restart: false # Restart nodes at beginning
 stop_all_nodes: true # Stop nodes after completion
 
+# Network configuration
+bootstrap_nodes: # Custom bootstrap nodes for DHT connectivity
+  - "/ip4/x.x.x.x/udp/4001/quic-v1/p2p/<peer_id>"
+  - "/ip4/x.x.x.x/tcp/4001/p2p/<peer_id>"
+
 nodes:
   count: 2
   prefix: "node-name"
@@ -1044,6 +1049,7 @@ steps:
 - `config_path`: Specify custom `config.toml` path for nodes. Supports both shared config for all nodes and per-node overrides. Skips node initialization when custom config is provided. See [Custom Config Path](#custom-config-path) for details.
 - `near_devnet`: When set to `true`, spins up a local NEAR Sandbox that is used for context management during the workflow running.
 - `contracts_dir`: Path to directory containing required WASM contracts (required when `near_devnet` is true).
+- `bootstrap_nodes`: List of multiaddr strings for DHT bootstrap nodes. When specified, nodes will connect to these peers for network discovery. Works independently of `e2e_mode`. Each multiaddr must end with a `/p2p/<peer_id>` component (e.g., `"/ip4/63.181.86.34/tcp/4001/p2p/12D3KooW..."`).
 
 ### Docker Image Management
 
