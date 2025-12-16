@@ -118,10 +118,23 @@ class RepeatStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         repeat_count = self.config.get("count", 1)
         nested_steps = self.config.get("steps", [])
+
+        # Store reference to original dynamic_values for propagating changes
+        original_dynamic_values = dynamic_values
 
         # Validate export configuration
         if not self._validate_export_config():
@@ -137,7 +150,10 @@ class RepeatStep(BaseStep):
             f"[cyan]🔄 Executing {len(nested_steps)} nested steps {repeat_count} times...[/cyan]"
         )
 
-        # Export repeat configuration variables
+        # Export repeat configuration variables to global scope
+        global_variables["total_iterations"] = repeat_count
+        global_variables["step_count"] = len(nested_steps)
+        # Also update dynamic_values for backward compatibility
         dynamic_values["total_iterations"] = repeat_count
         dynamic_values["step_count"] = len(nested_steps)
         console.print(
@@ -152,26 +168,36 @@ class RepeatStep(BaseStep):
                 f"\n[bold blue]📋 Iteration {iteration + 1}/{repeat_count}[/bold blue]"
             )
 
-            # Create iteration-specific dynamic values
+            # Create iteration-specific local variables (scoped to this iteration)
+            iteration_local_variables = {
+                "iteration": iteration + 1,
+                "iteration_index": iteration,
+                "iteration_zero_based": iteration,
+                "iteration_one_based": iteration + 1,
+            }
+
+            # Create iteration-specific dynamic values for backward compatibility
             iteration_dynamic_values = dynamic_values.copy()
-            iteration_dynamic_values.update(
-                {
-                    "iteration": iteration + 1,
-                    "iteration_index": iteration,
-                    "iteration_zero_based": iteration,
-                    "iteration_one_based": iteration + 1,
-                }
-            )
+            iteration_dynamic_values.update(iteration_local_variables)
 
             # Process custom outputs configuration for this iteration
-            self._export_iteration_variables(iteration + 1, iteration_dynamic_values)
+            self._export_iteration_variables(
+                iteration + 1,
+                iteration_dynamic_values,
+                global_variables,
+                iteration_local_variables,
+                original_dynamic_values,  # Pass original for backward compat
+            )
 
             # Execute each nested step in sequence
             for step_idx, step in enumerate(nested_steps):
                 step_type = step.get("type")
                 nested_step_name = step.get("name", f"Nested Step {step_idx + 1}")
 
-                # Update current step information
+                # Update current step information in local variables
+                iteration_local_variables["current_step"] = nested_step_name
+                iteration_local_variables["current_step_index"] = step_idx + 1
+                # Also update dynamic_values for backward compatibility
                 iteration_dynamic_values["current_step"] = nested_step_name
                 iteration_dynamic_values["current_step_index"] = step_idx + 1
 
@@ -188,9 +214,12 @@ class RepeatStep(BaseStep):
                         )
                         return False
 
-                    # Execute the nested step with iteration-specific dynamic values
+                    # Execute the nested step with both variable scopes
                     success = await step_executor.execute(
-                        workflow_results, iteration_dynamic_values
+                        workflow_results,
+                        iteration_dynamic_values,
+                        global_variables,
+                        iteration_local_variables,
                     )
 
                     if not success:
@@ -203,11 +232,24 @@ class RepeatStep(BaseStep):
                         f"  [green]✓ Nested step '{nested_step_name}' completed in iteration {iteration + 1}[/green]"
                     )
 
+                    # Process inline variables for nested step after successful execution
+                    if "variables" in step:
+                        self._process_nested_inline_variables(
+                            step,
+                            workflow_results,
+                            iteration_dynamic_values,
+                            global_variables,
+                            iteration_local_variables,
+                            original_dynamic_values,  # Pass original for backward compat
+                        )
+
                 except Exception as e:
                     console.print(
                         f"[red]❌ Nested step '{nested_step_name}' failed with error in iteration {iteration + 1}: {str(e)}[/red]"
                     )
                     return False
+
+            self._clear_nested_local_variables(iteration_local_variables)
 
         # Calculate duration and throughput
         end_time = time.perf_counter()
@@ -249,10 +291,134 @@ class RepeatStep(BaseStep):
 
         return True
 
-    def _export_iteration_variables(
-        self, iteration: int, dynamic_values: dict[str, Any]
+    def _clear_nested_local_variables(self, local_variables: dict[str, Any]) -> None:
+        """
+        Clear local variables after iteration completes, preserving iteration-specific variables.
+
+        Local variables persist across nested steps within the same iteration but are cleared
+        when the iteration completes to prevent them from leaking into the next iteration.
+
+        Args:
+            local_variables: Dictionary of local variables to clear
+        """
+        iteration_vars = {
+            "iteration",
+            "iteration_index",
+            "iteration_zero_based",
+            "iteration_one_based",
+            "current_step",
+            "current_step_index",
+        }
+
+        preserved_values = {
+            key: local_variables[key]
+            for key in iteration_vars
+            if key in local_variables
+        }
+        local_variables.clear()
+        local_variables.update(preserved_values)
+
+    def _process_nested_inline_variables(
+        self,
+        step_config: dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any],
+        local_variables: dict[str, Any],
+        original_dynamic_values: dict[str, Any],
     ) -> None:
-        """Export iteration variables based on custom outputs configuration."""
+        """Process inline variables field in nested step configuration.
+
+        Args:
+            step_config: Step configuration
+            workflow_results: Workflow results
+            dynamic_values: Iteration-specific dynamic values (copy)
+            global_variables: Global variables
+            local_variables: Local variables
+            original_dynamic_values: Original dynamic_values to update for backward compatibility
+        """
+        variables = step_config.get("variables", {})
+        if not isinstance(variables, dict):
+            return
+
+        for var_name, var_value in variables.items():
+            # Check if this is a scoped variable (local: or global: prefix)
+            if var_name.startswith("local:"):
+                actual_name = var_name[6:]  # Remove "local:" prefix
+                # Only resolve if it's a string with placeholders, otherwise preserve type
+                if isinstance(var_value, str):
+                    resolved_value = self._resolve_dynamic_value(
+                        var_value,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
+                local_variables[actual_name] = resolved_value
+                console.print(
+                    f"    [blue]📝 Set local variable '{actual_name}' = {resolved_value}[/blue]"
+                )
+            elif var_name.startswith("global:"):
+                actual_name = var_name[7:]  # Remove "global:" prefix
+                # Only resolve if it's a string with placeholders, otherwise preserve type
+                if isinstance(var_value, str):
+                    resolved_value = self._resolve_dynamic_value(
+                        var_value,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
+                global_variables[actual_name] = resolved_value
+                # Update ORIGINAL
+                original_dynamic_values[actual_name] = resolved_value
+                console.print(
+                    f"    [blue]📝 Set global variable '{actual_name}' = {resolved_value}[/blue]"
+                )
+            else:
+                # Default: set as global variable
+                # Only resolve if it's a string with placeholders, otherwise preserve type
+                if isinstance(var_value, str):
+                    resolved_value = self._resolve_dynamic_value(
+                        var_value,
+                        workflow_results,
+                        dynamic_values,
+                        global_variables,
+                        local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
+                global_variables[var_name] = resolved_value
+                # Update ORIGINAL
+                original_dynamic_values[var_name] = resolved_value
+                console.print(
+                    f"    [blue]📝 Set global variable '{var_name}' = {resolved_value}[/blue]"
+                )
+
+    def _export_iteration_variables(
+        self,
+        iteration: int,
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any],
+        local_variables: dict[str, Any],
+        original_dynamic_values: dict[str, Any],
+    ) -> None:
+        """Export iteration variables based on custom outputs configuration.
+
+        Args:
+            iteration: Current iteration number
+            dynamic_values: Iteration-specific dynamic values (copy)
+            global_variables: Global variables
+            local_variables: Local variables
+            original_dynamic_values: Original dynamic_values to update for backward compatibility
+        """
         outputs_config = self.config.get("outputs", {})
         if not outputs_config:
             return
@@ -265,31 +431,56 @@ class RepeatStep(BaseStep):
             if isinstance(export_config, str):
                 # Simple field assignment (e.g., current_iteration: iteration)
                 source_field = export_config
-                if source_field in dynamic_values:
+                # Check local variables first, then dynamic values
+                if source_field in local_variables:
+                    source_value = local_variables[source_field]
+                    global_variables[export_name] = source_value
+                    original_dynamic_values[export_name] = (
+                        source_value  # Update ORIGINAL
+                    )
+                    console.print(
+                        f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
+                    )
+                elif source_field in dynamic_values:
                     source_value = dynamic_values[source_field]
-                    dynamic_values[export_name] = source_value
+                    global_variables[export_name] = source_value
+                    original_dynamic_values[export_name] = (
+                        source_value  # Update ORIGINAL
+                    )
                     console.print(
                         f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
                     )
                 else:
                     console.print(
-                        f"[yellow]Warning: Source field {source_field} not found in dynamic values[/yellow]"
+                        f"[yellow]Warning: Source field {source_field} not found in variables[/yellow]"
                     )
             elif isinstance(export_config, dict):
                 # Complex field assignment with node name replacement
                 source_field = export_config.get("field")
                 target_template = export_config.get("target")
                 if source_field and target_template and "node_name" in target_template:
-                    if source_field in dynamic_values:
+                    # Check local variables first, then dynamic values
+                    if source_field in local_variables:
+                        source_value = local_variables[source_field]
+                        global_variables[export_name] = source_value
+                        original_dynamic_values[export_name] = (
+                            source_value  # Update ORIGINAL
+                        )
+                        console.print(
+                            f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
+                        )
+                    elif source_field in dynamic_values:
                         source_value = dynamic_values[source_field]
-                        # For repeat steps, we don't have node names, so just use the source value
-                        dynamic_values[export_name] = source_value
+                        global_variables[export_name] = source_value
+                        original_dynamic_values[export_name] = (
+                            source_value  # Update ORIGINAL
+                        )
                         console.print(
                             f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
                         )
                     else:
                         console.print(
-                            f"[yellow]Warning: Source field {source_field} not found in dynamic values[/yellow]"
+                            f"[yellow]Warning: Source field {source_field} not found in variables[/yellow]"
                         )
 
     def _export_timing_variables(self, dynamic_values: dict[str, Any]) -> None:
@@ -384,6 +575,34 @@ class RepeatStep(BaseStep):
             return ListProposalsStep(step_config, manager=self.manager)
         elif step_type == "get_proposal_approvers":
             return GetProposalApproversStep(step_config, manager=self.manager)
+        elif step_type == "upload_blob":
+            from merobox.commands.bootstrap.steps.blob import UploadBlobStep
+
+            return UploadBlobStep(step_config, manager=self.manager)
+        elif step_type == "assert":
+            from merobox.commands.bootstrap.steps.assertion import AssertStep
+
+            return AssertStep(step_config, manager=self.manager)
+        elif step_type == "json_assert":
+            from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+
+            return JsonAssertStep(step_config, manager=self.manager)
+        elif step_type == "create_mesh":
+            from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+
+            return CreateMeshStep(step_config, manager=self.manager)
+        elif step_type == "run_workflow":
+            from merobox.commands.bootstrap.steps.run_workflow import RunWorkflowStep
+
+            return RunWorkflowStep(
+                step_config, manager=self.manager, parent_executor=self.parent_executor
+            )
+        elif step_type == "run_workflows":
+            from merobox.commands.bootstrap.steps.run_workflows import RunWorkflowsStep
+
+            return RunWorkflowsStep(
+                step_config, manager=self.manager, parent_executor=self.parent_executor
+            )
         else:
             console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None

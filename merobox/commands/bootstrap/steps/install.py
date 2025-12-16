@@ -136,7 +136,11 @@ class InstallApplicationStep(BaseStep):
             return None
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
         node_name = self.config["node"]
         raw_application_path = self.config.get("path")

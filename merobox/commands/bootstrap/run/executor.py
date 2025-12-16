@@ -38,6 +38,8 @@ class WorkflowExecutor:
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
         e2e_mode: bool = False,
+        parent_executor: Optional["WorkflowExecutor"] = None,
+        nesting_level: int = 0,
         near_devnet: bool = False,
         contracts_dir: str = None,
     ):
@@ -46,7 +48,17 @@ class WorkflowExecutor:
         self.near_devnet = near_devnet
         self.contracts_dir = contracts_dir
         self.sandbox = None
+        self.sandbox_is_shared = False  # Track if sandbox is shared from parent
         self.near_config = {}
+        self.created_node_accounts = (
+            {}
+        )  # Track created node accounts: {node_name: creds}
+        # Lock to protect created_node_accounts from race conditions in parallel workflows
+        self._accounts_lock = (
+            parent_executor._accounts_lock
+            if parent_executor and hasattr(parent_executor, "_accounts_lock")
+            else asyncio.Lock()
+        )
 
         # Determine if we're in binary mode
         self.is_binary_mode = (
@@ -89,6 +101,27 @@ class WorkflowExecutor:
 
         self.workflow_id = str(uuid.uuid4())[:8]
 
+        # Workflow orchestration support
+        self.parent_executor = parent_executor
+        self.nesting_level = nesting_level
+        # Ensure max_nesting_depth is an integer (YAML might parse as string)
+        max_nesting_raw = config.get("max_workflow_nesting", 5)
+        try:
+            self.max_nesting_depth = int(max_nesting_raw)
+        except (ValueError, TypeError):
+            console.print(
+                f"[yellow]⚠️  Invalid max_workflow_nesting value '{max_nesting_raw}', using default 5[/yellow]"
+            )
+            self.max_nesting_depth = 5
+        # Ensure workflow_timeout is an integer (YAML might parse as string)
+        timeout_raw = config.get("workflow_timeout", 3600)
+        try:
+            self.workflow_timeout = int(timeout_raw)
+        except (ValueError, TypeError):
+            console.print(
+                f"[yellow]⚠️  Invalid workflow_timeout value '{timeout_raw}', using default 3600[/yellow]"
+            )
+            self.workflow_timeout = 3600
         self.near_devnet = near_devnet or config.get("near_devnet", False)
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 
@@ -112,6 +145,10 @@ class WorkflowExecutor:
             console.print(
                 f"[cyan]WorkflowExecutor: workflow_id='{self.workflow_id}' (for test isolation)[/cyan]"
             )
+            if self.nesting_level > 0:
+                console.print(
+                    f"[cyan]WorkflowExecutor: nesting_level={self.nesting_level}, max_depth={self.max_nesting_depth}[/cyan]"
+                )
         except Exception:
             pass
         try:
@@ -125,8 +162,21 @@ class WorkflowExecutor:
                 console.print("[cyan]WorkflowExecutor: mock relayer enabled[/cyan]")
         except Exception:
             pass
+
+        # Variable management with scopes
         self.workflow_results = {}
-        self.dynamic_values = {}  # Store dynamic values for later use
+        self.dynamic_values = {}  # For backward compatibility
+        self.global_variables = {}  # Workflow-scope variables
+        # Step-scope variables (cleared after each step)
+        self.local_variables = {}
+
+        # Initialize global variables from workflow config
+        if "variables" in config:
+            self.global_variables.update(config["variables"])
+            console.print(
+                f"[cyan]Initialized {len(self.global_variables)} global workflow variable(s)[/cyan]"
+            )
+
         # Node image can be overridden by CLI flag; otherwise from config; else default in manager
         self.image = image
 
@@ -182,48 +232,85 @@ class WorkflowExecutor:
 
             # Start NEAR Devnet if requested
             if self.near_devnet:
-                console.print(
-                    "\n[bold yellow]Step 0: Initializing NEAR Sandbox...[/bold yellow]"
-                )
-                self.sandbox = SandboxManager()
-                try:
-                    self.sandbox.start()
-
-                    ctx_path = os.path.join(
-                        self.contracts_dir, "calimero_context_config_near.wasm"
-                    )
-                    proxy_path = os.path.join(
-                        self.contracts_dir, "calimero_context_proxy_near.wasm"
-                    )
-
+                # Check if parent executor already has a sandbox (share it)
+                if (
+                    self.parent_executor
+                    and hasattr(self.parent_executor, "sandbox")
+                    and self.parent_executor.sandbox
+                ):
                     console.print(
-                        f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
+                        "\n[bold yellow]Step 0: Reusing parent NEAR Sandbox...[/bold yellow]"
                     )
+                    self.sandbox = self.parent_executor.sandbox
+                    self.sandbox_is_shared = True  # Mark as shared
+                    # Reuse parent's near_config
+                    if (
+                        hasattr(self.parent_executor, "near_config")
+                        and self.parent_executor.near_config
+                    ):
+                        self.near_config = self.parent_executor.near_config
+                        console.print(
+                            "[green]✓ Using parent's NEAR Sandbox configuration[/green]"
+                        )
+                    # Reuse parent's created node accounts and lock
+                    if hasattr(self.parent_executor, "created_node_accounts"):
+                        self.created_node_accounts = (
+                            self.parent_executor.created_node_accounts
+                        )
+                        # Share the parent's lock to protect against race conditions
+                        if hasattr(self.parent_executor, "_accounts_lock"):
+                            self._accounts_lock = self.parent_executor._accounts_lock
+                        console.print(
+                            f"[green]✓ Reusing {len(self.created_node_accounts)} node account(s) from parent[/green]"
+                        )
+                else:
                     console.print(
-                        f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
+                        "\n[bold yellow]Step 0: Initializing NEAR Sandbox...[/bold yellow]"
                     )
+                    self.sandbox = SandboxManager()
+                    try:
+                        self.sandbox.start()
 
-                    if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
-                        raise Exception(
-                            f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
+                        ctx_path = os.path.join(
+                            self.contracts_dir, "calimero_context_config_near.wasm"
+                        )
+                        proxy_path = os.path.join(
+                            self.contracts_dir, "calimero_context_proxy_near.wasm"
                         )
 
-                    contract_id = await self.sandbox.setup_calimero(
-                        ctx_path, proxy_path
-                    )
+                        console.print(
+                            f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
+                        )
+                        console.print(
+                            f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
+                        )
 
-                    # Determine RPC URL accessible from Docker containers
-                    # Not applicable in binary mode, but kept generic
-                    rpc_url = self.sandbox.get_rpc_url(
-                        for_docker=(not self.is_binary_mode)
-                    )
+                        if not os.path.exists(ctx_path) or not os.path.exists(
+                            proxy_path
+                        ):
+                            raise Exception(
+                                f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
+                            )
 
-                    self.near_config = {"contract_id": contract_id, "rpc_url": rpc_url}
-                except Exception as e:
-                    console.print(f"[red]Sandbox setup failed: {e}[/red]")
-                    if self.sandbox:
-                        await self.sandbox.stop()
-                    return False
+                        contract_id = await self.sandbox.setup_calimero(
+                            ctx_path, proxy_path
+                        )
+
+                        # Determine RPC URL accessible from Docker containers
+                        # Not applicable in binary mode, but kept generic
+                        rpc_url = self.sandbox.get_rpc_url(
+                            for_docker=(not self.is_binary_mode)
+                        )
+
+                        self.near_config = {
+                            "contract_id": contract_id,
+                            "rpc_url": rpc_url,
+                        }
+                    except Exception as e:
+                        console.print(f"[red]Sandbox setup failed: {e}[/red]")
+                        if self.sandbox:
+                            await self.sandbox.stop()
+                        return False
 
             # Check if we should restart nodes at the beginning
             restart_nodes = self.config.get("restart", False)
@@ -316,11 +403,28 @@ class WorkflowExecutor:
                 f"\n[bold green]🎉 Workflow '{workflow_name}' completed successfully![/bold green]"
             )
 
-            # Display captured dynamic values
-            if self.dynamic_values:
-                console.print("\n[bold]📋 Captured Dynamic Values:[/bold]")
-                for key, value in self.dynamic_values.items():
-                    console.print(f"  {key}: {value}")
+            # Display captured variables
+            if self.global_variables or self.dynamic_values:
+                console.print("\n[bold]📋 Workflow Variables:[/bold]")
+
+                # Show global variables
+                if self.global_variables:
+                    console.print("  [cyan]Global Variables:[/cyan]")
+                    for key, value in self.global_variables.items():
+                        console.print(f"    {key}: {value}")
+
+                # Show dynamic values (backward compatibility)
+                if self.dynamic_values:
+                    # Only show dynamic values that aren't already in global variables
+                    unique_dynamic = {
+                        k: v
+                        for k, v in self.dynamic_values.items()
+                        if k not in self.global_variables
+                    }
+                    if unique_dynamic:
+                        console.print("  [cyan]Captured Values:[/cyan]")
+                        for key, value in unique_dynamic.items():
+                            console.print(f"    {key}: {value}")
 
             return True
 
@@ -331,7 +435,8 @@ class WorkflowExecutor:
                 self._stop_nodes_on_failure()
             return False
         finally:
-            if self.sandbox:
+            # Only stop sandbox if we own it (not shared from parent)
+            if self.sandbox and not self.sandbox_is_shared:
                 await self.sandbox.stop()
 
     def _stop_nodes_on_failure(self) -> None:
@@ -346,6 +451,150 @@ class WorkflowExecutor:
             console.print("[red]Failed to stop all nodes[/red]")
         else:
             console.print("[green]✓ All nodes stopped[/green]")
+
+    def _set_global_variable(self, key: str, value: Any) -> None:
+        """
+        Set a global workflow variable.
+
+        Args:
+            key: Variable name
+            value: Variable value
+        """
+        self.global_variables[key] = value
+        # Also update dynamic_values for backward compatibility
+        self.dynamic_values[key] = value
+
+    def _set_local_variable(self, key: str, value: Any) -> None:
+        """
+        Set a local step variable.
+
+        Args:
+            key: Variable name
+            value: Variable value
+        """
+        self.local_variables[key] = value
+
+    def _get_variable(self, key: str) -> Any:
+        """
+        Get a variable value, checking local scope first, then global.
+
+        Args:
+            key: Variable name
+
+        Returns:
+            Variable value or None if not found
+        """
+        # Check local scope first
+        if key in self.local_variables:
+            return self.local_variables[key]
+        # Then check global scope
+        if key in self.global_variables:
+            return self.global_variables[key]
+        # Finally check dynamic_values for backward compatibility
+        if key in self.dynamic_values:
+            return self.dynamic_values[key]
+        return None
+
+    def _clear_local_variables(self) -> None:
+        """Clear all local step variables."""
+        self.local_variables.clear()
+
+    def _process_inline_variables(self, step_config: dict[str, Any]) -> None:
+        """
+        Process inline variables field in step configuration.
+
+        Args:
+            step_config: Step configuration dictionary
+        """
+        if "variables" not in step_config:
+            return
+
+        variables = step_config["variables"]
+        if not isinstance(variables, dict):
+            console.print(
+                "[yellow]⚠️  Step 'variables' field must be a dictionary[/yellow]"
+            )
+            return
+
+        for var_name, var_value in variables.items():
+            # Check if this is a scoped variable (local: or global: prefix)
+            if var_name.startswith("local:"):
+                actual_name = var_name[6:]  # Remove "local:" prefix
+                # Only resolve if it's a string with placeholders, otherwise use value as-is
+                if isinstance(var_value, str):
+                    from merobox.commands.bootstrap.steps.base import BaseStep
+
+                    base_step = BaseStep({"type": "dummy"})
+                    resolved_value = base_step._resolve_dynamic_value(
+                        var_value,
+                        self.workflow_results,
+                        self.dynamic_values,
+                        self.global_variables,
+                        self.local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
+                self._set_local_variable(actual_name, resolved_value)
+                console.print(
+                    f"[blue]📝 Set local variable '{actual_name}' = {resolved_value}[/blue]"
+                )
+            elif var_name.startswith("global:"):
+                actual_name = var_name[7:]  # Remove "global:" prefix
+                # Only resolve if it's a string with placeholders, otherwise use value as-is
+                if isinstance(var_value, str):
+                    from merobox.commands.bootstrap.steps.base import BaseStep
+
+                    base_step = BaseStep({"type": "dummy"})
+                    resolved_value = base_step._resolve_dynamic_value(
+                        var_value,
+                        self.workflow_results,
+                        self.dynamic_values,
+                        self.global_variables,
+                        self.local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
+                self._set_global_variable(actual_name, resolved_value)
+                console.print(
+                    f"[blue]📝 Set global variable '{actual_name}' = {resolved_value}[/blue]"
+                )
+            else:
+                # Default: set as global variable
+                # Only resolve if it's a string with placeholders, otherwise use value as-is
+                if isinstance(var_value, str):
+                    from merobox.commands.bootstrap.steps.base import BaseStep
+
+                    base_step = BaseStep({"type": "dummy"})
+                    resolved_value = base_step._resolve_dynamic_value(
+                        var_value,
+                        self.workflow_results,
+                        self.dynamic_values,
+                        self.global_variables,
+                        self.local_variables,
+                    )
+                else:
+                    # Preserve original type (int, float, bool, None)
+                    resolved_value = var_value
+                self._set_global_variable(var_name, resolved_value)
+                console.print(
+                    f"[blue]📝 Set global variable '{var_name}' = {resolved_value}[/blue]"
+                )
+
+    def _get_all_variables(self) -> dict[str, Any]:
+        """
+        Get all variables (local and global combined).
+        Local variables take precedence over global.
+
+        Returns:
+            Combined dictionary of all variables
+        """
+        all_vars = {}
+        all_vars.update(self.dynamic_values)  # Backward compatibility
+        all_vars.update(self.global_variables)
+        all_vars.update(self.local_variables)
+        return all_vars
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
@@ -486,10 +735,24 @@ class WorkflowExecutor:
                     console.print("[green]✓ Using Near Devnet config [/green]")
                     for i in range(count):
                         node_name = f"{prefix}-{i+1}"
-                        console.print(
-                            f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
-                        )
-                        creds = await self.sandbox.create_node_account(node_name)
+                        # Atomically check and create account to prevent race conditions
+                        async with self._accounts_lock:
+                            # Check if account already exists (from parent or previous creation)
+                            if node_name in self.created_node_accounts:
+                                console.print(
+                                    f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                                )
+                                creds = self.created_node_accounts[node_name]
+                            else:
+                                console.print(
+                                    f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
+                                )
+                                # Create account while holding lock to prevent duplicates
+                                creds = await self.sandbox.create_node_account(
+                                    node_name
+                                )
+                                # Store for reuse by child workflows
+                                self.created_node_accounts[node_name] = creds
                         node_near_config[node_name] = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
@@ -533,7 +796,21 @@ class WorkflowExecutor:
                     # NEAR Devnet Config Logic
                     node_near_config = None
                     if self.near_devnet:
-                        creds = await self.sandbox.create_node_account(node_name)
+                        # Atomically check and create account to prevent race conditions
+                        async with self._accounts_lock:
+                            # Check if account already exists
+                            if node_name in self.created_node_accounts:
+                                console.print(
+                                    f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                                )
+                                creds = self.created_node_accounts[node_name]
+                            else:
+                                # Create account while holding lock to prevent duplicates
+                                creds = await self.sandbox.create_node_account(
+                                    node_name
+                                )
+                                # Store for reuse by child workflows
+                                self.created_node_accounts[node_name] = creds
                         node_near_config = {
                             "rpc_url": self.near_config["rpc_url"],
                             "contract_id": self.near_config["contract_id"],
@@ -598,8 +875,19 @@ class WorkflowExecutor:
 
             node_near_config = None
             if self.near_devnet:
-                # Create unique account for this node
-                creds = await self.sandbox.create_node_account(node_name)
+                # Atomically check and create account to prevent race conditions
+                async with self._accounts_lock:
+                    # Check if account already exists
+                    if node_name in self.created_node_accounts:
+                        console.print(
+                            f"[green]✓ Reusing existing account '{node_name}'[/green]"
+                        )
+                        creds = self.created_node_accounts[node_name]
+                    else:
+                        # Create unique account for this node while holding lock
+                        creds = await self.sandbox.create_node_account(node_name)
+                        # Store for reuse by child workflows
+                        self.created_node_accounts[node_name] = creds
 
                 node_near_config = {
                     "rpc_url": self.near_config["rpc_url"],
@@ -856,9 +1144,12 @@ class WorkflowExecutor:
                     console.print(f"[red]Unknown step type: {step_type}[/red]")
                     return False
 
-                # Execute the step
+                # Execute the step with both variable scopes
                 success = await step_executor.execute(
-                    self.workflow_results, self.dynamic_values
+                    self.workflow_results,
+                    self.dynamic_values,
+                    self.global_variables,
+                    self.local_variables,
                 )
 
                 if not success:
@@ -867,6 +1158,10 @@ class WorkflowExecutor:
 
                 console.print(f"[green]✓ Step '{step_name}' completed[/green]")
 
+                # Process inline variables after successful step execution
+                self._process_inline_variables(step)
+
+                self._clear_local_variables()
             except Exception as e:
                 console.print(
                     f"[red]❌ Step '{step_name}' failed with error: {str(e)}[/red]"
@@ -920,7 +1215,7 @@ class WorkflowExecutor:
         elif step_type == "repeat":
             from merobox.commands.bootstrap.steps import RepeatStep
 
-            return RepeatStep(step_config, manager=self.manager)
+            return RepeatStep(step_config, manager=self.manager, parent_executor=self)
         elif step_type == "parallel":
             from merobox.commands.bootstrap.steps import ParallelStep
 
@@ -959,6 +1254,18 @@ class WorkflowExecutor:
             from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 
             return CreateMeshStep(step_config, manager=self.manager)
+        elif step_type == "run_workflow":
+            from merobox.commands.bootstrap.steps import RunWorkflowStep
+
+            return RunWorkflowStep(
+                step_config, manager=self.manager, parent_executor=self
+            )
+        elif step_type == "run_workflows":
+            from merobox.commands.bootstrap.steps import RunWorkflowsStep
+
+            return RunWorkflowsStep(
+                step_config, manager=self.manager, parent_executor=self
+            )
         elif step_type == "fuzzy_test":
             from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 

@@ -68,11 +68,25 @@ class CreateContextStep(BaseStep):
         ]
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
+
         node_name = self.config["node"]
         application_id = self._resolve_dynamic_value(
-            self.config["application_id"], workflow_results, dynamic_values
+            self.config["application_id"],
+            workflow_results,
+            dynamic_values,
+            global_variables,
+            local_variables,
         )
 
         # Debug: show resolution context

@@ -48,6 +48,15 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
         if field not in config:
             errors.append(f"Missing required field: {field}")
 
+    # Validate top-level variables if present
+    if "variables" in config:
+        from merobox.commands.bootstrap.config import validate_workflow_variables
+
+        try:
+            validate_workflow_variables(config["variables"])
+        except ValueError as e:
+            errors.append(f"Top-level variables validation failed: {str(e)}")
+
     # Validate nodes configuration
     if "nodes" in config:
         nodes = config["nodes"]
@@ -80,11 +89,65 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
                     errors.append(f"Step '{step_name}' is missing 'type' field")
                     continue
 
+                # Validate inline variables field if present
+                if "variables" in step:
+                    var_errors = validate_inline_variables(step["variables"], step_name)
+                    errors.extend(var_errors)
+
                 # Validate step-specific requirements
                 step_errors = validate_step_config(step, step_name, step_type)
                 errors.extend(step_errors)
 
     return {"valid": len(errors) == 0, "errors": errors}
+
+
+def validate_inline_variables(variables: dict, step_name: str) -> list:
+    """
+    Validate inline variables field in a step.
+
+    Args:
+        variables: The variables dictionary
+        step_name: Name of the step for error reporting
+
+    Returns:
+        List of validation errors
+    """
+    errors = []
+
+    if not isinstance(variables, dict):
+        errors.append(f"Step '{step_name}': 'variables' must be a dictionary")
+        return errors
+
+    from merobox.commands.bootstrap.config import validate_variable_name
+
+    for var_name, var_value in variables.items():
+        # Check if this is a scoped variable
+        if var_name.startswith("local:") or var_name.startswith("global:"):
+            # Extract actual variable name
+            actual_name = var_name.split(":", 1)[1]
+            if not validate_variable_name(actual_name):
+                errors.append(
+                    f"Step '{step_name}': Invalid scoped variable name '{actual_name}' "
+                    "(must start with letter/underscore, contain only alphanumeric/underscore, "
+                    "and not be a reserved keyword)"
+                )
+        else:
+            # Regular variable name
+            if not validate_variable_name(var_name):
+                errors.append(
+                    f"Step '{step_name}': Invalid variable name '{var_name}' "
+                    "(must start with letter/underscore, contain only alphanumeric/underscore, "
+                    "and not be a reserved keyword)"
+                )
+
+        # Validate variable value type (must be serializable)
+        if not isinstance(var_value, (str, int, float, bool, type(None))):
+            errors.append(
+                f"Step '{step_name}': Variable '{var_name}' has invalid type. "
+                "Variables must be strings, numbers, booleans, or null."
+            )
+
+    return errors
 
 
 def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
@@ -137,6 +200,14 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = ListProposalsStep
         elif step_type == "get_proposal_approvers":
             step_class = GetProposalApproversStep
+        elif step_type == "run_workflow":
+            from merobox.commands.bootstrap.steps import RunWorkflowStep
+
+            step_class = RunWorkflowStep
+        elif step_type == "run_workflows":
+            from merobox.commands.bootstrap.steps import RunWorkflowsStep
+
+            step_class = RunWorkflowsStep
         elif step_type == "fuzzy_test":
             step_class = FuzzyTestStep
         else:

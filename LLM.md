@@ -519,23 +519,207 @@ Join a context using an open invitation.
     member_public_key: "memberPublicKey"
 ```
 
-## Variable Substitution
+#### 14. Workflow Orchestration Steps
 
-Workflows support dynamic variable substitution using `{{variable_name}}` syntax.
+Execute child workflows from parent workflows for modular, reusable test suites.
+
+**Run Single Workflow**:
+
+```yaml
+- type: run_workflow
+  workflow_path: ./tests/setup-workflow.yml
+  inputs:
+    # Pass variables from parent to child
+    app_id: "{{parent_app_id}}"
+    node_count: 2
+  inherit_variables: false # Optional: inherit all parent variables
+  outputs:
+    # Capture child workflow variables back to parent
+    child_context_id: context_id
+    child_result: test_result
+  variables:
+    # Set variables after workflow execution
+    workflow_status: "completed"
+  on_failure:
+    continue: false # Stop parent on child failure (default)
+    set_variables:
+      test_failed: true
+```
+
+**Run Multiple Workflows (Parallel/Sequential)**:
+
+```yaml
+- type: run_workflows
+  mode: parallel # or 'sequential'
+  fail_fast: true # Stop on first failure
+  workflows:
+    - path: ./tests/test-context.yml
+      inputs: { test_id: 1 }
+      outputs: { result_1: test_result }
+    - path: ./tests/test-execution.yml
+      inputs: { test_id: 2 }
+      outputs: { result_2: test_result }
+  variables:
+    all_tests_count: 2
+```
+
+**Orchestration Features**:
+
+- Variable passing between parent and child workflows
+- Support for nested workflows (configurable depth limit, default: 5)
+- Parallel or sequential execution modes
+- Error handling and failure propagation
+- Outputs capture from child workflows
+- Automatic workflow statistics: `workflows_success_count`, `workflows_failure_count`, `workflows_total_count`
+
+**Important Implementation Notes**:
+
+- Nesting depth is strictly enforced to prevent infinite recursion
+- Duplicate output names in parallel execution trigger warnings
+- All workflow count variables are guaranteed to be set
+- Type preservation: numbers stay numbers, booleans stay booleans
+- Variables from repeat loops properly propagate to parent scope
+- **NEAR Devnet Integration**: Child workflows automatically share the parent's sandbox instance and reuse node accounts, ensuring consistent blockchain state across nested workflows
+
+## Variable Management
+
+Workflows support flexible variable management with scoped variables and dynamic substitution using `{{variable_name}}` syntax.
+
+### Variable Scopes
+
+Merobox supports two variable scopes:
+
+1. **Global Variables**: Accessible across all steps in the workflow
+
+   - Defined at workflow level or set via inline `variables` field
+   - Persist throughout workflow execution
+   - Can be passed between parent and child workflows
+
+2. **Local Variables**: Scoped to the current step
+   - Automatically cleared after step completes
+   - Used for iteration variables in `repeat` steps
+   - Useful for temporary step-specific data
+
+### Variable Resolution Priority
+
+When resolving `{{variable_name}}`, the system checks in this order:
+
+1. Local variables (step-scoped)
+2. Global variables (workflow-scoped)
+3. Step outputs (backward compatibility)
+
+### Top-Level Workflow Variables
+
+Define global variables at the workflow level:
+
+```yaml
+name: My Workflow
+variables:
+  environment: "staging"
+  timeout: 30
+  base_url: "https://api.staging.example.com"
+
+nodes:
+  # ... node configuration
+
+steps:
+  - type: call
+    node: node-1
+    context_id: "{{context_id}}"
+    method: "configure"
+    args:
+      env: "{{environment}}"
+      timeout: "{{timeout}}"
+```
+
+### Inline Variables
+
+Set variables during workflow execution using the `variables` field in any step:
+
+```yaml
+steps:
+  - type: call
+    node: node-1
+    context_id: "{{context_id}}"
+    method: "get_config"
+    variables:
+      # Default: set as global variable
+      config_version: "1.0.0"
+      deployment_time: "{{env.TIMESTAMP}}"
+    outputs:
+      config: result
+
+  - type: call
+    node: node-2
+    context_id: "{{context_id}}"
+    method: "apply_config"
+    args:
+      version: "{{config_version}}" # Uses variable set in previous step
+```
+
+### Scoped Variable Syntax
+
+Explicitly control variable scope using prefixes:
+
+```yaml
+steps:
+  - type: call
+    node: node-1
+    context_id: "{{context_id}}"
+    method: "process"
+    variables:
+      # Set local variable (cleared after step)
+      local:temp_result: "processing"
+
+      # Set global variable (persists across steps)
+      global:final_status: "in_progress"
+    outputs:
+      result: result
+```
+
+### Explicit Scope Access
+
+Access variables from specific scopes:
+
+```yaml
+steps:
+  - type: call
+    node: node-1
+    context_id: "{{context_id}}"
+    method: "execute"
+    args:
+      # Explicitly access global scope
+      status: "{{global.final_status}}"
+
+      # Explicitly access local scope
+      temp: "{{local.temp_result}}"
+
+      # Auto-resolve (checks local first, then global)
+      value: "{{some_variable}}"
+```
 
 ### Variable Sources
 
-1. **Step outputs**: Capture values from previous steps
-2. **Environment variables**: `{{env.MY_VAR}}`
-3. **Iteration variables**: In repeat loops `{{iteration}}`
-4. **Embedded variables**: `key_{{iteration}}_suffix`
+1. **Top-level variables**: Defined in workflow YAML
+2. **Step outputs**: Captured from step execution results
+3. **Inline variables**: Set during step execution
+4. **Environment variables**: `{{env.MY_VAR}}`
+5. **Iteration variables**: In repeat loops `{{iteration}}`
+6. **Embedded variables**: `key_{{iteration}}_suffix`
 
 ### Example with Variables
 
 ```yaml
+name: Variable Management Example
+variables:
+  environment: "production"
+  max_retries: 3
+
 steps:
   - type: create_identity
     node: main-node
+    variables:
+      identity_type: "admin"
     outputs:
       admin_key: "private_key"
       admin_pub: "public_key"
@@ -549,6 +733,8 @@ steps:
   - type: create_context
     node: main-node
     application_id: "{{app}}"
+    variables:
+      context_type: "{{environment}}"
     outputs:
       ctx: "context.context_id"
 
@@ -557,6 +743,9 @@ steps:
     context_id: "{{ctx}}"
     method: "initialize"
     executor_public_key: "{{admin_pub}}"
+    args:
+      env: "{{environment}}"
+      retries: "{{max_retries}}"
 ```
 
 ## Multi-Node Workflows
