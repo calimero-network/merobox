@@ -1154,12 +1154,10 @@ merobox blob info --node <node> --blob-id <id>     # Get metadata
 merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
-install_application, create_context, create_identity, join_context, call, wait, 
-repeat, script, assert, json_assert, upload_blob, invite_open, join_open
-
-# Workflow configuration options
-auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image, 
-restart, stop_all_nodes, log_level, rust_backtrace
 install_application, create_context, create_identity, join_context, call, wait,
 repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test
+
+# Workflow configuration options
+auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image,
+restart, stop_all_nodes, log_level, rust_backtrace
 ```
