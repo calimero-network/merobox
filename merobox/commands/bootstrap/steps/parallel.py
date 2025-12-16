@@ -143,8 +143,17 @@ class ParallelStep(BaseStep):
         return variables
 
     async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any] = None,
+        local_variables: dict[str, Any] = None,
     ) -> bool:
+        # Initialize scope variables if not provided
+        if global_variables is None:
+            global_variables = {}
+        if local_variables is None:
+            local_variables = {}
         groups = self.config.get("groups", [])
         mode = self.config.get("mode", "burst")  # burst, sustained, mixed
 
@@ -187,7 +196,12 @@ class ParallelStep(BaseStep):
                 # Current implementation: all groups start simultaneously
                 tasks = [
                     self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
+                        i,
+                        group,
+                        workflow_results,
+                        dynamic_values.copy(),
+                        global_variables,
+                        local_variables,
                     )
                     for i, group in enumerate(groups)
                 ]
@@ -204,7 +218,12 @@ class ParallelStep(BaseStep):
                 )
                 tasks = [
                     self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
+                        i,
+                        group,
+                        workflow_results,
+                        dynamic_values.copy(),
+                        global_variables,
+                        local_variables,
                     )
                     for i, group in enumerate(groups)
                 ]
@@ -227,7 +246,12 @@ class ParallelStep(BaseStep):
                 )
                 tasks = [
                     self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
+                        i,
+                        group,
+                        workflow_results,
+                        dynamic_values.copy(),
+                        global_variables,
+                        local_variables,
                     )
                     for i, group in enumerate(groups)
                 ]
@@ -238,7 +262,12 @@ class ParallelStep(BaseStep):
                 )
                 tasks = [
                     self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
+                        i,
+                        group,
+                        workflow_results,
+                        dynamic_values.copy(),
+                        global_variables,
+                        local_variables,
                     )
                     for i, group in enumerate(groups)
                 ]
@@ -326,6 +355,8 @@ class ParallelStep(BaseStep):
         group_config: dict[str, Any],
         workflow_results: dict[str, Any],
         group_dynamic_values: dict[str, Any],
+        global_variables: dict[str, Any],
+        local_variables: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute a single group of steps."""
         group_name = group_config.get("name", f"Group {group_index + 1}")
@@ -381,9 +412,12 @@ class ParallelStep(BaseStep):
                                 "error": f"Unknown step type: {step_type}",
                             }
 
-                        # Execute the nested step
+                        # Execute the nested step with both variable scopes
                         success = await step_executor.execute(
-                            workflow_results, iteration_dynamic_values
+                            workflow_results,
+                            iteration_dynamic_values,
+                            global_variables,
+                            local_variables,
                         )
 
                         if not success:
