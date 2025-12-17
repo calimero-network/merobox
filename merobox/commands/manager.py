@@ -476,9 +476,9 @@ class DockerManager:
                 },
             }
 
-            # Near Devnet and Mock relayer support
-            if near_devnet_config or mock_relayer:
-                # Add host gateway so container can talk to the sandbox process running on host
+            # Near Devnet, Mock relayer, and E2E mode support
+            if near_devnet_config or mock_relayer or e2e_mode:
+                # Add host gateway so container can reach services on the host machine
                 if "extra_hosts" not in container_config:
                     container_config["extra_hosts"] = {}
                 container_config["extra_hosts"]["host.docker.internal"] = "host-gateway"
