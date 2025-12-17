@@ -3,12 +3,15 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 """
 
 import os
+import shutil
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
 import docker
+import toml
 from rich.console import Console
 from rich.table import Table
 
@@ -291,6 +294,7 @@ class DockerManager:
         mock_relayer: bool = False,
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
+        config_path: str = None,  # custom config.toml path
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
@@ -378,6 +382,29 @@ class DockerManager:
             # Set permissions to be world-writable since container runs as root
             os.chmod(data_dir, 0o777)
             os.chmod(node_data_dir, 0o777)
+
+            # Handle custom config if provided
+            skip_init = False
+            if config_path is not None:
+                config_source = Path(config_path)
+                if not config_source.exists():
+                    console.print(
+                        f"[red]✗ Custom config file not found: {config_path}[/red]"
+                    )
+                    return False
+
+                config_dest = os.path.join(node_data_dir, "config.toml")
+                try:
+                    shutil.copy2(config_source, config_dest)
+                    console.print(
+                        f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
+                    )
+                    skip_init = True
+                except Exception as e:
+                    console.print(
+                        f"[red]✗ Failed to copy custom config: {str(e)}[/red]"
+                    )
+                    return False
 
             # Prepare container configuration
             # Prepare environment variables for node
@@ -525,43 +552,63 @@ class DockerManager:
                 # Try to ensure the auth service networks exist and connect to them
                 self._ensure_auth_networks()
 
-            # First, initialize the node
-            console.print(f"[yellow]Initializing node {node_name}...[/yellow]")
+            # Initialize the node (unless using custom config)
+            if not skip_init:
+                console.print(f"[yellow]Initializing node {node_name}...[/yellow]")
 
-            # Create a temporary container for initialization
-            init_config = container_config.copy()
-            init_config["name"] = init_container_name
-            init_config["entrypoint"] = ""
-            init_config["command"] = [
-                "merod",
-                "--home",
-                "/app/data",
-                "--node-name",
-                node_name,
-                "init",
-                "--server-host",
-                "0.0.0.0",
-                "--server-port",
-                str(2528),
-                "--swarm-port",
-                str(2428),
-            ]
-            if mock_relayer and relayer_url:
-                init_config["command"].extend(
-                    ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
+                # Create a temporary container for initialization
+                init_config = container_config.copy()
+                init_config["name"] = init_container_name
+                init_config["entrypoint"] = ""
+                init_config["command"] = [
+                    "merod",
+                    "--home",
+                    "/app/data",
+                    "--node-name",
+                    node_name,
+                    "init",
+                    "--server-host",
+                    "0.0.0.0",
+                    "--server-port",
+                    str(2528),
+                    "--swarm-port",
+                    str(2428),
+                ]
+                if mock_relayer and relayer_url:
+                    init_config["command"].extend(
+                        ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
+                    )
+                init_config["detach"] = False
+
+                try:
+                    init_container = self.client.containers.run(**init_config)
+                    console.print(
+                        f"[green]✓ Node {node_name} initialized successfully[/green]"
+                    )
+
+                except Exception as e:
+                    console.print(
+                        f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
+                    )
+                    return False
+                finally:
+                    # Clean up init container
+                    try:
+                        init_container.remove()
+                    except Exception:
+                        pass
+            else:
+                console.print(
+                    f"[cyan]Skipping initialization for {node_name} (using custom config)[/cyan]"
                 )
-            init_config["detach"] = False
+
+            config_file = os.path.join(node_data_dir, "config.toml")
 
             try:
-                init_container = self.client.containers.run(**init_config)
-                console.print(
-                    f"[green]✓ Node {node_name} initialized successfully[/green]"
-                )
-
-                # Docker might creates files as root; we need to own them to modify config.toml
-                self._fix_permissions(node_data_dir)
-
                 if near_devnet_config:
+                    # Docker might creates files as root; we need to own them to modify config.toml
+                    self._fix_permissions(node_data_dir)
+
                     console.print(
                         "[green]✓ Applying Near Devnet config for the node [/green]"
                     )
@@ -580,8 +627,6 @@ class DockerManager:
                         console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
                         return False
 
-                config_file = os.path.join(node_data_dir, "config.toml")
-
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
                     self._apply_e2e_defaults(config_file, node_name, workflow_id)
@@ -590,17 +635,12 @@ class DockerManager:
                 if bootstrap_nodes:
                     self._apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
 
-            except Exception as e:
-                console.print(
-                    f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
-                )
-                return False
-            finally:
-                # Clean up init container
-                try:
-                    init_container.remove()
-                except Exception:
-                    pass
+            except Exception:
+                if e2e_mode:
+                    console.print(
+                        f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
+                    )
+                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
@@ -1053,8 +1093,6 @@ class DockerManager:
 
         # Generate a single shared workflow_id for all nodes if none provided
         if workflow_id is None:
-            import uuid
-
             workflow_id = str(uuid.uuid4())[:8]
             console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
@@ -1470,11 +1508,6 @@ class DockerManager:
     ):
         """Apply e2e-style defaults for reliable testing."""
         try:
-            import uuid
-            from pathlib import Path
-
-            import toml
-
             # Generate unique workflow ID if not provided
             if not workflow_id:
                 workflow_id = str(uuid.uuid4())[:8]
@@ -1498,8 +1531,10 @@ class DockerManager:
                 "discovery.mdns": True,
                 # Aggressive sync settings from e2e tests for reliable testing
                 "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-                "sync.interval_ms": 500,  # 500ms between syncs (very aggressive for tests)
-                "sync.frequency_ms": 1000,  # 1s periodic checks (ensures rapid sync in tests)
+                # 500ms between syncs (very aggressive for tests)
+                "sync.interval_ms": 500,
+                # 1s periodic checks (ensures rapid sync in tests)
+                "sync.frequency_ms": 1000,
                 # Ethereum local devnet configuration (same as e2e tests)
                 "context.config.ethereum.network": "sepolia",
                 "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",

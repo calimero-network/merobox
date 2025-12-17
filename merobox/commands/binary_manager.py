@@ -3,13 +3,19 @@ Binary Manager - Manages Calimero nodes as native processes (no Docker).
 """
 
 import os
+import re
+import shutil
 import signal
+import socket
+import stat
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
+import toml
 from rich.console import Console
 
 from merobox.commands.config_utils import apply_near_devnet_config_to_file
@@ -133,6 +139,7 @@ class BinaryManager:
         mock_relayer: bool = False,  # Ignored in binary mode
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
+        config_path: Optional[str] = None,  # custom config.toml path
         near_devnet_config: dict = None,  # Enable NEAR Devnet
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
     ) -> bool:
@@ -182,6 +189,31 @@ class BinaryManager:
             node_data_dir = data_path / node_name
             node_data_dir.mkdir(parents=True, exist_ok=True)
 
+            # Handle custom config if provided
+            skip_init = False
+            if config_path is not None:
+                config_source = Path(config_path)
+                if not config_source.exists():
+                    console.print(
+                        f"[red]✗ Custom config file not found: {config_path}[/red]"
+                    )
+                    return False
+
+                config_dest_dir = node_data_dir / node_name
+                config_dest_dir.mkdir(parents=True, exist_ok=True)
+                config_dest = config_dest_dir / "config.toml"
+                try:
+                    shutil.copy2(config_source, config_dest)
+                    console.print(
+                        f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
+                    )
+                    skip_init = True
+                except Exception as e:
+                    console.print(
+                        f"[red]✗ Failed to copy custom config: {str(e)}[/red]"
+                    )
+                    return False
+
             # Prepare log file (not used when foreground)
             log_dir = data_path / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
@@ -201,42 +233,47 @@ class BinaryManager:
             env["RUST_LOG"] = log_level
             env["RUST_BACKTRACE"] = rust_backtrace
 
-            # First-time init if needed (config.toml not present)
-            config_file = node_data_dir / "config.toml"
-            if not config_file.exists():
+            # Initialize node if needed (unless using custom config)
+            if not skip_init:
+                config_file = node_data_dir / "config.toml"
+                if not config_file.exists():
+                    console.print(
+                        f"[yellow]Initializing node {node_name} (first run)...[/yellow]"
+                    )
+                    init_cmd = [
+                        self.binary_path,
+                        "--home",
+                        str(node_data_dir.absolute()),
+                        "--node-name",
+                        node_name,
+                        "init",
+                        "--server-port",
+                        str(rpc_port),
+                        "--swarm-port",
+                        str(port),
+                    ]
+                    with open(log_file, "a") as log_f:
+                        try:
+                            subprocess.run(
+                                init_cmd,
+                                check=True,
+                                env=env,
+                                stdout=log_f,
+                                stderr=subprocess.STDOUT,
+                            )
+                            console.print(
+                                f"[green]✓ Node {node_name} initialized successfully[/green]"
+                            )
+                        except subprocess.CalledProcessError as e:
+                            console.print(
+                                f"[red]✗ Failed to initialize node {node_name}: {e}[/red]"
+                            )
+                            console.print(f"[yellow]Check logs: {log_file}[/yellow]")
+                            return False
+            else:
                 console.print(
-                    f"[yellow]Initializing node {node_name} (first run)...[/yellow]"
+                    f"[cyan]Skipping initialization for {node_name} (using custom config)[/cyan]"
                 )
-                init_cmd = [
-                    self.binary_path,
-                    "--home",
-                    str(node_data_dir.absolute()),
-                    "--node-name",
-                    node_name,
-                    "init",
-                    "--server-port",
-                    str(rpc_port),
-                    "--swarm-port",
-                    str(port),
-                ]
-                with open(log_file, "a") as log_f:
-                    try:
-                        subprocess.run(
-                            init_cmd,
-                            check=True,
-                            env=env,
-                            stdout=log_f,
-                            stderr=subprocess.STDOUT,
-                        )
-                        console.print(
-                            f"[green]✓ Node {node_name} initialized successfully[/green]"
-                        )
-                    except subprocess.CalledProcessError as e:
-                        console.print(
-                            f"[red]✗ Failed to initialize node {node_name}: {e}[/red]"
-                        )
-                        console.print(f"[yellow]Check logs: {log_file}[/yellow]")
-                        return False
 
             # The actual config file is in a nested subdirectory created by merod init
             actual_config_file = node_data_dir / node_name / "config.toml"
@@ -350,8 +387,6 @@ class BinaryManager:
 
                 # Quick bind check for admin port
                 try:
-                    import socket
-
                     with socket.create_connection(
                         ("127.0.0.1", int(rpc_port)), timeout=1.5
                     ):
@@ -545,7 +580,6 @@ class BinaryManager:
             config_path = node_dir / "config.toml"
             if not config_path.exists():
                 return None
-            import re
 
             with open(config_path) as f:
                 content = f.read()
@@ -714,8 +748,6 @@ class BinaryManager:
 
         # Generate a single shared workflow_id for all nodes if none provided
         if workflow_id is None:
-            import uuid
-
             workflow_id = str(uuid.uuid4())[:8]
             console.print(f"[cyan]Generated shared workflow_id: {workflow_id}[/cyan]")
 
@@ -850,10 +882,6 @@ class BinaryManager:
     ):
         """Apply e2e-style defaults for reliable testing."""
         try:
-            import uuid
-
-            import toml
-
             # Generate unique workflow ID if not provided
             if not workflow_id:
                 workflow_id = str(uuid.uuid4())[:8]
@@ -895,8 +923,6 @@ class BinaryManager:
                 self._set_nested_config(config, key, value)
 
             # Write back to file (ensure it's writable first)
-            import stat
-
             if config_file.exists():
                 config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
 
@@ -918,8 +944,6 @@ class BinaryManager:
 
     def _find_available_ports(self, count: int) -> list[int]:
         """Find available ports for dynamic allocation."""
-        import socket
-
         ports = []
         start_port = 3000  # Start from a higher range to avoid common conflicts
 

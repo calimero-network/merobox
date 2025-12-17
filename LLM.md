@@ -202,6 +202,40 @@ steps:
     message: "Waiting for node to start with auth service..."
 ```
 
+#### Custom Config Path
+
+Specify custom `config.toml` files for workflow nodes, allowing you to reuse existing node configurations.
+
+```yaml
+name: Workflow with Custom Config
+description: "Workflow using custom node configuration"
+
+nodes:
+  # Shared config path for all nodes
+  config_path: ./workflow-examples/custom-config.toml
+  
+  calimero-node-1:
+    port: 2428
+    rpc_port: 2528
+    # Uses shared config
+  
+  calimero-node-2:
+    port: 2429
+    rpc_port: 2529
+    # Per-node override
+    config_path: ./workflow-examples/another-config.toml
+
+steps:
+  - type: wait
+    seconds: 5
+```
+
+**Features:**
+- Shared config for all nodes or per-node overrides
+- Skips node initialization when custom config is provided
+- Works with both Docker and binary (`no_docker: true`) modes
+- Not supported with `count` mode
+
 **What gets enabled:**
 
 - **Traefik Proxy**: Routes traffic and applies authentication middleware
@@ -1122,4 +1156,8 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 # Workflow step types
 install_application, create_context, create_identity, join_context, call, wait,
 repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test
+
+# Workflow configuration options
+auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image,
+restart, stop_all_nodes, log_level, rust_backtrace
 ```

@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import time
+import uuid
 from typing import Any, Optional
 
 import docker
@@ -17,6 +18,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 from merobox.commands.manager import DockerManager
 from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.utils import console
@@ -38,13 +40,13 @@ class WorkflowExecutor:
         rust_backtrace: str = "0",
         mock_relayer: bool = False,
         e2e_mode: bool = False,
+        workflow_dir: str = None,
         near_devnet: bool = False,
         contracts_dir: str = None,
     ):
         self.config = config
         self.manager = manager
-        self.near_devnet = near_devnet
-        self.contracts_dir = contracts_dir
+        self.workflow_dir = workflow_dir or "."
         self.sandbox = None
         self.near_config = {}
 
@@ -85,8 +87,6 @@ class WorkflowExecutor:
         self.bootstrap_nodes = config.get("bootstrap_nodes", None)
 
         # Generate unique workflow ID for test isolation (like e2e tests)
-        import uuid
-
         self.workflow_id = str(uuid.uuid4())[:8]
 
         self.near_devnet = near_devnet or config.get("near_devnet", False)
@@ -449,6 +449,23 @@ class WorkflowExecutor:
         except Exception:
             return False
 
+    def _resolve_config_path(self, config_path: Optional[str]) -> Optional[str]:
+        """
+        Resolve config path relative to workflow YAML file location.
+
+        Args:
+            config_path: Path to config file (can be relative or absolute)
+
+        Returns:
+            Absolute path to config file, or None if config_path is None
+        """
+        if config_path is None:
+            return None
+        if os.path.isabs(config_path):
+            return config_path
+        resolved = os.path.join(self.workflow_dir, config_path)
+        return os.path.abspath(resolved)
+
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get("nodes", {})
@@ -463,6 +480,7 @@ class WorkflowExecutor:
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
+        config_path = self._resolve_config_path(nodes_config.get("config_path"))
 
         # Ensure nodes are restarted when Near Devnet or Mock Relayer is requested so wiring is fresh
         if (self.near_devnet or self.mock_relayer) and not restart:
@@ -474,6 +492,16 @@ class WorkflowExecutor:
 
         # If workflow declares a count, delegate to manager to handle bulk creation
         if "count" in nodes_config:
+            # Check for incompatible config_path option
+            if config_path is not None:
+                console.print(
+                    "[red]❌ config_path is not supported with 'count' mode[/red]"
+                )
+                console.print(
+                    "[yellow]Please define nodes individually to use custom config paths[/yellow]"
+                )
+                return False
+
             count = nodes_config["count"]
             if restart:
                 console.print(
@@ -569,10 +597,15 @@ class WorkflowExecutor:
 
         # Otherwise handle individually defined nodes (dict or list)
         if isinstance(nodes_config, dict):
-            items = nodes_config.items()
+            # Filter out reserved configuration keys from node definitions
+            items = [
+                (k, v)
+                for k, v in nodes_config.items()
+                if k not in RESERVED_NODE_CONFIG_KEYS
+            ]
         else:
             # list of node names
-            items = ((n, None) for n in nodes_config)
+            items = [(n, None) for n in nodes_config]
 
         for node_name, node_cfg in items:
             # Resolve per-node settings
@@ -586,12 +619,16 @@ class WorkflowExecutor:
                     else node_cfg.get("image", image)
                 )
                 data_dir = node_cfg.get("data_dir")
+                node_config_path = self._resolve_config_path(
+                    node_cfg.get("config_path", nodes_config.get("config_path"))
+                )
             else:
                 port = base_port
                 rpc_port = base_rpc_port
                 node_chain_id = chain_id
                 node_image = image
                 data_dir = None
+                node_config_path = config_path
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
@@ -643,6 +680,7 @@ class WorkflowExecutor:
                         self.mock_relayer,
                         workflow_id=self.workflow_id,
                         e2e_mode=self.e2e_mode,
+                        config_path=node_config_path,
                         near_devnet_config=node_near_config,
                         bootstrap_nodes=self.bootstrap_nodes,
                     ):
@@ -670,6 +708,7 @@ class WorkflowExecutor:
                     self.mock_relayer,
                     workflow_id=self.workflow_id,
                     e2e_mode=self.e2e_mode,
+                    config_path=node_config_path,
                     near_devnet_config=node_near_config,
                     bootstrap_nodes=self.bootstrap_nodes,
                 ):
@@ -680,19 +719,10 @@ class WorkflowExecutor:
 
     async def _wait_for_nodes_ready(self) -> bool:
         """Wait for all nodes to be ready and accessible."""
-        nodes_config = self.config.get("nodes", {})
         wait_timeout = self.config.get("wait_timeout", 60)  # Default 60 seconds
 
-        if "count" in nodes_config:
-            count = nodes_config["count"]
-            prefix = nodes_config.get("prefix", "calimero-node")
-            node_names = [f"{prefix}-{i+1}" for i in range(count)]
-        else:
-            node_names = (
-                list(nodes_config.keys())
-                if isinstance(nodes_config, dict)
-                else list(nodes_config)
-            )
+        # Use the validated node names (filters out reserved config keys)
+        node_names = list(self._get_valid_node_names())
 
         console.print(
             f"Waiting up to {wait_timeout} seconds for {len(node_names)} nodes to be ready..."
@@ -757,7 +787,10 @@ class WorkflowExecutor:
                 return set()
         else:
             if isinstance(nodes_config, dict):
-                return set(nodes_config.keys())
+                # Filter out reserved configuration keys
+                return {
+                    k for k in nodes_config.keys() if k not in RESERVED_NODE_CONFIG_KEYS
+                }
             elif isinstance(nodes_config, list):
                 return set(nodes_config)
             else:
