@@ -1500,6 +1500,18 @@ class DockerManager:
                 f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
             )
 
+    def _get_docker_host_url(self, port: int) -> str:
+        """Get Docker host URL for a given port.
+
+        When nodes run in Docker containers (via --image flag), they need to use
+        host.docker.internal to reach services on the host machine.
+        This works on Mac/Windows Docker Desktop.
+        On Linux, Docker will handle the resolution or fall back to gateway IP.
+        """
+        # When merobox uses --image flag, nodes run in Docker
+        # Use host.docker.internal to reach host services
+        return f"http://host.docker.internal:{port}"
+
     def _apply_e2e_defaults(
         self,
         config_file: str,
@@ -1521,6 +1533,10 @@ class DockerManager:
             with open(config_path) as f:
                 config = toml.load(f)
 
+            # Use Docker host URLs when nodes run in Docker (they always do with --image flag)
+            eth_rpc_url = self._get_docker_host_url(8545)  # Anvil runs on port 8545
+            icp_rpc_url = self._get_docker_host_url(4943)  # dfx runs on port 4943
+
             # Apply e2e-style defaults for reliable testing
             e2e_config = {
                 # Disable bootstrap nodes for test isolation
@@ -1535,13 +1551,18 @@ class DockerManager:
                 "sync.interval_ms": 500,
                 # 1s periodic checks (ensures rapid sync in tests)
                 "sync.frequency_ms": 1000,
-                # Ethereum local devnet configuration (same as e2e tests)
-                "context.config.ethereum.network": "sepolia",
+                # Ethereum local devnet configuration
+                "context.config.ethereum.network": "local",
                 "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
                 "context.config.ethereum.signer": "self",
-                "context.config.signer.self.ethereum.sepolia.rpc_url": "http://127.0.0.1:8545",
-                "context.config.signer.self.ethereum.sepolia.account_id": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-                "context.config.signer.self.ethereum.sepolia.secret_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+                "context.config.signer.self.ethereum.local.rpc_url": eth_rpc_url,
+                "context.config.signer.self.ethereum.local.account_id": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "context.config.signer.self.ethereum.local.secret_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+                # ICP local devnet configuration (for consistency)
+                "context.config.icp.network": "local",
+                "context.config.icp.contract_id": "bkyz2-fmaaa-aaaaa-qaaaq-cai",
+                "context.config.icp.signer": "self",
+                "context.config.signer.self.icp.local.rpc_url": icp_rpc_url,
             }
 
             # Apply each configuration
