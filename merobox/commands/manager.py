@@ -638,6 +638,10 @@ class DockerManager:
 
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
+                    # Docker might create files as root; we need to own them to modify config.toml
+                    # Only fix permissions if not already fixed (when near_devnet_config is provided)
+                    if not near_devnet_config:
+                        self._fix_permissions(node_data_dir)
                     self._apply_e2e_defaults(config_file, node_name, workflow_id)
 
                 # Apply bootstrap nodes configuration (works regardless of e2e_mode)
