@@ -636,6 +636,7 @@ class WorkflowExecutor:
                 node_use_image_entrypoint = node_cfg.get(
                     "use_image_entrypoint", use_image_entrypoint
                 )
+                node_cap_add = node_cfg.get("cap_add")
             else:
                 port = base_port
                 rpc_port = base_rpc_port
@@ -644,6 +645,7 @@ class WorkflowExecutor:
                 data_dir = None
                 node_config_path = config_path
                 node_use_image_entrypoint = use_image_entrypoint
+                node_cap_add = None
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
@@ -704,6 +706,8 @@ class WorkflowExecutor:
                         run_node_kwargs["use_image_entrypoint"] = (
                             node_use_image_entrypoint
                         )
+                    if node_cap_add is not None:
+                        run_node_kwargs["cap_add"] = node_cap_add
 
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
@@ -737,6 +741,8 @@ class WorkflowExecutor:
                 }
                 if not self.is_binary_mode:
                     run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
+                if node_cap_add is not None:
+                    run_node_kwargs["cap_add"] = node_cap_add
 
                 if not self.manager.run_node(**run_node_kwargs):
                     return False

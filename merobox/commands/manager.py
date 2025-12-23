@@ -307,6 +307,7 @@ class DockerManager:
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
+        cap_add: list[str] = None,  # Linux capabilities to add (e.g., ["SYS_ADMIN"])
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -485,6 +486,20 @@ class DockerManager:
                     "chain.id": chain_id,
                 },
             }
+
+            # Add Linux capabilities for profiling images or if explicitly configured
+            # Auto-detect profiling images by checking if image name contains "-profiling"
+            if cap_add is not None:
+                container_config["cap_add"] = cap_add
+                console.print(
+                    f"[cyan]Adding Linux capabilities to {node_name}: {', '.join(cap_add)}[/cyan]"
+                )
+            elif "-profiling" in image_to_use:
+                # Auto-detect profiling images and add SYS_ADMIN capability
+                container_config["cap_add"] = ["SYS_ADMIN"]
+                console.print(
+                    f"[cyan]Auto-detected profiling image for {node_name}, adding SYS_ADMIN capability[/cyan]"
+                )
 
             # Near Devnet, Mock relayer, and E2E mode support
             if near_devnet_config or mock_relayer or e2e_mode:
