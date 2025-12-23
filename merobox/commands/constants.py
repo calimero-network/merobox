@@ -43,6 +43,7 @@ RESERVED_NODE_CONFIG_KEYS = {
     "chain_id",
     "image",
     "config_path",
+    "use_image_entrypoint",
 }
 
 # Response field names (from API responses)
