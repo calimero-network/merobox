@@ -481,6 +481,7 @@ class WorkflowExecutor:
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
         config_path = self._resolve_config_path(nodes_config.get("config_path"))
+        use_image_entrypoint = nodes_config.get("use_image_entrypoint", False)
 
         # Ensure nodes are restarted when Near Devnet or Mock Relayer is requested so wiring is fresh
         if (self.near_devnet or self.mock_relayer) and not restart:
@@ -524,25 +525,30 @@ class WorkflowExecutor:
                             **creds,
                         }
 
-                if not self.manager.run_multiple_nodes(
-                    count,
-                    base_port,
-                    base_rpc_port,
-                    chain_id,
-                    prefix,
-                    image,
-                    self.auth_service,
-                    self.auth_image,
-                    self.auth_use_cached,
-                    self.webui_use_cached,
-                    self.log_level,
-                    self.rust_backtrace,
-                    self.mock_relayer,
-                    workflow_id=self.workflow_id,
-                    e2e_mode=self.e2e_mode,
-                    near_devnet_config=node_near_config,
-                    bootstrap_nodes=self.bootstrap_nodes,
-                ):
+                # Build arguments for run_multiple_nodes
+                run_multiple_kwargs = {
+                    "count": count,
+                    "base_port": base_port,
+                    "base_rpc_port": base_rpc_port,
+                    "chain_id": chain_id,
+                    "prefix": prefix,
+                    "image": image,
+                    "auth_service": self.auth_service,
+                    "auth_image": self.auth_image,
+                    "auth_use_cached": self.auth_use_cached,
+                    "webui_use_cached": self.webui_use_cached,
+                    "log_level": self.log_level,
+                    "rust_backtrace": self.rust_backtrace,
+                    "mock_relayer": self.mock_relayer,
+                    "workflow_id": self.workflow_id,
+                    "e2e_mode": self.e2e_mode,
+                    "near_devnet_config": node_near_config,
+                    "bootstrap_nodes": self.bootstrap_nodes,
+                }
+                if not self.is_binary_mode:
+                    run_multiple_kwargs["use_image_entrypoint"] = use_image_entrypoint
+
+                if not self.manager.run_multiple_nodes(**run_multiple_kwargs):
                     return False
             else:
                 console.print(
@@ -571,25 +577,30 @@ class WorkflowExecutor:
                     # Not running -> start (allow manager to allocate ports if base_* is None)
                     port = base_port + i if base_port is not None else None
                     rpc_port = base_rpc_port + i if base_rpc_port is not None else None
-                    if not self.manager.run_node(
-                        node_name,
-                        port,
-                        rpc_port,
-                        chain_id,
-                        None,
-                        image,
-                        self.auth_service,
-                        self.auth_image,
-                        self.auth_use_cached,
-                        self.webui_use_cached,
-                        self.log_level,
-                        self.rust_backtrace,
-                        self.mock_relayer,
-                        workflow_id=self.workflow_id,
-                        e2e_mode=self.e2e_mode,
-                        near_devnet_config=node_near_config,
-                        bootstrap_nodes=self.bootstrap_nodes,
-                    ):
+                    # Build arguments for run_node
+                    run_node_kwargs = {
+                        "node_name": node_name,
+                        "port": port,
+                        "rpc_port": rpc_port,
+                        "chain_id": chain_id,
+                        "data_dir": None,
+                        "image": image,
+                        "auth_service": self.auth_service,
+                        "auth_image": self.auth_image,
+                        "auth_use_cached": self.auth_use_cached,
+                        "webui_use_cached": self.webui_use_cached,
+                        "log_level": self.log_level,
+                        "rust_backtrace": self.rust_backtrace,
+                        "mock_relayer": self.mock_relayer,
+                        "workflow_id": self.workflow_id,
+                        "e2e_mode": self.e2e_mode,
+                        "near_devnet_config": node_near_config,
+                        "bootstrap_nodes": self.bootstrap_nodes,
+                    }
+                    if not self.is_binary_mode:
+                        run_node_kwargs["use_image_entrypoint"] = use_image_entrypoint
+
+                    if not self.manager.run_node(**run_node_kwargs):
                         return False
 
             console.print("[green]✓ Node management completed[/green]")
@@ -622,6 +633,9 @@ class WorkflowExecutor:
                 node_config_path = self._resolve_config_path(
                     node_cfg.get("config_path", nodes_config.get("config_path"))
                 )
+                node_use_image_entrypoint = node_cfg.get(
+                    "use_image_entrypoint", use_image_entrypoint
+                )
             else:
                 port = base_port
                 rpc_port = base_rpc_port
@@ -629,6 +643,7 @@ class WorkflowExecutor:
                 node_image = image
                 data_dir = None
                 node_config_path = config_path
+                node_use_image_entrypoint = use_image_entrypoint
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
@@ -664,26 +679,33 @@ class WorkflowExecutor:
                         )
 
                     console.print(f"Starting node '{node_name}'...")
-                    if not self.manager.run_node(
-                        node_name,
-                        port,
-                        rpc_port,
-                        node_chain_id,
-                        data_dir,
-                        node_image,
-                        self.auth_service,
-                        self.auth_image,
-                        self.auth_use_cached,
-                        self.webui_use_cached,
-                        self.log_level,
-                        self.rust_backtrace,
-                        self.mock_relayer,
-                        workflow_id=self.workflow_id,
-                        e2e_mode=self.e2e_mode,
-                        config_path=node_config_path,
-                        near_devnet_config=node_near_config,
-                        bootstrap_nodes=self.bootstrap_nodes,
-                    ):
+                    # Build arguments for run_node
+                    run_node_kwargs = {
+                        "node_name": node_name,
+                        "port": port,
+                        "rpc_port": rpc_port,
+                        "chain_id": node_chain_id,
+                        "data_dir": data_dir,
+                        "image": node_image,
+                        "auth_service": self.auth_service,
+                        "auth_image": self.auth_image,
+                        "auth_use_cached": self.auth_use_cached,
+                        "webui_use_cached": self.webui_use_cached,
+                        "log_level": self.log_level,
+                        "rust_backtrace": self.rust_backtrace,
+                        "mock_relayer": self.mock_relayer,
+                        "workflow_id": self.workflow_id,
+                        "e2e_mode": self.e2e_mode,
+                        "config_path": node_config_path,
+                        "near_devnet_config": node_near_config,
+                        "bootstrap_nodes": self.bootstrap_nodes,
+                    }
+                    if not self.is_binary_mode:
+                        run_node_kwargs["use_image_entrypoint"] = (
+                            node_use_image_entrypoint
+                        )
+
+                    if not self.manager.run_node(**run_node_kwargs):
                         return False
                 else:
                     console.print(
@@ -692,26 +714,31 @@ class WorkflowExecutor:
                     continue
             else:
                 console.print(f"Starting node '{node_name}'...")
-                if not self.manager.run_node(
-                    node_name,
-                    port,
-                    rpc_port,
-                    node_chain_id,
-                    data_dir,
-                    node_image,
-                    self.auth_service,
-                    self.auth_image,
-                    self.auth_use_cached,
-                    self.webui_use_cached,
-                    self.log_level,
-                    self.rust_backtrace,
-                    self.mock_relayer,
-                    workflow_id=self.workflow_id,
-                    e2e_mode=self.e2e_mode,
-                    config_path=node_config_path,
-                    near_devnet_config=node_near_config,
-                    bootstrap_nodes=self.bootstrap_nodes,
-                ):
+                # Build arguments for run_node
+                run_node_kwargs = {
+                    "node_name": node_name,
+                    "port": port,
+                    "rpc_port": rpc_port,
+                    "chain_id": node_chain_id,
+                    "data_dir": data_dir,
+                    "image": node_image,
+                    "auth_service": self.auth_service,
+                    "auth_image": self.auth_image,
+                    "auth_use_cached": self.auth_use_cached,
+                    "webui_use_cached": self.webui_use_cached,
+                    "log_level": self.log_level,
+                    "rust_backtrace": self.rust_backtrace,
+                    "mock_relayer": self.mock_relayer,
+                    "workflow_id": self.workflow_id,
+                    "e2e_mode": self.e2e_mode,
+                    "config_path": node_config_path,
+                    "near_devnet_config": node_near_config,
+                    "bootstrap_nodes": self.bootstrap_nodes,
+                }
+                if not self.is_binary_mode:
+                    run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
+
+                if not self.manager.run_node(**run_node_kwargs):
                     return False
 
         console.print("[green]✓ Node management completed[/green]")

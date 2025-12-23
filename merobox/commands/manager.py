@@ -306,6 +306,7 @@ class DockerManager:
         config_path: str = None,  # custom config.toml path
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
+        use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -568,25 +569,49 @@ class DockerManager:
                 # Create a temporary container for initialization
                 init_config = container_config.copy()
                 init_config["name"] = init_container_name
-                init_config["entrypoint"] = ""
-                init_config["command"] = [
-                    "merod",
-                    "--home",
-                    "/app/data",
-                    "--node-name",
-                    node_name,
-                    "init",
-                    "--server-host",
-                    "0.0.0.0",
-                    "--server-port",
-                    str(2528),
-                    "--swarm-port",
-                    str(2428),
-                ]
-                if mock_relayer and relayer_url:
-                    init_config["command"].extend(
-                        ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
-                    )
+                if use_image_entrypoint:
+                    # Preserve image's entrypoint
+                    # Pass full merod command as CMD - entrypoint will handle it
+                    init_config["command"] = [
+                        "merod",
+                        "--home",
+                        "/app/data",
+                        "--node-name",
+                        node_name,
+                        "init",
+                        "--server-host",
+                        "0.0.0.0",
+                        "--server-port",
+                        str(2528),
+                        "--swarm-port",
+                        str(2428),
+                    ]
+                    if mock_relayer and relayer_url:
+                        init_config["command"].extend(
+                            ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
+                        )
+                    # Note: Don't set entrypoint - use image default
+                else:
+                    # Original behavior - bypass entrypoint for direct merod control
+                    init_config["entrypoint"] = ""
+                    init_config["command"] = [
+                        "merod",
+                        "--home",
+                        "/app/data",
+                        "--node-name",
+                        node_name,
+                        "init",
+                        "--server-host",
+                        "0.0.0.0",
+                        "--server-port",
+                        str(2528),
+                        "--swarm-port",
+                        str(2428),
+                    ]
+                    if mock_relayer and relayer_url:
+                        init_config["command"].extend(
+                            ["--relayer-url", relayer_url, "--protocol", "mock-relayer"]
+                        )
                 init_config["detach"] = False
 
                 try:
@@ -658,15 +683,29 @@ class DockerManager:
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
             run_config = container_config.copy()
-            run_config["entrypoint"] = ""
-            run_config["command"] = [
-                "merod",
-                "--home",
-                "/app/data",
-                "--node-name",
-                node_name,
-                "run",
-            ]
+            if use_image_entrypoint:
+                # Preserve image's entrypoint
+                # Pass full merod command as CMD - entrypoint will handle it
+                run_config["command"] = [
+                    "merod",
+                    "--home",
+                    "/app/data",
+                    "--node-name",
+                    node_name,
+                    "run",
+                ]
+                # Note: Don't set entrypoint - use image default
+            else:
+                # Original behavior - bypass entrypoint for direct merod control
+                run_config["entrypoint"] = ""
+                run_config["command"] = [
+                    "merod",
+                    "--home",
+                    "/app/data",
+                    "--node-name",
+                    node_name,
+                    "run",
+                ]
 
             # Set primary network for auth service
             if auth_service:
@@ -1100,6 +1139,7 @@ class DockerManager:
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
+        use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1150,6 +1190,7 @@ class DockerManager:
                 e2e_mode=e2e_mode,
                 near_devnet_config=node_specific_near_config,
                 bootstrap_nodes=bootstrap_nodes,
+                use_image_entrypoint=use_image_entrypoint,
             ):
                 success_count += 1
             else:
