@@ -83,6 +83,11 @@ console = Console()
     is_flag=True,
     help="Start a local mock relayer (ghcr.io/calimero-network/mero-relayer:8ee178e) and point nodes at it",
 )
+@click.option(
+    "--use-image-entrypoint",
+    is_flag=True,
+    help="Preserve Docker image's entrypoint instead of running merod directly",
+)
 def run(
     count,
     base_port,
@@ -102,6 +107,7 @@ def run(
     binary_path,
     foreground,
     mock_relayer,
+    use_image_entrypoint,
 ):
     """Run Calimero node(s)."""
     if mock_relayer and no_docker:
@@ -165,6 +171,9 @@ def run(
 
         if no_docker:
             run_kwargs["foreground"] = foreground
+        else:
+            # Only applicable in Docker mode
+            run_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
         success = calimero_manager.run_node(**run_kwargs)
         sys.exit(0 if success else 1)
@@ -173,19 +182,23 @@ def run(
         if foreground:
             console.print("[red]--foreground requires a single node (--count 1)")
             sys.exit(1)
-        success = calimero_manager.run_multiple_nodes(
-            count,
-            base_port,
-            base_rpc_port,
-            chain_id,
-            prefix,
-            image if not no_docker else None,
-            auth_service,
-            auth_image,
-            auth_use_cached,
-            webui_use_cached,
-            log_level,
-            rust_backtrace,
-            mock_relayer,
-        )
+        run_multiple_kwargs = {
+            "count": count,
+            "base_port": base_port,
+            "base_rpc_port": base_rpc_port,
+            "chain_id": chain_id,
+            "prefix": prefix,
+            "image": image if not no_docker else None,
+            "auth_service": auth_service,
+            "auth_image": auth_image,
+            "auth_use_cached": auth_use_cached,
+            "webui_use_cached": webui_use_cached,
+            "log_level": log_level,
+            "rust_backtrace": rust_backtrace,
+            "mock_relayer": mock_relayer,
+        }
+        if not no_docker:
+            run_multiple_kwargs["use_image_entrypoint"] = use_image_entrypoint
+
+        success = calimero_manager.run_multiple_nodes(**run_multiple_kwargs)
         sys.exit(0 if success else 1)

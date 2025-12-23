@@ -481,6 +481,7 @@ class WorkflowExecutor:
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
         config_path = self._resolve_config_path(nodes_config.get("config_path"))
+        use_image_entrypoint = nodes_config.get("use_image_entrypoint", False)
 
         # Ensure nodes are restarted when Near Devnet or Mock Relayer is requested so wiring is fresh
         if (self.near_devnet or self.mock_relayer) and not restart:
@@ -542,6 +543,7 @@ class WorkflowExecutor:
                     e2e_mode=self.e2e_mode,
                     near_devnet_config=node_near_config,
                     bootstrap_nodes=self.bootstrap_nodes,
+                    use_image_entrypoint=use_image_entrypoint,
                 ):
                     return False
             else:
@@ -589,6 +591,7 @@ class WorkflowExecutor:
                         e2e_mode=self.e2e_mode,
                         near_devnet_config=node_near_config,
                         bootstrap_nodes=self.bootstrap_nodes,
+                        use_image_entrypoint=use_image_entrypoint,
                     ):
                         return False
 
@@ -622,6 +625,9 @@ class WorkflowExecutor:
                 node_config_path = self._resolve_config_path(
                     node_cfg.get("config_path", nodes_config.get("config_path"))
                 )
+                node_use_image_entrypoint = node_cfg.get(
+                    "use_image_entrypoint", use_image_entrypoint
+                )
             else:
                 port = base_port
                 rpc_port = base_rpc_port
@@ -629,6 +635,7 @@ class WorkflowExecutor:
                 node_image = image
                 data_dir = None
                 node_config_path = config_path
+                node_use_image_entrypoint = use_image_entrypoint
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
@@ -683,6 +690,7 @@ class WorkflowExecutor:
                         config_path=node_config_path,
                         near_devnet_config=node_near_config,
                         bootstrap_nodes=self.bootstrap_nodes,
+                        use_image_entrypoint=node_use_image_entrypoint,
                     ):
                         return False
                 else:
@@ -711,6 +719,7 @@ class WorkflowExecutor:
                     config_path=node_config_path,
                     near_devnet_config=node_near_config,
                     bootstrap_nodes=self.bootstrap_nodes,
+                    use_image_entrypoint=node_use_image_entrypoint,
                 ):
                     return False
 
