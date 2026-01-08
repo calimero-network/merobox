@@ -65,7 +65,7 @@ jobs:
     outputs:
       version-bumped: ${{ steps.check.outputs.bumped }}
       current-version: ${{ steps.check.outputs.current_version }}
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -79,11 +79,11 @@ jobs:
         CURRENT_VERSION=$(grep '^__version__ = ' merobox/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
         echo "Current version: $CURRENT_VERSION"
         echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-        
+
         # Get previous version from git history
         PREVIOUS_VERSION=$(git show HEAD~1:merobox/__init__.py | grep '^__version__ = ' | sed 's/__version__ = "\(.*\)"/\1/' || echo "0.0.0")
         echo "Previous version: $PREVIOUS_VERSION"
-        
+
         # Check if version was bumped
         if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
           echo "Version bumped from $PREVIOUS_VERSION to $CURRENT_VERSION"
@@ -97,17 +97,17 @@ jobs:
       if: steps.check.outputs.bumped == 'true'
       run: |
         TAG="v${{ steps.check.outputs.current_version }}"
-        
+
         # Check if tag already exists
         if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
           echo "⏭️  Tag $TAG already exists, skipping"
         else
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           git tag -a "$TAG" -m "Release $TAG (auto-tagged)"
           git push origin "$TAG"
-          
+
           echo "✅ Created and pushed tag: $TAG"
         fi
 
@@ -117,7 +117,7 @@ jobs:
       with:
         body: |
           🎉 **Auto-tagged release v${{ steps.check.outputs.current_version }}**
-          
+
           Release pipeline is now running. Monitor: [Actions](https://github.com/${{ github.repository }}/actions)
 
   # Job 3: Build binaries for all platforms
@@ -169,8 +169,7 @@ jobs:
 
       - name: Build executable
         run: |
-          # Build with PyInstaller on native workers
-          pyinstaller --onefile --name merobox merobox/cli.py
+          pyinstaller merobox.spec
 
       - name: Test executable
         run: |
@@ -185,7 +184,7 @@ jobs:
         run: |
           file_output=$(file ./dist/merobox)
           echo "Binary architecture: $file_output"
-          
+
           # Verify correct architecture based on target
           case "${{ matrix.target }}" in
             "aarch64-unknown-linux-gnu")
@@ -345,7 +344,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     steps:
     - name: Download source artifacts
       uses: actions/download-artifact@v4
@@ -358,7 +357,7 @@ jobs:
         echo "Source distributions found:"
         ls -la dist/
         echo "Total source distribution count: $(ls dist/*.tar.gz 2>/dev/null | wc -l)"
-        
+
         # Verify the source distribution
         for file in dist/*.tar.gz; do
           echo "Checking $file"
@@ -376,7 +375,7 @@ jobs:
     needs: [build-source, check-version, build-binaries, create-release, publish-pypi]
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
       - name: Report status
         run: |
@@ -393,4 +392,3 @@ jobs:
           echo ""
           echo "📦 Package: https://pypi.org/project/merobox/${VERSION}/"
           echo "📥 Release: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
-
