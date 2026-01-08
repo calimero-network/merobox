@@ -1,12 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
+# Collect all nacl dependencies (required for PyNaCl/CFFI)
+nacl_datas, nacl_binaries, nacl_hiddenimports = collect_all('nacl')
 
 a = Analysis(
     ['merobox/cli.py'],
     pathex=[],
-    binaries=[],
-    datas=[],
-    hiddenimports=[],
+    binaries=nacl_binaries,
+    datas=nacl_datas,
+    hiddenimports=[
+        '_cffi_backend',
+        'cffi',
+        'nacl',
+        'nacl.bindings',
+        'nacl.bindings.crypto_aead',
+    ] + nacl_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
