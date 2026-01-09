@@ -4,6 +4,7 @@ Script execution step for bootstrap workflow.
 
 import io
 import os
+import platform
 import subprocess
 import tarfile
 import time
@@ -122,11 +123,13 @@ class ScriptStep(BaseStep):
     ) -> bool:
         """Execute the script step."""
         if not self.script_path:
-            console.print("[red]❌ Script path not specified[/red]")
+            console.print("[red][ERROR] Script path not specified[/red]")
             return False
 
         if not os.path.exists(self.script_path):
-            console.print(f"[red]❌ Script file not found: {self.script_path}[/red]")
+            console.print(
+                f"[red][ERROR] Script file not found: {self.script_path}[/red]"
+            )
             return False
 
         # Validate export configuration
@@ -153,7 +156,7 @@ class ScriptStep(BaseStep):
                 workflow_results, dynamic_values, resolved_args
             )
         else:
-            console.print(f"[red]❌ Unknown target type: {self.target}[/red]")
+            console.print(f"[red][ERROR] Unknown target type: {self.target}[/red]")
             return False
 
     async def _execute_local(
@@ -170,7 +173,7 @@ class ScriptStep(BaseStep):
 
             if not os.path.exists(self.script_path):
                 console.print(
-                    f"[red]❌ Script file not found: {self.script_path}[/red]"
+                    f"[red][ERROR] Script file not found: {self.script_path}[/red]"
                 )
                 return False
 
@@ -192,11 +195,13 @@ class ScriptStep(BaseStep):
                 env_key = key.upper().replace("-", "_").replace(".", "_")
                 env[env_key] = str(value) if value is not None else ""
 
-            # Run the script using /bin/sh
+            # Run the script using platform-specific shell
+            # Use cmd.exe on Windows, /bin/sh on Unix-like systems
+            shell_cmd = "cmd.exe" if platform.system() == "Windows" else "/bin/sh"
             start_time = time.time()
             try:
                 completed = subprocess.run(
-                    ["/bin/sh", self.script_path, *resolved_args],
+                    [shell_cmd, self.script_path, *resolved_args],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -232,7 +237,7 @@ class ScriptStep(BaseStep):
             self._export_script_results(
                 "local", completed.returncode, output, execution_time, dynamic_values
             )
-            console.print("[green]✓ Local script executed successfully[/green]")
+            console.print("[green][OK] Local script executed successfully[/green]")
             return True
 
         except Exception as e:
@@ -341,7 +346,7 @@ class ScriptStep(BaseStep):
                     # Ensure the image is available
                     if not manager._ensure_image_pulled(image):
                         console.print(
-                            f"[red]✗ Cannot proceed without image: {image}[/red]"
+                            f"[red][FAIL] Cannot proceed without image: {image}[/red]"
                         )
                         return False
 
@@ -420,7 +425,7 @@ class ScriptStep(BaseStep):
                     "image", result.exit_code, output, execution_time, dynamic_values
                 )
 
-                console.print("[green]✓ Script executed successfully[/green]")
+                console.print("[green][OK] Script executed successfully[/green]")
                 return True
 
             finally:
@@ -545,7 +550,7 @@ class ScriptStep(BaseStep):
                             failed_nodes.append(node_name)
                         else:
                             console.print(
-                                f"[green]✓ Script executed successfully on {node_name}[/green]"
+                                f"[green][OK] Script executed successfully on {node_name}[/green]"
                             )
                             success_count += 1
 
@@ -583,7 +588,9 @@ class ScriptStep(BaseStep):
                 console.print(f"[red]Failed on nodes: {', '.join(failed_nodes)}[/red]")
                 return False
 
-            console.print("[green]✓ Script executed successfully on all nodes[/green]")
+            console.print(
+                "[green][OK] Script executed successfully on all nodes[/green]"
+            )
             return True
 
         except Exception as e:

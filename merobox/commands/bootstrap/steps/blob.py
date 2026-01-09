@@ -87,12 +87,14 @@ class UploadBlobStep(BaseStep):
             client = get_client_for_rpc_url(rpc_url)
             result = client.upload_blob(file_data, context_id)
 
-            console.print("[green]✓ Blob uploaded successfully![/green]")
+            console.print("[green][OK] Blob uploaded successfully![/green]")
             console.print(f"[green]   Response: {result}[/green]")
 
             return ok(result)
         except Exception as e:
-            console.print(f"[red]✗ Blob upload failed: {type(e).__name__}: {e}[/red]")
+            console.print(
+                f"[red][FAIL] Blob upload failed: {type(e).__name__}: {e}[/red]"
+            )
             return fail("upload_blob failed", error=e)
 
     async def execute(

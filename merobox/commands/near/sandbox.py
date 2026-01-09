@@ -154,11 +154,13 @@ class SandboxManager:
         try:
             # Force kill existing sandbox processes
             # This ensures we don't connect to a stale process with old state
-            subprocess.run(
-                ["pkill", "-9", "near-sandbox"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            # pkill is Unix-only, so skip on Windows (sandbox doesn't support Windows anyway)
+            if platform.system() != "Windows":
+                subprocess.run(
+                    ["pkill", "-9", "near-sandbox"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             # Wait for OS to release the port
             time.sleep(0.5)
         except Exception:

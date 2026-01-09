@@ -274,7 +274,7 @@ class FuzzyTestStep(BaseStep):
             console.print("\n[yellow]⚠️  Fuzzy test interrupted by user[/yellow]")
             had_exception = True
         except Exception as e:
-            console.print(f"\n[red]❌ Fuzzy test error: {str(e)}[/red]")
+            console.print(f"\n[red][ERROR] Fuzzy test error: {str(e)}[/red]")
             had_exception = True
             # Continue to print final report even on error
 
@@ -643,12 +643,12 @@ class FuzzyTestStep(BaseStep):
         console.print(f"Total Patterns Executed: {summary['total_patterns_executed']}")
         console.print(f"Total Assertions: {summary['total_assertions']}")
         console.print(
-            f"  [green]✓ Passed: {summary['assertions_passed']} "
+            f"  [green][OK] Passed: {summary['assertions_passed']} "
             f"({pass_rate:.1f}%)[/green]"
         )
         console.print(
             f"  [{'red' if summary['assertions_failed'] > 0 else 'green'}]"
-            f"✗ Failed: {summary['assertions_failed']} "
+            f"[FAIL] Failed: {summary['assertions_failed']} "
             f"({100 - pass_rate:.1f}%)[/{'red' if summary['assertions_failed'] > 0 else 'green'}]"
         )
 

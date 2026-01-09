@@ -370,7 +370,7 @@ class BaseStep:
                         display_value = display_value[:97] + "..."
 
                     console.print(
-                        f"[green]   ✓[/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}"
+                        f"[green]   [OK][/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}"
                     )
 
             elif isinstance(assigned_var, dict):
@@ -423,7 +423,7 @@ class BaseStep:
                             display_value = display_value[:97] + "..."
 
                         console.print(
-                            f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}"
+                            f"[green]   [OK][/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}"
                         )
                 else:
                     console.print(

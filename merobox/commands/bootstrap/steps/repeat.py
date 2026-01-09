@@ -195,17 +195,17 @@ class RepeatStep(BaseStep):
 
                     if not success:
                         console.print(
-                            f"[red]❌ Nested step '{nested_step_name}' failed in iteration {iteration + 1}[/red]"
+                            f"[red][ERROR] Nested step '{nested_step_name}' failed in iteration {iteration + 1}[/red]"
                         )
                         return False
 
                     console.print(
-                        f"  [green]✓ Nested step '{nested_step_name}' completed in iteration {iteration + 1}[/green]"
+                        f"  [green][OK] Nested step '{nested_step_name}' completed in iteration {iteration + 1}[/green]"
                     )
 
                 except Exception as e:
                     console.print(
-                        f"[red]❌ Nested step '{nested_step_name}' failed with error in iteration {iteration + 1}: {str(e)}[/red]"
+                        f"[red][ERROR] Nested step '{nested_step_name}' failed with error in iteration {iteration + 1}: {str(e)}[/red]"
                     )
                     return False
 
@@ -234,7 +234,7 @@ class RepeatStep(BaseStep):
 
         # Log timing information
         console.print(
-            f"[green]✓ All {repeat_count} iterations completed successfully[/green]"
+            f"[green][OK] All {repeat_count} iterations completed successfully[/green]"
         )
         console.print("[blue]⏱️  Timing Metrics:[/blue]")
         console.print(

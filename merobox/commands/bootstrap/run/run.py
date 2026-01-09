@@ -121,7 +121,7 @@ async def run_workflow(
                 for key, value in executor.workflow_results.items():
                     console.print(f"  {key}: {value}")
         else:
-            console.print("\n[bold red]❌ Workflow failed![/bold red]")
+            console.print("\n[bold red][ERROR] Workflow failed![/bold red]")
 
         return success
 

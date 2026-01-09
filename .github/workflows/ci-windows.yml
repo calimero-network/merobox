@@ -1,0 +1,122 @@
+name: CI - Windows Binary Testing
+
+on:
+    push:
+        branches: [master]
+    pull_request:
+        branches: [master]
+    workflow_dispatch:
+
+jobs:
+    test-merobox-windows:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.11"
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+
+            - name: Install merobox in development mode
+              run: |
+                  pip install -e .
+
+            - name: Install merod binary (Windows)
+              shell: pwsh
+              run: |
+                  $VERSION = "0.10.0-rc.28"
+                  $ARCH = "x86_64"
+                  $PLATFORM = "pc-windows-msvc"
+                  $ZIPFILE = "merod_${ARCH}-${PLATFORM}.zip"
+                  $TARFILE = "merod_${ARCH}-${PLATFORM}.tar.gz"
+                  $DOWNLOAD_URL_ZIP = "https://github.com/calimero-network/core/releases/download/${VERSION}/${ZIPFILE}"
+                  $DOWNLOAD_URL_TAR = "https://github.com/calimero-network/core/releases/download/${VERSION}/${TARFILE}"
+
+                  try {
+                      Invoke-WebRequest -Uri $DOWNLOAD_URL_ZIP -OutFile $ZIPFILE -ErrorAction Stop
+                      Expand-Archive -Path $ZIPFILE -DestinationPath . -Force
+                      Remove-Item $ZIPFILE -Force
+                  } catch {
+                      try {
+                          Invoke-WebRequest -Uri $DOWNLOAD_URL_TAR -OutFile $TARFILE -ErrorAction Stop
+                          tar -xzf $TARFILE
+                          Remove-Item $TARFILE -Force
+                      } catch {
+                          Write-Error "Failed to download merod binary"
+                          exit 1
+                      }
+                  }
+
+                  $MEROD_EXE = Get-ChildItem -Recurse -Filter "merod.exe" | Select-Object -First 1
+                  if (-not $MEROD_EXE) {
+                      Write-Error "merod.exe not found"
+                      exit 1
+                  }
+
+                  $BIN_DIR = "$env:USERPROFILE\bin"
+                  if (-not (Test-Path $BIN_DIR)) {
+                      New-Item -ItemType Directory -Path $BIN_DIR | Out-Null
+                  }
+                  Copy-Item $MEROD_EXE.FullName -Destination "$BIN_DIR\merod.exe" -Force
+                  $env:PATH = "$BIN_DIR;$env:PATH"
+                  merod --version
+
+            - name: Test merobox workflows
+              shell: pwsh
+              run: |
+                  merobox --version
+                  merobox --help
+
+                  $failedWorkflows = @()
+                  $workflowFiles = Get-ChildItem -Path "workflow-examples\*.yml" | Where-Object {
+                      $_.Name -ne "workflow-fuzzy-kv-store.yml"
+                  }
+
+                  foreach ($workflowFile in $workflowFiles) {
+                      $workflowPath = $workflowFile.FullName
+                      merobox bootstrap run $workflowPath `
+                          --no-docker `
+                          --binary-path "$env:USERPROFILE\bin\merod.exe"
+
+                      if ($LASTEXITCODE -ne 0) {
+                          $failedWorkflows += $workflowPath
+                      }
+
+                      merobox stop --all --no-docker 2>&1 | Out-Null
+                      merobox nuke -f 2>&1 | Out-Null
+                      Start-Sleep -Seconds 3
+                  }
+
+                  for ($retry = 1; $retry -le 2; $retry++) {
+                      if ($failedWorkflows.Count -eq 0) {
+                          break
+                      }
+
+                      Start-Sleep -Seconds 3
+                      $stillFailed = @()
+                      foreach ($workflowPath in $failedWorkflows) {
+                          merobox bootstrap run $workflowPath `
+                              --no-docker `
+                              --binary-path "$env:USERPROFILE\bin\merod.exe"
+
+                          if ($LASTEXITCODE -ne 0) {
+                              $stillFailed += $workflowPath
+                          }
+
+                          merobox stop --all --no-docker 2>&1 | Out-Null
+                          merobox nuke -f 2>&1 | Out-Null
+                          Start-Sleep -Seconds 3
+                      }
+
+                      $failedWorkflows = $stillFailed
+                  }
+
+                  if ($failedWorkflows.Count -gt 0) {
+                      exit 1
+                  }

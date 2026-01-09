@@ -255,7 +255,7 @@ class WaitForSyncStep(BaseStep):
                 elapsed = time.time() - start_time
 
                 console.print(
-                    f"[green]✓ All nodes synced after {elapsed:.2f}s ({attempt} attempts)![/green]"
+                    f"[green][OK] All nodes synced after {elapsed:.2f}s ({attempt} attempts)![/green]"
                 )
                 console.print(f"[green]  Root hash: {synced_hash}[/green]")
 
@@ -289,7 +289,7 @@ class WaitForSyncStep(BaseStep):
         # Timeout exceeded or max attempts reached
         elapsed = time.time() - start_time
         console.print(
-            f"[red]✗ Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
+            f"[red][FAIL] Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
         )
 
         # Get final state
