@@ -213,6 +213,7 @@ class ScriptStep(BaseStep):
                     ]
 
                     shell_cmd = None
+                    is_wsl_bash = False
                     for bash_path in bash_paths:
                         if bash_path in ["bash.exe", "wsl.exe"]:
                             # Check if it's in PATH
@@ -221,9 +222,16 @@ class ScriptStep(BaseStep):
                             found = which(bash_path)
                             if found:
                                 shell_cmd = found
+                                # Detect if this is WSL's bash (in System32) or wsl.exe
+                                if (
+                                    "system32" in found.lower()
+                                    or "wsl.exe" in found.lower()
+                                ):
+                                    is_wsl_bash = True
                                 break
                         elif os.path.exists(bash_path):
                             shell_cmd = bash_path
+                            # Git Bash paths don't need conversion
                             break
 
                     if not shell_cmd:
@@ -233,18 +241,22 @@ class ScriptStep(BaseStep):
                         )
                         return False
 
-                    # For WSL, convert Windows path to WSL path format
-                    if "wsl.exe" in shell_cmd.lower():
+                    # For WSL bash, convert Windows path to WSL path format
+                    if is_wsl_bash or "wsl.exe" in shell_cmd.lower():
                         # WSL needs the script path to be accessible from Linux
                         # Convert Windows path to WSL path (C:/path -> /mnt/c/path)
                         wsl_path = self.script_path.replace("\\", "/")
                         if len(wsl_path) > 1 and wsl_path[1] == ":":
                             drive = wsl_path[0].lower()
                             wsl_path = f"/mnt/{drive}{wsl_path[2:]}"
-                        # WSL: wsl bash script.sh args
-                        cmd = [shell_cmd, "bash", wsl_path] + list(resolved_args)
+                        # WSL: wsl bash script.sh args OR bash.exe script.sh (with converted path)
+                        if "wsl.exe" in shell_cmd.lower():
+                            cmd = [shell_cmd, "bash", wsl_path] + list(resolved_args)
+                        else:
+                            # WSL's bash.exe needs the converted path
+                            cmd = [shell_cmd, wsl_path] + list(resolved_args)
                     else:
-                        # Git Bash or system bash can execute .sh files directly
+                        # Git Bash can execute .sh files directly with Windows paths
                         cmd = [shell_cmd, self.script_path] + list(resolved_args)
                 elif script_ext in [".bat", ".cmd"]:
                     # For .bat/.cmd files, use cmd.exe /c
