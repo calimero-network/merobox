@@ -149,7 +149,7 @@ class WorkflowExecutor:
                         "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
                     )
                 else:
-                    console.print("[green]✓ Nuke on start completed[/green]")
+                    console.print("[green][OK] Nuke on start completed[/green]")
                 time.sleep(2)  # Give time for cleanup
 
             # Check if we should force pull images
@@ -163,7 +163,7 @@ class WorkflowExecutor:
                         "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
                     )
                 else:
-                    console.print("[green]✓ Nuke on start completed[/green]")
+                    console.print("[green][OK] Nuke on start completed[/green]")
                 time.sleep(2)  # Give time for cleanup
 
             # Check if we should force pull images (only for Docker mode)
@@ -178,7 +178,7 @@ class WorkflowExecutor:
                         "\n[bold yellow]🔄 Force pulling workflow images (force_pull_image=true)...[/bold yellow]"
                     )
                     await self._force_pull_workflow_images()
-                    console.print("[green]✓ Image force pull completed[/green]")
+                    console.print("[green][OK] Image force pull completed[/green]")
 
             # Start NEAR Devnet if requested
             if self.near_devnet:
@@ -237,12 +237,12 @@ class WorkflowExecutor:
                 )
                 if not self.manager.stop_all_nodes():
                     console.print(
-                        "[red]❌ Failed to stop workflow nodes - stopping workflow[/red]"
+                        "[red][ERROR] Failed to stop workflow nodes - stopping workflow[/red]"
                     )
                     if stop_all_nodes:
                         self._stop_nodes_on_failure()
                     return False
-                console.print("[green]✓ Workflow nodes stopped[/green]")
+                console.print("[green][OK] Workflow nodes stopped[/green]")
                 time.sleep(2)  # Give time for cleanup
             else:
                 console.print(
@@ -256,7 +256,7 @@ class WorkflowExecutor:
             console.print("\n[bold yellow]Step 2: Managing nodes...[/bold yellow]")
             if not await self._start_nodes(restart_nodes):
                 console.print(
-                    "[red]❌ Node management failed - stopping workflow[/red]"
+                    "[red][ERROR] Node management failed - stopping workflow[/red]"
                 )
                 if stop_all_nodes:
                     self._stop_nodes_on_failure()
@@ -267,7 +267,7 @@ class WorkflowExecutor:
                 "\n[bold yellow]Step 3: Waiting for nodes to be ready...[/bold yellow]"
             )
             if not await self._wait_for_nodes_ready():
-                console.print("[red]❌ Nodes not ready - stopping workflow[/red]")
+                console.print("[red][ERROR] Nodes not ready - stopping workflow[/red]")
                 if stop_all_nodes:
                     self._stop_nodes_on_failure()
                 return False
@@ -277,7 +277,9 @@ class WorkflowExecutor:
                 "\n[bold yellow]Step 4: Executing workflow steps...[/bold yellow]"
             )
             if not await self._execute_workflow_steps():
-                console.print("[red]❌ Workflow steps failed - stopping workflow[/red]")
+                console.print(
+                    "[red][ERROR] Workflow steps failed - stopping workflow[/red]"
+                )
                 if stop_all_nodes:
                     self._stop_nodes_on_failure()
                 return False
@@ -291,7 +293,7 @@ class WorkflowExecutor:
                     console.print("[red]Failed to stop all nodes[/red]")
                     # Don't return False here as workflow completed successfully
                 else:
-                    console.print("[green]✓ All nodes stopped[/green]")
+                    console.print("[green][OK] All nodes stopped[/green]")
             else:
                 console.print(
                     "\n[bold blue]Step 5: Leaving nodes running (stop_all_nodes=false)...[/bold blue]"
@@ -310,7 +312,7 @@ class WorkflowExecutor:
                         "[yellow]⚠️  Warning: Nuke operation encountered issues[/yellow]"
                     )
                 else:
-                    console.print("[green]✓ Nuke on end completed[/green]")
+                    console.print("[green][OK] Nuke on end completed[/green]")
 
             console.print(
                 f"\n[bold green]🎉 Workflow '{workflow_name}' completed successfully![/bold green]"
@@ -325,7 +327,7 @@ class WorkflowExecutor:
             return True
 
         except Exception as e:
-            console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
+            console.print(f"\n[red][ERROR] Workflow failed with error: {str(e)}[/red]")
             stop_all_nodes = self.config.get("stop_all_nodes", False)
             if stop_all_nodes:
                 self._stop_nodes_on_failure()
@@ -345,7 +347,7 @@ class WorkflowExecutor:
         if not self.manager.stop_all_nodes():
             console.print("[red]Failed to stop all nodes[/red]")
         else:
-            console.print("[green]✓ All nodes stopped[/green]")
+            console.print("[green][OK] All nodes stopped[/green]")
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
@@ -496,7 +498,7 @@ class WorkflowExecutor:
             # Check for incompatible config_path option
             if config_path is not None:
                 console.print(
-                    "[red]❌ config_path is not supported with 'count' mode[/red]"
+                    "[red][ERROR] config_path is not supported with 'count' mode[/red]"
                 )
                 console.print(
                     "[yellow]Please define nodes individually to use custom config paths[/yellow]"
@@ -512,11 +514,11 @@ class WorkflowExecutor:
                 # NEAR Devnet Config Logic
                 node_near_config = {}
                 if self.near_devnet:
-                    console.print("[green]✓ Using Near Devnet config [/green]")
+                    console.print("[green][OK] Using Near Devnet config [/green]")
                     for i in range(count):
                         node_name = f"{prefix}-{i+1}"
                         console.print(
-                            f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
+                            f"[green][OK] Creating account '{node_name}' using Near Devnet config [/green]"
                         )
                         creds = await self.sandbox.create_node_account(node_name)
                         node_near_config[node_name] = {
@@ -560,7 +562,7 @@ class WorkflowExecutor:
 
                     if is_running:
                         console.print(
-                            f"[green]✓ Node '{node_name}' is already running[/green]"
+                            f"[green][OK] Node '{node_name}' is already running[/green]"
                         )
                         continue
 
@@ -603,7 +605,7 @@ class WorkflowExecutor:
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
 
-            console.print("[green]✓ Node management completed[/green]")
+            console.print("[green][OK] Node management completed[/green]")
             return True
 
         # Otherwise handle individually defined nodes (dict or list)
@@ -709,7 +711,7 @@ class WorkflowExecutor:
                         return False
                 else:
                     console.print(
-                        f"[green]✓ Node '{node_name}' is already running[/green]"
+                        f"[green][OK] Node '{node_name}' is already running[/green]"
                     )
                     continue
             else:
@@ -741,7 +743,7 @@ class WorkflowExecutor:
                 if not self.manager.run_node(**run_node_kwargs):
                     return False
 
-        console.print("[green]✓ Node management completed[/green]")
+        console.print("[green][OK] Node management completed[/green]")
         return True
 
     async def _wait_for_nodes_ready(self) -> bool:
@@ -782,7 +784,7 @@ class WorkflowExecutor:
                                     ready_nodes.add(node_name)
                                     progress.update(task, completed=len(ready_nodes))
                                     console.print(
-                                        f"[green]✓ Node {node_name} is ready[/green]"
+                                        f"[green][OK] Node {node_name} is ready[/green]"
                                     )
                         except Exception:
                             pass
@@ -791,11 +793,13 @@ class WorkflowExecutor:
                     await asyncio.sleep(2)
 
         if len(ready_nodes) == len(node_names):
-            console.print("[green]✓ All nodes are ready[/green]")
+            console.print("[green][OK] All nodes are ready[/green]")
             return True
         else:
             missing_nodes = set(node_names) - ready_nodes
-            console.print(f"[red]❌ Nodes not ready: {', '.join(missing_nodes)}[/red]")
+            console.print(
+                f"[red][ERROR] Nodes not ready: {', '.join(missing_nodes)}[/red]"
+            )
             return False
 
     def _get_valid_node_names(self) -> set[str]:
@@ -864,7 +868,7 @@ class WorkflowExecutor:
         if not valid_nodes:
             if referenced_nodes:
                 console.print(
-                    f"[red]❌ Workflow references nodes but no nodes are configured: {', '.join(sorted(referenced_nodes))}[/red]"
+                    f"[red][ERROR] Workflow references nodes but no nodes are configured: {', '.join(sorted(referenced_nodes))}[/red]"
                 )
                 return False
             return True
@@ -873,7 +877,7 @@ class WorkflowExecutor:
 
         if invalid_nodes:
             console.print(
-                f"[red]❌ Workflow references non-existent nodes: {', '.join(sorted(invalid_nodes))}[/red]"
+                f"[red][ERROR] Workflow references non-existent nodes: {', '.join(sorted(invalid_nodes))}[/red]"
             )
             console.print(
                 f"[yellow]Valid nodes based on configuration: {', '.join(sorted(valid_nodes))}[/yellow]"
@@ -922,14 +926,14 @@ class WorkflowExecutor:
                 )
 
                 if not success:
-                    console.print(f"[red]❌ Step '{step_name}' failed[/red]")
+                    console.print(f"[red][ERROR] Step '{step_name}' failed[/red]")
                     return False
 
-                console.print(f"[green]✓ Step '{step_name}' completed[/green]")
+                console.print(f"[green][OK] Step '{step_name}' completed[/green]")
 
             except Exception as e:
                 console.print(
-                    f"[red]❌ Step '{step_name}' failed with error: {str(e)}[/red]"
+                    f"[red][ERROR] Step '{step_name}' failed with error: {str(e)}[/red]"
                 )
                 return False
 

@@ -189,7 +189,7 @@ def validate(config_file, verbose):
                     console.print("  Chain ID: N/A")
         else:
             console.print(
-                "\n[bold red]❌ Workflow configuration validation failed![/bold red]"
+                "\n[bold red][ERROR] Workflow configuration validation failed![/bold red]"
             )
             for error in validation_result["errors"]:
                 console.print(f"  [red]• {error}[/red]")

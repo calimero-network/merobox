@@ -213,7 +213,7 @@ class ExecuteStep(BaseStep):
                     if expected_failure:
                         # This is an expected failure - capture error details and continue
                         console.print(
-                            f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]"
+                            f"[yellow][OK] Expected failure occurred: {error_message}[/yellow]"
                         )
 
                         # Structure error information for export
@@ -234,7 +234,7 @@ class ExecuteStep(BaseStep):
                     else:
                         # Unexpected failure - stop workflow
                         console.print(
-                            f"[red]❌ Execution failed: {error_message}[/red]"
+                            f"[red][ERROR] Execution failed: {error_message}[/red]"
                         )
                         # Print node logs to help with debugging
                         self._print_node_logs_on_failure(node_name=node_name, lines=50)
@@ -268,7 +268,7 @@ class ExecuteStep(BaseStep):
                     )
                     if expected_failure:
                         console.print(
-                            "[yellow]✓ Expected failure occurred (JSON-RPC error detected)[/yellow]"
+                            "[yellow][OK] Expected failure occurred (JSON-RPC error detected)[/yellow]"
                         )
 
                         step_key = f"execute_{node_name}_{method}"
@@ -281,7 +281,7 @@ class ExecuteStep(BaseStep):
                         return True
                     else:
                         console.print(
-                            "[red]❌ Unexpected JSON-RPC error detected[/red]"
+                            "[red][ERROR] Unexpected JSON-RPC error detected[/red]"
                         )
                         # Print node logs to help with debugging
                         self._print_node_logs_on_failure(node_name=node_name, lines=50)

@@ -3,6 +3,7 @@ Binary Manager - Manages Calimero nodes as native processes (no Docker).
 """
 
 import os
+import platform
 import re
 import shutil
 import signal
@@ -55,7 +56,7 @@ class BinaryManager:
 
         binary = which("merod")
         if binary:
-            console.print(f"[green]✓ Found merod binary in PATH: {binary}[/green]")
+            console.print(f"[green][OK] Found merod binary in PATH: {binary}[/green]")
             return binary
 
         # Check common locations
@@ -69,13 +70,13 @@ class BinaryManager:
 
         for path in common_paths:
             if os.path.isfile(path) and os.access(path, os.X_OK):
-                console.print(f"[green]✓ Found merod binary: {path}[/green]")
+                console.print(f"[green][OK] Found merod binary: {path}[/green]")
                 return path
 
         # Not found - either exit or return None
         if require:
             console.print(
-                "[red]✗ merod binary not found. Please install or specify --binary-path[/red]"
+                "[red][FAIL] merod binary not found. Please install or specify --binary-path[/red]"
             )
             console.print(
                 "[yellow]Searched: PATH and common locations (/usr/local/bin, /usr/bin, ~/bin, ./)[/yellow]"
@@ -195,7 +196,7 @@ class BinaryManager:
                 config_source = Path(config_path)
                 if not config_source.exists():
                     console.print(
-                        f"[red]✗ Custom config file not found: {config_path}[/red]"
+                        f"[red][FAIL] Custom config file not found: {config_path}[/red]"
                     )
                     return False
 
@@ -205,12 +206,12 @@ class BinaryManager:
                 try:
                     shutil.copy2(config_source, config_dest)
                     console.print(
-                        f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
+                        f"[green][OK] Copied custom config from {config_path} to {config_dest}[/green]"
                     )
                     skip_init = True
                 except Exception as e:
                     console.print(
-                        f"[red]✗ Failed to copy custom config: {str(e)}[/red]"
+                        f"[red][FAIL] Failed to copy custom config: {str(e)}[/red]"
                     )
                     return False
 
@@ -262,11 +263,11 @@ class BinaryManager:
                                 stderr=subprocess.STDOUT,
                             )
                             console.print(
-                                f"[green]✓ Node {node_name} initialized successfully[/green]"
+                                f"[green][OK] Node {node_name} initialized successfully[/green]"
                             )
                         except subprocess.CalledProcessError as e:
                             console.print(
-                                f"[red]✗ Failed to initialize node {node_name}: {e}[/red]"
+                                f"[red][FAIL] Failed to initialize node {node_name}: {e}[/red]"
                             )
                             console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                             return False
@@ -291,7 +292,7 @@ class BinaryManager:
             # Apply NEAR Devnet config if provided
             if near_devnet_config:
                 console.print(
-                    "[green]✓ Applying Near Devnet config for the node [/green]"
+                    "[green][OK] Applying Near Devnet config for the node [/green]"
                 )
 
                 actual_config_file = node_data_dir / node_name / "config.toml"
@@ -304,7 +305,9 @@ class BinaryManager:
                     near_devnet_config["public_key"],
                     near_devnet_config["secret_key"],
                 ):
-                    console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
+                    console.print(
+                        "[red][FAIL] Failed to apply NEAR Devnet config[/red]"
+                    )
                     return False
 
             # Build run command (ports are taken from config created during init)
@@ -331,7 +334,7 @@ class BinaryManager:
                     except (TypeError, ValueError):
                         pass
                     console.print(
-                        f"[green]✓ Node {node_name} started (foreground) (PID: {process.pid})[/green]"
+                        f"[green][OK] Node {node_name} started (foreground) (PID: {process.pid})[/green]"
                     )
                     # Wait until process exits
                     process.wait()
@@ -340,7 +343,7 @@ class BinaryManager:
                     return True
                 except Exception as e:
                     console.print(
-                        f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]"
+                        f"[red][FAIL] Failed to start node {node_name}: {str(e)}[/red]"
                     )
                     return False
             else:
@@ -371,7 +374,7 @@ class BinaryManager:
                     pass
 
                 console.print(
-                    f"[green]✓ Node {node_name} started successfully (PID: {process.pid})[/green]"
+                    f"[green][OK] Node {node_name} started successfully (PID: {process.pid})[/green]"
                 )
                 console.print(f"[cyan]  View logs: tail -f {log_file}[/cyan]")
                 console.print(
@@ -381,7 +384,9 @@ class BinaryManager:
                 # Wait a moment to check if process stays alive
                 time.sleep(2)
                 if not self._is_process_running(process.pid):
-                    console.print(f"[red]✗ Node {node_name} crashed immediately![/red]")
+                    console.print(
+                        f"[red][FAIL] Node {node_name} crashed immediately![/red]"
+                    )
                     console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                     return False
 
@@ -391,7 +396,7 @@ class BinaryManager:
                         ("127.0.0.1", int(rpc_port)), timeout=1.5
                     ):
                         console.print(
-                            f"[green]✓ Admin server reachable at http://localhost:{rpc_port}/admin-dashboard[/green]"
+                            f"[green][OK] Admin server reachable at http://localhost:{rpc_port}/admin-dashboard[/green]"
                         )
                 except Exception:
                     console.print(
@@ -401,7 +406,9 @@ class BinaryManager:
                 return True
 
         except Exception as e:
-            console.print(f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
+            console.print(
+                f"[red][FAIL] Failed to start node {node_name}: {str(e)}[/red]"
+            )
             return False
 
     def stop_node(self, node_name: str) -> bool:
@@ -413,7 +420,7 @@ class BinaryManager:
                 try:
                     process.terminate()
                     process.wait(timeout=5)
-                    console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                    console.print(f"[green][OK] Stopped node {node_name}[/green]")
                 except subprocess.TimeoutExpired:
                     console.print(f"[yellow]Force killing node {node_name}...[/yellow]")
                     process.kill()
@@ -432,11 +439,15 @@ class BinaryManager:
                 # Check if still running
                 if self._is_process_running(pid):
                     console.print(f"[yellow]Force killing node {node_name}...[/yellow]")
-                    os.kill(pid, signal.SIGKILL)
+                    # On Windows, SIGKILL doesn't exist, but os.kill with SIGTERM works
+                    if platform.system() == "Windows":
+                        os.kill(pid, signal.SIGTERM)
+                    else:
+                        os.kill(pid, signal.SIGKILL)
 
                 self._remove_pid_file(node_name)
                 self.node_rpc_ports.pop(node_name, None)
-                console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                console.print(f"[green][OK] Stopped node {node_name}[/green]")
                 return True
             else:
                 console.print(f"[yellow]Node {node_name} is not running[/yellow]")
@@ -444,7 +455,9 @@ class BinaryManager:
                 return False
 
         except Exception as e:
-            console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
+            console.print(
+                f"[red][FAIL] Failed to stop node {node_name}: {str(e)}[/red]"
+            )
             return False
 
     def stop_all_nodes(self) -> bool:
@@ -490,14 +503,14 @@ class BinaryManager:
                     try:
                         process.terminate()
                         process.wait(timeout=5)
-                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                        console.print(f"[green][OK] Stopped node {node_name}[/green]")
                     except subprocess.TimeoutExpired:
                         console.print(
                             f"[yellow]Force killing node {node_name}...[/yellow]"
                         )
                         process.kill()
                         process.wait()
-                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                        console.print(f"[green][OK] Stopped node {node_name}[/green]")
                     del self.processes[node_name]
                     self._remove_pid_file(node_name)
                     self.node_rpc_ports.pop(node_name, None)
@@ -514,9 +527,13 @@ class BinaryManager:
                             console.print(
                                 f"[yellow]Force killing node {node_name}...[/yellow]"
                             )
-                            os.kill(pid, signal.SIGKILL)
+                            # On Windows, SIGKILL doesn't exist, but os.kill with SIGTERM works
+                            if platform.system() == "Windows":
+                                os.kill(pid, signal.SIGTERM)
+                            else:
+                                os.kill(pid, signal.SIGKILL)
 
-                        console.print(f"[green]✓ Stopped node {node_name}[/green]")
+                        console.print(f"[green][OK] Stopped node {node_name}[/green]")
                     else:
                         # Process stopped between check and stop attempt (race condition)
                         # Still need to clean up resources
@@ -531,7 +548,7 @@ class BinaryManager:
                     # Increment counter only after successful cleanup
                     stopped += 1
             except Exception as e:
-                console.print(f"[red]✗ Failed to stop {node_name}: {str(e)}[/red]")
+                console.print(f"[red][FAIL] Failed to stop {node_name}: {str(e)}[/red]")
                 failed_nodes.append(node_name)
 
         console.print(
@@ -799,12 +816,17 @@ class BinaryManager:
                 bootstrap_nodes=bootstrap_nodes,
             ):
                 success_count += 1
+                # Add delay between starting nodes to prevent Windows DLL file locking conflicts
+                # Windows locks DLL files during load, causing STATUS_DLL_NOT_FOUND for subsequent nodes
+                # This delay is harmless on macOS/Linux but essential for Windows
+                if i < count - 1:  # Don't delay after the last node
+                    time.sleep(2)
             else:
-                console.print(f"[red]✗ Failed to start node {node_name}[/red]")
+                console.print(f"[red][FAIL] Failed to start node {node_name}[/red]")
                 return False
 
         console.print(
-            f"\n[bold green]✓ Successfully started all {success_count} node(s)[/bold green]"
+            f"\n[bold green][OK] Successfully started all {success_count} node(s)[/bold green]"
         )
         return True
 
@@ -862,16 +884,16 @@ class BinaryManager:
                 toml.dump(config, f)
 
             console.print(
-                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
+                f"[green][OK] Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
             )
 
         except ImportError:
             console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+                "[red][FAIL] toml package not found. Install with: pip install toml[/red]"
             )
         except Exception as e:
             console.print(
-                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
+                f"[red][FAIL] Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
             )
 
     def _apply_e2e_defaults(
@@ -930,16 +952,16 @@ class BinaryManager:
                 toml.dump(config, f)
 
             console.print(
-                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
+                f"[green][OK] Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
             )
 
         except ImportError:
             console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+                "[red][FAIL] toml package not found. Install with: pip install toml[/red]"
             )
         except Exception as e:
             console.print(
-                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
+                f"[red][FAIL] Failed to apply e2e defaults to {node_name}: {e}[/red]"
             )
 
     def _find_available_ports(self, count: int) -> list[int]:

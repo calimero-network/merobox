@@ -119,7 +119,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
             yaml.dump(sample_config, file, default_flow_style=False, indent=2)
 
         console.print(
-            f"[green]✓ Sample workflow configuration created: {output_path}[/green]"
+            f"[green][OK] Sample workflow configuration created: {output_path}[/green]"
         )
         console.print(
             "[yellow]Note: Dynamic values are automatically captured and used with placeholders[/yellow]"

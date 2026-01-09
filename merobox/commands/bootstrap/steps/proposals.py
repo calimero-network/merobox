@@ -98,12 +98,12 @@ class GetProposalStep(BaseStep):
             self._export_variables(actual_proposal, node_name, dynamic_values)
 
             console.print(
-                f"[green]✓ Proposal retrieved successfully on {node_name}[/green]"
+                f"[green][OK] Proposal retrieved successfully on {node_name}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]✗ Failed to get proposal on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+                f"[red][FAIL] Failed to get proposal on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
 
@@ -197,12 +197,12 @@ class ListProposalsStep(BaseStep):
             self._export_variables(actual_proposals, node_name, dynamic_values)
 
             console.print(
-                f"[green]✓ Proposals retrieved successfully on {node_name}[/green]"
+                f"[green][OK] Proposals retrieved successfully on {node_name}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]✗ Failed to list proposals on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+                f"[red][FAIL] Failed to list proposals on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
 
@@ -302,11 +302,11 @@ class GetProposalApproversStep(BaseStep):
             self._export_variables(actual_approvers, node_name, dynamic_values)
 
             console.print(
-                f"[green]✓ Proposal approvers retrieved successfully on {node_name}[/green]"
+                f"[green][OK] Proposal approvers retrieved successfully on {node_name}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]✗ Failed to get proposal approvers on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+                f"[red][FAIL] Failed to get proposal approvers on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
