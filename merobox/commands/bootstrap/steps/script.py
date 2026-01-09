@@ -196,12 +196,74 @@ class ScriptStep(BaseStep):
                 env[env_key] = str(value) if value is not None else ""
 
             # Run the script using platform-specific shell
-            # Use cmd.exe on Windows, /bin/sh on Unix-like systems
-            shell_cmd = "cmd.exe" if platform.system() == "Windows" else "/bin/sh"
+            # On Windows: .sh files need bash (Git Bash/WSL), .bat/.cmd use cmd.exe /c
+            # On Unix: use /bin/sh
+            script_ext = os.path.splitext(self.script_path)[1].lower()
+            is_windows = platform.system() == "Windows"
+
+            if is_windows:
+                if script_ext in [".sh"]:
+                    # For .sh files on Windows, try to find bash
+                    # Check common locations: Git Bash, WSL, or system bash
+                    bash_paths = [
+                        r"C:\Program Files\Git\bin\bash.exe",
+                        r"C:\Program Files (x86)\Git\bin\bash.exe",
+                        "bash.exe",  # In PATH (Git Bash, WSL)
+                        "wsl.exe",  # Windows Subsystem for Linux
+                    ]
+
+                    shell_cmd = None
+                    for bash_path in bash_paths:
+                        if bash_path in ["bash.exe", "wsl.exe"]:
+                            # Check if it's in PATH
+                            from shutil import which
+
+                            found = which(bash_path)
+                            if found:
+                                shell_cmd = found
+                                break
+                        elif os.path.exists(bash_path):
+                            shell_cmd = bash_path
+                            break
+
+                    if not shell_cmd:
+                        console.print(
+                            "[red][ERROR] Cannot execute .sh script on Windows: bash not found. "
+                            "Please install Git Bash or WSL, or use .bat/.cmd scripts instead.[/red]"
+                        )
+                        return False
+
+                    # For WSL, convert Windows path to WSL path format
+                    if "wsl.exe" in shell_cmd.lower():
+                        # WSL needs the script path to be accessible from Linux
+                        # Convert Windows path to WSL path (C:/path -> /mnt/c/path)
+                        wsl_path = self.script_path.replace("\\", "/")
+                        if len(wsl_path) > 1 and wsl_path[1] == ":":
+                            drive = wsl_path[0].lower()
+                            wsl_path = f"/mnt/{drive}{wsl_path[2:]}"
+                        # WSL: wsl bash script.sh args
+                        cmd = [shell_cmd, "bash", wsl_path] + list(resolved_args)
+                    else:
+                        # Git Bash or system bash can execute .sh files directly
+                        cmd = [shell_cmd, self.script_path] + list(resolved_args)
+                elif script_ext in [".bat", ".cmd"]:
+                    # For .bat/.cmd files, use cmd.exe /c
+                    cmd = ["cmd.exe", "/c", self.script_path] + list(resolved_args)
+                else:
+                    # Unknown extension, try cmd.exe /c as fallback
+                    console.print(
+                        f"[yellow]Warning: Unknown script extension '{script_ext}' on Windows. "
+                        f"Trying cmd.exe /c[/yellow]"
+                    )
+                    cmd = ["cmd.exe", "/c", self.script_path] + list(resolved_args)
+            else:
+                # Unix-like systems: use /bin/sh
+                cmd = ["/bin/sh", self.script_path] + list(resolved_args)
+
             start_time = time.time()
             try:
                 completed = subprocess.run(
-                    [shell_cmd, self.script_path, *resolved_args],
+                    cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
