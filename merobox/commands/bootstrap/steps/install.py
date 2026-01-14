@@ -6,6 +6,8 @@ import os
 import shutil
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
@@ -237,7 +239,14 @@ class InstallApplicationStep(BaseStep):
             console.print(f"  Data: {data}")
 
         if not result.get("success"):
-            console.print(f"  Error: {result.get('error')}")
+            console.print(f"  Error: {escape(str(result.get('error')))}")
+            # Print exception details if available
+            if "exception" in result:
+                exc_info = result["exception"]
+                console.print(f"  Exception Type: {escape(str(exc_info.get('type')))}")
+                console.print(
+                    f"  Exception Message: {escape(str(exc_info.get('message')))}"
+                )
 
         if result["success"]:
             # Check if the JSON-RPC response contains an error
