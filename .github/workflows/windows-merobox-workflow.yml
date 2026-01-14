@@ -1,0 +1,99 @@
+name: Windows - Merobox Workflow Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  windows-merobox-test:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Merobox Repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git for Windows
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Clone Calimero Core Repository
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/calimero-network/core.git "$env:GITHUB_WORKSPACE\core"
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ github.workspace }}/core/target
+          key: ${{ runner.os }}-cargo-merod-${{ hashFiles('core/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-merod-
+
+      - name: Build merod Binary
+        shell: pwsh
+        working-directory: ${{ github.workspace }}/core
+        run: |
+          rustc --version
+          cargo --version
+          cargo build --release -p merod
+
+      - name: Validate merod Binary
+        shell: pwsh
+        run: |
+          $merodPath = "$env:GITHUB_WORKSPACE\core\target\release\merod.exe"
+          if (-not (Test-Path $merodPath)) {
+            Get-ChildItem "$env:GITHUB_WORKSPACE\core\target\release" -ErrorAction SilentlyContinue
+            exit 1
+          }
+          & $merodPath --help
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Merobox
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Validate Merobox Installation
+        shell: pwsh
+        run: |
+          merobox --version
+          merobox --help
+
+      - name: Run Merobox Workflow
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          $merodPath = "$env:GITHUB_WORKSPACE\core\target\release\merod.exe"
+          $workflowPath = "$env:GITHUB_WORKSPACE\workflow-examples\workflow-example.yml"
+          merobox bootstrap run $workflowPath --no-docker --binary-path $merodPath
+
+      - name: Cleanup - Stop All Nodes
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: merobox stop --all --no-docker
+
+      - name: Cleanup - Nuke Merobox State
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: merobox nuke -f
