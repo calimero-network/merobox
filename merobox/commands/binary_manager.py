@@ -256,16 +256,20 @@ class BinaryManager:
                     with open(log_file, "a") as log_f:
                         # On Windows, DLL locking can cause init to fail with STATUS_DLL_NOT_FOUND
                         # when multiple nodes are started in quick succession. Retry with delays.
-                        max_retries = 3 if platform.system() == "Windows" else 1
+                        # Use exponential backoff: 5s, 8s, 12s between retries
+                        max_retries = 5 if platform.system() == "Windows" else 1
+                        retry_delays = [5, 8, 12, 15]  # Exponential backoff delays
                         last_error = None
                         for attempt in range(max_retries):
                             try:
                                 if attempt > 0:
+                                    delay = retry_delays[
+                                        min(attempt - 1, len(retry_delays) - 1)
+                                    ]
                                     console.print(
-                                        f"[yellow]Retrying initialization (attempt {attempt + 1}/{max_retries})...[/yellow]"
+                                        f"[yellow]Retrying initialization (attempt {attempt + 1}/{max_retries}, waiting {delay}s)...[/yellow]"
                                     )
-                                    # Wait before retry on Windows
-                                    time.sleep(3)
+                                    time.sleep(delay)
                                 subprocess.run(
                                     init_cmd,
                                     check=True,
@@ -280,11 +284,21 @@ class BinaryManager:
                                 break
                             except subprocess.CalledProcessError as e:
                                 last_error = e
+                                console.print(
+                                    f"[yellow]Init attempt {attempt + 1} failed (exit code {e.returncode})[/yellow]"
+                                )
+                                if attempt < max_retries - 1:
+                                    continue
+                            except Exception as e:
+                                last_error = e
+                                console.print(
+                                    f"[yellow]Init attempt {attempt + 1} failed: {type(e).__name__}: {e}[/yellow]"
+                                )
                                 if attempt < max_retries - 1:
                                     continue
                         if last_error:
                             console.print(
-                                f"[red][FAIL] Failed to initialize node {node_name}: {last_error}[/red]"
+                                f"[red][FAIL] Failed to initialize node {node_name} after {max_retries} attempts: {last_error}[/red]"
                             )
                             console.print(f"[yellow]Check logs: {log_file}[/yellow]")
                             return False
@@ -837,7 +851,10 @@ class BinaryManager:
                 # Windows locks DLL files during load, causing STATUS_DLL_NOT_FOUND for subsequent nodes
                 # This delay is harmless on macOS/Linux but essential for Windows
                 if i < count - 1:  # Don't delay after the last node
-                    time.sleep(3)
+                    if platform.system() == "Windows":
+                        time.sleep(5)  # Longer delay on Windows for DLL lock release
+                    else:
+                        time.sleep(1)  # Short delay on Unix systems
             else:
                 console.print(f"[red][FAIL] Failed to start node {node_name}[/red]")
                 return False
