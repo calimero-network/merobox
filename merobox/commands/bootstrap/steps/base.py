@@ -7,6 +7,8 @@ import json
 import re
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.utils import console
 
 
@@ -541,9 +543,11 @@ class BaseStep:
             if isinstance(error_info, dict):
                 error_type = error_info.get("type", "Unknown")
                 error_data = error_info.get("data", "No details")
-                console.print(f"[red]JSON-RPC Error: {error_type} - {error_data}[/red]")
+                console.print(
+                    f"[red]JSON-RPC Error: {escape(str(error_type))} - {escape(str(error_data))}[/red]"
+                )
             else:
-                console.print(f"[red]JSON-RPC Error: {error_info}[/red]")
+                console.print(f"[red]JSON-RPC Error: {escape(str(error_info))}[/red]")
             return True
         return False
 
@@ -585,7 +589,7 @@ class BaseStep:
                 # Binary mode - use BinaryManager's get_node_logs
                 log_content = self.manager.get_node_logs(node_name, lines=lines)
                 if log_content:
-                    console.print(log_content)
+                    console.print(escape(log_content))
                 else:
                     console.print(f"[dim]No logs found for {node_name}[/dim]")
             else:
@@ -600,11 +604,13 @@ class BaseStep:
 
                     logs = container.logs(tail=lines, timestamps=True).decode("utf-8")
                     if logs:
-                        console.print(logs)
+                        console.print(escape(logs))
                     else:
                         console.print(f"[dim]No logs available for {node_name}[/dim]")
                 except Exception as e:
-                    console.print(f"[dim]Could not retrieve logs: {str(e)}[/dim]")
+                    console.print(
+                        f"[dim]Could not retrieve logs: {escape(str(e))}[/dim]"
+                    )
 
             console.print("[dim]" + "=" * 80 + "[/dim]\n")
         except Exception as e:

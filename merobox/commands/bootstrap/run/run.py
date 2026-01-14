@@ -12,6 +12,8 @@ import asyncio
 import os
 from typing import Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.utils import console
@@ -126,7 +128,7 @@ async def run_workflow(
         return success
 
     except Exception as e:
-        console.print(f"[red]Failed to execute workflow: {str(e)}[/red]")
+        console.print(f"[red]Failed to execute workflow: {escape(str(e))}[/red]")
         return False
 
 
