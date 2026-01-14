@@ -52,13 +52,13 @@ async def list_proposals_via_admin_api(
         )
         client = get_client_for_rpc_url(rpc_url)
         result = client.list_proposals(context_id=context_id, args=args_to_pass)
-        console.print(f"[green]✓ list_proposals returned: {result}[/green]")
+        console.print(f"[green][OK] list_proposals returned: {result}[/green]")
         return ok(
             result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS}/{context_id}/proposals"
         )
     except Exception as e:
         console.print(
-            f"[red]✗ list_proposals exception: {type(e).__name__}: {str(e)}[/red]"
+            f"[red][FAIL] list_proposals exception: {type(e).__name__}: {str(e)}[/red]"
         )
         return fail("list_proposals failed", error=e)
 
@@ -106,7 +106,7 @@ def get(node, context_id, proposal_id, verbose):
     )
 
     if result["success"]:
-        console.print("\n[green]✓ Proposal retrieved successfully![/green]")
+        console.print("\n[green][OK] Proposal retrieved successfully![/green]")
 
         # Create table
         table = Table(title="Proposal Details", box=box.ROUNDED)
@@ -128,7 +128,7 @@ def get(node, context_id, proposal_id, verbose):
             console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
     else:
-        console.print("\n[red]✗ Failed to get proposal[/red]")
+        console.print("\n[red][FAIL] Failed to get proposal[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -157,7 +157,7 @@ def list(node, context_id, args, verbose):
             count = 1 if proposals_data else 0
             proposals_data = [proposals_data] if proposals_data else []
 
-        console.print(f"\n[green]✓ Found {count} proposals![/green]")
+        console.print(f"\n[green][OK] Found {count} proposals![/green]")
 
         if proposals_data:
             # Create table
@@ -191,7 +191,7 @@ def list(node, context_id, args, verbose):
             console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
     else:
-        console.print("\n[red]✗ Failed to list proposals[/red]")
+        console.print("\n[red][FAIL] Failed to list proposals[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -222,7 +222,7 @@ def approvers(node, context_id, proposal_id, verbose):
             count = 1 if approvers_data else 0
             approvers_data = [approvers_data] if approvers_data else []
 
-        console.print(f"\n[green]✓ Found {count} approvers![/green]")
+        console.print(f"\n[green][OK] Found {count} approvers![/green]")
 
         if approvers_data:
             # Create table
@@ -247,7 +247,7 @@ def approvers(node, context_id, proposal_id, verbose):
             console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
     else:
-        console.print("\n[red]✗ Failed to get approvers[/red]")
+        console.print("\n[red][FAIL] Failed to get approvers[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 

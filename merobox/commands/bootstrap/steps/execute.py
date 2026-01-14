@@ -98,7 +98,7 @@ class ExecuteStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Execute step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Execute step export configuration validation failed[/yellow]"
             )
 
         # Get executor public key from config or extract from context
@@ -294,7 +294,7 @@ class ExecuteStep(BaseStep):
                 # If failure was expected but call succeeded, warn the user
                 if expected_failure:
                     console.print(
-                        "[yellow]⚠️  Warning: Expected failure but call succeeded[/yellow]"
+                        "[yellow][WARNING]  Warning: Expected failure but call succeeded[/yellow]"
                     )
                     # Create error_info with None values to maintain consistency with actual failures
                     # This ensures error fields are auto-exported even when no outputs are configured

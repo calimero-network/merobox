@@ -109,7 +109,7 @@ class CreateMeshStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  CreateMesh step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  CreateMesh step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -230,7 +230,7 @@ class CreateMeshStep(BaseStep):
         for node_name in nodes:
             if node_name == context_node:
                 console.print(
-                    f"[yellow]⚠️  Skipping {node_name} (same as context node)[/yellow]"
+                    f"[yellow][WARNING]  Skipping {node_name} (same as context node)[/yellow]"
                 )
                 continue
 

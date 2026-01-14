@@ -83,7 +83,7 @@ class JoinContextStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Join step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Join step export configuration validation failed[/yellow]"
             )
 
         # Debug: Show resolved values

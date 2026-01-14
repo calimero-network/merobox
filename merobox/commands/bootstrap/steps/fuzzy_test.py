@@ -271,7 +271,9 @@ class FuzzyTestStep(BaseStep):
                     await asyncio.sleep(operation_delay_ms / 1000)
 
         except KeyboardInterrupt:
-            console.print("\n[yellow]⚠️  Fuzzy test interrupted by user[/yellow]")
+            console.print(
+                "\n[yellow][WARNING]  Fuzzy test interrupted by user[/yellow]"
+            )
             had_exception = True
         except Exception as e:
             console.print(f"\n[red][ERROR] Fuzzy test error: {str(e)}[/red]")
@@ -299,7 +301,7 @@ class FuzzyTestStep(BaseStep):
         elif summary["total_assertions"] == 0:
             # No assertions ran - nothing was validated, test must fail
             console.print(
-                "[yellow]⚠️  Warning: No assertions were executed during fuzzy test![/yellow]"
+                "[yellow][WARNING]  Warning: No assertions were executed during fuzzy test![/yellow]"
             )
             console.print(
                 "[yellow]   The test cannot pass without validating any results.[/yellow]"
@@ -348,7 +350,7 @@ class FuzzyTestStep(BaseStep):
             # Validate step is a dict (extra safety check)
             if not isinstance(step_config, dict):
                 console.print(
-                    f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                    f"[yellow][WARNING]  Step {step_idx + 1} in pattern '{pattern_name}' "
                     f"is not a dictionary (got {type(step_config).__name__}), "
                     f"skipping (iteration {iteration})[/yellow]"
                 )
@@ -357,7 +359,7 @@ class FuzzyTestStep(BaseStep):
             step_type = step_config.get("type")
             if not step_type:
                 console.print(
-                    f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                    f"[yellow][WARNING]  Step {step_idx + 1} in pattern '{pattern_name}' "
                     f"missing 'type' field, skipping (iteration {iteration})[/yellow]"
                 )
                 continue
@@ -389,20 +391,20 @@ class FuzzyTestStep(BaseStep):
                 )
                 if step_executor is None:
                     console.print(
-                        f"[yellow]⚠️  Unknown step type in pattern: {step_type}[/yellow]"
+                        f"[yellow][WARNING]  Unknown step type in pattern: {step_type}[/yellow]"
                     )
                     continue
             except ValueError as e:
                 # Step configuration validation failed - log and skip this step
                 console.print(
-                    f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                    f"[yellow][WARNING]  Step {step_idx + 1} in pattern '{pattern_name}' "
                     f"has invalid configuration: {str(e)} (iteration {iteration})[/yellow]"
                 )
                 continue
             except Exception as e:
                 # Unexpected error during step creation - log and skip
                 console.print(
-                    f"[yellow]⚠️  Failed to create step {step_idx + 1} in pattern '{pattern_name}': "
+                    f"[yellow][WARNING]  Failed to create step {step_idx + 1} in pattern '{pattern_name}': "
                     f"{str(e)} (iteration {iteration})[/yellow]"
                 )
                 continue
@@ -414,12 +416,12 @@ class FuzzyTestStep(BaseStep):
                 if not success and step_type != "assert":
                     # Non-assertion step failed - log but continue
                     console.print(
-                        f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                        f"[yellow][WARNING]  Step {step_idx + 1} in pattern '{pattern_name}' "
                         f"returned failure (iteration {iteration})[/yellow]"
                     )
             except Exception as e:
                 console.print(
-                    f"[yellow]⚠️  Step {step_idx + 1} in pattern '{pattern_name}' "
+                    f"[yellow][WARNING]  Step {step_idx + 1} in pattern '{pattern_name}' "
                     f"raised exception during execution: {str(e)} (iteration {iteration})[/yellow]"
                 )
 

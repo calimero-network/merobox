@@ -162,7 +162,7 @@ class BinaryManager:
         try:
             if mock_relayer:
                 console.print(
-                    "[yellow]⚠ Mock relayer is not supported in binary mode (--no-docker); flag will be ignored[/yellow]"
+                    "[yellow][WARNING] Mock relayer is not supported in binary mode (--no-docker); flag will be ignored[/yellow]"
                 )
             # Default ports if None provided
             if port is None:
@@ -258,7 +258,8 @@ class BinaryManager:
                         # when multiple nodes are started in quick succession. Retry with delays.
                         # Use exponential backoff: 5s, 8s, 12s between retries
                         max_retries = 5 if platform.system() == "Windows" else 1
-                        retry_delays = [5, 8, 12, 15]  # Exponential backoff delays
+                        # Exponential backoff delays
+                        retry_delays = [5, 8, 12, 15]
                         last_error = None
                         for attempt in range(max_retries):
                             try:
@@ -431,7 +432,7 @@ class BinaryManager:
                         )
                 except Exception:
                     console.print(
-                        f"[yellow]⚠ Admin server not reachable yet on http://localhost:{rpc_port}. It may take a few seconds. Check logs if it persists.[/yellow]"
+                        f"[yellow][WARNING] Admin server not reachable yet on http://localhost:{rpc_port}. It may take a few seconds. Check logs if it persists.[/yellow]"
                     )
 
                 return True
@@ -789,7 +790,7 @@ class BinaryManager:
         """
         if auth_service:
             console.print(
-                "[yellow]⚠ Auth service is not supported in binary mode (--no-docker)[/yellow]"
+                "[yellow][WARNING] Auth service is not supported in binary mode (--no-docker)[/yellow]"
             )
 
         console.print(f"[cyan]Starting {count} nodes with prefix '{prefix}'...[/cyan]")
@@ -852,7 +853,8 @@ class BinaryManager:
                 # This delay is harmless on macOS/Linux but essential for Windows
                 if i < count - 1:  # Don't delay after the last node
                     if platform.system() == "Windows":
-                        time.sleep(5)  # Longer delay on Windows for DLL lock release
+                        # Longer delay on Windows for DLL lock release
+                        time.sleep(5)
                     else:
                         time.sleep(1)  # Short delay on Unix systems
             else:

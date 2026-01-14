@@ -146,7 +146,7 @@ class WorkflowExecutor:
                 )
                 if not self._nuke_data():
                     console.print(
-                        "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
+                        "[yellow][WARNING]  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
                     )
                 else:
                     console.print("[green][OK] Nuke on start completed[/green]")
@@ -160,7 +160,7 @@ class WorkflowExecutor:
                 )
                 if not self._nuke_data():
                     console.print(
-                        "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
+                        "[yellow][WARNING]  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
                     )
                 else:
                     console.print("[green][OK] Nuke on start completed[/green]")
@@ -309,7 +309,7 @@ class WorkflowExecutor:
                 )
                 if not self._nuke_data():
                     console.print(
-                        "[yellow]⚠️  Warning: Nuke operation encountered issues[/yellow]"
+                        "[yellow][WARNING]  Warning: Nuke operation encountered issues[/yellow]"
                     )
                 else:
                     console.print("[green][OK] Nuke on end completed[/green]")

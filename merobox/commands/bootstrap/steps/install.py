@@ -151,7 +151,7 @@ class InstallApplicationStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Install step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Install step export configuration validation failed[/yellow]"
             )
 
         if not application_path and not application_url:
@@ -270,11 +270,11 @@ class InstallApplicationStep(BaseStep):
                         )
                     else:
                         console.print(
-                            f"[yellow]⚠️  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]"
+                            f"[yellow][WARNING]  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]"
                         )
                 else:
                     console.print(
-                        f"[yellow]⚠️  Install result is not a dict: {type(result['data'])}[/yellow]"
+                        f"[yellow][WARNING]  Install result is not a dict: {type(result['data'])}[/yellow]"
                     )
 
             return True

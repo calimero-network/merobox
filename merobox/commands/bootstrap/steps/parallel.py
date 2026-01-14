@@ -151,7 +151,7 @@ class ParallelStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Parallel step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Parallel step export configuration validation failed[/yellow]"
             )
 
         if not groups:
@@ -200,7 +200,7 @@ class ParallelStep(BaseStep):
                 # - Stagger starts: for i, group in enumerate(groups): await asyncio.sleep(i * (1.0 / rate))
                 # - Then gather with limited concurrency
                 console.print(
-                    "[yellow]⚠️  'sustained' mode not yet implemented, falling back to 'burst' mode[/yellow]"
+                    "[yellow][WARNING]  'sustained' mode not yet implemented, falling back to 'burst' mode[/yellow]"
                 )
                 tasks = [
                     self._execute_group(
@@ -223,7 +223,7 @@ class ParallelStep(BaseStep):
                 #       sustained_results.append(result)
                 # - Combine results: group_results = burst_results + sustained_results
                 console.print(
-                    "[yellow]⚠️  'mixed' mode not yet implemented, falling back to 'burst' mode[/yellow]"
+                    "[yellow][WARNING]  'mixed' mode not yet implemented, falling back to 'burst' mode[/yellow]"
                 )
                 tasks = [
                     self._execute_group(
@@ -234,7 +234,7 @@ class ParallelStep(BaseStep):
                 group_results = await asyncio.gather(*tasks, return_exceptions=True)
             else:
                 console.print(
-                    f"[yellow]⚠️  Unknown mode '{mode}', defaulting to 'burst' mode[/yellow]"
+                    f"[yellow][WARNING]  Unknown mode '{mode}', defaulting to 'burst' mode[/yellow]"
                 )
                 tasks = [
                     self._execute_group(

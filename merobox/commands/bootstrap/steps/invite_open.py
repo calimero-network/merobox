@@ -104,7 +104,7 @@ class InviteOpenStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  InviteOpen step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  InviteOpen step export configuration validation failed[/yellow]"
             )
 
         # Get node RPC URL

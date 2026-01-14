@@ -78,7 +78,7 @@ def upload(node, file, context_id, no_docker, verbose):
         blob_id = blob_info.get("blob_id")
         blob_size = blob_info.get("size")
 
-        console.print("\n[green]✓ Blob uploaded successfully![/green]")
+        console.print("\n[green][OK] Blob uploaded successfully![/green]")
 
         # Create table
         table = Table(title="Blob Upload Result", box=box.ROUNDED)
@@ -99,7 +99,7 @@ def upload(node, file, context_id, no_docker, verbose):
             console.print(f"{result}")
 
     except Exception as e:
-        console.print(f"\n[red]✗ Failed to upload blob: {str(e)}[/red]")
+        console.print(f"\n[red][FAIL] Failed to upload blob: {str(e)}[/red]")
         sys.exit(1)
 
 
@@ -131,7 +131,7 @@ def download(node, blob_id, output, context_id, no_docker, verbose):
         output.write(blob_data)
         output_size = len(blob_data)
 
-        console.print("\n[green]✓ Blob downloaded successfully![/green]")
+        console.print("\n[green][OK] Blob downloaded successfully![/green]")
         console.print(
             f"[green]Downloaded {output_size} bytes ({output_size / 1024:.2f} KB)[/green]"
         )
@@ -146,7 +146,7 @@ def download(node, blob_id, output, context_id, no_docker, verbose):
                 console.print(f"Context ID: {context_id}")
 
     except Exception as e:
-        console.print(f"\n[red]✗ Failed to download blob: {str(e)}[/red]")
+        console.print(f"\n[red][FAIL] Failed to download blob: {str(e)}[/red]")
         sys.exit(1)
 
 
@@ -180,7 +180,7 @@ def list_blobs(node, context_id, no_docker, verbose):
 
         blobs = blobs_data.get("blobs", []) if isinstance(blobs_data, dict) else []
 
-        console.print(f"\n[green]✓ Found {len(blobs)} blobs[/green]")
+        console.print(f"\n[green][OK] Found {len(blobs)} blobs[/green]")
 
         if blobs:
             # Create table
@@ -205,7 +205,7 @@ def list_blobs(node, context_id, no_docker, verbose):
             console.print(f"{result}")
 
     except Exception as e:
-        console.print(f"\n[red]✗ Failed to list blobs: {str(e)}[/red]")
+        console.print(f"\n[red][FAIL] Failed to list blobs: {str(e)}[/red]")
         sys.exit(1)
 
 
@@ -234,7 +234,7 @@ def info(node, blob_id, no_docker, verbose):
         else:
             blob_info = result
 
-        console.print("\n[green]✓ Blob info retrieved successfully![/green]")
+        console.print("\n[green][OK] Blob info retrieved successfully![/green]")
 
         # Create table
         table = Table(title="Blob Information", box=box.ROUNDED)
@@ -254,7 +254,7 @@ def info(node, blob_id, no_docker, verbose):
             console.print(f"{result}")
 
     except Exception as e:
-        console.print(f"\n[red]✗ Failed to get blob info: {str(e)}[/red]")
+        console.print(f"\n[red][FAIL] Failed to get blob info: {str(e)}[/red]")
         sys.exit(1)
 
 
@@ -290,18 +290,20 @@ def delete(node, blob_id, no_docker, verbose, yes):
         if isinstance(result, dict):
             deleted = result.get("deleted", False)
             if deleted:
-                console.print("\n[green]✓ Blob deleted successfully![/green]")
+                console.print("\n[green][OK] Blob deleted successfully![/green]")
             else:
-                console.print("\n[yellow]⚠ Blob deletion status unclear[/yellow]")
+                console.print(
+                    "\n[yellow][WARNING] Blob deletion status unclear[/yellow]"
+                )
         else:
-            console.print("\n[green]✓ Blob deletion completed[/green]")
+            console.print("\n[green][OK] Blob deletion completed[/green]")
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
             console.print(f"{result}")
 
     except Exception as e:
-        console.print(f"\n[red]✗ Failed to delete blob: {str(e)}[/red]")
+        console.print(f"\n[red][FAIL] Failed to delete blob: {str(e)}[/red]")
         sys.exit(1)
 
 

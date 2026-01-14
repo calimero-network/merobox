@@ -126,7 +126,7 @@ class RepeatStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Repeat step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Repeat step export configuration validation failed[/yellow]"
             )
 
         if not nested_steps:
@@ -324,7 +324,7 @@ class RepeatStep(BaseStep):
                     )
                 else:
                     console.print(
-                        f"[yellow]⚠️  Warning: Source field '{source_field}' not found in dynamic values for export '{export_name}'[/yellow]"
+                        f"[yellow][WARNING]  Warning: Source field '{source_field}' not found in dynamic values for export '{export_name}'[/yellow]"
                     )
             elif isinstance(export_config, dict):
                 # Complex field assignment with node name replacement
@@ -345,7 +345,7 @@ class RepeatStep(BaseStep):
                         )
                     else:
                         console.print(
-                            f"[yellow]⚠️  Warning: Source field '{source_field}' not found in dynamic values for export '{export_name}'[/yellow]"
+                            f"[yellow][WARNING]  Warning: Source field '{source_field}' not found in dynamic values for export '{export_name}'[/yellow]"
                         )
 
     def _create_nested_step_executor(self, step_type: str, step_config: dict[str, Any]):

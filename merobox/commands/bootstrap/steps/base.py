@@ -225,7 +225,7 @@ class BaseStep:
             )
         else:
             console.print(
-                f"[yellow]⚠️  Could not export {source_field} → {target_key} (value is None)[/yellow]"
+                f"[yellow][WARNING]  Could not export {source_field} → {target_key} (value is None)[/yellow]"
             )
 
     def _export_variables_from_response(
@@ -350,7 +350,7 @@ class BaseStep:
 
                 if field_missing:
                     console.print(
-                        f"[yellow]⚠️  Export failed: '{assigned_var}' not found[/yellow]"
+                        f"[yellow][WARNING]  Export failed: '{assigned_var}' not found[/yellow]"
                     )
                     console.print(
                         f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
@@ -360,7 +360,7 @@ class BaseStep:
                     # Skip exporting if this key is protected (e.g., error field export)
                     if target_key in protected_keys:
                         console.print(
-                            f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                            f"[yellow][WARNING]  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
                         )
                         continue
                     dynamic_values[target_key] = value
@@ -401,7 +401,7 @@ class BaseStep:
 
                     if field_missing:
                         console.print(
-                            f"[yellow]⚠️  Export failed: '{field_name}' not found or path unresolved[/yellow]"
+                            f"[yellow][WARNING]  Export failed: '{field_name}' not found or path unresolved[/yellow]"
                         )
                         console.print(
                             f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
@@ -412,7 +412,7 @@ class BaseStep:
                         # Skip exporting if this key is protected (e.g., error field export)
                         if target_key in protected_keys:
                             console.print(
-                                f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                                f"[yellow][WARNING]  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
                             )
                             continue
                         dynamic_values[target_key] = base_value
@@ -427,12 +427,12 @@ class BaseStep:
                         )
                 else:
                     console.print(
-                        f"[yellow]⚠️  Invalid custom export config: missing 'field' in {assigned_var}[/yellow]"
+                        f"[yellow][WARNING]  Invalid custom export config: missing 'field' in {assigned_var}[/yellow]"
                     )
 
             else:
                 console.print(
-                    f"[yellow]⚠️  Invalid custom export config: {assigned_var} is not a string or dict[/yellow]"
+                    f"[yellow][WARNING]  Invalid custom export config: {assigned_var} is not a string or dict[/yellow]"
                 )
 
     def _export_variables(
@@ -458,7 +458,7 @@ class BaseStep:
             )
         else:
             console.print(
-                "[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
+                "[yellow][WARNING]  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
             )
             console.print(
                 "[yellow]   To export variables, add an 'outputs' section to your step configuration.[/yellow]"
@@ -474,7 +474,7 @@ class BaseStep:
             outputs_config = self.config["outputs"]
             if not isinstance(outputs_config, dict):
                 console.print(
-                    f"[yellow]⚠️  Step {self.__class__.__name__} has invalid outputs config: must be a dictionary[/yellow]"
+                    f"[yellow][WARNING]  Step {self.__class__.__name__} has invalid outputs config: must be a dictionary[/yellow]"
                 )
                 return False
 
@@ -482,7 +482,7 @@ class BaseStep:
             for exported_var, assigned_var in outputs_config.items():
                 if not isinstance(exported_var, str):
                     console.print(
-                        f"[yellow]⚠️  Invalid output key '{exported_var}': must be a string[/yellow]"
+                        f"[yellow][WARNING]  Invalid output key '{exported_var}': must be a string[/yellow]"
                     )
                     return False
 
@@ -493,12 +493,12 @@ class BaseStep:
                     # Complex assignment must have 'field' key
                     if "field" not in assigned_var:
                         console.print(
-                            f"[yellow]⚠️  Invalid output config for '{exported_var}': missing 'field' key[/yellow]"
+                            f"[yellow][WARNING]  Invalid output config for '{exported_var}': missing 'field' key[/yellow]"
                         )
                         return False
                 else:
                     console.print(
-                        f"[yellow]⚠️  Invalid output config for '{exported_var}': must be string or dict[/yellow]"
+                        f"[yellow][WARNING]  Invalid output config for '{exported_var}': must be string or dict[/yellow]"
                     )
                     return False
 
@@ -510,7 +510,7 @@ class BaseStep:
         # Check if automatic exports are configured
         if not hasattr(self, "exportable_variables") or not self.exportable_variables:
             console.print(
-                f"[yellow]⚠️  Step {self.__class__.__name__} has no exportable variables defined[/yellow]"
+                f"[yellow][WARNING]  Step {self.__class__.__name__} has no exportable variables defined[/yellow]"
             )
             return False
 

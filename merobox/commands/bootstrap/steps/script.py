@@ -135,7 +135,7 @@ class ScriptStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Script step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Script step export configuration validation failed[/yellow]"
             )
 
         console.print(f"\n[bold blue]📜 {self.description}[/bold blue]")

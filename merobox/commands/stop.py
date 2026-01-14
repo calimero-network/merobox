@@ -40,7 +40,10 @@ def stop(node_name, stop_all, auth_service, no_docker):
         )
         sys.exit(0)
 
-    calimero_manager = BinaryManager() if no_docker else DockerManager()
+    # For stop operations, we don't need the binary - just need to stop running processes
+    calimero_manager = (
+        BinaryManager(require_binary=False) if no_docker else DockerManager()
+    )
 
     if auth_service:
         # Stop auth service stack
@@ -63,7 +66,7 @@ def stop(node_name, stop_all, auth_service, no_docker):
                 console.print("[cyan]• No auth service stack to stop[/cyan]")
             except docker.errors.DockerException as exc:
                 console.print(
-                    "[yellow]⚠ Unable to stop auth service stack: "
+                    "[yellow][WARNING] Unable to stop auth service stack: "
                     f"{getattr(exc, 'explanation', str(exc))}[/yellow]"
                 )
                 auth_success = False

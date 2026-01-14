@@ -58,7 +58,7 @@ class GetProposalStep(BaseStep):
 
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Get proposal step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Get proposal step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -147,7 +147,7 @@ class ListProposalsStep(BaseStep):
 
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  List proposals step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  List proposals step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -246,7 +246,7 @@ class GetProposalApproversStep(BaseStep):
 
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Get proposal approvers step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Get proposal approvers step export configuration validation failed[/yellow]"
             )
 
         try:

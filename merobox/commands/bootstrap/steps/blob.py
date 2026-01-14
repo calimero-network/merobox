@@ -113,7 +113,7 @@ class UploadBlobStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Upload blob step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Upload blob step export configuration validation failed[/yellow]"
             )
 
         # Resolve dynamic values in file_path
@@ -178,7 +178,7 @@ class UploadBlobStep(BaseStep):
                     blob_info = response_data
             else:
                 console.print(
-                    f"[yellow]⚠️  Unexpected response format: {type(response_data)}[/yellow]"
+                    f"[yellow][WARNING]  Unexpected response format: {type(response_data)}[/yellow]"
                 )
                 return False
 
@@ -204,7 +204,7 @@ class UploadBlobStep(BaseStep):
                         )
                     else:
                         console.print(
-                            f"[yellow]⚠️  No blob_id found in response. Available keys: {list(blob_info.keys())}[/yellow]"
+                            f"[yellow][WARNING]  No blob_id found in response. Available keys: {list(blob_info.keys())}[/yellow]"
                         )
 
             return True

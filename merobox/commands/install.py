@@ -100,7 +100,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
     # Validate installation source
     is_valid, error_msg = validate_installation_source(url, path, dev)
     if not is_valid:
-        console.print(f"[red]✗ {error_msg}[/red]")
+        console.print(f"[red][FAIL] {error_msg}[/red]")
         sys.exit(1)
 
     # Parse metadata if provided
@@ -109,7 +109,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
         try:
             metadata_bytes = metadata.encode("utf-8")
         except Exception as e:
-            console.print(f"[red]✗ Failed to encode metadata: {str(e)}[/red]")
+            console.print(f"[red][FAIL] Failed to encode metadata: {str(e)}[/red]")
             sys.exit(1)
 
     # Get admin API URL
@@ -136,7 +136,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
     )
 
     if result["success"]:
-        console.print("\n[green]✓ Application installed successfully![/green]")
+        console.print("\n[green][OK] Application installed successfully![/green]")
 
         if dev and "container_path" in result:
             console.print(f"[blue]Container path: {result['container_path']}[/blue]")
@@ -146,6 +146,6 @@ def install(node, url, path, dev, metadata, timeout, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to install application[/red]")
+        console.print("\n[red][FAIL] Failed to install application[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)

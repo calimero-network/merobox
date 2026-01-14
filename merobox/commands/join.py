@@ -42,7 +42,6 @@ async def join_context_via_open_invitation(
 ) -> dict:
     """Join a context using an open invitation via calimero-client-py."""
     try:
-
         client = get_client_for_rpc_url(rpc_url)
 
         # The client expects two separate parameters:
@@ -97,7 +96,7 @@ def context(node, context_id, invitee_id, invitation, verbose):
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
 
     if result["success"]:
-        console.print("\n[green]✓ Successfully joined context![/green]")
+        console.print("\n[green][OK] Successfully joined context![/green]")
 
         # Create table
         table = Table(title="Context Join Details", box=box.ROUNDED)
@@ -116,7 +115,7 @@ def context(node, context_id, invitee_id, invitation, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to join context[/red]")
+        console.print("\n[red][FAIL] Failed to join context[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         # Show detailed error information if available
@@ -163,7 +162,7 @@ def open_invitation(node, invitee_id, invitation, verbose):
 
     if result["success"]:
         console.print(
-            "\n[green]✓ Successfully joined context via open invitation![/green]"
+            "\n[green][OK] Successfully joined context via open invitation![/green]"
         )
 
         response_data = result.get("data", {})
@@ -189,7 +188,7 @@ def open_invitation(node, invitee_id, invitation, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to join context via open invitation[/red]")
+        console.print("\n[red][FAIL] Failed to join context via open invitation[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         # Show detailed error information if available

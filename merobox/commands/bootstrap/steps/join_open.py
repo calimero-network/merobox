@@ -118,7 +118,7 @@ class JoinOpenStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  JoinOpen step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  JoinOpen step export configuration validation failed[/yellow]"
             )
 
         # Ensure invitation is a dict (not a string)

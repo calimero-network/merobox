@@ -163,7 +163,7 @@ def list_identities(node, context_id, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to list identities[/red]")
+        console.print("\n[red][FAIL] Failed to list identities[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -199,7 +199,7 @@ def generate(node, verbose=False):
         )
 
         if identity_data:
-            console.print("\n[green]✓ Identity generated successfully![/green]")
+            console.print("\n[green][OK] Identity generated successfully![/green]")
 
             # Create table
             table = Table(title="New Identity Details", box=box.ROUNDED)
@@ -213,7 +213,7 @@ def generate(node, verbose=False):
 
             console.print(table)
         else:
-            console.print("\n[green]✓ Identity generated successfully![/green]")
+            console.print("\n[green][OK] Identity generated successfully![/green]")
             console.print(f"[yellow]Response: {response_data}[/yellow]")
 
         if verbose:
@@ -221,7 +221,7 @@ def generate(node, verbose=False):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to generate identity[/red]")
+        console.print("\n[red][FAIL] Failed to generate identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
         sys.exit(1)
 
@@ -268,7 +268,7 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
 
     if result["success"]:
-        console.print("\n[green]✓ Identity invited successfully![/green]")
+        console.print("\n[green][OK] Identity invited successfully![/green]")
 
         # Create table
         table = Table(title="Identity Invitation Details", box=box.ROUNDED)
@@ -286,7 +286,7 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to invite identity[/red]")
+        console.print("\n[red][FAIL] Failed to invite identity[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         # Show detailed error information if available
@@ -349,7 +349,7 @@ def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
         console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
 
     if result["success"]:
-        console.print("\n[green]✓ Open invitation created successfully![/green]")
+        console.print("\n[green][OK] Open invitation created successfully![/green]")
 
         # Create table
         table = Table(title="Open Invitation Details", box=box.ROUNDED)
@@ -379,7 +379,7 @@ def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to create open invitation[/red]")
+        console.print("\n[red][FAIL] Failed to create open invitation[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         # Show detailed error information if available
