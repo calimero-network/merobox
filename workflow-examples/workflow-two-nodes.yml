@@ -1,0 +1,139 @@
+description: Two node workflow - demonstrates cross-node sync and operations
+name: Two Node Workflow
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install application on Node 1
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Step 2: Create context on Node 1
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Step 3: Create identity on Node 2
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      public_key_node2: publicKey
+
+  # Step 4: Wait for identity creation
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 3
+
+  # Step 5: Invite Node 2 to join context
+  - name: Invite Node 2 from Node 1
+    type: invite_identity
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    grantee_id: '{{public_key_node2}}'
+    granter_id: '{{member_public_key}}'
+    capability: member
+    outputs:
+      invitation_node2: invitation
+
+  # Step 6: Join context from Node 2
+  - name: Join Context from Node 2
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+    invitee_id: '{{public_key_node2}}'
+    invitation: '{{invitation_node2}}'
+
+  # Step 7: Wait for join to complete
+  - name: Wait for Join
+    type: wait
+    seconds: 3
+
+  # Step 8: Set value from Node 1
+  - name: Set Key-Value from Node 1
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    executor_public_key: '{{member_public_key}}'
+    method: set
+    args:
+      key: hello
+      value: world
+    outputs:
+      set_result: result
+
+  # Step 9: Wait for sync between nodes
+  - name: Wait for Sync
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
+
+  # Step 10: Get value from Node 2 (cross-node read)
+  - name: Get Key-Value from Node 2
+    type: call
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+    executor_public_key: '{{public_key_node2}}'
+    method: get
+    args:
+      key: hello
+    outputs:
+      get_result_node2: result
+
+  # Step 11: Set value from Node 2
+  - name: Set Key-Value from Node 2
+    type: call
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+    executor_public_key: '{{public_key_node2}}'
+    method: set
+    args:
+      key: node2_key
+      value: node2_value
+    outputs:
+      set_result_node2: result
+
+  # Step 12: Wait for sync
+  - name: Wait for Sync After Node 2 Set
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
+
+  # Step 13: Verify Node 2's value from Node 1
+  - name: Get Node 2 Value from Node 1
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    executor_public_key: '{{member_public_key}}'
+    method: get
+    args:
+      key: node2_key
+    outputs:
+      verify_result: result
+
+stop_all_nodes: false
+restart: false
+wait_timeout: 60

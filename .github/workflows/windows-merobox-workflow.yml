@@ -10,7 +10,7 @@ on:
 jobs:
   windows-merobox-test:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout Merobox Repository
@@ -77,23 +77,101 @@ jobs:
           merobox --version
           merobox --help
 
-      - name: Run Merobox Workflow
+      # Workflow 1: Single Node
+      - name: Run Single Node Workflow
+        id: single_node
         shell: pwsh
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          $merodPath = "$env:GITHUB_WORKSPACE\core\target\release\merod.exe"
+          $workflowPath = "$env:GITHUB_WORKSPACE\workflow-examples\workflow-single-node.yml"
+          Write-Host "Running: workflow-single-node.yml"
+          merobox bootstrap run $workflowPath --no-docker --binary-path $merodPath
+
+      - name: Cleanup After Single Node
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          merobox stop --all --no-docker
+          merobox nuke -f
+
+      # Workflow 2: Two Nodes
+      - name: Run Two Nodes Workflow
+        id: two_nodes
+        shell: pwsh
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          $merodPath = "$env:GITHUB_WORKSPACE\core\target\release\merod.exe"
+          $workflowPath = "$env:GITHUB_WORKSPACE\workflow-examples\workflow-two-nodes.yml"
+          Write-Host "Running: workflow-two-nodes.yml"
+          merobox bootstrap run $workflowPath --no-docker --binary-path $merodPath
+
+      - name: Cleanup After Two Nodes
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          merobox stop --all --no-docker
+          merobox nuke -f
+
+      # Workflow 3: Three Nodes
+      - name: Run Three Nodes Workflow
+        id: three_nodes
+        shell: pwsh
+        continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8
         run: |
           $merodPath = "$env:GITHUB_WORKSPACE\core\target\release\merod.exe"
           $workflowPath = "$env:GITHUB_WORKSPACE\workflow-examples\workflow-example.yml"
+          Write-Host "Running: workflow-example.yml"
           merobox bootstrap run $workflowPath --no-docker --binary-path $merodPath
 
-      - name: Cleanup - Stop All Nodes
+      - name: Cleanup After Three Nodes
         if: always()
         shell: pwsh
         continue-on-error: true
-        run: merobox stop --all --no-docker
+        run: |
+          merobox stop --all --no-docker
+          merobox nuke -f
 
-      - name: Cleanup - Nuke Merobox State
+      # Summary
+      - name: Workflow Results Summary
         if: always()
         shell: pwsh
-        continue-on-error: true
-        run: merobox nuke -f
+        run: |
+          Write-Host "============================================"
+          Write-Host "         WORKFLOW RESULTS SUMMARY           "
+          Write-Host "============================================"
+
+          $singleNode = "${{ steps.single_node.outcome }}"
+          $twoNodes = "${{ steps.two_nodes.outcome }}"
+          $threeNodes = "${{ steps.three_nodes.outcome }}"
+
+          Write-Host "Single Node (1 node):   $singleNode"
+          Write-Host "Two Nodes (2 nodes):    $twoNodes"
+          Write-Host "Three Nodes (3 nodes):  $threeNodes"
+          Write-Host "============================================"
+
+          $passed = 0
+          $failed = 0
+
+          if ($singleNode -eq "success") { $passed++ } else { $failed++ }
+          if ($twoNodes -eq "success") { $passed++ } else { $failed++ }
+          if ($threeNodes -eq "success") { $passed++ } else { $failed++ }
+
+          Write-Host "Passed: $passed / 3"
+          Write-Host "Failed: $failed / 3"
+          Write-Host "============================================"
+
+          if ($failed -gt 0) {
+            Write-Host "Some workflows failed. Check logs above for details."
+            exit 1
+          } else {
+            Write-Host "All workflows passed!"
+          }
