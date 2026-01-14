@@ -186,11 +186,12 @@ class InstallApplicationStep(BaseStep):
                     return False
 
                 if self._is_binary_mode():
+                    api_path = application_path.replace("\\", "/")
                     console.print(
-                        f"[cyan]Installing dev application from host filesystem path: {application_path}[/cyan]"
+                        f"[cyan]Installing dev application from host filesystem path: {api_path}[/cyan]"
                     )
                     api_result = client.install_dev_application(
-                        path=application_path, metadata=DEFAULT_METADATA
+                        path=api_path, metadata=DEFAULT_METADATA
                     )
                 else:
                     container_path = self._prepare_container_path(
