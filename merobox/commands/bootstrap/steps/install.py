@@ -2,6 +2,7 @@
 Install application step executor.
 """
 
+import asyncio
 import os
 import shutil
 from typing import Any, Optional
@@ -176,6 +177,35 @@ class InstallApplicationStep(BaseStep):
             )
             return False
 
+        # Verify admin HTTP server is actually responding before attempting installation
+        # This is especially important on Windows where the server might not be ready yet
+        import aiohttp
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{rpc_url}/admin-api/health",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as response:
+                    if response.status != 200:
+                        console.print(
+                            f"[red]Admin server health check failed: HTTP {response.status}[/red]"
+                        )
+                        return False
+        except asyncio.TimeoutError:
+            console.print(
+                "[red]Admin server health check timed out - server may not be ready yet[/red]"
+            )
+            return False
+        except Exception as e:
+            console.print(
+                f"[red]Admin server health check failed: {escape(str(e))}[/red]"
+            )
+            console.print(
+                f"[yellow]This may indicate the admin HTTP server isn't running on {rpc_url}[/yellow]"
+            )
+            return False
+
         # Execute installation using calimero-client-py
         try:
             client = get_client_for_rpc_url(rpc_url)
@@ -192,7 +222,7 @@ class InstallApplicationStep(BaseStep):
                     console.print(
                         f"[cyan]Installing dev application from host filesystem path: {api_path}[/cyan]"
                     )
-                    api_result = client.install_dev_application(
+                    api_result = await client.install_dev_application(
                         path=api_path, metadata=DEFAULT_METADATA
                     )
                 else:
@@ -210,11 +240,11 @@ class InstallApplicationStep(BaseStep):
                     console.print(
                         f"[cyan]Installing dev application using container path: {container_path}[/cyan]"
                     )
-                    api_result = client.install_dev_application(
+                    api_result = await client.install_dev_application(
                         path=container_path, metadata=DEFAULT_METADATA
                     )
             else:
-                api_result = client.install_application(
+                api_result = await client.install_application(
                     url=application_url, metadata=DEFAULT_METADATA
                 )
 
