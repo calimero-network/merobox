@@ -38,14 +38,20 @@ def _prepare_container_path(
             mounts = container.attrs.get("Mounts", [])
             for mount in mounts:
                 if mount.get("Destination") == "/app/data":
-                    container_data_dir = mount.get("Source")
-                    if container_data_dir and os.path.exists(container_data_dir):
+                    mount_source = mount.get("Source")
+                    if mount_source and os.path.exists(mount_source):
+                        container_data_dir = mount_source
                         break
-        except (docker.errors.NotFound, AttributeError, KeyError):
+        except (
+            docker.errors.NotFound,
+            docker.errors.APIError,
+            AttributeError,
+            KeyError,
+        ):
             pass
 
-    # Fallback to pattern matching if not found from container
-    if not container_data_dir:
+    # Fallback to pattern matching if not found from container or path doesn't exist
+    if not container_data_dir or not os.path.exists(container_data_dir):
         for pattern in CONTAINER_DATA_DIR_PATTERNS:
             if "{prefix}-{node_num}-{chain_id}" in pattern:
                 parts = node_name.split("-")
@@ -185,7 +191,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
             api_result = client.install_application(url=url, metadata=metadata_bytes)
 
         result = ok(api_result)
-    except (ConnectionError, TimeoutError, ValueError, OSError) as e:
+    except Exception as e:
         result = fail("install_application failed", error=e)
 
     if result["success"]:
