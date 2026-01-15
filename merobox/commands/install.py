@@ -146,6 +146,15 @@ def install(node, url, path, dev, metadata, timeout, verbose):
         console.print(f"[red]✗ {error_msg}[/red]")
         sys.exit(1)
 
+    # Parse metadata if provided
+    metadata_bytes = DEFAULT_METADATA
+    if metadata:
+        try:
+            metadata_bytes = metadata.encode("utf-8")
+        except (UnicodeEncodeError, AttributeError) as e:
+            console.print(f"[red]✗ Failed to encode metadata: {str(e)}[/red]")
+            sys.exit(1)
+
     # Get admin API URL
     rpc_url = get_node_rpc_url(node, manager)
 
@@ -169,10 +178,10 @@ def install(node, url, path, dev, metadata, timeout, verbose):
                 sys.exit(1)
 
             api_result = client.install_dev_application(
-                path=container_path, metadata=DEFAULT_METADATA
+                path=container_path, metadata=metadata_bytes
             )
         else:
-            api_result = client.install_application(url=url, metadata=DEFAULT_METADATA)
+            api_result = client.install_application(url=url, metadata=metadata_bytes)
 
         result = ok(api_result)
     except (ConnectionError, TimeoutError, ValueError, OSError) as e:
