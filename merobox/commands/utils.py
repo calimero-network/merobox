@@ -64,7 +64,7 @@ def get_node_rpc_url(node_name: str, manager: Any) -> str:
     if host_port is None:
         host_port = DEFAULT_RPC_PORT
 
-    return f"http://127.0.0.1:{host_port}"
+    return f"http://localhost:{host_port}"
 
 
 def check_node_running(node: str, manager: DockerManager) -> None:
