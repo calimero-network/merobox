@@ -71,7 +71,8 @@ def _prepare_container_path(
                 break
 
     if not container_data_dir or not os.path.exists(container_data_dir):
-        console.print(f"[red]Container data directory not found for {node_name}[/red]")
+        console.print(
+            f"[red]Container data directory not found for {node_name}[/red]")
         return None
 
     try:
@@ -83,8 +84,10 @@ def _prepare_container_path(
             == abs_container_data_dir
         ):
             # Preserve subdirectory structure relative to container data directory
-            relative_path = os.path.relpath(abs_source_path, abs_container_data_dir)
-            return f"/app/data/{relative_path}"
+            # Use forward slashes for Linux container paths (Windows returns backslashes)
+            relative_path = os.path.relpath(
+                abs_source_path, abs_container_data_dir)
+            return f"/app/data/{relative_path.replace(os.sep, '/')}"
     except ValueError:
         pass
 
@@ -177,7 +180,8 @@ def install(node, url, path, dev, metadata, timeout, verbose):
                 )
                 sys.exit(1)
 
-            container_path = _prepare_container_path(node, application_path, manager)
+            container_path = _prepare_container_path(
+                node, application_path, manager)
             if not container_path:
                 console.print(
                     "[red]✗ Unable to prepare application file inside container data directory[/red]"
@@ -188,7 +192,8 @@ def install(node, url, path, dev, metadata, timeout, verbose):
                 path=container_path, metadata=metadata_bytes
             )
         else:
-            api_result = client.install_application(url=url, metadata=metadata_bytes)
+            api_result = client.install_application(
+                url=url, metadata=metadata_bytes)
 
         result = ok(api_result)
     except Exception as e:
@@ -203,11 +208,13 @@ def install(node, url, path, dev, metadata, timeout, verbose):
 
     else:
         console.print("\n[red]✗ Failed to install application[/red]")
-        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+        console.print(
+            f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         if verbose and "exception" in result:
             exc = result["exception"]
-            console.print(f"[red]Exception Type: {exc.get('type', 'Unknown')}[/red]")
+            console.print(
+                f"[red]Exception Type: {exc.get('type', 'Unknown')}[/red]")
             console.print(
                 f"[red]Exception Message: {exc.get('message', 'No message')}[/red]"
             )
