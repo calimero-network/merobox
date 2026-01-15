@@ -201,7 +201,9 @@ def execute_nuke(
                 auth_container.stop(timeout=30)
                 auth_container.remove()
                 if not silent:
-                    console.print("[green]✓ Auth service stopped and removed[/green]")
+                    console.print(
+                        "[green][OK] Auth service stopped and removed[/green]"
+                    )
             except Exception:
                 pass
 
@@ -212,7 +214,9 @@ def execute_nuke(
                 proxy_container.stop(timeout=30)
                 proxy_container.remove()
                 if not silent:
-                    console.print("[green]✓ Traefik proxy stopped and removed[/green]")
+                    console.print(
+                        "[green][OK] Traefik proxy stopped and removed[/green]"
+                    )
             except Exception:
                 pass
 
@@ -223,13 +227,13 @@ def execute_nuke(
                     console.print("[yellow]Removing auth data volume...[/yellow]")
                 auth_volume.remove()
                 if not silent:
-                    console.print("[green]✓ Auth data volume removed[/green]")
+                    console.print("[green][OK] Auth data volume removed[/green]")
             except docker.errors.NotFound:
                 pass
             except Exception as e:
                 if not silent:
                     console.print(
-                        f"[yellow]⚠️  Warning: Could not remove auth data volume: {e}[/yellow]"
+                        f"[yellow][WARNING]  Warning: Could not remove auth data volume: {e}[/yellow]"
                     )
 
         # Delete data directories
@@ -248,7 +252,7 @@ def execute_nuke(
         if not silent:
             if deleted_count > 0:
                 console.print(
-                    f"[green]✓ Successfully deleted {deleted_count} data directory(ies)[/green]"
+                    f"[green][OK] Successfully deleted {deleted_count} data directory(ies)[/green]"
                 )
                 console.print(
                     f"[green]Total space freed: {format_file_size(total_deleted_size)}[/green]"
@@ -265,7 +269,7 @@ def execute_nuke(
 
     except Exception as e:
         if not silent:
-            console.print(f"[red]❌ Nuke operation failed: {str(e)}[/red]")
+            console.print(f"[red][ERROR] Nuke operation failed: {str(e)}[/red]")
         return False
 
 
@@ -392,7 +396,7 @@ def nuke(dry_run, force, verbose, prefix):
 
     if not force:
         console.print(
-            "\n[red]⚠️  WARNING: This will permanently delete ALL Calimero node data![/red]"
+            "\n[red][WARNING] This will permanently delete ALL Calimero node data![/red]"
         )
         console.print("[red]This action cannot be undone.[/red]")
 
@@ -406,7 +410,7 @@ def nuke(dry_run, force, verbose, prefix):
         console.print("\n[blue]To start fresh, run:[/blue]")
         console.print("[blue]  merobox run[/blue]")
     else:
-        console.print("\n[red]❌ Nuke operation failed[/red]")
+        console.print("\n[red][ERROR] Nuke operation failed[/red]")
 
 
 if __name__ == "__main__":

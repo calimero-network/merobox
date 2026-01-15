@@ -91,7 +91,7 @@ class SandboxManager:
             # Clean up tar and ensure binary is executable
             tar_path.unlink()
             self.binary_path.chmod(0o755)
-            console.print("[green]✓ near-sandbox installed[/green]")
+            console.print("[green][OK] near-sandbox installed[/green]")
         except Exception as e:
             console.print(f"[red]Failed to download sandbox: {e}[/red]")
             # Cleanup partial download
@@ -146,7 +146,7 @@ class SandboxManager:
         )
 
         console.print(
-            f"[green]✓ NEAR Sandbox running. Root: {self.root_client.account.account_id}[/green]"
+            f"[green][OK] NEAR Sandbox running. Root: {self.root_client.account.account_id}[/green]"
         )
 
     def _cleanup_stale_sandbox(self):
@@ -154,11 +154,13 @@ class SandboxManager:
         try:
             # Force kill existing sandbox processes
             # This ensures we don't connect to a stale process with old state
-            subprocess.run(
-                ["pkill", "-9", "near-sandbox"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            # pkill is Unix-only, so skip on Windows (sandbox doesn't support Windows anyway)
+            if platform.system() != "Windows":
+                subprocess.run(
+                    ["pkill", "-9", "near-sandbox"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             # Wait for OS to release the port
             time.sleep(0.5)
         except Exception:
@@ -244,7 +246,7 @@ class SandboxManager:
             # The proxy code is passed as raw bytes argument to the method
             await calimero_client.call(acc_id, "set_proxy_code", proxy_code)
 
-            console.print(f"[green]✓ Contracts deployed to {acc_id}[/green]")
+            console.print(f"[green][OK] Contracts deployed to {acc_id}[/green]")
             return acc_id
         finally:
             await calimero_client.close()

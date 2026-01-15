@@ -4,6 +4,7 @@ Script execution step for bootstrap workflow.
 
 import io
 import os
+import platform
 import subprocess
 import tarfile
 import time
@@ -122,17 +123,19 @@ class ScriptStep(BaseStep):
     ) -> bool:
         """Execute the script step."""
         if not self.script_path:
-            console.print("[red]❌ Script path not specified[/red]")
+            console.print("[red][ERROR] Script path not specified[/red]")
             return False
 
         if not os.path.exists(self.script_path):
-            console.print(f"[red]❌ Script file not found: {self.script_path}[/red]")
+            console.print(
+                f"[red][ERROR] Script file not found: {self.script_path}[/red]"
+            )
             return False
 
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Script step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Script step export configuration validation failed[/yellow]"
             )
 
         console.print(f"\n[bold blue]📜 {self.description}[/bold blue]")
@@ -153,7 +156,7 @@ class ScriptStep(BaseStep):
                 workflow_results, dynamic_values, resolved_args
             )
         else:
-            console.print(f"[red]❌ Unknown target type: {self.target}[/red]")
+            console.print(f"[red][ERROR] Unknown target type: {self.target}[/red]")
             return False
 
     async def _execute_local(
@@ -170,7 +173,7 @@ class ScriptStep(BaseStep):
 
             if not os.path.exists(self.script_path):
                 console.print(
-                    f"[red]❌ Script file not found: {self.script_path}[/red]"
+                    f"[red][ERROR] Script file not found: {self.script_path}[/red]"
                 )
                 return False
 
@@ -192,11 +195,87 @@ class ScriptStep(BaseStep):
                 env_key = key.upper().replace("-", "_").replace(".", "_")
                 env[env_key] = str(value) if value is not None else ""
 
-            # Run the script using /bin/sh
+            # Run the script using platform-specific shell
+            # On Windows: .sh files need bash (Git Bash/WSL), .bat/.cmd use cmd.exe /c
+            # On Unix: use /bin/sh
+            script_ext = os.path.splitext(self.script_path)[1].lower()
+            is_windows = platform.system() == "Windows"
+
+            if is_windows:
+                if script_ext in [".sh"]:
+                    # For .sh files on Windows, try to find bash
+                    # Check common locations: Git Bash, WSL, or system bash
+                    bash_paths = [
+                        r"C:\Program Files\Git\bin\bash.exe",
+                        r"C:\Program Files (x86)\Git\bin\bash.exe",
+                        "bash.exe",  # In PATH (Git Bash, WSL)
+                        "wsl.exe",  # Windows Subsystem for Linux
+                    ]
+
+                    shell_cmd = None
+                    is_wsl_bash = False
+                    for bash_path in bash_paths:
+                        if bash_path in ["bash.exe", "wsl.exe"]:
+                            # Check if it's in PATH
+                            from shutil import which
+
+                            found = which(bash_path)
+                            if found:
+                                shell_cmd = found
+                                # Detect if this is WSL's bash (in System32) or wsl.exe
+                                if (
+                                    "system32" in found.lower()
+                                    or "wsl.exe" in found.lower()
+                                ):
+                                    is_wsl_bash = True
+                                break
+                        elif os.path.exists(bash_path):
+                            shell_cmd = bash_path
+                            # Git Bash paths don't need conversion
+                            break
+
+                    if not shell_cmd:
+                        console.print(
+                            "[red][ERROR] Cannot execute .sh script on Windows: bash not found. "
+                            "Please install Git Bash or WSL, or use .bat/.cmd scripts instead.[/red]"
+                        )
+                        return False
+
+                    # For WSL bash, convert Windows path to WSL path format
+                    if is_wsl_bash or "wsl.exe" in shell_cmd.lower():
+                        # WSL needs the script path to be accessible from Linux
+                        # Convert Windows path to WSL path (C:/path -> /mnt/c/path)
+                        wsl_path = self.script_path.replace("\\", "/")
+                        if len(wsl_path) > 1 and wsl_path[1] == ":":
+                            drive = wsl_path[0].lower()
+                            wsl_path = f"/mnt/{drive}{wsl_path[2:]}"
+                        # WSL: wsl bash script.sh args OR bash.exe script.sh (with converted path)
+                        if "wsl.exe" in shell_cmd.lower():
+                            cmd = [shell_cmd, "bash", wsl_path] + list(resolved_args)
+                        else:
+                            # WSL's bash.exe needs the converted path
+                            cmd = [shell_cmd, wsl_path] + list(resolved_args)
+                    else:
+                        # Git Bash can execute .sh files directly with Windows paths
+                        cmd = [shell_cmd, self.script_path] + list(resolved_args)
+                elif script_ext in [".bat", ".cmd"]:
+                    # For .bat/.cmd files, use cmd.exe /c
+                    cmd = ["cmd.exe", "/c", self.script_path] + list(resolved_args)
+                else:
+                    # Unknown extension, try cmd.exe /c as fallback
+                    console.print(
+                        f"[yellow]Warning: Unknown script extension '{script_ext}' on Windows. "
+                        f"Trying cmd.exe /c[/yellow]"
+                    )
+                    cmd = ["cmd.exe", "/c", self.script_path] + list(resolved_args)
+            else:
+                # Unix-like systems: use /bin/sh
+                cmd = ["/bin/sh", self.script_path] + list(resolved_args)
+
             start_time = time.time()
             try:
                 completed = subprocess.run(
-                    ["/bin/sh", self.script_path, *resolved_args],
+                    cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -232,7 +311,7 @@ class ScriptStep(BaseStep):
             self._export_script_results(
                 "local", completed.returncode, output, execution_time, dynamic_values
             )
-            console.print("[green]✓ Local script executed successfully[/green]")
+            console.print("[green][OK] Local script executed successfully[/green]")
             return True
 
         except Exception as e:
@@ -341,7 +420,7 @@ class ScriptStep(BaseStep):
                     # Ensure the image is available
                     if not manager._ensure_image_pulled(image):
                         console.print(
-                            f"[red]✗ Cannot proceed without image: {image}[/red]"
+                            f"[red][FAIL] Cannot proceed without image: {image}[/red]"
                         )
                         return False
 
@@ -420,7 +499,7 @@ class ScriptStep(BaseStep):
                     "image", result.exit_code, output, execution_time, dynamic_values
                 )
 
-                console.print("[green]✓ Script executed successfully[/green]")
+                console.print("[green][OK] Script executed successfully[/green]")
                 return True
 
             finally:
@@ -545,7 +624,7 @@ class ScriptStep(BaseStep):
                             failed_nodes.append(node_name)
                         else:
                             console.print(
-                                f"[green]✓ Script executed successfully on {node_name}[/green]"
+                                f"[green][OK] Script executed successfully on {node_name}[/green]"
                             )
                             success_count += 1
 
@@ -583,7 +662,9 @@ class ScriptStep(BaseStep):
                 console.print(f"[red]Failed on nodes: {', '.join(failed_nodes)}[/red]")
                 return False
 
-            console.print("[green]✓ Script executed successfully on all nodes[/green]")
+            console.print(
+                "[green][OK] Script executed successfully on all nodes[/green]"
+            )
             return True
 
         except Exception as e:

@@ -195,7 +195,7 @@ class AssertStep(BaseStep):
                 message = stmt.get("message")
                 stmt = stmt.get("statement", "")
             if not isinstance(stmt, str):
-                console.print(f"[red]✗ Invalid statement at #{idx}[/red]")
+                console.print(f"[red][FAIL] Invalid statement at #{idx}[/red]")
                 all_ok = False
                 # Record invalid statement as failure in tracker
                 if results_tracker is not None:
@@ -220,9 +220,9 @@ class AssertStep(BaseStep):
                 )
 
             if passed:
-                console.print(f"[green]✓ {description}[/green]")
+                console.print(f"[green][OK] {description}[/green]")
             else:
-                console.print(f"[red]✗ {description} failed[/red] {detail}")
+                console.print(f"[red][FAIL] {description} failed[/red] {detail}")
                 all_ok = False
 
         # In non-blocking mode, always return True to continue workflow

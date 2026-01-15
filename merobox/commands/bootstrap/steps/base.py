@@ -7,6 +7,8 @@ import json
 import re
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.utils import console
 
 
@@ -225,7 +227,7 @@ class BaseStep:
             )
         else:
             console.print(
-                f"[yellow]⚠️  Could not export {source_field} → {target_key} (value is None)[/yellow]"
+                f"[yellow][WARNING]  Could not export {source_field} → {target_key} (value is None)[/yellow]"
             )
 
     def _export_variables_from_response(
@@ -350,7 +352,7 @@ class BaseStep:
 
                 if field_missing:
                     console.print(
-                        f"[yellow]⚠️  Export failed: '{assigned_var}' not found[/yellow]"
+                        f"[yellow][WARNING]  Export failed: '{assigned_var}' not found[/yellow]"
                     )
                     console.print(
                         f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
@@ -360,7 +362,7 @@ class BaseStep:
                     # Skip exporting if this key is protected (e.g., error field export)
                     if target_key in protected_keys:
                         console.print(
-                            f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                            f"[yellow][WARNING]  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
                         )
                         continue
                     dynamic_values[target_key] = value
@@ -370,7 +372,7 @@ class BaseStep:
                         display_value = display_value[:97] + "..."
 
                     console.print(
-                        f"[green]   ✓[/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}"
+                        f"[green]   [OK][/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}"
                     )
 
             elif isinstance(assigned_var, dict):
@@ -401,7 +403,7 @@ class BaseStep:
 
                     if field_missing:
                         console.print(
-                            f"[yellow]⚠️  Export failed: '{field_name}' not found or path unresolved[/yellow]"
+                            f"[yellow][WARNING]  Export failed: '{field_name}' not found or path unresolved[/yellow]"
                         )
                         console.print(
                             f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
@@ -412,7 +414,7 @@ class BaseStep:
                         # Skip exporting if this key is protected (e.g., error field export)
                         if target_key in protected_keys:
                             console.print(
-                                f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                                f"[yellow][WARNING]  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
                             )
                             continue
                         dynamic_values[target_key] = base_value
@@ -423,16 +425,16 @@ class BaseStep:
                             display_value = display_value[:97] + "..."
 
                         console.print(
-                            f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}"
+                            f"[green]   [OK][/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}"
                         )
                 else:
                     console.print(
-                        f"[yellow]⚠️  Invalid custom export config: missing 'field' in {assigned_var}[/yellow]"
+                        f"[yellow][WARNING]  Invalid custom export config: missing 'field' in {assigned_var}[/yellow]"
                     )
 
             else:
                 console.print(
-                    f"[yellow]⚠️  Invalid custom export config: {assigned_var} is not a string or dict[/yellow]"
+                    f"[yellow][WARNING]  Invalid custom export config: {assigned_var} is not a string or dict[/yellow]"
                 )
 
     def _export_variables(
@@ -458,7 +460,7 @@ class BaseStep:
             )
         else:
             console.print(
-                "[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
+                "[yellow][WARNING]  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
             )
             console.print(
                 "[yellow]   To export variables, add an 'outputs' section to your step configuration.[/yellow]"
@@ -474,7 +476,7 @@ class BaseStep:
             outputs_config = self.config["outputs"]
             if not isinstance(outputs_config, dict):
                 console.print(
-                    f"[yellow]⚠️  Step {self.__class__.__name__} has invalid outputs config: must be a dictionary[/yellow]"
+                    f"[yellow][WARNING]  Step {self.__class__.__name__} has invalid outputs config: must be a dictionary[/yellow]"
                 )
                 return False
 
@@ -482,7 +484,7 @@ class BaseStep:
             for exported_var, assigned_var in outputs_config.items():
                 if not isinstance(exported_var, str):
                     console.print(
-                        f"[yellow]⚠️  Invalid output key '{exported_var}': must be a string[/yellow]"
+                        f"[yellow][WARNING]  Invalid output key '{exported_var}': must be a string[/yellow]"
                     )
                     return False
 
@@ -493,12 +495,12 @@ class BaseStep:
                     # Complex assignment must have 'field' key
                     if "field" not in assigned_var:
                         console.print(
-                            f"[yellow]⚠️  Invalid output config for '{exported_var}': missing 'field' key[/yellow]"
+                            f"[yellow][WARNING]  Invalid output config for '{exported_var}': missing 'field' key[/yellow]"
                         )
                         return False
                 else:
                     console.print(
-                        f"[yellow]⚠️  Invalid output config for '{exported_var}': must be string or dict[/yellow]"
+                        f"[yellow][WARNING]  Invalid output config for '{exported_var}': must be string or dict[/yellow]"
                     )
                     return False
 
@@ -510,7 +512,7 @@ class BaseStep:
         # Check if automatic exports are configured
         if not hasattr(self, "exportable_variables") or not self.exportable_variables:
             console.print(
-                f"[yellow]⚠️  Step {self.__class__.__name__} has no exportable variables defined[/yellow]"
+                f"[yellow][WARNING]  Step {self.__class__.__name__} has no exportable variables defined[/yellow]"
             )
             return False
 
@@ -541,9 +543,11 @@ class BaseStep:
             if isinstance(error_info, dict):
                 error_type = error_info.get("type", "Unknown")
                 error_data = error_info.get("data", "No details")
-                console.print(f"[red]JSON-RPC Error: {error_type} - {error_data}[/red]")
+                console.print(
+                    f"[red]JSON-RPC Error: {escape(str(error_type))} - {escape(str(error_data))}[/red]"
+                )
             else:
-                console.print(f"[red]JSON-RPC Error: {error_info}[/red]")
+                console.print(f"[red]JSON-RPC Error: {escape(str(error_info))}[/red]")
             return True
         return False
 
@@ -585,7 +589,7 @@ class BaseStep:
                 # Binary mode - use BinaryManager's get_node_logs
                 log_content = self.manager.get_node_logs(node_name, lines=lines)
                 if log_content:
-                    console.print(log_content)
+                    console.print(escape(log_content))
                 else:
                     console.print(f"[dim]No logs found for {node_name}[/dim]")
             else:
@@ -600,11 +604,13 @@ class BaseStep:
 
                     logs = container.logs(tail=lines, timestamps=True).decode("utf-8")
                     if logs:
-                        console.print(logs)
+                        console.print(escape(logs))
                     else:
                         console.print(f"[dim]No logs available for {node_name}[/dim]")
                 except Exception as e:
-                    console.print(f"[dim]Could not retrieve logs: {str(e)}[/dim]")
+                    console.print(
+                        f"[dim]Could not retrieve logs: {escape(str(e))}[/dim]"
+                    )
 
             console.print("[dim]" + "=" * 80 + "[/dim]\n")
         except Exception as e:

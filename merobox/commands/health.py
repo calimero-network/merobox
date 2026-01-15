@@ -111,7 +111,7 @@ def health(node, timeout, verbose):
         if result["success"]:
             display_health_results([(node, result)], verbose)
         else:
-            console.print(f"\n[red]✗ Failed to check health of {node}[/red]")
+            console.print(f"\n[red][FAIL] Failed to check health of {node}[/red]")
             console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
             sys.exit(1)
     else:

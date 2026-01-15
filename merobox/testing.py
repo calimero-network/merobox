@@ -188,7 +188,7 @@ def workflow(
             raise RuntimeError(f"Workflow execution failed: {workflow_path.name}")
 
         console.print(
-            f"[green]✓ Workflow executed successfully: {workflow_path.name}[/green]"
+            f"[green][OK] Workflow executed successfully: {workflow_path.name}[/green]"
         )
 
         # Get running nodes from the workflow

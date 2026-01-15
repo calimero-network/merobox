@@ -59,7 +59,7 @@ class CreateIdentityStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  CreateIdentity step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  CreateIdentity step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -128,11 +128,11 @@ class CreateIdentityStep(BaseStep):
                         )
                     else:
                         console.print(
-                            f"[yellow]⚠️  No public key found in response. Available keys: {list(result['data'].keys())}[/yellow]"
+                            f"[yellow][WARNING]  No public key found in response. Available keys: {list(result['data'].keys())}[/yellow]"
                         )
                 else:
                     console.print(
-                        f"[yellow]⚠️  Identity result is not a dict: {type(result['data'])}[/yellow]"
+                        f"[yellow][WARNING]  Identity result is not a dict: {type(result['data'])}[/yellow]"
                     )
 
             return True
@@ -209,7 +209,7 @@ class InviteIdentityStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  InviteIdentity step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  InviteIdentity step export configuration validation failed[/yellow]"
             )
 
         # Get node RPC URL

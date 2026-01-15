@@ -82,7 +82,7 @@ class JsonAssertStep(BaseStep):
                 message = stmt.get("message")
                 stmt = stmt.get("statement", "")
             if not isinstance(stmt, str):
-                console.print(f"[red]✗ Invalid JSON assertion at #{idx}[/red]")
+                console.print(f"[red][FAIL] Invalid JSON assertion at #{idx}[/red]")
                 all_ok = False
                 continue
             passed, desc, left_val, right_val = self._eval_statement(
@@ -90,10 +90,10 @@ class JsonAssertStep(BaseStep):
             )
             description = message or desc
             if passed:
-                console.print(f"[green]✓ {description} passed[/green]")
+                console.print(f"[green][OK] {description} passed[/green]")
             else:
                 console.print(
-                    f"[red]✗ {description} failed[/red]\n  left={left_val!r}\n  right={right_val!r}"
+                    f"[red][FAIL] {description} failed[/red]\n  left={left_val!r}\n  right={right_val!r}"
                 )
                 all_ok = False
         return all_ok

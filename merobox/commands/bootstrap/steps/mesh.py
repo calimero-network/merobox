@@ -109,7 +109,7 @@ class CreateMeshStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  CreateMesh step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  CreateMesh step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -210,9 +210,9 @@ class CreateMeshStep(BaseStep):
                     pass
             return False
 
-        console.print(f"[green]✓ Context created: {context_id}[/green]")
+        console.print(f"[green][OK] Context created: {context_id}[/green]")
         if member_public_key:
-            console.print(f"[green]✓ Member public key: {member_public_key}[/green]")
+            console.print(f"[green][OK] Member public key: {member_public_key}[/green]")
 
         step_key = f"context_{context_node}"
         workflow_results[step_key] = context_data
@@ -230,7 +230,7 @@ class CreateMeshStep(BaseStep):
         for node_name in nodes:
             if node_name == context_node:
                 console.print(
-                    f"[yellow]⚠️  Skipping {node_name} (same as context node)[/yellow]"
+                    f"[yellow][WARNING]  Skipping {node_name} (same as context node)[/yellow]"
                 )
                 continue
 
@@ -290,7 +290,7 @@ class CreateMeshStep(BaseStep):
                     pass
                 return False
 
-            console.print(f"  [green]✓ Identity created: {public_key}[/green]")
+            console.print(f"  [green][OK] Identity created: {public_key}[/green]")
 
             identity_key = f"identity_{node_name}"
             actual_identity_data = (
@@ -334,7 +334,7 @@ class CreateMeshStep(BaseStep):
                 )
                 return False
 
-            console.print("  [green]✓ Invitation created[/green]")
+            console.print("  [green][OK] Invitation created[/green]")
 
             invite_key = f"invite_{context_node}_{public_key}"
             workflow_results[invite_key] = invitation
@@ -353,13 +353,13 @@ class CreateMeshStep(BaseStep):
             if self._check_jsonrpc_error(join_result["data"]):
                 return False
 
-            console.print("  [green]✓ Joined context successfully[/green]")
+            console.print("  [green][OK] Joined context successfully[/green]")
 
             join_key = f"join_{node_name}_{public_key}"
             workflow_results[join_key] = join_result["data"]
             connected_nodes.append(node_name)
 
-        console.print("\n[bold green]✓ Mesh created successfully![/bold green]")
+        console.print("\n[bold green][OK] Mesh created successfully![/bold green]")
         console.print(f"  Context: {context_id} on {context_node}")
         console.print(f"  Connected nodes: {', '.join(connected_nodes)}")
 

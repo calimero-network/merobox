@@ -133,7 +133,7 @@ class WaitForSyncStep(BaseStep):
                             client.sync_all_contexts()
                         except (RuntimeError, ValueError, AttributeError) as sync_error:
                             console.print(
-                                f"[dim]⚠️  Sync trigger failed for {node_name}: {str(sync_error)}[/dim]"
+                                f"[dim][WARNING]  Sync trigger failed for {node_name}: {str(sync_error)}[/dim]"
                             )
 
                 # Get context information which includes root_hash
@@ -154,7 +154,7 @@ class WaitForSyncStep(BaseStep):
                 # No root hash found - retry
                 if retry < max_retries - 1:
                     console.print(
-                        f"[dim]⚠️  No root_hash from {node_name}, retrying ({retry + 1}/{max_retries})...[/dim]"
+                        f"[dim][WARNING]  No root_hash from {node_name}, retrying ({retry + 1}/{max_retries})...[/dim]"
                     )
                     continue
 
@@ -169,12 +169,12 @@ class WaitForSyncStep(BaseStep):
             ) as e:
                 if retry < max_retries - 1:
                     console.print(
-                        f"[dim]⚠️  Error fetching from {node_name}: {str(e)}, retrying ({retry + 1}/{max_retries})...[/dim]"
+                        f"[dim][WARNING]  Error fetching from {node_name}: {str(e)}, retrying ({retry + 1}/{max_retries})...[/dim]"
                     )
                     continue
                 else:
                     console.print(
-                        f"[yellow]⚠️  Failed to get root_hash from {node_name} after {max_retries} retries: {str(e)}[/yellow]"
+                        f"[yellow][WARNING]  Failed to get root_hash from {node_name} after {max_retries} retries: {str(e)}[/yellow]"
                     )
                     return node_name, None
 
@@ -255,7 +255,7 @@ class WaitForSyncStep(BaseStep):
                 elapsed = time.time() - start_time
 
                 console.print(
-                    f"[green]✓ All nodes synced after {elapsed:.2f}s ({attempt} attempts)![/green]"
+                    f"[green][OK] All nodes synced after {elapsed:.2f}s ({attempt} attempts)![/green]"
                 )
                 console.print(f"[green]  Root hash: {synced_hash}[/green]")
 
@@ -289,7 +289,7 @@ class WaitForSyncStep(BaseStep):
         # Timeout exceeded or max attempts reached
         elapsed = time.time() - start_time
         console.print(
-            f"[red]✗ Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
+            f"[red][FAIL] Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
         )
 
         # Get final state

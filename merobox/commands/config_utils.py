@@ -69,11 +69,11 @@ def apply_near_devnet_config_to_file(
             toml.dump(config, f)
 
         console.print(
-            f"[green]✓ Injected Local NEAR Devnet config for {node_name}[/green]"
+            f"[green][OK] Injected Local NEAR Devnet config for {node_name}[/green]"
         )
         return True
     except Exception as e:
         console.print(
-            f"[red]✗ Failed to apply NEAR devnet config to {node_name}: {e}[/red]"
+            f"[red][FAIL] Failed to apply NEAR devnet config to {node_name}: {e}[/red]"
         )
         return False

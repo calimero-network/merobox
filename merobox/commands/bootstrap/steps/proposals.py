@@ -58,7 +58,7 @@ class GetProposalStep(BaseStep):
 
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Get proposal step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Get proposal step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -98,12 +98,12 @@ class GetProposalStep(BaseStep):
             self._export_variables(actual_proposal, node_name, dynamic_values)
 
             console.print(
-                f"[green]✓ Proposal retrieved successfully on {node_name}[/green]"
+                f"[green][OK] Proposal retrieved successfully on {node_name}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]✗ Failed to get proposal on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+                f"[red][FAIL] Failed to get proposal on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
 
@@ -147,7 +147,7 @@ class ListProposalsStep(BaseStep):
 
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  List proposals step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  List proposals step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -197,12 +197,12 @@ class ListProposalsStep(BaseStep):
             self._export_variables(actual_proposals, node_name, dynamic_values)
 
             console.print(
-                f"[green]✓ Proposals retrieved successfully on {node_name}[/green]"
+                f"[green][OK] Proposals retrieved successfully on {node_name}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]✗ Failed to list proposals on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+                f"[red][FAIL] Failed to list proposals on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
 
@@ -246,7 +246,7 @@ class GetProposalApproversStep(BaseStep):
 
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Get proposal approvers step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Get proposal approvers step export configuration validation failed[/yellow]"
             )
 
         try:
@@ -302,11 +302,11 @@ class GetProposalApproversStep(BaseStep):
             self._export_variables(actual_approvers, node_name, dynamic_values)
 
             console.print(
-                f"[green]✓ Proposal approvers retrieved successfully on {node_name}[/green]"
+                f"[green][OK] Proposal approvers retrieved successfully on {node_name}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]✗ Failed to get proposal approvers on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+                f"[red][FAIL] Failed to get proposal approvers on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
             return False

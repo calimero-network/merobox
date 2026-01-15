@@ -151,7 +151,7 @@ class ParallelStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Parallel step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Parallel step export configuration validation failed[/yellow]"
             )
 
         if not groups:
@@ -200,7 +200,7 @@ class ParallelStep(BaseStep):
                 # - Stagger starts: for i, group in enumerate(groups): await asyncio.sleep(i * (1.0 / rate))
                 # - Then gather with limited concurrency
                 console.print(
-                    "[yellow]⚠️  'sustained' mode not yet implemented, falling back to 'burst' mode[/yellow]"
+                    "[yellow][WARNING]  'sustained' mode not yet implemented, falling back to 'burst' mode[/yellow]"
                 )
                 tasks = [
                     self._execute_group(
@@ -223,7 +223,7 @@ class ParallelStep(BaseStep):
                 #       sustained_results.append(result)
                 # - Combine results: group_results = burst_results + sustained_results
                 console.print(
-                    "[yellow]⚠️  'mixed' mode not yet implemented, falling back to 'burst' mode[/yellow]"
+                    "[yellow][WARNING]  'mixed' mode not yet implemented, falling back to 'burst' mode[/yellow]"
                 )
                 tasks = [
                     self._execute_group(
@@ -234,7 +234,7 @@ class ParallelStep(BaseStep):
                 group_results = await asyncio.gather(*tasks, return_exceptions=True)
             else:
                 console.print(
-                    f"[yellow]⚠️  Unknown mode '{mode}', defaulting to 'burst' mode[/yellow]"
+                    f"[yellow][WARNING]  Unknown mode '{mode}', defaulting to 'burst' mode[/yellow]"
                 )
                 tasks = [
                     self._execute_group(
@@ -244,7 +244,7 @@ class ParallelStep(BaseStep):
                 ]
                 group_results = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
-            console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
+            console.print(f"[red][ERROR] Parallel execution failed: {str(e)}[/red]")
             return False
 
         # Calculate overall duration
@@ -265,7 +265,7 @@ class ParallelStep(BaseStep):
 
             if isinstance(result, Exception):
                 console.print(
-                    f"[red]❌ Group '{group_name}' failed with error: {str(result)}[/red]"
+                    f"[red][ERROR] Group '{group_name}' failed with error: {str(result)}[/red]"
                 )
                 all_success = False
                 continue
@@ -294,11 +294,11 @@ class ParallelStep(BaseStep):
                     dynamic_values[f"{group['name']}_duration_ns"] = duration_ns
 
                 if not success:
-                    console.print(f"[red]❌ Group '{group_name}' failed[/red]")
+                    console.print(f"[red][ERROR] Group '{group_name}' failed[/red]")
                     all_success = False
                 else:
                     console.print(
-                        f"[green]✓ Group '{group_name}' completed successfully[/green]"
+                        f"[green][OK] Group '{group_name}' completed successfully[/green]"
                     )
                     console.print(
                         f"  [cyan]Duration:[/cyan] {duration_seconds:.3f} seconds ({duration_ms:.2f} ms)"
@@ -309,14 +309,16 @@ class ParallelStep(BaseStep):
 
         if all_success:
             console.print(
-                f"[green]✓ All {len(groups)} groups completed successfully[/green]"
+                f"[green][OK] All {len(groups)} groups completed successfully[/green]"
             )
             console.print("[blue] Overall Timing Metrics:[/blue]")
             console.print(
                 f"  [cyan]Total Duration:[/cyan] {overall_duration_seconds:.3f} seconds ({overall_duration_ms:.2f} ms, {overall_duration_ns:,} ns)"
             )
         else:
-            console.print("[red]❌ Some groups failed during parallel execution[/red]")
+            console.print(
+                "[red][ERROR] Some groups failed during parallel execution[/red]"
+            )
 
         return all_success
 
@@ -388,7 +390,7 @@ class ParallelStep(BaseStep):
 
                         if not success:
                             console.print(
-                                f"[red]❌ Step '{nested_step_name}' failed in group '{group_name}'[/red]"
+                                f"[red][ERROR] Step '{nested_step_name}' failed in group '{group_name}'[/red]"
                             )
                             end_time = time.perf_counter()
                             return {
@@ -399,7 +401,7 @@ class ParallelStep(BaseStep):
 
                     except Exception as e:
                         console.print(
-                            f"[red]❌ Step '{nested_step_name}' failed with error in group '{group_name}': {str(e)}[/red]"
+                            f"[red][ERROR] Step '{nested_step_name}' failed with error in group '{group_name}': {str(e)}[/red]"
                         )
                         end_time = time.perf_counter()
                         return {
@@ -412,7 +414,7 @@ class ParallelStep(BaseStep):
             duration_seconds = end_time - start_time
 
             console.print(
-                f"[green]✓ Group '{group_name}' completed successfully in {duration_seconds:.3f}s[/green]"
+                f"[green][OK] Group '{group_name}' completed successfully in {duration_seconds:.3f}s[/green]"
             )
 
             return {"success": True, "duration_seconds": duration_seconds}
@@ -420,7 +422,7 @@ class ParallelStep(BaseStep):
         except Exception as e:
             end_time = time.perf_counter()
             console.print(
-                f"[red]❌ Group '{group_name}' failed with exception: {str(e)}[/red]"
+                f"[red][ERROR] Group '{group_name}' failed with exception: {str(e)}[/red]"
             )
             return {
                 "success": False,

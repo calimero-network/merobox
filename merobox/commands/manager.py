@@ -71,7 +71,9 @@ class DockerManager:
             return self._ensure_image_pulled(image)
 
         except Exception as e:
-            console.print(f"[red]✗ Error force pulling image {image}: {str(e)}[/red]")
+            console.print(
+                f"[red][FAIL] Error force pulling image {image}: {str(e)}[/red]"
+            )
             return False
 
     def _ensure_image_pulled(self, image: str) -> bool:
@@ -80,7 +82,9 @@ class DockerManager:
             # Check if image exists locally
             try:
                 self.client.images.get(image)
-                console.print(f"[cyan]✓ Image {image} already available locally[/cyan]")
+                console.print(
+                    f"[cyan][OK] Image {image} already available locally[/cyan]"
+                )
                 return True
             except docker.errors.ImageNotFound:
                 pass
@@ -91,24 +95,26 @@ class DockerManager:
                 # Pull the image
                 self.client.images.pull(image)
 
-                console.print(f"[green]✓ Successfully pulled image: {image}[/green]")
+                console.print(f"[green][OK] Successfully pulled image: {image}[/green]")
                 return True
 
             except docker.errors.NotFound:
-                console.print(f"[red]✗ Image {image} not found in registry[/red]")
+                console.print(f"[red][FAIL] Image {image} not found in registry[/red]")
                 return False
             except docker.errors.APIError as e:
                 console.print(
-                    f"[red]✗ Docker API error pulling {image}: {str(e)}[/red]"
+                    f"[red][FAIL] Docker API error pulling {image}: {str(e)}[/red]"
                 )
                 return False
             except Exception as e:
-                console.print(f"[red]✗ Failed to pull image {image}: {str(e)}[/red]")
+                console.print(
+                    f"[red][FAIL] Failed to pull image {image}: {str(e)}[/red]"
+                )
                 return False
 
         except Exception as e:
             console.print(
-                f"[red]✗ Error checking/pulling image {image}: {str(e)}[/red]"
+                f"[red][FAIL] Error checking/pulling image {image}: {str(e)}[/red]"
             )
             return False
 
@@ -182,12 +188,12 @@ class DockerManager:
                 )
                 if host_port is None:
                     console.print(
-                        "[red]✗ Mock relayer is running but could not determine host port[/red]"
+                        "[red][FAIL] Mock relayer is running but could not determine host port[/red]"
                     )
                     return None
                 self.mock_relayer_url = f"http://host.docker.internal:{host_port}"
                 console.print(
-                    f"[cyan]✓ Mock relayer already running at {self.mock_relayer_url}[/cyan]"
+                    f"[cyan][OK] Mock relayer already running at {self.mock_relayer_url}[/cyan]"
                 )
                 return self.mock_relayer_url
 
@@ -198,13 +204,13 @@ class DockerManager:
                 existing.remove(force=True)
             except Exception as remove_err:
                 console.print(
-                    f"[red]✗ Failed to clean up existing mock relayer: {remove_err}[/red]"
+                    f"[red][FAIL] Failed to clean up existing mock relayer: {remove_err}[/red]"
                 )
                 return None
         except docker.errors.NotFound:
             pass
         except Exception as e:
-            console.print(f"[red]✗ Error inspecting mock relayer: {e}[/red]")
+            console.print(f"[red][FAIL] Error inspecting mock relayer: {e}[/red]")
             return None
 
         # Pull image if needed
@@ -240,13 +246,13 @@ class DockerManager:
                     else:
                         # Random port was requested but we couldn't determine it
                         console.print(
-                            "[red]✗ Failed to determine mock relayer host port[/red]"
+                            "[red][FAIL] Failed to determine mock relayer host port[/red]"
                         )
                         container.remove(force=True)
                         return None
                 self.mock_relayer_url = f"http://host.docker.internal:{host_port}"
                 console.print(
-                    f"[green]✓ Mock relayer started ({container.short_id}) at {self.mock_relayer_url}[/green]"
+                    f"[green][OK] Mock relayer started ({container.short_id}) at {self.mock_relayer_url}[/green]"
                 )
                 return self.mock_relayer_url
             except docker.errors.APIError as e:
@@ -257,12 +263,12 @@ class DockerManager:
                     port_binding = None
                     continue
                 console.print(
-                    f"[red]✗ Failed to start mock relayer container: {str(e)}[/red]"
+                    f"[red][FAIL] Failed to start mock relayer container: {str(e)}[/red]"
                 )
                 return None
             except Exception as e:
                 console.print(
-                    f"[red]✗ Unexpected error starting mock relayer: {str(e)}[/red]"
+                    f"[red][FAIL] Unexpected error starting mock relayer: {str(e)}[/red]"
                 )
                 return None
 
@@ -316,7 +322,7 @@ class DockerManager:
             # Ensure the image is available
             if not self._ensure_image_pulled(image_to_use):
                 console.print(
-                    f"[red]✗ Cannot proceed without image: {image_to_use}[/red]"
+                    f"[red][FAIL] Cannot proceed without image: {image_to_use}[/red]"
                 )
                 return False
 
@@ -325,7 +331,7 @@ class DockerManager:
                 relayer_url = self._ensure_mock_relayer()
                 if not relayer_url:
                     console.print(
-                        "[red]✗ Mock relayer requested but failed to start[/red]"
+                        "[red][FAIL] Mock relayer requested but failed to start[/red]"
                     )
                     return False
                 console.print(
@@ -344,22 +350,22 @@ class DockerManager:
                             existing_container.stop()
                             existing_container.remove()
                             console.print(
-                                f"[green]✓ Cleaned up existing container {container_name}[/green]"
+                                f"[green][OK] Cleaned up existing container {container_name}[/green]"
                             )
                         except Exception as stop_error:
                             console.print(
-                                f"[yellow]⚠️  Could not stop container {container_name}: {str(stop_error)}[/yellow]"
+                                f"[yellow][WARNING]  Could not stop container {container_name}: {str(stop_error)}[/yellow]"
                             )
                             console.print("[yellow]Trying to force remove...[/yellow]")
                             try:
                                 # Try to force remove the container
                                 existing_container.remove(force=True)
                                 console.print(
-                                    f"[green]✓ Force removed container {container_name}[/green]"
+                                    f"[green][OK] Force removed container {container_name}[/green]"
                                 )
                             except Exception as force_error:
                                 console.print(
-                                    f"[red]✗ Could not remove container {container_name}: {str(force_error)}[/red]"
+                                    f"[red][FAIL] Could not remove container {container_name}: {str(force_error)}[/red]"
                                 )
                                 console.print(
                                     "[yellow]Container may need manual cleanup. Continuing with deployment...[/yellow]"
@@ -369,7 +375,7 @@ class DockerManager:
                         # Container exists but not running, just remove it
                         existing_container.remove()
                         console.print(
-                            f"[green]✓ Cleaned up existing container {container_name}[/green]"
+                            f"[green][OK] Cleaned up existing container {container_name}[/green]"
                         )
                 except docker.errors.NotFound:
                     pass
@@ -399,7 +405,7 @@ class DockerManager:
                 config_source = Path(config_path)
                 if not config_source.exists():
                     console.print(
-                        f"[red]✗ Custom config file not found: {config_path}[/red]"
+                        f"[red][FAIL] Custom config file not found: {config_path}[/red]"
                     )
                     return False
 
@@ -407,12 +413,12 @@ class DockerManager:
                 try:
                     shutil.copy2(config_source, config_dest)
                     console.print(
-                        f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
+                        f"[green][OK] Copied custom config from {config_path} to {config_dest}[/green]"
                     )
                     skip_init = True
                 except Exception as e:
                     console.print(
-                        f"[red]✗ Failed to copy custom config: {str(e)}[/red]"
+                        f"[red][FAIL] Failed to copy custom config: {str(e)}[/red]"
                     )
                     return False
 
@@ -502,7 +508,7 @@ class DockerManager:
                 # Ensure auth service stack is running
                 if not self._start_auth_service_stack(auth_image, auth_use_cached):
                     console.print(
-                        "[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
+                        "[yellow][WARNING]  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
                     )
 
                 # Add Traefik labels for auth service integration
@@ -617,12 +623,12 @@ class DockerManager:
                 try:
                     init_container = self.client.containers.run(**init_config)
                     console.print(
-                        f"[green]✓ Node {node_name} initialized successfully[/green]"
+                        f"[green][OK] Node {node_name} initialized successfully[/green]"
                     )
 
                 except Exception as e:
                     console.print(
-                        f"[red]✗ Failed to initialize node {node_name}: {str(e)}[/red]"
+                        f"[red][FAIL] Failed to initialize node {node_name}: {str(e)}[/red]"
                     )
                     return False
                 finally:
@@ -644,7 +650,7 @@ class DockerManager:
                     self._fix_permissions(node_data_dir)
 
                     console.print(
-                        "[green]✓ Applying Near Devnet config for the node [/green]"
+                        "[green][OK] Applying Near Devnet config for the node [/green]"
                     )
                     # Calculate the config path here, using the resolved data_dir/node_data_dir
                     actual_config_file = Path(node_data_dir) / "config.toml"
@@ -658,7 +664,9 @@ class DockerManager:
                         near_devnet_config["public_key"],
                         near_devnet_config["secret_key"],
                     ):
-                        console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
+                        console.print(
+                            "[red][FAIL] Failed to apply NEAR Devnet config[/red]"
+                        )
                         return False
 
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
@@ -721,14 +729,14 @@ class DockerManager:
                     internal_network = self.client.networks.get("calimero_internal")
                     internal_network.connect(container)
                     console.print(
-                        f"[cyan]✓ {node_name} connected to internal network (secure backend)[/cyan]"
+                        f"[cyan][OK] {node_name} connected to internal network (secure backend)[/cyan]"
                     )
                     console.print(
-                        f"[cyan]✓ {node_name} connected to web network (Traefik routing)[/cyan]"
+                        f"[cyan][OK] {node_name} connected to web network (Traefik routing)[/cyan]"
                     )
                 except Exception as e:
                     console.print(
-                        f"[yellow]⚠️  Warning: Could not connect {node_name} to auth networks: {str(e)}[/yellow]"
+                        f"[yellow][WARNING]  Warning: Could not connect {node_name} to auth networks: {str(e)}[/yellow]"
                     )
 
             # Wait a moment and check if container is still running
@@ -739,7 +747,7 @@ class DockerManager:
                 # Container failed to start, get logs
                 logs = container.logs().decode("utf-8")
                 container.remove()
-                console.print(f"[red]✗ Node {node_name} failed to start[/red]")
+                console.print(f"[red][FAIL] Node {node_name} failed to start[/red]")
                 console.print("[yellow]Container logs:[/yellow]")
                 console.print(logs)
 
@@ -757,7 +765,7 @@ class DockerManager:
                 return False
 
             console.print(
-                f"[green]✓ Started Calimero node {node_name} (ID: {container.short_id})[/green]"
+                f"[green][OK] Started Calimero node {node_name} (ID: {container.short_id})[/green]"
             )
             console.print(f"  - P2P Port: {port}")
             console.print(f"  - RPC/Admin Port: {rpc_port}")
@@ -786,7 +794,9 @@ class DockerManager:
             return True
 
         except Exception as e:
-            console.print(f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
+            console.print(
+                f"[red][FAIL] Failed to start node {node_name}: {str(e)}[/red]"
+            )
             return False
 
     def _find_available_ports(self, count: int, start_port: int = 2428) -> list[int]:
@@ -829,7 +839,7 @@ class DockerManager:
                     # Check if network already exists
                     self.client.networks.get(network_name)
                     console.print(
-                        f"[cyan]✓ Network {network_name} already exists[/cyan]"
+                        f"[cyan][OK] Network {network_name} already exists[/cyan]"
                     )
                 except docker.errors.NotFound:
                     # Create the network
@@ -842,11 +852,13 @@ class DockerManager:
                         network_config["internal"] = True
 
                     self.client.networks.create(**network_config)
-                    console.print(f"[green]✓ Created network: {network_name}[/green]")
+                    console.print(
+                        f"[green][OK] Created network: {network_name}[/green]"
+                    )
 
         except Exception as e:
             console.print(
-                f"[yellow]⚠️  Warning: Could not ensure auth networks: {str(e)}[/yellow]"
+                f"[yellow][WARNING]  Warning: Could not ensure auth networks: {str(e)}[/yellow]"
             )
 
     def _start_auth_service_stack(
@@ -863,7 +875,9 @@ class DockerManager:
             traefik_running = self._is_container_running("proxy")
 
             if auth_running and traefik_running:
-                console.print("[green]✓ Auth service stack is already running[/green]")
+                console.print(
+                    "[green][OK] Auth service stack is already running[/green]"
+                )
                 return True
 
             # Ensure networks exist first
@@ -887,16 +901,18 @@ class DockerManager:
             if self._is_container_running("auth") and self._is_container_running(
                 "proxy"
             ):
-                console.print("[green]✓ Auth service stack is healthy[/green]")
+                console.print("[green][OK] Auth service stack is healthy[/green]")
                 return True
             else:
                 console.print(
-                    "[yellow]⚠️  Auth service stack started but may not be fully ready[/yellow]"
+                    "[yellow][WARNING]  Auth service stack started but may not be fully ready[/yellow]"
                 )
                 return True
 
         except Exception as e:
-            console.print(f"[red]✗ Error starting auth service stack: {str(e)}[/red]")
+            console.print(
+                f"[red][FAIL] Error starting auth service stack: {str(e)}[/red]"
+            )
             return False
 
     def _start_traefik_container(self):
@@ -950,11 +966,11 @@ class DockerManager:
             }
 
             self.client.containers.run(**traefik_config)
-            console.print("[green]✓ Traefik proxy started[/green]")
+            console.print("[green][OK] Traefik proxy started[/green]")
             return True
 
         except Exception as e:
-            console.print(f"[red]✗ Failed to start Traefik proxy: {str(e)}[/red]")
+            console.print(f"[red][FAIL] Failed to start Traefik proxy: {str(e)}[/red]")
             return False
 
     def _start_auth_container(
@@ -977,7 +993,7 @@ class DockerManager:
             # Ensure auth image is available
             if not self._ensure_image_pulled(auth_image_to_use):
                 console.print(
-                    "[yellow]⚠️  Warning: Could not pull auth image, trying with local image[/yellow]"
+                    "[yellow][WARNING]  Warning: Could not pull auth image, trying with local image[/yellow]"
                 )
 
             # Create volume for auth data if it doesn't exist
@@ -1052,17 +1068,17 @@ class DockerManager:
                 internal_network = self.client.networks.get("calimero_internal")
                 internal_network.connect(container)
                 console.print(
-                    "[cyan]✓ Auth service connected to internal network[/cyan]"
+                    "[cyan][OK] Auth service connected to internal network[/cyan]"
                 )
             except Exception as e:
                 console.print(
-                    f"[yellow]⚠️  Warning: Could not connect auth to internal network: {str(e)}[/yellow]"
+                    f"[yellow][WARNING]  Warning: Could not connect auth to internal network: {str(e)}[/yellow]"
                 )
-            console.print("[green]✓ Auth service started[/green]")
+            console.print("[green][OK] Auth service started[/green]")
             return True
 
         except Exception as e:
-            console.print(f"[red]✗ Failed to start Auth service: {str(e)}[/red]")
+            console.print(f"[red][FAIL] Failed to start Auth service: {str(e)}[/red]")
             return False
 
     def _is_container_running(self, container_name: str) -> bool:
@@ -1086,12 +1102,12 @@ class DockerManager:
                 auth_container = self.client.containers.get("auth")
                 auth_container.stop()
                 auth_container.remove()
-                console.print("[green]✓ Auth service stopped[/green]")
+                console.print("[green][OK] Auth service stopped[/green]")
             except docker.errors.NotFound:
                 console.print("[cyan]• Auth service was not running[/cyan]")
             except Exception as e:
                 console.print(
-                    f"[yellow]⚠️  Warning: Could not stop auth service: {str(e)}[/yellow]"
+                    f"[yellow][WARNING]  Warning: Could not stop auth service: {str(e)}[/yellow]"
                 )
                 success = False
 
@@ -1100,24 +1116,26 @@ class DockerManager:
                 proxy_container = self.client.containers.get("proxy")
                 proxy_container.stop()
                 proxy_container.remove()
-                console.print("[green]✓ Traefik proxy stopped[/green]")
+                console.print("[green][OK] Traefik proxy stopped[/green]")
             except docker.errors.NotFound:
                 console.print("[cyan]• Traefik proxy was not running[/cyan]")
             except Exception as e:
                 console.print(
-                    f"[yellow]⚠️  Warning: Could not stop Traefik proxy: {str(e)}[/yellow]"
+                    f"[yellow][WARNING]  Warning: Could not stop Traefik proxy: {str(e)}[/yellow]"
                 )
                 success = False
 
             if success:
                 console.print(
-                    "[green]✓ Auth service stack stopped successfully[/green]"
+                    "[green][OK] Auth service stack stopped successfully[/green]"
                 )
 
             return success
 
         except Exception as e:
-            console.print(f"[red]✗ Error stopping auth service stack: {str(e)}[/red]")
+            console.print(
+                f"[red][FAIL] Error stopping auth service stack: {str(e)}[/red]"
+            )
             return False
 
     def run_multiple_nodes(
@@ -1212,7 +1230,9 @@ class DockerManager:
                 container.stop(timeout=10)
                 container.remove()
                 del self.nodes[node_name]
-                console.print(f"[green]✓ Stopped and removed node {node_name}[/green]")
+                console.print(
+                    f"[green][OK] Stopped and removed node {node_name}[/green]"
+                )
                 self.node_rpc_ports.pop(node_name, None)
                 return True
             else:
@@ -1222,7 +1242,7 @@ class DockerManager:
                     container.stop(timeout=10)
                     container.remove()
                     console.print(
-                        f"[green]✓ Stopped and removed node {node_name}[/green]"
+                        f"[green][OK] Stopped and removed node {node_name}[/green]"
                     )
                     self.node_rpc_ports.pop(node_name, None)
                     return True
@@ -1230,7 +1250,9 @@ class DockerManager:
                     console.print(f"[yellow]Node {node_name} not found[/yellow]")
                     return False
         except Exception as e:
-            console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
+            console.print(
+                f"[red][FAIL] Failed to stop node {node_name}: {str(e)}[/red]"
+            )
             return False
 
     def stop_all_nodes(self) -> bool:
@@ -1258,7 +1280,7 @@ class DockerManager:
                         container.stop(timeout=10)
                         container.remove()
                         console.print(
-                            f"[green]✓ Stopped and removed {container.name}[/green]"
+                            f"[green][OK] Stopped and removed {container.name}[/green]"
                         )
                         success_count += 1
                         self.node_rpc_ports.pop(container.name, None)
@@ -1269,7 +1291,7 @@ class DockerManager:
 
                     except Exception as e:
                         console.print(
-                            f"[red]✗ Failed to stop {container.name}: {str(e)}[/red]"
+                            f"[red][FAIL] Failed to stop {container.name}: {str(e)}[/red]"
                         )
                         failed_nodes.append(container.name)
 
@@ -1290,13 +1312,13 @@ class DockerManager:
                     console.print("[cyan]Stopping mock relayer container...[/cyan]")
                     relayer.stop(timeout=10)
                 relayer.remove()
-                console.print("[green]✓ Mock relayer stopped[/green]")
+                console.print("[green][OK] Mock relayer stopped[/green]")
                 self.mock_relayer_url = None
             except docker.errors.NotFound:
                 pass
             except Exception as e:
                 console.print(
-                    f"[yellow]⚠️  Warning: Failed to stop mock relayer: {e}[/yellow]"
+                    f"[yellow][WARNING]  Warning: Failed to stop mock relayer: {e}[/yellow]"
                 )
                 success = False
 
@@ -1501,12 +1523,12 @@ class DockerManager:
 
             if "Connection failed" in result.output.decode():
                 console.print(
-                    f"[red]✗ Admin server not accessible on localhost:2528 for {node_name}[/red]"
+                    f"[red][FAIL] Admin server not accessible on localhost:2528 for {node_name}[/red]"
                 )
                 return False
             else:
                 console.print(
-                    f"[green]✓ Admin server accessible on localhost:2528 for {node_name}[/green]"
+                    f"[green][OK] Admin server accessible on localhost:2528 for {node_name}[/green]"
                 )
                 return True
 
@@ -1542,16 +1564,16 @@ class DockerManager:
                 toml.dump(config, f)
 
             console.print(
-                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
+                f"[green][OK] Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
             )
 
         except ImportError:
             console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+                "[red][FAIL] toml package not found. Install with: pip install toml[/red]"
             )
         except Exception as e:
             console.print(
-                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
+                f"[red][FAIL] Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
             )
 
     def _get_docker_host_url(self, port: int) -> str:
@@ -1628,16 +1650,16 @@ class DockerManager:
                 toml.dump(config, f)
 
             console.print(
-                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
+                f"[green][OK] Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
             )
 
         except ImportError:
             console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
+                "[red][FAIL] toml package not found. Install with: pip install toml[/red]"
             )
         except Exception as e:
             console.print(
-                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
+                f"[red][FAIL] Failed to apply e2e defaults to {node_name}: {e}[/red]"
             )
 
     def _set_nested_config(self, config: dict, key: str, value):
@@ -1693,5 +1715,5 @@ class DockerManager:
             )
         except Exception as e:
             console.print(
-                f"[yellow]⚠️  Warning: Failed to fix permissions for {path}: {e}[/yellow]"
+                f"[yellow][WARNING]  Warning: Failed to fix permissions for {path}: {e}[/yellow]"
             )

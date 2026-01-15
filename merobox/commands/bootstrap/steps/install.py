@@ -6,6 +6,8 @@ import os
 import shutil
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
@@ -151,7 +153,7 @@ class InstallApplicationStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Install step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Install step export configuration validation failed[/yellow]"
             )
 
         if not application_path and not application_url:
@@ -186,11 +188,12 @@ class InstallApplicationStep(BaseStep):
                     return False
 
                 if self._is_binary_mode():
+                    api_path = application_path.replace("\\", "/")
                     console.print(
-                        f"[cyan]Installing dev application from host filesystem path: {application_path}[/cyan]"
+                        f"[cyan]Installing dev application from host filesystem path: {api_path}[/cyan]"
                     )
                     api_result = client.install_dev_application(
-                        path=application_path, metadata=DEFAULT_METADATA
+                        path=api_path, metadata=DEFAULT_METADATA
                     )
                 else:
                     container_path = self._prepare_container_path(
@@ -236,7 +239,14 @@ class InstallApplicationStep(BaseStep):
             console.print(f"  Data: {data}")
 
         if not result.get("success"):
-            console.print(f"  Error: {result.get('error')}")
+            console.print(f"  Error: {escape(str(result.get('error')))}")
+            # Print exception details if available
+            if "exception" in result:
+                exc_info = result["exception"]
+                console.print(f"  Exception Type: {escape(str(exc_info.get('type')))}")
+                console.print(
+                    f"  Exception Message: {escape(str(exc_info.get('message')))}"
+                )
 
         if result["success"]:
             # Check if the JSON-RPC response contains an error
@@ -270,11 +280,11 @@ class InstallApplicationStep(BaseStep):
                         )
                     else:
                         console.print(
-                            f"[yellow]⚠️  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]"
+                            f"[yellow][WARNING]  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]"
                         )
                 else:
                     console.print(
-                        f"[yellow]⚠️  Install result is not a dict: {type(result['data'])}[/yellow]"
+                        f"[yellow][WARNING]  Install result is not a dict: {type(result['data'])}[/yellow]"
                     )
 
             return True

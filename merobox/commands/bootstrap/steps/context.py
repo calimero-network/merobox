@@ -88,7 +88,7 @@ class CreateContextStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  Context step export configuration validation failed[/yellow]"
+                "[yellow][WARNING]  Context step export configuration validation failed[/yellow]"
             )
 
         params_json: str | None = None
@@ -212,11 +212,11 @@ class CreateContextStep(BaseStep):
                                 [f"data.{k}" for k in result["data"]["data"].keys()]
                             )
                         console.print(
-                            f"[yellow]⚠️  No context ID found in response. Available keys: {available_keys}[/yellow]"
+                            f"[yellow][WARNING]  No context ID found in response. Available keys: {available_keys}[/yellow]"
                         )
                 else:
                     console.print(
-                        f"[yellow]⚠️  Context result is not a dict: {type(result['data'])}[/yellow]"
+                        f"[yellow][WARNING]  Context result is not a dict: {type(result['data'])}[/yellow]"
                     )
 
             return True
