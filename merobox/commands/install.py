@@ -76,8 +76,9 @@ def _prepare_container_path(
             os.path.commonpath([abs_source_path, abs_container_data_dir])
             == abs_container_data_dir
         ):
-            filename = os.path.basename(source_path)
-            return f"/app/data/{filename}"
+            # Preserve subdirectory structure relative to container data directory
+            relative_path = os.path.relpath(abs_source_path, abs_container_data_dir)
+            return f"/app/data/{relative_path}"
     except ValueError:
         pass
 
