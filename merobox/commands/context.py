@@ -60,7 +60,6 @@ def create_context_table(contexts_data: list) -> Table:
     table = Table(title="Contexts", box=box.ROUNDED)
     table.add_column("Context ID", style="cyan")
     table.add_column("Application ID", style="yellow")
-    table.add_column("Protocol", style="blue")
 
     for context_info in contexts_data:
         if isinstance(context_info, dict):
@@ -69,16 +68,13 @@ def create_context_table(contexts_data: list) -> Table:
                 "contextId", "Unknown"
             )
             application_id = context_info.get("applicationId", "Unknown")
-            # Protocol is not returned in list response, default to "near" (most common)
-            protocol = context_info.get("protocol", DEFAULT_PROTOCOL.upper())
             table.add_row(
                 context_id,
                 application_id,
-                protocol,
             )
         else:
             # Handle case where context_info is a string (just the ID)
-            table.add_row(str(context_info), "N/A", "N/A")
+            table.add_row(str(context_info), "N/A")
 
     return table
 
