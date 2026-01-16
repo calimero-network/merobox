@@ -61,7 +61,17 @@ async def call_function(
 @click.option("--context-id", required=True, help="Context ID to execute in")
 @click.option("--function", required=True, help="Function name to call")
 @click.option("--args", help="JSON string of arguments for the function call")
-def call(node: str, context_id: str, function: str, args: str = None):
+@click.option(
+    "--executor-key",
+    help="Executor public key (required for mutate operations, optional for view operations)",
+)
+def call(
+    node: str,
+    context_id: str,
+    function: str,
+    args: str = None,
+    executor_key: str = None,
+):
     """Execute function calls."""
 
     # Initialize manager and get RPC URL from node name
@@ -83,7 +93,7 @@ def call(node: str, context_id: str, function: str, args: str = None):
 
     # Execute the function call
     result = run_async_function(
-        call_function, rpc_url, context_id, function, parsed_args
+        call_function, rpc_url, context_id, function, parsed_args, executor_key
     )
 
     if result:
@@ -100,13 +110,26 @@ def call(node: str, context_id: str, function: str, args: str = None):
                 )
             )
         else:
+            error_msg = result.get("error", "Unknown error")
+            error_details = ""
+
+            # Try to extract more detailed error information
+            if "exception" in result:
+                exc = result["exception"]
+                error_type = exc.get("type", "Unknown")
+                error_message = exc.get("message", "No message")
+                error_details = f"\nException Type: {error_type}\nException Message: {error_message}"
+                if "traceback" in exc:
+                    error_details += f"\n\nTraceback:\n{exc['traceback']}"
+
             console.print(
                 Panel(
                     f"[red]Function call failed![/red]\n\n"
                     f"Function: {function}\n"
                     f"Context: {context_id}\n"
                     f"Node: {node}\n"
-                    f"Error: {result.get('error', 'Unknown error')}",
+                    f"Executor Key: {executor_key or 'Not provided'}\n"
+                    f"Error: {error_msg}{error_details}",
                     title="Function Call Error",
                     border_style="red",
                 )

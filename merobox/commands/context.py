@@ -60,6 +60,7 @@ def create_context_table(contexts_data: list) -> Table:
     table = Table(title="Contexts", box=box.ROUNDED)
     table.add_column("Context ID", style="cyan")
     table.add_column("Application ID", style="yellow")
+    table.add_column("Member Public Key", style="green")
 
     for context_info in contexts_data:
         if isinstance(context_info, dict):
@@ -68,13 +69,15 @@ def create_context_table(contexts_data: list) -> Table:
                 "contextId", "Unknown"
             )
             application_id = context_info.get("applicationId", "Unknown")
+            member_public_key = context_info.get("memberPublicKey", "N/A")
             table.add_row(
                 context_id,
                 application_id,
+                member_public_key,
             )
         else:
             # Handle case where context_info is a string (just the ID)
-            table.add_row(str(context_info), "N/A")
+            table.add_row(str(context_info), "N/A", "N/A")
 
     return table
 
@@ -132,7 +135,7 @@ def create(node, application_id, protocol, params, verbose):
     if result["success"]:
         console.print("\n[green]✓ Context created successfully![/green]")
 
-        # Extract and display context ID
+        # Extract and display context ID and member public key
         response_data = result.get("data", {})
         if isinstance(response_data, dict):
             # Handle nested data structure
@@ -141,8 +144,14 @@ def create(node, application_id, protocol, params, verbose):
                 context_id = actual_data.get(
                     "contextId", actual_data.get("id", actual_data.get("name"))
                 )
+                member_public_key = actual_data.get("memberPublicKey")
+
                 if context_id:
                     console.print(f"[cyan]Context ID: {context_id}[/cyan]")
+                if member_public_key:
+                    console.print(
+                        f"[cyan]Member Public Key: {member_public_key}[/cyan]"
+                    )
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
@@ -284,6 +293,31 @@ def list_contexts(node, verbose):
 
         console.print(f"\n[green]Found {len(contexts_data)} context(s):[/green]")
 
+        # Fetch member public key for each context (list API doesn't return it)
+        if contexts_data:
+            console.print("[dim]Fetching member public keys...[/dim]")
+            for context_info in contexts_data:
+                if isinstance(context_info, dict):
+                    context_id = context_info.get("id") or context_info.get("contextId")
+                    if context_id and "memberPublicKey" not in context_info:
+                        # Fetch individual context to get member public key
+                        context_result = run_async_function(
+                            get_context_via_admin_api, rpc_url, context_id
+                        )
+                        if context_result.get("success"):
+                            context_detail_data = context_result.get("data", {})
+                            # Handle nested structure
+                            if isinstance(context_detail_data, dict):
+                                detail_data = context_detail_data.get(
+                                    "data", context_detail_data
+                                )
+                                if isinstance(detail_data, dict):
+                                    member_pk = detail_data.get(
+                                        "memberPublicKey"
+                                    ) or detail_data.get("member_public_key")
+                                    if member_pk:
+                                        context_info["memberPublicKey"] = member_pk
+
         # Create and display table
         table = create_context_table(contexts_data)
         console.print(table)
@@ -338,6 +372,28 @@ def show(node, context_id, verbose):
             )
             console.print(f"[cyan]Context ID:[/cyan] {context_id_display}")
 
+            # Extract member public key (check nested structures too)
+            member_public_key = context_data.get("memberPublicKey") or context_data.get(
+                "member_public_key"
+            )
+            if not member_public_key and isinstance(response_data, dict):
+                # Try to get from nested data structure
+                nested_data = response_data.get("data", {})
+                if isinstance(nested_data, dict):
+                    member_public_key = nested_data.get(
+                        "memberPublicKey"
+                    ) or nested_data.get("member_public_key")
+
+            if member_public_key:
+                console.print(f"[cyan]Member Public Key:[/cyan] {member_public_key}")
+            elif verbose:
+                console.print(
+                    "[yellow]⚠️  Member Public Key not found in response[/yellow]"
+                )
+                console.print(
+                    f"[dim]Available keys in context_data: {list(context_data.keys()) if isinstance(context_data, dict) else 'N/A'}[/dim]"
+                )
+
             if "applicationId" in context_data:
                 console.print(
                     f"[cyan]Application ID:[/cyan] {context_data['applicationId']}"
@@ -351,11 +407,6 @@ def show(node, context_id, verbose):
                     "root_hash"
                 )
                 console.print(f"[cyan]Root Hash:[/cyan] {root_hash}")
-
-            if "memberPublicKey" in context_data:
-                console.print(
-                    f"[cyan]Member Public Key:[/cyan] {context_data['memberPublicKey']}"
-                )
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
