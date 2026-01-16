@@ -3,9 +3,11 @@ Commands module - All available CLI commands.
 """
 
 from merobox.commands import near
+from merobox.commands.application import application
 from merobox.commands.blob import blob
 from merobox.commands.bootstrap import bootstrap
 from merobox.commands.call import call
+from merobox.commands.context import context
 from merobox.commands.health import health
 from merobox.commands.identity import identity
 from merobox.commands.install import install
@@ -26,8 +28,10 @@ __all__ = [
     "logs",
     "health",
     "install",
+    "application",
     "nuke",
     "identity",
+    "context",
     "bootstrap",
     "call",
     "blob",

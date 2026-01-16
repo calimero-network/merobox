@@ -83,23 +83,32 @@ merobox nuke my-node
 
 ```bash
 # Install a WASM application on a node
-merobox install my-node /path/to/app.wasm
+merobox install --node my-node --path /path/to/app.wasm --dev
+
+# List all installed applications
+merobox application list --node my-node
 
 # Call a function on an installed application
-merobox call my-node <app-id> <method> '{"arg": "value"}'
+merobox call my-node <context-id> <method> '{"arg": "value"}'
 ```
 
 ### Identity & Context Management
 
 ```bash
 # Create a new identity
-merobox identity create
+merobox identity generate --node my-node
 
-# Create a new context
-merobox context create my-node <context-config>
+# Create a new context for an installed application
+merobox context create --node my-node --application-id <app-id>
+
+# List all contexts on a node
+merobox context list --node my-node
+
+# Show context details
+merobox context show --node my-node --context-id <context-id>
 
 # Join a node to a context
-merobox join my-node <context-id> <private-key>
+merobox join my-node <context-id> <invitee-id> <invitation>
 ```
 
 ### Blob Storage Management
@@ -213,12 +222,12 @@ description: "Workflow using custom node configuration"
 nodes:
   # Shared config path for all nodes
   config_path: ./workflow-examples/custom-config.toml
-  
+
   calimero-node-1:
     port: 2428
     rpc_port: 2528
     # Uses shared config
-  
+
   calimero-node-2:
     port: 2429
     rpc_port: 2529
