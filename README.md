@@ -923,16 +923,63 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 
 #### `merobox install`
 
-Install applications on nodes.
+Install applications on Calimero nodes.
 
 ```bash
-merobox install [OPTIONS] NODE_NAME PATH_OR_URL
+merobox install [OPTIONS] --node NODE_NAME [--url URL | --path PATH]
 ```
 
 **Options:**
 
-- `--dev`: Development mode installation
+- `--node`, `-n`: Node name to install the application on (required)
+- `--url`: URL to install the application from (for remote installation)
+- `--path`: Local path for dev installation (for development mode)
+- `--dev`: Install as development application from local path
+- `--metadata`: Application metadata (optional)
+- `--timeout`: Timeout in seconds for installation (default: 30)
+- `--verbose`, `-v`: Show verbose output
 - `--help`: Show help message
+
+**Examples:**
+
+```bash
+# Install from URL
+merobox install --node my-node --url https://example.com/app.wasm
+
+# Install from local file (dev mode)
+merobox install --node my-node --path ./app.wasm --dev
+```
+
+#### `merobox application`
+
+Manage applications on Calimero nodes.
+
+```bash
+merobox application [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+
+- `list`: List all installed applications on a node
+
+**List Command:**
+
+```bash
+merobox application list --node NODE_NAME [--verbose]
+```
+
+**Options:**
+
+- `--node`, `-n`: Node name to list applications from (required)
+- `--verbose`, `-v`: Show verbose output including full API response
+- `--help`: Show help message
+
+**Example:**
+
+```bash
+# List all applications
+merobox application list --node my-node
+```
 
 #### `merobox context`
 
@@ -945,8 +992,64 @@ merobox context [OPTIONS] COMMAND [ARGS]...
 **Subcommands:**
 
 - `create`: Create a new context
-- `list`: List contexts
-- `show`: Show context details
+- `list`: List all contexts on a node
+- `show`: Show details of a specific context
+
+**Create Command:**
+
+```bash
+merobox context create --node NODE_NAME --application-id APPLICATION_ID [OPTIONS]
+```
+
+**Options:**
+
+- `--node`, `-n`: Node name to create context on (required)
+- `--application-id`, `-a`: Application ID to create context for (required)
+- `--protocol`, `-p`: Protocol type (default: "near")
+- `--params`: Initialization parameters as JSON string (optional)
+- `--verbose`, `-v`: Show verbose output
+- `--help`: Show help message
+
+**List Command:**
+
+```bash
+merobox context list --node NODE_NAME [--verbose]
+```
+
+**Options:**
+
+- `--node`, `-n`: Node name to list contexts from (required)
+- `--verbose`, `-v`: Show verbose output including full API response
+- `--help`: Show help message
+
+**Show Command:**
+
+```bash
+merobox context show --node NODE_NAME --context-id CONTEXT_ID [--verbose]
+```
+
+**Options:**
+
+- `--node`, `-n`: Node name to show context from (required)
+- `--context-id`, `-c`: Context ID to show details for (required)
+- `--verbose`, `-v`: Show verbose output including full API response
+- `--help`: Show help message
+
+**Examples:**
+
+```bash
+# Create a context
+merobox context create --node my-node --application-id app-123
+
+# Create with custom protocol and params
+merobox context create --node my-node --application-id app-123 --protocol ethereum --params '{"key": "value"}'
+
+# List all contexts
+merobox context list --node my-node
+
+# Show context details
+merobox context show --node my-node --context-id ctx-456
+```
 
 #### `merobox identity`
 
