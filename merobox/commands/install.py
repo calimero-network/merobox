@@ -203,14 +203,19 @@ def install(node, url, path, dev, metadata, timeout, verbose):
         if isinstance(response_data, dict):
             # Handle nested data structure
             actual_data = response_data.get("data", response_data)
-            application_id = actual_data.get(
-                "id", actual_data.get("applicationId", actual_data.get("name"))
-            )
-            if application_id:
-                console.print(f"[cyan]Application ID: {application_id}[/cyan]")
+            if isinstance(actual_data, dict):
+                application_id = actual_data.get(
+                    "id", actual_data.get("applicationId", actual_data.get("name"))
+                )
+                if application_id:
+                    console.print(f"[cyan]Application ID: {application_id}[/cyan]")
+                elif verbose:
+                    console.print(
+                        f"[yellow]⚠️  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]"
+                    )
             elif verbose:
                 console.print(
-                    f"[yellow]⚠️  No application ID found in response. Available keys: {list(actual_data.keys())}[/yellow]"
+                    f"[yellow]⚠️  Unexpected response format. Expected dict, got {type(actual_data)}[/yellow]"
                 )
 
         if verbose:

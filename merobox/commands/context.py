@@ -137,11 +137,12 @@ def create(node, application_id, protocol, params, verbose):
         if isinstance(response_data, dict):
             # Handle nested data structure
             actual_data = response_data.get("data", response_data)
-            context_id = actual_data.get(
-                "contextId", actual_data.get("id", actual_data.get("name"))
-            )
-            if context_id:
-                console.print(f"[cyan]Context ID: {context_id}[/cyan]")
+            if isinstance(actual_data, dict):
+                context_id = actual_data.get(
+                    "contextId", actual_data.get("id", actual_data.get("name"))
+                )
+                if context_id:
+                    console.print(f"[cyan]Context ID: {context_id}[/cyan]")
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
@@ -217,7 +218,7 @@ def list_contexts(node, verbose):
             elif isinstance(response_data, list):
                 # Direct list of contexts
                 contexts_data = response_data
-            else:
+            elif isinstance(response_data, dict):
                 # Check if this is a dict of contexts (keys might be context IDs)
                 # If all values are dicts, treat as context objects
                 if response_data and all(
@@ -230,10 +231,10 @@ def list_contexts(node, verbose):
                             context_obj["id"] = key
                         contexts_data.append(context_obj)
                 # Otherwise, treat the whole dict as a single context
-                elif response_data:
-                    contexts_data = [response_data]
                 else:
-                    contexts_data = []
+                    contexts_data = [response_data]
+            else:
+                contexts_data = []
         elif isinstance(response_data, list):
             # Direct list of contexts
             contexts_data = response_data
