@@ -39,7 +39,10 @@ def merge_remote_nodes_config(
     existing_remote_nodes = yaml_config.get("remote_nodes", {})
 
     # Merge: CLI takes precedence
-    merged_remote_nodes = {**existing_remote_nodes}
+    # Create a deep copy of existing nodes to avoid mutating the original yaml_config
+    merged_remote_nodes = {
+        name: {**node_config} for name, node_config in existing_remote_nodes.items()
+    }
 
     for name, cli_config in cli_remote_nodes.items():
         if name in merged_remote_nodes:
