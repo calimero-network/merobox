@@ -435,6 +435,15 @@ class NodeResolver:
         """
         # Handle API key auth
         if auth_method == AUTH_METHOD_API_KEY:
+            # Try cached token first (same as user_password path)
+            cached = self.auth_manager.get_cached_token(node_name)
+            if (
+                cached
+                and cached.auth_method == AUTH_METHOD_API_KEY
+                and not cached.is_expired()
+            ):
+                return cached
+
             resolved_api_key = self._resolve_api_key(api_key, node_ref)
             if resolved_api_key:
                 # Store API key as an AuthToken for consistent handling
