@@ -50,7 +50,7 @@ setup(
         "docker>=6.0.0",
         "rich>=13.0.0",
         "PyYAML>=6.0.0",
-        "calimero-client-py==0.2.7",
+        "calimero-client-py==0.3.0",
         "aiohttp>=3.8.0",
         "toml>=0.10.2",
         "base58>=2.1.0",

@@ -5,18 +5,27 @@ Base step class for all workflow steps.
 import ast
 import json
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from merobox.commands.utils import console
+from merobox.commands.utils import console, get_node_rpc_url
+
+if TYPE_CHECKING:
+    from merobox.commands.node_resolver import NodeResolver
 
 
 class BaseStep:
     """Base class for all workflow steps."""
 
-    def __init__(self, config: dict[str, Any], manager: object | None = None):
+    def __init__(
+        self,
+        config: dict[str, Any],
+        manager: object | None = None,
+        resolver: Optional["NodeResolver"] = None,
+    ):
         self.config = config
 
         self.manager = manager
+        self.resolver = resolver
         # Define which variables this step can export and their mapping
         self.exportable_variables = self._get_exportable_variables()
         # Validate required fields before proceeding
@@ -71,6 +80,96 @@ class BaseStep:
         Override this method in subclasses to add type validation.
         """
         pass
+
+    def _get_node_rpc_url(self, node_name: str) -> str:
+        """
+        Get the RPC URL for a node using the resolver or fallback to manager.
+
+        This method handles both:
+        - Remote nodes (via NodeResolver with auth)
+        - Local docker/binary nodes (via NodeResolver or legacy get_node_rpc_url)
+
+        Args:
+            node_name: The node name or reference to resolve
+
+        Returns:
+            The RPC URL for the node
+
+        Raises:
+            Exception: If the node cannot be resolved
+        """
+        resolved = self._resolve_node(node_name)
+        if resolved:
+            return resolved.url
+        # Legacy fallback for local nodes
+        if self.manager is not None:
+            return get_node_rpc_url(node_name, self.manager)
+        raise Exception(f"Cannot resolve node '{node_name}': no manager available.")
+
+    def _resolve_node(self, node_name: str) -> Optional[Any]:
+        """
+        Resolve a node and return the ResolvedNode object (includes URL, stable name, and token).
+
+        This method handles both:
+        - Remote nodes (via NodeResolver with auth)
+        - Local docker/binary nodes (via NodeResolver or legacy get_node_rpc_url)
+
+        Args:
+            node_name: The node name or reference to resolve
+
+        Returns:
+            ResolvedNode if resolved via resolver, None if using legacy fallback
+
+        Raises:
+            Exception: If the node cannot be resolved
+        """
+        # Try resolver first (handles both remote and local nodes)
+        if self.resolver is not None:
+            try:
+                # Extract credentials from registered node config if available
+                username = None
+                password = None
+                api_key = None
+
+                entry = self.resolver.remote_manager.get(node_name)
+                if entry and entry.auth:
+                    username = entry.auth.username
+                    password = entry.auth.password
+                    api_key = entry.auth.api_key
+
+                resolved = self.resolver.resolve_sync(
+                    node_name,
+                    username=username,
+                    password=password,
+                    api_key=api_key,
+                    prompt_for_credentials=True,
+                    skip_auth=False,
+                )
+                return resolved
+            except Exception as e:
+                # Check if this is a remote node - if so, don't fallback
+                if self.resolver.remote_manager.get(node_name) is not None:
+                    raise Exception(
+                        f"Failed to resolve remote node '{node_name}': {e}"
+                    ) from e
+                if self.resolver.remote_manager.is_url(node_name):
+                    raise Exception(f"Failed to resolve URL '{node_name}': {e}") from e
+                # Log the resolver error but try fallback for local nodes
+                console.print(
+                    f"[yellow]Warning: Resolver failed for {node_name}: {e}. "
+                    f"Trying legacy resolution...[/yellow]"
+                )
+
+        # Fallback to legacy get_node_rpc_url (only for local nodes)
+        if self.manager is not None:
+            return None  # Legacy path - no ResolvedNode
+        else:
+            # No manager available - this is likely a remote-only workflow
+            # and we shouldn't try to create a DockerManager
+            raise Exception(
+                f"Cannot resolve node '{node_name}': no manager available. "
+                f"For remote nodes, ensure the node is configured in remote_nodes."
+            )
 
     def _try_parse_json(self, value: Any) -> Any:
         """Parse JSON string to Python object with fallback strategies.
@@ -564,6 +663,21 @@ class BaseStep:
         if not node_name:
             # No node associated with this step, skip log printing
             return
+
+        # Check if this is a remote node - can't get logs from remote nodes
+        if self.resolver is not None:
+            entry = self.resolver.remote_manager.get(node_name)
+            if entry is not None:
+                console.print(
+                    f"[dim]📋 Cannot retrieve logs for remote node '{node_name}'[/dim]"
+                )
+                return
+            # Also check if it's a URL
+            if self.resolver.remote_manager.is_url(node_name):
+                console.print(
+                    f"[dim]📋 Cannot retrieve logs for URL-based node '{node_name}'[/dim]"
+                )
+                return
 
         if not self.manager:
             # No manager available, skip log printing

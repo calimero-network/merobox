@@ -6,7 +6,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.join import join_context_via_admin_api
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class JoinContextStep(BaseStep):
@@ -97,26 +97,28 @@ class JoinContextStep(BaseStep):
         console.print(
             f"  invitation length: {len(invitation) if isinstance(invitation, str) else 'N/A'}"
         )
-        # Get node RPC URL
+        # Resolve node to get URL and stable name for token caching
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes - no auth needed
+                rpc_url = self._get_node_rpc_url(node_name)
+                client_node_name = None
         except Exception as e:
-            console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute join
         console.print("[blue]About to call join function...[/blue]")
         result = await join_context_via_admin_api(
-            rpc_url, context_id, invitee_id, invitation
+            rpc_url, context_id, invitee_id, invitation, node_name=client_node_name
         )
         console.print(f"[blue]Join function returned: {result}[/blue]")
 

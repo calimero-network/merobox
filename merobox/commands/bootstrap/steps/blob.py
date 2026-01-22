@@ -9,7 +9,7 @@ from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class UploadBlobStep(BaseStep):
@@ -63,7 +63,11 @@ class UploadBlobStep(BaseStep):
 
     @with_retry(config=NETWORK_RETRY_CONFIG)
     async def _upload_blob_to_node(
-        self, rpc_url: str, file_data: bytes, context_id: str | None = None
+        self,
+        rpc_url: str,
+        file_data: bytes,
+        context_id: str | None = None,
+        node_name: str | None = None,
     ) -> dict:
         """
         Upload blob to node .
@@ -72,6 +76,7 @@ class UploadBlobStep(BaseStep):
             rpc_url: The RPC URL of the node
             file_data: Binary file data to upload
             context_id: Optional context ID for the blob
+            node_name: Node name for token caching
 
         Returns:
             Dictionary with success status and response data
@@ -84,7 +89,7 @@ class UploadBlobStep(BaseStep):
             console.print(f"[cyan]   Context ID: {context_id}[/cyan]")
 
         try:
-            client = get_client_for_rpc_url(rpc_url)
+            client = get_client_for_rpc_url(rpc_url, node_name=node_name)
             result = client.upload_blob(file_data, context_id)
 
             console.print("[green]✓ Blob uploaded successfully![/green]")
@@ -139,24 +144,28 @@ class UploadBlobStep(BaseStep):
             console.print(f"[red]Failed to read file {file_path}: {str(e)}[/red]")
             return False
 
-        # Get node RPC URL
+        # Resolve node to get URL and stable name for token caching
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes - no auth needed
+                rpc_url = self._get_node_rpc_url(node_name)
+                client_node_name = None
         except Exception as e:
-            console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Upload blob
-        result = await self._upload_blob_to_node(rpc_url, file_data, context_id)
+        result = await self._upload_blob_to_node(
+            rpc_url, file_data, context_id, node_name=client_node_name
+        )
 
         if result["success"]:
             # Extract blob info from response

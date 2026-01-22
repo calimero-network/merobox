@@ -9,7 +9,7 @@ from merobox.commands.identity import (
     generate_identity_via_admin_api,
     invite_identity_via_admin_api,
 )
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class CreateIdentityStep(BaseStep):
@@ -62,23 +62,28 @@ class CreateIdentityStep(BaseStep):
                 "[yellow]⚠️  CreateIdentity step export configuration validation failed[/yellow]"
             )
 
+        # Resolve node (gets URL and ensures authentication)
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes - no auth needed
+                rpc_url = self._get_node_rpc_url(node_name)
+                client_node_name = None
         except Exception as e:
-            console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute identity creation
-        result = await generate_identity_via_admin_api(rpc_url)
+        result = await generate_identity_via_admin_api(
+            rpc_url, node_name=client_node_name
+        )
 
         # Log detailed API response
         import json as json_lib
@@ -212,25 +217,32 @@ class InviteIdentityStep(BaseStep):
                 "[yellow]⚠️  InviteIdentity step export configuration validation failed[/yellow]"
             )
 
-        # Get node RPC URL
+        # Resolve node to get URL and stable name for token caching
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes - no auth needed
+                rpc_url = self._get_node_rpc_url(node_name)
+                client_node_name = None
         except Exception as e:
-            console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute invitation
         result = await invite_identity_via_admin_api(
-            rpc_url, context_id, inviter_id, invitee_id, capability
+            rpc_url,
+            context_id,
+            inviter_id,
+            invitee_id,
+            capability,
+            node_name=client_node_name,
         )
 
         import json as json_lib

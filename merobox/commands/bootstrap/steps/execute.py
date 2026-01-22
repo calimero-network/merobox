@@ -7,7 +7,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.call import call_function
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class ExecuteStep(BaseStep):
@@ -150,19 +150,22 @@ class ExecuteStep(BaseStep):
         console.print(f"  args: {resolved_args}")
         console.print(f"  executor_public_key: {executor_public_key}")
 
+        # Resolve node (gets URL and ensures authentication)
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes - no auth needed
+                rpc_url = self._get_node_rpc_url(node_name)
+                client_node_name = None
         except Exception as e:
-            console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute based on type
@@ -181,7 +184,12 @@ class ExecuteStep(BaseStep):
             while retry_attempt <= max_state_retries:
                 if exec_type in ["contract_call", "view_call", "function_call"]:
                     result = await call_function(
-                        rpc_url, context_id, method, resolved_args, executor_public_key
+                        rpc_url,
+                        context_id,
+                        method,
+                        resolved_args,
+                        executor_public_key,
+                        node_name=client_node_name,
                     )
                 else:
                     console.print(f"[red]Unknown execution type: {exec_type}[/red]")

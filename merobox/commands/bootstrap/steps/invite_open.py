@@ -7,19 +7,31 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def create_open_invitation_via_admin_api(
-    rpc_url: str, context_id: str, granter_id: str, valid_for_blocks: int = 1000
+    rpc_url: str,
+    context_id: str,
+    granter_id: str,
+    valid_for_blocks: int = 1000,
+    node_name: str | None = None,
 ) -> dict:
-    """Create an open invitation using calimero-client-py."""
+    """Create an open invitation using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        context_id: The context ID to create invitation for.
+        granter_id: The granter ID.
+        valid_for_blocks: Number of blocks the invitation is valid for.
+        node_name: Optional stable node name for token caching (required for authenticated nodes).
+    """
     try:
         from merobox.commands.client import get_client_for_rpc_url
         from merobox.commands.result import fail, ok
 
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
         result = client.invite_to_context_by_open_invitation(
             context_id=context_id,
@@ -107,20 +119,22 @@ class InviteOpenStep(BaseStep):
                 "[yellow]⚠️  InviteOpen step export configuration validation failed[/yellow]"
             )
 
-        # Get node RPC URL
+        # Resolve node (gets URL and ensures authentication)
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes - no auth needed
+                rpc_url = self._get_node_rpc_url(node_name)
+                client_node_name = None
         except Exception as e:
-            console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute open invitation creation
@@ -128,7 +142,11 @@ class InviteOpenStep(BaseStep):
             f"[blue]Creating open invitation for context {context_id} on {node_name}...[/blue]"
         )
         result = await create_open_invitation_via_admin_api(
-            rpc_url, context_id, granter_id, valid_for_blocks
+            rpc_url,
+            context_id,
+            granter_id,
+            valid_for_blocks,
+            node_name=client_node_name,
         )
 
         console.print(f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")

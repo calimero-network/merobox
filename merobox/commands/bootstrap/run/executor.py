@@ -21,6 +21,7 @@ from rich.progress import (
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 from merobox.commands.manager import DockerManager
 from merobox.commands.near.sandbox import SandboxManager
+from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import console
 
 
@@ -30,7 +31,7 @@ class WorkflowExecutor:
     def __init__(
         self,
         config: dict[str, Any],
-        manager: DockerManager,
+        manager: Optional[DockerManager] = None,
         image: Optional[str] = None,
         auth_service: bool = False,
         auth_image: str = None,
@@ -52,7 +53,9 @@ class WorkflowExecutor:
 
         # Determine if we're in binary mode
         self.is_binary_mode = (
-            hasattr(manager, "binary_path") and manager.binary_path is not None
+            manager is not None
+            and hasattr(manager, "binary_path")
+            and manager.binary_path is not None
         )
 
         # Auth service can be enabled by CLI flag or workflow config (CLI takes precedence)
@@ -91,6 +94,13 @@ class WorkflowExecutor:
 
         self.near_devnet = near_devnet or config.get("near_devnet", False)
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
+
+        # Remote nodes configuration
+        self.remote_nodes_config = config.get("remote_nodes", {})
+
+        # Initialize node resolver with current manager
+        # Will be set up properly after manager is confirmed
+        self.resolver: Optional[NodeResolver] = None
 
         # Forbid having Near Devnet (sandbox) configuration and mock relayer at the same time
         if self.mock_relayer and self.near_devnet:
@@ -136,6 +146,20 @@ class WorkflowExecutor:
         console.print(
             f"\n[bold blue]🚀 Executing Workflow: {workflow_name}[/bold blue]"
         )
+
+        # Set up the node resolver
+        self._setup_resolver()
+
+        # Determine if we have local nodes to manage
+        has_local_nodes = self._has_local_nodes()
+        has_remote_nodes = self._has_remote_nodes()
+
+        if has_remote_nodes and not has_local_nodes:
+            console.print(
+                "[cyan]Running in remote-only mode (no local nodes to start)[/cyan]"
+            )
+        elif has_remote_nodes and has_local_nodes:
+            console.print("[cyan]Running in mixed mode (local + remote nodes)[/cyan]")
 
         try:
             # Check if we should nuke on start
@@ -230,47 +254,53 @@ class WorkflowExecutor:
             stop_all_nodes = self.config.get("stop_all_nodes", False)
             nuke_on_end = self.config.get("nuke_on_end", False)
 
-            # Step 1: Restart nodes if requested (at beginning)
-            if restart_nodes:
-                console.print(
-                    "\n[bold yellow]Step 1: Restarting workflow nodes (restart=true)...[/bold yellow]"
-                )
-                if not self.manager.stop_all_nodes():
+            # Steps 1-3: Local node management (skip if remote-only mode)
+            if has_local_nodes:
+                # Step 1: Restart nodes if requested (at beginning)
+                if restart_nodes:
                     console.print(
-                        "[red]❌ Failed to stop workflow nodes - stopping workflow[/red]"
+                        "\n[bold yellow]Step 1: Restarting workflow nodes (restart=true)...[/bold yellow]"
+                    )
+                    if not self.manager.stop_all_nodes():
+                        console.print(
+                            "[red]❌ Failed to stop workflow nodes - stopping workflow[/red]"
+                        )
+                        if stop_all_nodes:
+                            self._stop_nodes_on_failure()
+                        return False
+                    console.print("[green]✓ Workflow nodes stopped[/green]")
+                    time.sleep(2)  # Give time for cleanup
+                else:
+                    console.print(
+                        "\n[bold blue]Step 1: Checking workflow nodes (restart=false)...[/bold blue]"
+                    )
+                    console.print(
+                        "[cyan]Will reuse existing nodes if they're running...[/cyan]"
+                    )
+
+                # Step 2: Manage nodes
+                console.print("\n[bold yellow]Step 2: Managing nodes...[/bold yellow]")
+                if not await self._start_nodes(restart_nodes):
+                    console.print(
+                        "[red]❌ Node management failed - stopping workflow[/red]"
                     )
                     if stop_all_nodes:
                         self._stop_nodes_on_failure()
                     return False
-                console.print("[green]✓ Workflow nodes stopped[/green]")
-                time.sleep(2)  # Give time for cleanup
+
+                # Step 3: Wait for nodes to be ready
+                console.print(
+                    "\n[bold yellow]Step 3: Waiting for nodes to be ready...[/bold yellow]"
+                )
+                if not await self._wait_for_nodes_ready():
+                    console.print("[red]❌ Nodes not ready - stopping workflow[/red]")
+                    if stop_all_nodes:
+                        self._stop_nodes_on_failure()
+                    return False
             else:
                 console.print(
-                    "\n[bold blue]Step 1: Checking workflow nodes (restart=false)...[/bold blue]"
+                    "\n[bold blue]Steps 1-3: Skipped (no local nodes to manage)[/bold blue]"
                 )
-                console.print(
-                    "[cyan]Will reuse existing nodes if they're running...[/cyan]"
-                )
-
-            # Step 2: Manage nodes
-            console.print("\n[bold yellow]Step 2: Managing nodes...[/bold yellow]")
-            if not await self._start_nodes(restart_nodes):
-                console.print(
-                    "[red]❌ Node management failed - stopping workflow[/red]"
-                )
-                if stop_all_nodes:
-                    self._stop_nodes_on_failure()
-                return False
-
-            # Step 3: Wait for nodes to be ready
-            console.print(
-                "\n[bold yellow]Step 3: Waiting for nodes to be ready...[/bold yellow]"
-            )
-            if not await self._wait_for_nodes_ready():
-                console.print("[red]❌ Nodes not ready - stopping workflow[/red]")
-                if stop_all_nodes:
-                    self._stop_nodes_on_failure()
-                return False
 
             # Step 4: Execute workflow steps
             console.print(
@@ -282,22 +312,27 @@ class WorkflowExecutor:
                     self._stop_nodes_on_failure()
                 return False
 
-            # Step 5: Stop all nodes if requested (at end)
-            if stop_all_nodes:
-                console.print(
-                    "\n[bold yellow]Step 5: Stopping all nodes (stop_all_nodes=true)...[/bold yellow]"
-                )
-                if not self.manager.stop_all_nodes():
-                    console.print("[red]Failed to stop all nodes[/red]")
-                    # Don't return False here as workflow completed successfully
+            # Step 5: Stop all nodes if requested (at end) - only if we have local nodes
+            if has_local_nodes:
+                if stop_all_nodes:
+                    console.print(
+                        "\n[bold yellow]Step 5: Stopping all nodes (stop_all_nodes=true)...[/bold yellow]"
+                    )
+                    if not self.manager.stop_all_nodes():
+                        console.print("[red]Failed to stop all nodes[/red]")
+                        # Don't return False here as workflow completed successfully
+                    else:
+                        console.print("[green]✓ All nodes stopped[/green]")
                 else:
-                    console.print("[green]✓ All nodes stopped[/green]")
+                    console.print(
+                        "\n[bold blue]Step 5: Leaving nodes running (stop_all_nodes=false)...[/bold blue]"
+                    )
+                    console.print(
+                        "[cyan]Nodes will continue running for future workflows[/cyan]"
+                    )
             else:
                 console.print(
-                    "\n[bold blue]Step 5: Leaving nodes running (stop_all_nodes=false)...[/bold blue]"
-                )
-                console.print(
-                    "[cyan]Nodes will continue running for future workflows[/cyan]"
+                    "\n[bold blue]Step 5: Skipped (no local nodes to stop)[/bold blue]"
                 )
 
             # Step 6: Nuke on end if requested
@@ -745,11 +780,15 @@ class WorkflowExecutor:
         return True
 
     async def _wait_for_nodes_ready(self) -> bool:
-        """Wait for all nodes to be ready and accessible."""
+        """Wait for all local nodes to be ready and accessible.
+
+        Note: This only waits for local (docker/binary) nodes. Remote nodes
+        are assumed to be already running and accessible.
+        """
         wait_timeout = self.config.get("wait_timeout", 60)  # Default 60 seconds
 
-        # Use the validated node names (filters out reserved config keys)
-        node_names = list(self._get_valid_node_names())
+        # Use only local node names (remote nodes don't need local readiness check)
+        node_names = list(self._get_local_node_names())
 
         console.print(
             f"Waiting up to {wait_timeout} seconds for {len(node_names)} nodes to be ready..."
@@ -798,8 +837,8 @@ class WorkflowExecutor:
             console.print(f"[red]❌ Nodes not ready: {', '.join(missing_nodes)}[/red]")
             return False
 
-    def _get_valid_node_names(self) -> set[str]:
-        """Get the set of valid node names based on nodes configuration."""
+    def _get_local_node_names(self) -> set[str]:
+        """Get the set of valid local (docker/binary) node names based on nodes configuration."""
         nodes_config = self.config.get("nodes", {})
 
         if not nodes_config:
@@ -822,6 +861,88 @@ class WorkflowExecutor:
                 return set(nodes_config)
             else:
                 return set()
+
+    def _get_remote_node_names(self) -> set[str]:
+        """Get the set of remote node names from remote_nodes configuration."""
+        remote_nodes = self.config.get("remote_nodes", {})
+        if not remote_nodes or not isinstance(remote_nodes, dict):
+            return set()
+        return set(remote_nodes.keys())
+
+    def _get_valid_node_names(self) -> set[str]:
+        """Get the set of all valid node names (local + remote)."""
+        local_nodes = self._get_local_node_names()
+        remote_nodes = self._get_remote_node_names()
+        return local_nodes | remote_nodes
+
+    def _has_local_nodes(self) -> bool:
+        """Check if the workflow has local (docker/binary) nodes configured."""
+        return len(self._get_local_node_names()) > 0
+
+    def _has_remote_nodes(self) -> bool:
+        """Check if the workflow has remote nodes configured."""
+        return len(self._get_remote_node_names()) > 0
+
+    def _setup_resolver(self) -> None:
+        """Set up the NodeResolver with manager and remote nodes configuration."""
+        # Create resolver with appropriate managers
+        if self.manager is None:
+            # Remote-only mode: no local node managers
+            self.resolver = get_resolver(
+                docker_manager=None,
+                binary_manager=None,
+            )
+        elif self.is_binary_mode:
+            self.resolver = get_resolver(
+                docker_manager=None,
+                binary_manager=self.manager,
+            )
+        else:
+            self.resolver = get_resolver(
+                docker_manager=self.manager,
+                binary_manager=None,
+            )
+
+        # Register remote nodes from workflow config
+        if self.remote_nodes_config:
+            from merobox.commands.auth import AUTH_METHOD_NONE
+
+            for node_name, node_config in self.remote_nodes_config.items():
+                if not isinstance(node_config, dict):
+                    console.print(
+                        f"[yellow]Warning: Invalid remote node config for '{node_name}', skipping[/yellow]"
+                    )
+                    continue
+
+                url = node_config.get("url")
+                if not url:
+                    console.print(
+                        f"[yellow]Warning: Remote node '{node_name}' has no URL, skipping[/yellow]"
+                    )
+                    continue
+
+                # Parse auth configuration
+                auth_config = node_config.get("auth", {})
+                auth_method = auth_config.get("method", AUTH_METHOD_NONE)
+                username = auth_config.get("username")
+                # Support both 'api_key' and 'key' field names
+                api_key = auth_config.get("api_key") or auth_config.get("key")
+                password = auth_config.get("password")
+
+                # Register the remote node
+                self.resolver.remote_manager.register(
+                    name=node_name,
+                    url=url,
+                    auth_method=auth_method,
+                    username=username,
+                    password=password,
+                    api_key=api_key,
+                    description=node_config.get("description"),
+                )
+
+                console.print(
+                    f"[cyan]Registered remote node: {node_name} -> {url} (auth: {auth_method})[/cyan]"
+                )
 
     def _extract_node_references_from_step(self, step: dict[str, Any]) -> set[str]:
         """Extract all node references from a step, including nested steps."""
@@ -936,63 +1057,87 @@ class WorkflowExecutor:
         return True
 
     def _create_step_executor(self, step_type: str, step_config: dict[str, Any]):
-        """Create a step executor based on the step type."""
+        """Create a step executor based on the step type.
+
+        All step executors receive the manager and resolver to support both
+        local (docker/binary) and remote node resolution.
+        """
         if step_type == "install_application":
             from merobox.commands.bootstrap.steps import InstallApplicationStep
 
-            return InstallApplicationStep(step_config, manager=self.manager)
+            return InstallApplicationStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "create_context":
             from merobox.commands.bootstrap.steps import CreateContextStep
 
-            return CreateContextStep(step_config, manager=self.manager)
+            return CreateContextStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "create_identity":
             from merobox.commands.bootstrap.steps import CreateIdentityStep
 
-            return CreateIdentityStep(step_config, manager=self.manager)
+            return CreateIdentityStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "invite_identity":
             from merobox.commands.bootstrap.steps import InviteIdentityStep
 
-            return InviteIdentityStep(step_config, manager=self.manager)
+            return InviteIdentityStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "join_context":
             from merobox.commands.bootstrap.steps import JoinContextStep
 
-            return JoinContextStep(step_config, manager=self.manager)
+            return JoinContextStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "invite_open":
             from merobox.commands.bootstrap.steps import InviteOpenStep
 
-            return InviteOpenStep(step_config, manager=self.manager)
+            return InviteOpenStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "join_open":
             from merobox.commands.bootstrap.steps import JoinOpenStep
 
-            return JoinOpenStep(step_config, manager=self.manager)
+            return JoinOpenStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "call":
             from merobox.commands.bootstrap.steps import ExecuteStep
 
-            return ExecuteStep(step_config, manager=self.manager)
+            return ExecuteStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "wait":
             from merobox.commands.bootstrap.steps import WaitStep
 
-            return WaitStep(step_config, manager=self.manager)
+            return WaitStep(step_config, manager=self.manager, resolver=self.resolver)
         elif step_type == "wait_for_sync":
             from merobox.commands.bootstrap.steps import WaitForSyncStep
 
-            return WaitForSyncStep(step_config, manager=self.manager)
+            return WaitForSyncStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "repeat":
             from merobox.commands.bootstrap.steps import RepeatStep
 
-            return RepeatStep(step_config, manager=self.manager)
+            return RepeatStep(step_config, manager=self.manager, resolver=self.resolver)
         elif step_type == "parallel":
             from merobox.commands.bootstrap.steps import ParallelStep
 
-            return ParallelStep(step_config, manager=self.manager)
+            return ParallelStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "script":
             from merobox.commands.bootstrap.steps import ScriptStep
 
-            return ScriptStep(step_config, manager=self.manager)
+            return ScriptStep(step_config, manager=self.manager, resolver=self.resolver)
         elif step_type == "assert":
             from merobox.commands.bootstrap.steps.assertion import AssertStep
 
-            return AssertStep(step_config, manager=self.manager)
+            return AssertStep(step_config, manager=self.manager, resolver=self.resolver)
         elif step_type == "json_assert":
             from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 
@@ -1000,29 +1145,41 @@ class WorkflowExecutor:
         elif step_type == "get_proposal":
             from merobox.commands.bootstrap.steps.proposals import GetProposalStep
 
-            return GetProposalStep(step_config, manager=self.manager)
+            return GetProposalStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "list_proposals":
             from merobox.commands.bootstrap.steps.proposals import ListProposalsStep
 
-            return ListProposalsStep(step_config, manager=self.manager)
+            return ListProposalsStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "get_proposal_approvers":
             from merobox.commands.bootstrap.steps.proposals import (
                 GetProposalApproversStep,
             )
 
-            return GetProposalApproversStep(step_config, manager=self.manager)
+            return GetProposalApproversStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "upload_blob":
             from merobox.commands.bootstrap.steps import UploadBlobStep
 
-            return UploadBlobStep(step_config, manager=self.manager)
+            return UploadBlobStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "create_mesh":
             from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 
-            return CreateMeshStep(step_config, manager=self.manager)
+            return CreateMeshStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "fuzzy_test":
             from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 
-            return FuzzyTestStep(step_config, manager=self.manager)
+            return FuzzyTestStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

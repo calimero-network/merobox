@@ -8,15 +8,25 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 async def join_context_via_open_invitation(
-    rpc_url: str, invitation_dict: dict, new_member_public_key: str
+    rpc_url: str,
+    invitation_dict: dict,
+    new_member_public_key: str,
+    node_name: str | None = None,
 ) -> dict:
-    """Join a context using an open invitation ."""
+    """Join a context using an open invitation.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        invitation_dict: The invitation dictionary.
+        new_member_public_key: The public key of the new member.
+        node_name: Optional stable node name for token caching (required for authenticated nodes).
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
     except Exception as exc:
         return fail(
             "join_context_via_open_invitation failed during client creation",
@@ -130,25 +140,27 @@ class JoinOpenStep(BaseStep):
             console.print(f"[red]Unexpected invitation type: {type(invitation)}[/red]")
             return False
 
-        # Get node RPC URL
+        # Resolve node (gets URL and ensures authentication)
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes - no auth needed
+                rpc_url = self._get_node_rpc_url(node_name)
+                client_node_name = None
         except Exception as exc:
-            console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {exc}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {exc}[/red]")
             return False
 
         # Execute join via open invitation
         result = await join_context_via_open_invitation(
-            rpc_url, invitation_dict, invitee_id
+            rpc_url, invitation_dict, invitee_id, node_name=client_node_name
         )
 
         if not result.get("success"):
