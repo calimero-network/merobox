@@ -138,7 +138,9 @@ class CreateMeshStep(BaseStep):
                 return False
 
         try:
-            client = get_client_for_rpc_url(context_rpc_url, node_name=stable_context_node)
+            client = get_client_for_rpc_url(
+                context_rpc_url, node_name=stable_context_node
+            )
             protocol = self.config.get("protocol", DEFAULT_PROTOCOL)
             api_result = client.create_context(
                 application_id=application_id,
@@ -364,7 +366,11 @@ class CreateMeshStep(BaseStep):
 
             console.print(f"  [cyan]Joining context from {node_name}...[/cyan]")
             join_result = await join_context_via_admin_api(
-                node_rpc_url, context_id, public_key, invitation, node_name=stable_node_name
+                node_rpc_url,
+                context_id,
+                public_key,
+                invitation,
+                node_name=stable_node_name,
             )
 
             if not join_result.get("success"):

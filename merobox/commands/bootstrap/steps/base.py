@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from merobox.commands.utils import console, get_node_rpc_url
 
 if TYPE_CHECKING:
-    from merobox.commands.node_resolver import NodeResolver, ResolvedNode
+    from merobox.commands.node_resolver import NodeResolver
 
 
 class BaseStep:
@@ -104,9 +104,7 @@ class BaseStep:
         # Legacy fallback for local nodes
         if self.manager is not None:
             return get_node_rpc_url(node_name, self.manager)
-        raise Exception(
-            f"Cannot resolve node '{node_name}': no manager available."
-        )
+        raise Exception(f"Cannot resolve node '{node_name}': no manager available.")
 
     def _resolve_node(self, node_name: str) -> Optional[Any]:
         """
@@ -141,9 +139,7 @@ class BaseStep:
                         f"Failed to resolve remote node '{node_name}': {e}"
                     ) from e
                 if self.resolver.remote_manager.is_url(node_name):
-                    raise Exception(
-                        f"Failed to resolve URL '{node_name}': {e}"
-                    ) from e
+                    raise Exception(f"Failed to resolve URL '{node_name}': {e}") from e
                 # Log the resolver error but try fallback for local nodes
                 console.print(
                     f"[yellow]Warning: Resolver failed for {node_name}: {e}. "
@@ -237,7 +233,7 @@ class BaseStep:
                 elif text[i] == closing:
                     stack.pop()
                     if not stack:
-                        return text[pos: i + 1]
+                        return text[pos : i + 1]
         return None
 
     def _extract_path(self, obj: Any, path: str) -> Any:
@@ -409,8 +405,7 @@ class BaseStep:
         else:
             actual_data = response_data
 
-        console.print(
-            f"[cyan]� Exporting variables from {node_name} response:[/cyan]")
+        console.print(f"[cyan]� Exporting variables from {node_name} response:[/cyan]")
 
         for exported_variable, assigned_var in outputs_config.items():
             if isinstance(assigned_var, str):
@@ -497,10 +492,8 @@ class BaseStep:
                             f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
                         )
                     else:
-                        target_key = assigned_var.get(
-                            "target", exported_variable)
-                        target_key = target_key.replace(
-                            "{node_name}", node_name)
+                        target_key = assigned_var.get("target", exported_variable)
+                        target_key = target_key.replace("{node_name}", node_name)
                         # Skip exporting if this key is protected (e.g., error field export)
                         if target_key in protected_keys:
                             console.print(
@@ -633,8 +626,7 @@ class BaseStep:
             if isinstance(error_info, dict):
                 error_type = error_info.get("type", "Unknown")
                 error_data = error_info.get("data", "No details")
-                console.print(
-                    f"[red]JSON-RPC Error: {error_type} - {error_data}[/red]")
+                console.print(f"[red]JSON-RPC Error: {error_type} - {error_data}[/red]")
             else:
                 console.print(f"[red]JSON-RPC Error: {error_info}[/red]")
             return True
@@ -676,8 +668,7 @@ class BaseStep:
 
             if is_binary_mode:
                 # Binary mode - use BinaryManager's get_node_logs
-                log_content = self.manager.get_node_logs(
-                    node_name, lines=lines)
+                log_content = self.manager.get_node_logs(node_name, lines=lines)
                 if log_content:
                     console.print(log_content)
                 else:
@@ -690,19 +681,15 @@ class BaseStep:
                     if node_name in self.manager.nodes:
                         container = self.manager.nodes[node_name]
                     else:
-                        container = self.manager.client.containers.get(
-                            node_name)
+                        container = self.manager.client.containers.get(node_name)
 
-                    logs = container.logs(
-                        tail=lines, timestamps=True).decode("utf-8")
+                    logs = container.logs(tail=lines, timestamps=True).decode("utf-8")
                     if logs:
                         console.print(logs)
                     else:
-                        console.print(
-                            f"[dim]No logs available for {node_name}[/dim]")
+                        console.print(f"[dim]No logs available for {node_name}[/dim]")
                 except Exception as e:
-                    console.print(
-                        f"[dim]Could not retrieve logs: {str(e)}[/dim]")
+                    console.print(f"[dim]Could not retrieve logs: {str(e)}[/dim]")
 
             console.print("[dim]" + "=" * 80 + "[/dim]\n")
         except Exception as e:
@@ -760,8 +747,7 @@ class BaseStep:
                                 return result.get(
                                     "id",
                                     result.get(
-                                        "applicationId", result.get(
-                                            "name", value)
+                                        "applicationId", result.get("name", value)
                                     ),
                                 )
                             return str(result)
@@ -815,8 +801,7 @@ class BaseStep:
                                     return actual_data.get(
                                         "id",
                                         actual_data.get(
-                                            "contextId", actual_data.get(
-                                                "name", value)
+                                            "contextId", actual_data.get("name", value)
                                         ),
                                     )
                                 return str(result)
@@ -879,8 +864,7 @@ class BaseStep:
                                     return actual_data.get(
                                         "invitation",
                                         actual_data.get(
-                                            "id", actual_data.get(
-                                                "name", value)
+                                            "id", actual_data.get("name", value)
                                         ),
                                     )
                                 return str(result)
@@ -931,7 +915,7 @@ class BaseStep:
 
                     # Extract the placeholder content
                     placeholder = result[
-                        placeholder_start + 2: placeholder_end
+                        placeholder_start + 2 : placeholder_end
                     ].strip()
 
                     # Resolve the placeholder
@@ -943,7 +927,7 @@ class BaseStep:
                     result = (
                         result[:placeholder_start]
                         + str(resolved_value)
-                        + result[placeholder_end + 2:]
+                        + result[placeholder_end + 2 :]
                     )
 
                     # Update start position for next search
@@ -985,8 +969,7 @@ class BaseStep:
                         return result.get(
                             "id",
                             result.get(
-                                "applicationId", result.get(
-                                    "name", placeholder)
+                                "applicationId", result.get("name", placeholder)
                             ),
                         )
                     return str(result)
@@ -1040,8 +1023,7 @@ class BaseStep:
                             return actual_data.get(
                                 "id",
                                 actual_data.get(
-                                    "contextId", actual_data.get(
-                                        "name", placeholder)
+                                    "contextId", actual_data.get("name", placeholder)
                                 ),
                             )
                         return str(result)
@@ -1065,8 +1047,7 @@ class BaseStep:
                         actual_data = result.get("data", result)
                         return actual_data.get(
                             "publicKey",
-                            actual_data.get(
-                                "id", actual_data.get("name", placeholder)),
+                            actual_data.get("id", actual_data.get("name", placeholder)),
                         )
                     return str(result)
                 else:
@@ -1082,8 +1063,7 @@ class BaseStep:
                 invite_part = parts[1]
                 # Parse the format: node_name_identity.node_name
                 if "_identity." in invite_part:
-                    inviter_node, identity_node = invite_part.split(
-                        "_identity.", 1)
+                    inviter_node, identity_node = invite_part.split("_identity.", 1)
                     # First resolve the identity to get the actual public key
                     identity_placeholder = f"{{{{identity.{identity_node}}}}}"
                     actual_identity = self._resolve_dynamic_value(

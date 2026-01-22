@@ -37,13 +37,11 @@ class CreateContextStep(BaseStep):
 
         # Validate application_id is a string
         if not isinstance(self.config.get("application_id"), str):
-            raise ValueError(
-                f"Step '{step_name}': 'application_id' must be a string")
+            raise ValueError(f"Step '{step_name}': 'application_id' must be a string")
 
         # Validate params is JSON string if provided
         if "params" in self.config and not isinstance(self.config["params"], str):
-            raise ValueError(
-                f"Step '{step_name}': 'params' must be a JSON string")
+            raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
 
     def _get_exportable_variables(self):
         """
@@ -82,10 +80,8 @@ class CreateContextStep(BaseStep):
             console.print("[blue]Debug: CreateContext resolved values:[/blue]")
             console.print(f"  node: {node_name}")
             console.print(f"  application_id (resolved): {application_id}")
-            console.print(
-                f"  dynamic_values keys: {list(dynamic_values.keys())}")
-            console.print(
-                f"  workflow_results keys: {list(workflow_results.keys())}")
+            console.print(f"  dynamic_values keys: {list(dynamic_values.keys())}")
+            console.print(f"  workflow_results keys: {list(workflow_results.keys())}")
         except Exception:
             pass
 
@@ -105,8 +101,7 @@ class CreateContextStep(BaseStep):
                 json.loads(params_json)
                 console.print("[blue]Using initialization params JSON[/blue]")
             except json.JSONDecodeError as e:
-                console.print(
-                    f"[red]Failed to parse params JSON: {str(e)}[/red]")
+                console.print(f"[red]Failed to parse params JSON: {str(e)}[/red]")
                 return False
 
         # Resolve node (gets URL and ensures authentication)
@@ -121,15 +116,12 @@ class CreateContextStep(BaseStep):
                 rpc_url = self._get_node_rpc_url(node_name)
                 stable_node_name = node_name
         except Exception as e:
-            console.print(
-                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute context creation using calimero-client-py
         try:
-            client = get_client_for_rpc_url(
-                rpc_url, node_name=stable_node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=stable_node_name)
 
             protocol = self.config.get("protocol", DEFAULT_PROTOCOL)
             api_result = client.create_context(
@@ -145,8 +137,7 @@ class CreateContextStep(BaseStep):
         # Log detailed API response
         import json as json_lib
 
-        console.print(
-            f"[cyan]🔍 Context Creation API Response for {node_name}:[/cyan]")
+        console.print(f"[cyan]🔍 Context Creation API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")
@@ -218,8 +209,7 @@ class CreateContextStep(BaseStep):
                             result["data"]["data"], dict
                         ):
                             available_keys.extend(
-                                [f"data.{k}" for k in result["data"]
-                                    ["data"].keys()]
+                                [f"data.{k}" for k in result["data"]["data"].keys()]
                             )
                         console.print(
                             f"[yellow]⚠️  No context ID found in response. Available keys: {available_keys}[/yellow]"

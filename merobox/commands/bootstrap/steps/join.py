@@ -107,9 +107,7 @@ class JoinContextStep(BaseStep):
                 rpc_url = self._get_node_rpc_url(node_name)
                 stable_node_name = node_name
         except Exception as e:
-            console.print(
-                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute join

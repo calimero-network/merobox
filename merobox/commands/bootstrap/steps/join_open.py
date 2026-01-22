@@ -87,13 +87,11 @@ class JoinOpenStep(BaseStep):
 
         # Validate invitee_id is a string
         if not isinstance(self.config.get("invitee_id"), str):
-            raise ValueError(
-                f"Step '{step_name}': 'invitee_id' must be a string")
+            raise ValueError(f"Step '{step_name}': 'invitee_id' must be a string")
 
         # Validate invitation is a string
         if not isinstance(self.config.get("invitation"), str):
-            raise ValueError(
-                f"Step '{step_name}': 'invitation' must be a string")
+            raise ValueError(f"Step '{step_name}': 'invitation' must be a string")
 
     def _get_exportable_variables(self):
         """
@@ -139,8 +137,7 @@ class JoinOpenStep(BaseStep):
         elif isinstance(invitation, dict):
             invitation_dict = invitation
         else:
-            console.print(
-                f"[red]Unexpected invitation type: {type(invitation)}[/red]")
+            console.print(f"[red]Unexpected invitation type: {type(invitation)}[/red]")
             return False
 
         # Resolve node (gets URL and ensures authentication)
@@ -155,9 +152,7 @@ class JoinOpenStep(BaseStep):
                 rpc_url = self._get_node_rpc_url(node_name)
                 stable_node_name = node_name
         except Exception as exc:
-            console.print(
-                f"[red]Failed to resolve node {node_name}: {exc}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {exc}[/red]")
             return False
 
         # Execute join via open invitation

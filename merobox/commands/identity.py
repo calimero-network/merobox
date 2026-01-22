@@ -71,7 +71,7 @@ async def list_identities_via_admin_api(
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def generate_identity_via_admin_api(rpc_url: str, node_name: str = None) -> dict:
     """Generate identity using calimero-client-py.
-    
+
     Args:
         rpc_url: The RPC URL to connect to.
         node_name: Optional node name for token caching (required for authenticated nodes).
@@ -82,7 +82,10 @@ async def generate_identity_via_admin_api(rpc_url: str, node_name: str = None) -
         return ok(result, endpoint=f"{rpc_url}{ADMIN_API_IDENTITY_CONTEXT}")
     except Exception as e:
         import traceback
-        console.print(f"[red]Exception in generate_identity: {type(e).__name__}: {e}[/red]")
+
+        console.print(
+            f"[red]Exception in generate_identity: {type(e).__name__}: {e}[/red]"
+        )
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         return fail(f"generate_context_identity failed: {e}", error=e)
 

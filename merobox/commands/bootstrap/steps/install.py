@@ -170,17 +170,15 @@ class InstallApplicationStep(BaseStep):
                 rpc_url = self._get_node_rpc_url(node_name)
                 stable_node_name = node_name
         except Exception as e:
-            console.print(
-                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute installation using calimero-client-py
         try:
             console.print(
-                f"[cyan]Connecting to {rpc_url} (node: {stable_node_name})...[/cyan]")
-            client = get_client_for_rpc_url(
-                rpc_url, node_name=stable_node_name)
+                f"[cyan]Connecting to {rpc_url} (node: {stable_node_name})...[/cyan]"
+            )
+            client = get_client_for_rpc_url(rpc_url, node_name=stable_node_name)
 
             if is_dev and application_path:
                 if not os.path.isfile(application_path):
@@ -205,8 +203,7 @@ class InstallApplicationStep(BaseStep):
                             "[red]Unable to prepare application file inside container data directory[/red]"
                         )
                         # Print node logs to help with debugging
-                        self._print_node_logs_on_failure(
-                            node_name=node_name, lines=50)
+                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
                         return False
 
                     console.print(
@@ -217,7 +214,8 @@ class InstallApplicationStep(BaseStep):
                     )
             else:
                 console.print(
-                    f"[cyan]Installing application from URL: {application_url}[/cyan]")
+                    f"[cyan]Installing application from URL: {application_url}[/cyan]"
+                )
                 api_result = client.install_application(
                     url=application_url, metadata=DEFAULT_METADATA
                 )
@@ -225,8 +223,10 @@ class InstallApplicationStep(BaseStep):
             result = ok(api_result)
         except Exception as e:
             import traceback
+
             console.print(
-                f"[red]Exception during install_application: {type(e).__name__}: {e}[/red]")
+                f"[red]Exception during install_application: {type(e).__name__}: {e}[/red]"
+            )
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
             result = fail(f"install_application failed: {e}", error=e)
 
@@ -261,8 +261,7 @@ class InstallApplicationStep(BaseStep):
             workflow_results[step_key] = result["data"]
 
             # Debug: Show what we actually received
-            console.print(
-                f"[blue]📝 Install result data: {result['data']}[/blue]")
+            console.print(f"[blue]📝 Install result data: {result['data']}[/blue]")
 
             # Export variables using the new standardized approach
             self._export_variables(result["data"], node_name, dynamic_values)
@@ -273,8 +272,7 @@ class InstallApplicationStep(BaseStep):
                 if isinstance(result["data"], dict):
                     actual_data = result["data"].get("data", result["data"])
                     app_id = actual_data.get(
-                        "id", actual_data.get(
-                            "applicationId", actual_data.get("name"))
+                        "id", actual_data.get("applicationId", actual_data.get("name"))
                     )
                     if app_id:
                         dynamic_values[f"app_id_{node_name}"] = app_id

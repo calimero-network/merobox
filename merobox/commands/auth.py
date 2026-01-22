@@ -300,8 +300,7 @@ class AuthManager:
             AuthenticationError: If refresh fails.
         """
         if not token.refresh_token:
-            raise AuthenticationError(
-                "Cannot refresh: no refresh token available")
+            raise AuthenticationError("Cannot refresh: no refresh token available")
 
         normalized_url = node_url.rstrip("/")
         refresh_endpoint = f"{normalized_url}{AUTH_REFRESH_ENDPOINT}"
@@ -346,8 +345,7 @@ class AuthManager:
                         )
 
         except aiohttp.ClientError as e:
-            raise AuthenticationError(
-                f"Network error during token refresh: {e}") from e
+            raise AuthenticationError(f"Network error during token refresh: {e}") from e
 
     def get_cached_token(self, node_name: str) -> Optional[AuthToken]:
         """Get a cached token for a node.
@@ -402,8 +400,7 @@ class AuthManager:
             return True
 
         except OSError as e:
-            console.print(
-                f"[red]Error saving token cache for {node_name}: {e}[/red]")
+            console.print(f"[red]Error saving token cache for {node_name}: {e}[/red]")
             return False
 
     def delete_token(self, node_name: str) -> bool:
@@ -423,8 +420,7 @@ class AuthManager:
             cache_path.unlink()
             return True
         except OSError as e:
-            console.print(
-                f"[red]Error deleting token cache for {node_name}: {e}[/red]")
+            console.print(f"[red]Error deleting token cache for {node_name}: {e}[/red]")
             return False
 
     def delete_all_tokens(self) -> int:
@@ -501,8 +497,7 @@ class AuthManager:
                     self.save_token(new_token, node_name)
                     return new_token
                 except AuthenticationError as e:
-                    console.print(
-                        f"[yellow]Token refresh failed: {e}[/yellow]")
+                    console.print(f"[yellow]Token refresh failed: {e}[/yellow]")
                     # Fall through to re-authenticate
 
             # Get username from cached token if not provided

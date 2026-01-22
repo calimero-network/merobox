@@ -75,12 +75,10 @@ class InviteOpenStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
         # Validate context_id is a string
         if not isinstance(self.config.get("context_id"), str):
-            raise ValueError(
-                f"Step '{step_name}': 'context_id' must be a string")
+            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
         # Validate granter_id is a string
         if not isinstance(self.config.get("granter_id"), str):
-            raise ValueError(
-                f"Step '{step_name}': 'granter_id' must be a string")
+            raise ValueError(f"Step '{step_name}': 'granter_id' must be a string")
         # Validate valid_for_blocks is an integer if provided
         if "valid_for_blocks" in self.config:
             if not isinstance(self.config.get("valid_for_blocks"), int):
@@ -133,9 +131,7 @@ class InviteOpenStep(BaseStep):
                 rpc_url = self._get_node_rpc_url(node_name)
                 stable_node_name = node_name
         except Exception as e:
-            console.print(
-                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
-            )
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         # Execute open invitation creation
@@ -143,11 +139,14 @@ class InviteOpenStep(BaseStep):
             f"[blue]Creating open invitation for context {context_id} on {node_name}...[/blue]"
         )
         result = await create_open_invitation_via_admin_api(
-            rpc_url, context_id, granter_id, valid_for_blocks, node_name=stable_node_name
+            rpc_url,
+            context_id,
+            granter_id,
+            valid_for_blocks,
+            node_name=stable_node_name,
         )
 
-        console.print(
-            f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")
+        console.print(f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")
@@ -161,8 +160,7 @@ class InviteOpenStep(BaseStep):
             console.print(f"  Data: {data}")
 
         console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
-        console.print(
-            f"  Payload Format: {result.get('payload_format', 'N/A')}")
+        console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
         if not result.get("success"):
             console.print(f"  Error: {result.get('error')}")
             if "tried_payloads" in result:
@@ -186,8 +184,7 @@ class InviteOpenStep(BaseStep):
             # Create a synthetic response where "invitation" field contains the complete signed invitation
             actual_data = result["data"].get("data", result["data"])
             synthetic_response = {"invitation": actual_data}
-            self._export_variables(
-                synthetic_response, node_name, dynamic_values)
+            self._export_variables(synthetic_response, node_name, dynamic_values)
 
             return True
         else:
