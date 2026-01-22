@@ -28,6 +28,7 @@ async def call_function(
     function_name: str,
     args: Optional[dict[str, Any]] = None,
     executor_public_key: Optional[str] = None,
+    node_name: Optional[str] = None,
 ) -> dict:
     """Execute a function call using the admin API.
 
@@ -36,12 +37,14 @@ async def call_function(
         context_id: The ID of the context to execute in.
         function_name: The function to call.
         args: Optional arguments for the function call.
+        executor_public_key: Optional executor public key for mutate operations.
+        node_name: Optional node name for token caching (required for authenticated nodes).
 
     Returns:
         The execution result.
     """
     try:
-        connection = create_connection(rpc_url)
+        connection = create_connection(rpc_url, node_name=node_name)
         client = create_client(connection)
 
         encoded_args = ensure_json_string(args or {})

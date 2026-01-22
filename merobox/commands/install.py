@@ -168,7 +168,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
 
     # Execute installation using calimero-client-py
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node)
 
         if dev and path:
             application_path = os.path.abspath(os.path.expanduser(path))

@@ -8,7 +8,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class WaitForSyncStep(BaseStep):
@@ -114,14 +114,28 @@ class WaitForSyncStep(BaseStep):
         max_retries = 3
         retry_delay = 0.5  # 500ms between retries
 
+        # Resolve node to get stable name for token caching
+        try:
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                stable_node_name = resolved.node_name
+            else:
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
+        except Exception as e:
+            console.print(
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
+            )
+            return node_name, None
+
         for retry in range(max_retries):
             try:
                 # Add small delay on retries to avoid overwhelming the API
                 if retry > 0:
                     await asyncio.sleep(retry_delay)
 
-                rpc_url = get_node_rpc_url(node_name, self.manager)
-                client = get_client_for_rpc_url(rpc_url)
+                client = get_client_for_rpc_url(rpc_url, node_name=stable_node_name)
 
                 # Optionally trigger sync to ensure root_hash is up-to-date
                 if trigger_sync:

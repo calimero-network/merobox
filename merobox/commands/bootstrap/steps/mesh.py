@@ -13,9 +13,8 @@ from merobox.commands.identity import (
     invite_identity_via_admin_api,
 )
 from merobox.commands.join import join_context_via_admin_api
-from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
-from merobox.commands.utils import console, extract_nested_data, get_node_rpc_url
+from merobox.commands.utils import console, extract_nested_data
 
 
 class CreateMeshStep(BaseStep):
@@ -112,17 +111,21 @@ class CreateMeshStep(BaseStep):
                 "[yellow]⚠️  CreateMesh step export configuration validation failed[/yellow]"
             )
 
-        try:
-            if self.manager is not None:
-                manager = self.manager
-            else:
-                manager = DockerManager()
-        except Exception as e:
-            console.print(f"[red]Failed to get manager: {str(e)}[/red]")
-            return False
-
         console.print(f"\n[bold]Step 1: Creating context on {context_node}[/bold]")
-        context_rpc_url = get_node_rpc_url(context_node, manager)
+        # Resolve node to get URL and stable name for token caching
+        try:
+            resolved = self._resolve_node(context_node)
+            if resolved:
+                context_rpc_url = resolved.url
+                stable_context_node = resolved.node_name
+            else:
+                context_rpc_url = self._get_node_rpc_url(context_node)
+                stable_context_node = context_node
+        except Exception as e:
+            console.print(
+                f"[red]Failed to resolve context node {context_node}: {str(e)}[/red]"
+            )
+            return False
 
         params_json: str | None = None
         if "params" in self.config:
@@ -135,7 +138,7 @@ class CreateMeshStep(BaseStep):
                 return False
 
         try:
-            client = get_client_for_rpc_url(context_rpc_url)
+            client = get_client_for_rpc_url(context_rpc_url, node_name=stable_context_node)
             protocol = self.config.get("protocol", DEFAULT_PROTOCOL)
             api_result = client.create_context(
                 application_id=application_id,
@@ -237,8 +240,23 @@ class CreateMeshStep(BaseStep):
             console.print(f"\n[bold]Processing node: {node_name}[/bold]")
 
             console.print(f"  [cyan]Creating identity on {node_name}...[/cyan]")
-            node_rpc_url = get_node_rpc_url(node_name, manager)
-            identity_result = await generate_identity_via_admin_api(node_rpc_url)
+            # Resolve node to get URL and stable name for token caching
+            try:
+                resolved = self._resolve_node(node_name)
+                if resolved:
+                    node_rpc_url = resolved.url
+                    stable_node_name = resolved.node_name
+                else:
+                    node_rpc_url = self._get_node_rpc_url(node_name)
+                    stable_node_name = node_name
+            except Exception as e:
+                console.print(
+                    f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
+                )
+                return False
+            identity_result = await generate_identity_via_admin_api(
+                node_rpc_url, node_name=stable_node_name
+            )
 
             if not identity_result.get("success"):
                 console.print(
@@ -309,7 +327,12 @@ class CreateMeshStep(BaseStep):
                 f"  [cyan]Inviting {public_key} from {context_node}...[/cyan]"
             )
             invite_result = await invite_identity_via_admin_api(
-                context_rpc_url, context_id, member_public_key, public_key, capability
+                context_rpc_url,
+                context_id,
+                member_public_key,
+                public_key,
+                capability,
+                node_name=stable_context_node,
             )
 
             if not invite_result.get("success"):
@@ -341,7 +364,7 @@ class CreateMeshStep(BaseStep):
 
             console.print(f"  [cyan]Joining context from {node_name}...[/cyan]")
             join_result = await join_context_via_admin_api(
-                node_rpc_url, context_id, public_key, invitation
+                node_rpc_url, context_id, public_key, invitation, node_name=stable_node_name
             )
 
             if not join_result.get("success"):

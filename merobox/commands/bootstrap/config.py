@@ -2,28 +2,148 @@
 Configuration management for bootstrap workflows.
 """
 
+import os
+import re
 from typing import Any
 
 import yaml
 
 from merobox.commands.utils import console
 
+# Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
+ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_env_vars(value: Any) -> Any:
+    """
+    Recursively expand ${ENV_VAR} placeholders in strings.
+
+    Supports:
+    - ${VAR} - expands to environment variable value
+    - ${VAR:-default} - expands to default if VAR is not set
+
+    Args:
+        value: The value to expand (can be str, dict, list, or other)
+
+    Returns:
+        The value with environment variables expanded
+    """
+    if isinstance(value, str):
+
+        def replace_env_var(match: re.Match) -> str:
+            var_name = match.group(1)
+            default_value = match.group(2)
+            env_value = os.environ.get(var_name)
+            if env_value is not None:
+                return env_value
+            elif default_value is not None:
+                return default_value
+            else:
+                console.print(
+                    f"[yellow]Warning: Environment variable ${{{var_name}}} is not set[/yellow]"
+                )
+                return match.group(0)  # Return original placeholder if not found
+
+        return ENV_VAR_PATTERN.sub(replace_env_var, value)
+
+    elif isinstance(value, dict):
+        return {k: expand_env_vars(v) for k, v in value.items()}
+
+    elif isinstance(value, list):
+        return [expand_env_vars(item) for item in value]
+
+    return value
+
+
+def expand_remote_nodes_auth(config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Expand environment variables in remote_nodes auth configuration.
+
+    This function specifically targets the auth fields in remote_nodes
+    where sensitive credentials are likely to be stored as env vars.
+
+    Args:
+        config: The workflow configuration dictionary
+
+    Returns:
+        The configuration with auth fields expanded
+    """
+    if "remote_nodes" not in config:
+        return config
+
+    remote_nodes = config.get("remote_nodes", {})
+    if not isinstance(remote_nodes, dict):
+        return config
+
+    expanded_remote_nodes = {}
+    for node_name, node_config in remote_nodes.items():
+        if not isinstance(node_config, dict):
+            expanded_remote_nodes[node_name] = node_config
+            continue
+
+        expanded_node = dict(node_config)
+
+        # Expand auth fields
+        if "auth" in expanded_node and isinstance(expanded_node["auth"], dict):
+            expanded_node["auth"] = expand_env_vars(expanded_node["auth"])
+
+        # Also expand url in case it contains env vars
+        if "url" in expanded_node:
+            expanded_node["url"] = expand_env_vars(expanded_node["url"])
+
+        expanded_remote_nodes[node_name] = expanded_node
+
+    config["remote_nodes"] = expanded_remote_nodes
+    return config
+
 
 def load_workflow_config(
     config_path: str, validate_only: bool = False
 ) -> dict[str, Any]:
-    """Load workflow configuration from YAML file."""
+    """Load workflow configuration from YAML file.
+
+    Supports:
+    - Traditional local/docker/binary nodes via `nodes:` key
+    - Remote nodes via `remote_nodes:` key
+    - Mixed configurations with both local and remote nodes
+    - ${ENV_VAR} expansion in remote_nodes auth fields
+
+    Args:
+        config_path: Path to the workflow YAML file
+        validate_only: If True, skip strict validation
+
+    Returns:
+        The parsed and processed workflow configuration
+
+    Raises:
+        FileNotFoundError: If the config file doesn't exist
+        ValueError: If the YAML is invalid or required fields are missing
+    """
     try:
         with open(config_path) as file:
             config = yaml.safe_load(file)
 
+        # Handle empty YAML files (yaml.safe_load returns None for empty files)
+        if config is None:
+            config = {}
+
+        # Expand environment variables in remote_nodes auth
+        config = expand_remote_nodes_auth(config)
+
         # Skip basic validation if this is just for validation purposes
         if not validate_only:
             # Validate required fields
-            required_fields = ["name", "nodes"]
-            for field in required_fields:
-                if field not in config:
-                    raise ValueError(f"Missing required field: {field}")
+            # A workflow must have a name and at least one of: nodes or remote_nodes
+            if "name" not in config:
+                raise ValueError("Missing required field: name")
+
+            has_local_nodes = "nodes" in config and config["nodes"]
+            has_remote_nodes = "remote_nodes" in config and config["remote_nodes"]
+
+            if not has_local_nodes and not has_remote_nodes:
+                raise ValueError(
+                    "Missing required field: either 'nodes' or 'remote_nodes' must be specified"
+                )
 
         return config
 

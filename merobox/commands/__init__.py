@@ -17,6 +17,7 @@ from merobox.commands.logs import logs
 from merobox.commands.manager import DockerManager
 from merobox.commands.nuke import nuke
 from merobox.commands.proposals import proposals
+from merobox.commands.remote import remote
 from merobox.commands.run import run
 from merobox.commands.stop import stop
 
@@ -37,5 +38,6 @@ __all__ = [
     "blob",
     "join",
     "proposals",
+    "remote",
     "near",
 ]

@@ -7,19 +7,31 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def create_open_invitation_via_admin_api(
-    rpc_url: str, context_id: str, granter_id: str, valid_for_blocks: int = 1000
+    rpc_url: str,
+    context_id: str,
+    granter_id: str,
+    valid_for_blocks: int = 1000,
+    node_name: str | None = None,
 ) -> dict:
-    """Create an open invitation using calimero-client-py."""
+    """Create an open invitation using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        context_id: The context ID to create invitation for.
+        granter_id: The granter ID.
+        valid_for_blocks: Number of blocks the invitation is valid for.
+        node_name: Optional stable node name for token caching (required for authenticated nodes).
+    """
     try:
         from merobox.commands.client import get_client_for_rpc_url
         from merobox.commands.result import fail, ok
 
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
         result = client.invite_to_context_by_open_invitation(
             context_id=context_id,
@@ -63,10 +75,12 @@ class InviteOpenStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
         # Validate context_id is a string
         if not isinstance(self.config.get("context_id"), str):
-            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+            raise ValueError(
+                f"Step '{step_name}': 'context_id' must be a string")
         # Validate granter_id is a string
         if not isinstance(self.config.get("granter_id"), str):
-            raise ValueError(f"Step '{step_name}': 'granter_id' must be a string")
+            raise ValueError(
+                f"Step '{step_name}': 'granter_id' must be a string")
         # Validate valid_for_blocks is an integer if provided
         if "valid_for_blocks" in self.config:
             if not isinstance(self.config.get("valid_for_blocks"), int):
@@ -107,19 +121,20 @@ class InviteOpenStep(BaseStep):
                 "[yellow]⚠️  InviteOpen step export configuration validation failed[/yellow]"
             )
 
-        # Get node RPC URL
+        # Resolve node (gets URL and ensures authentication)
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Use the stable node name from resolver (matches what was used for auth)
+                stable_node_name = resolved.node_name
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
         except Exception as e:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
             )
             return False
 
@@ -128,10 +143,11 @@ class InviteOpenStep(BaseStep):
             f"[blue]Creating open invitation for context {context_id} on {node_name}...[/blue]"
         )
         result = await create_open_invitation_via_admin_api(
-            rpc_url, context_id, granter_id, valid_for_blocks
+            rpc_url, context_id, granter_id, valid_for_blocks, node_name=stable_node_name
         )
 
-        console.print(f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")
+        console.print(
+            f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")
@@ -145,7 +161,8 @@ class InviteOpenStep(BaseStep):
             console.print(f"  Data: {data}")
 
         console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
-        console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
+        console.print(
+            f"  Payload Format: {result.get('payload_format', 'N/A')}")
         if not result.get("success"):
             console.print(f"  Error: {result.get('error')}")
             if "tried_payloads" in result:
@@ -169,7 +186,8 @@ class InviteOpenStep(BaseStep):
             # Create a synthetic response where "invitation" field contains the complete signed invitation
             actual_data = result["data"].get("data", result["data"])
             synthetic_response = {"invitation": actual_data}
-            self._export_variables(synthetic_response, node_name, dynamic_values)
+            self._export_variables(
+                synthetic_response, node_name, dynamic_values)
 
             return True
         else:

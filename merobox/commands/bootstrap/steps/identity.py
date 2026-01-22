@@ -9,7 +9,7 @@ from merobox.commands.identity import (
     generate_identity_via_admin_api,
     invite_identity_via_admin_api,
 )
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class CreateIdentityStep(BaseStep):
@@ -62,23 +62,25 @@ class CreateIdentityStep(BaseStep):
                 "[yellow]⚠️  CreateIdentity step export configuration validation failed[/yellow]"
             )
 
+        # Resolve node (gets URL and ensures authentication)
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Use the stable node name from resolver (matches what was used for auth)
+                stable_node_name = resolved.node_name
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
         except Exception as e:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
             )
             return False
 
         # Execute identity creation
-        result = await generate_identity_via_admin_api(rpc_url)
+        result = await generate_identity_via_admin_api(rpc_url, node_name=stable_node_name)
 
         # Log detailed API response
         import json as json_lib
@@ -168,13 +170,16 @@ class InviteIdentityStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
         # Validate context_id is a string
         if not isinstance(self.config.get("context_id"), str):
-            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+            raise ValueError(
+                f"Step '{step_name}': 'context_id' must be a string")
         # Validate granter_id is a string
         if not isinstance(self.config.get("granter_id"), str):
-            raise ValueError(f"Step '{step_name}': 'granter_id' must be a string")
+            raise ValueError(
+                f"Step '{step_name}': 'granter_id' must be a string")
         # Validate grantee_id is a string
         if not isinstance(self.config.get("grantee_id"), str):
-            raise ValueError(f"Step '{step_name}': 'grantee_id' must be a string")
+            raise ValueError(
+                f"Step '{step_name}': 'grantee_id' must be a string")
 
     def _get_exportable_variables(self):
         """
@@ -212,30 +217,30 @@ class InviteIdentityStep(BaseStep):
                 "[yellow]⚠️  InviteIdentity step export configuration validation failed[/yellow]"
             )
 
-        # Get node RPC URL
+        # Resolve node to get URL and stable name for token caching
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                stable_node_name = resolved.node_name
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
         except Exception as e:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
             )
             return False
 
         # Execute invitation
         result = await invite_identity_via_admin_api(
-            rpc_url, context_id, inviter_id, invitee_id, capability
+            rpc_url, context_id, inviter_id, invitee_id, capability, node_name=stable_node_name
         )
 
         import json as json_lib
 
-        console.print(f"[cyan]🔍 Invitation API Response for {node_name}:[/cyan]")
+        console.print(
+            f"[cyan]🔍 Invitation API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")
@@ -249,7 +254,8 @@ class InviteIdentityStep(BaseStep):
             console.print(f"  Data: {data}")
 
         console.print(f"  Endpoint: {result.get('endpoint', 'N/A')}")
-        console.print(f"  Payload Format: {result.get('payload_format', 'N/A')}")
+        console.print(
+            f"  Payload Format: {result.get('payload_format', 'N/A')}")
         if not result.get("success"):
             console.print(f"  Error: {result.get('error')}")
             if "tried_payloads" in result:
@@ -282,7 +288,8 @@ class InviteIdentityStep(BaseStep):
                 else result["data"]
             )
             synthetic_response_data = {"invitation": actual_invitation}
-            self._export_variables(synthetic_response_data, node_name, dynamic_values)
+            self._export_variables(
+                synthetic_response_data, node_name, dynamic_values)
 
             return True
         else:

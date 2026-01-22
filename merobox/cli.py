@@ -21,6 +21,7 @@ from merobox.commands import (
     logs,
     nuke,
     proposals,
+    remote,
     run,
     stop,
 )
@@ -49,6 +50,7 @@ cli.add_command(call)
 cli.add_command(blob)
 cli.add_command(proposals)
 cli.add_command(bootstrap)
+cli.add_command(remote)
 
 
 def main():

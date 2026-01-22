@@ -48,13 +48,18 @@ from merobox.commands.utils import console
 class FuzzyTestStep(BaseStep):
     """Execute long-running fuzzy load tests with randomized operations."""
 
-    def __init__(self, config: dict[str, Any], manager: object | None = None):
+    def __init__(
+        self,
+        config: dict[str, Any],
+        manager: object | None = None,
+        resolver: object | None = None,
+    ):
         # Initialize instance attributes used during execution
         self._context_id: str = ""
         self._nodes: list[dict] = []
         self._operations: list[dict] = []
         self._total_weight: float = 0
-        super().__init__(config, manager)
+        super().__init__(config, manager, resolver)
 
     def _get_required_fields(self) -> list[str]:
         """Define required fields for this step."""
@@ -547,11 +552,13 @@ class FuzzyTestStep(BaseStep):
     def _create_pattern_step_executor(self, step_type: str, step_config: dict):
         """Create a step executor for pattern steps."""
         if step_type == "call":
-            return ExecuteStep(step_config, manager=self.manager)
+            return ExecuteStep(
+                step_config, manager=self.manager, resolver=self.resolver
+            )
         elif step_type == "assert":
-            return AssertStep(step_config, manager=self.manager)
+            return AssertStep(step_config, manager=self.manager, resolver=self.resolver)
         elif step_type == "wait":
-            return WaitStep(step_config, manager=self.manager)
+            return WaitStep(step_config, manager=self.manager, resolver=self.resolver)
         else:
             return None
 

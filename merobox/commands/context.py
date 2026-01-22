@@ -19,11 +19,23 @@ from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def create_context_via_admin_api(
-    rpc_url: str, application_id: str, protocol: str = None, params: str = None
+    rpc_url: str,
+    application_id: str,
+    protocol: str = None,
+    params: str = None,
+    node_name: str = None,
 ) -> dict:
-    """Create a context using calimero-client-py."""
+    """Create a context using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        application_id: Application ID to create context for.
+        protocol: Optional protocol type.
+        params: Optional initialization parameters as JSON string.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
         protocol = protocol or DEFAULT_PROTOCOL
         api_result = client.create_context(
             application_id=application_id, protocol=protocol, params=params
@@ -34,10 +46,15 @@ async def create_context_via_admin_api(
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
-async def list_contexts_via_admin_api(rpc_url: str) -> dict:
-    """List contexts using calimero-client-py."""
+async def list_contexts_via_admin_api(rpc_url: str, node_name: str = None) -> dict:
+    """List contexts using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
         result = client.list_contexts()
         return ok(result)
     except Exception as e:
@@ -45,10 +62,18 @@ async def list_contexts_via_admin_api(rpc_url: str) -> dict:
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
-async def get_context_via_admin_api(rpc_url: str, context_id: str) -> dict:
-    """Get context details using calimero-client-py."""
+async def get_context_via_admin_api(
+    rpc_url: str, context_id: str, node_name: str = None
+) -> dict:
+    """Get context details using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        context_id: Context ID to get details for.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
         result = client.get_context(context_id)
         return ok(result)
     except Exception as e:

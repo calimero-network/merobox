@@ -11,6 +11,7 @@ a clean, organized interface for workflow management.
 """
 
 import sys
+from typing import Any
 
 import click
 
@@ -21,6 +22,109 @@ from merobox.commands.bootstrap.config import (
 from merobox.commands.bootstrap.run import run_workflow_sync
 from merobox.commands.bootstrap.validate import validate_workflow_config
 from merobox.commands.utils import console
+
+
+def parse_remote_nodes(remote_node_args: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+    """Parse --remote-node arguments into a config dict.
+
+    Args:
+        remote_node_args: Tuple of "name=url" strings.
+
+    Returns:
+        Dict mapping node names to their config: {name: {"url": url, "auth": {...}}}
+    """
+    remote_nodes = {}
+    for arg in remote_node_args:
+        if "=" not in arg:
+            console.print(
+                f"[yellow]Warning: Invalid --remote-node format '{arg}', expected 'name=url'[/yellow]"
+            )
+            continue
+        name, url = arg.split("=", 1)
+        name = name.strip()
+        url = url.strip()
+        if not name or not url:
+            console.print(
+                f"[yellow]Warning: Invalid --remote-node '{arg}', name and url must not be empty[/yellow]"
+            )
+            continue
+        remote_nodes[name] = {
+            "url": url,
+            "auth": {"method": "none"},  # Default to no auth
+        }
+    return remote_nodes
+
+
+def parse_remote_auth(
+    remote_auth_args: tuple[str, ...],
+    remote_nodes: dict[str, dict[str, Any]],
+    default_api_key: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Parse --remote-auth arguments and merge into remote_nodes config.
+
+    Args:
+        remote_auth_args: Tuple of "name=user:pass" or "name=apikey:KEY" strings.
+        remote_nodes: Existing remote nodes config to update.
+        default_api_key: Default API key to apply to nodes without explicit auth.
+
+    Returns:
+        Updated remote_nodes dict with auth configuration.
+    """
+    for arg in remote_auth_args:
+        if "=" not in arg:
+            console.print(
+                f"[yellow]Warning: Invalid --remote-auth format '{arg}', expected 'name=user:pass' or 'name=apikey:KEY'[/yellow]"
+            )
+            continue
+        name, auth_str = arg.split("=", 1)
+        name = name.strip()
+        auth_str = auth_str.strip()
+
+        if not name:
+            console.print(
+                f"[yellow]Warning: Invalid --remote-auth '{arg}', node name must not be empty[/yellow]"
+            )
+            continue
+
+        # Create node entry if it doesn't exist yet
+        if name not in remote_nodes:
+            console.print(
+                f"[yellow]Warning: --remote-auth for '{name}' but no --remote-node defined for it. "
+                f"Auth will be stored but node URL must be defined in workflow config.[/yellow]"
+            )
+            remote_nodes[name] = {"auth": {}}
+
+        # Parse auth string - support both user:pass and apikey:KEY formats
+        if auth_str.lower().startswith("apikey:"):
+            api_key = auth_str[7:]  # Remove "apikey:" prefix
+            remote_nodes[name]["auth"] = {
+                "method": "api_key",
+                "api_key": api_key,
+            }
+        elif ":" in auth_str:
+            username, password = auth_str.split(":", 1)
+            remote_nodes[name]["auth"] = {
+                "method": "user_password",
+                "username": username,
+                "password": password,
+            }
+        else:
+            console.print(
+                f"[yellow]Warning: Invalid auth format for '{name}': '{auth_str}'. "
+                f"Expected 'user:pass' or 'apikey:KEY'[/yellow]"
+            )
+
+    # Apply default API key to nodes without explicit auth
+    if default_api_key:
+        for name, config in remote_nodes.items():
+            auth = config.get("auth", {})
+            if auth.get("method") == "none" or not auth.get("method"):
+                remote_nodes[name]["auth"] = {
+                    "method": "api_key",
+                    "api_key": default_api_key,
+                }
+
+    return remote_nodes
 
 
 @click.group()
@@ -101,6 +205,22 @@ def bootstrap():
     type=click.Path(exists=True),
     help="Directory containing context_config_near.wasm and context_proxy_near.wasm",
 )
+@click.option(
+    "--remote-node",
+    multiple=True,
+    metavar="NAME=URL",
+    help="Register a remote node for this workflow run. Format: name=url (e.g., 'prod=https://node.example.com'). Can be specified multiple times.",
+)
+@click.option(
+    "--remote-auth",
+    multiple=True,
+    metavar="NAME=AUTH",
+    help="Set authentication for a remote node. Format: name=user:pass or name=apikey:KEY. Can be specified multiple times.",
+)
+@click.option(
+    "--api-key",
+    help="Default API key to use for remote nodes without explicit auth configuration.",
+)
 def run(
     config_file,
     verbose,
@@ -117,6 +237,9 @@ def run(
     e2e_mode,
     near_devnet,
     contracts_dir,
+    remote_node,
+    remote_auth,
+    api_key,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -127,7 +250,18 @@ def run(
     3. Execute each step in sequence
     4. Handle dynamic variable resolution
     5. Export results and captured values
+
+    Remote nodes can be specified via --remote-node and --remote-auth flags:
+    - --remote-node prod=https://node.example.com
+    - --remote-auth prod=admin:password123
+    - --remote-auth staging=apikey:sk-xxx
+
+    These CLI-specified remote nodes are merged with any remote_nodes
+    defined in the workflow YAML file, with CLI options taking precedence.
     """
+    # Parse remote node CLI options
+    cli_remote_nodes = parse_remote_nodes(remote_node)
+    cli_remote_nodes = parse_remote_auth(remote_auth, cli_remote_nodes, api_key)
 
     success = run_workflow_sync(
         config_file,
@@ -145,6 +279,7 @@ def run(
         e2e_mode=e2e_mode,
         near_devnet=near_devnet,
         contracts_dir=contracts_dir,
+        cli_remote_nodes=cli_remote_nodes,
     )
     if not success:
         sys.exit(1)

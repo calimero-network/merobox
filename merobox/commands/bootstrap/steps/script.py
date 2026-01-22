@@ -16,8 +16,13 @@ from merobox.commands.utils import console
 class ScriptStep(BaseStep):
     """Execute a script on Docker images or running nodes."""
 
-    def __init__(self, config: dict[str, Any], manager: object | None = None):
-        super().__init__(config, manager)
+    def __init__(
+        self,
+        config: dict[str, Any],
+        manager: object | None = None,
+        resolver: object | None = None,
+    ):
+        super().__init__(config, manager, resolver)
         self.script_path = config.get("script")
         self.target = config.get("target", "image")  # 'image' or 'nodes'
         self.description = config.get(

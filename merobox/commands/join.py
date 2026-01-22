@@ -18,11 +18,23 @@ from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def join_context_via_admin_api(
-    rpc_url: str, context_id: str, invitee_id: str, invitation_data: str
+    rpc_url: str,
+    context_id: str,
+    invitee_id: str,
+    invitation_data: str,
+    node_name: str = None,
 ) -> dict:
-    """Join a context using calimero-client-py."""
+    """Join a context using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        context_id: Context ID to join.
+        invitee_id: Public key of the invitee.
+        invitation_data: Invitation payload/token.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
         result = client.join_context(
             context_id=context_id,
@@ -38,12 +50,21 @@ async def join_context_via_admin_api(
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def join_context_via_open_invitation(
-    rpc_url: str, invitation_json: str, new_member_public_key: str
+    rpc_url: str,
+    invitation_json: str,
+    new_member_public_key: str,
+    node_name: str = None,
 ) -> dict:
-    """Join a context using an open invitation via calimero-client-py."""
-    try:
+    """Join a context using an open invitation via calimero-client-py.
 
-        client = get_client_for_rpc_url(rpc_url)
+    Args:
+        rpc_url: The RPC URL to connect to.
+        invitation_json: The SignedOpenInvitation as JSON string.
+        new_member_public_key: The public key as string.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
+    try:
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
         # The client expects two separate parameters:
         # 1. invitation_json: The SignedOpenInvitation as JSON string

@@ -15,7 +15,7 @@ from merobox.commands.proposals import (
     get_proposal_via_admin_api,
     list_proposals_via_admin_api,
 )
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class GetProposalStep(BaseStep):
@@ -61,22 +61,24 @@ class GetProposalStep(BaseStep):
                 "[yellow]⚠️  Get proposal step export configuration validation failed[/yellow]"
             )
 
+        # Resolve node to get URL and stable name for token caching
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                stable_node_name = resolved.node_name
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
         except Exception as e:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
             )
             return False
 
-        result = await get_proposal_via_admin_api(rpc_url, context_id, proposal_id)
+        result = await get_proposal_via_admin_api(
+            rpc_url, context_id, proposal_id, node_name=stable_node_name
+        )
 
         console.print(f"[cyan]🔍 Get Proposal API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
@@ -150,22 +152,24 @@ class ListProposalsStep(BaseStep):
                 "[yellow]⚠️  List proposals step export configuration validation failed[/yellow]"
             )
 
+        # Resolve node to get URL and stable name for token caching
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                stable_node_name = resolved.node_name
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
         except Exception as e:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
             )
             return False
 
-        result = await list_proposals_via_admin_api(rpc_url, context_id, args)
+        result = await list_proposals_via_admin_api(
+            rpc_url, context_id, args, node_name=stable_node_name
+        )
 
         console.print(f"[cyan]🔍 List Proposals API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
@@ -249,23 +253,23 @@ class GetProposalApproversStep(BaseStep):
                 "[yellow]⚠️  Get proposal approvers step export configuration validation failed[/yellow]"
             )
 
+        # Resolve node to get URL and stable name for token caching
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                stable_node_name = resolved.node_name
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
         except Exception as e:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
             )
             return False
 
         result = await get_proposal_approvers_via_admin_api(
-            rpc_url, context_id, proposal_id
+            rpc_url, context_id, proposal_id, node_name=stable_node_name
         )
 
         console.print(

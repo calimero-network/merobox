@@ -10,11 +10,63 @@ This module handles the execution of Calimero workflows including:
 
 import asyncio
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.utils import console
+
+
+def merge_remote_nodes_config(
+    yaml_config: dict[str, Any],
+    cli_remote_nodes: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Merge CLI-provided remote nodes with YAML config.
+
+    CLI options take precedence over YAML config.
+
+    Args:
+        yaml_config: The loaded workflow YAML configuration.
+        cli_remote_nodes: Remote nodes from CLI options.
+
+    Returns:
+        Updated config with merged remote_nodes.
+    """
+    if not cli_remote_nodes:
+        return yaml_config
+
+    # Get existing remote_nodes from YAML or create empty dict
+    existing_remote_nodes = yaml_config.get("remote_nodes", {})
+
+    # Merge: CLI takes precedence
+    merged_remote_nodes = {**existing_remote_nodes}
+
+    for name, cli_config in cli_remote_nodes.items():
+        if name in merged_remote_nodes:
+            # Merge individual node config, CLI takes precedence
+            existing_node = merged_remote_nodes[name]
+            # Update URL if provided
+            if "url" in cli_config:
+                existing_node["url"] = cli_config["url"]
+            # Update auth if provided (and not just default 'none')
+            cli_auth = cli_config.get("auth", {})
+            if cli_auth.get("method") and cli_auth["method"] != "none":
+                existing_node["auth"] = cli_auth
+            elif cli_auth.get("method") == "none" and "auth" not in existing_node:
+                existing_node["auth"] = cli_auth
+        else:
+            # New node from CLI
+            merged_remote_nodes[name] = cli_config
+
+    yaml_config["remote_nodes"] = merged_remote_nodes
+
+    # Log merged remote nodes for visibility
+    if merged_remote_nodes:
+        console.print(
+            f"[cyan]Remote nodes configured: {', '.join(merged_remote_nodes.keys())}[/cyan]"
+        )
+
+    return yaml_config
 
 
 async def run_workflow(
@@ -22,7 +74,7 @@ async def run_workflow(
     verbose: bool = False,
     image: Optional[str] = None,
     auth_service: bool = False,
-    auth_image: [str] = None,
+    auth_image: Optional[str] = None,
     auth_use_cached: bool = False,
     webui_use_cached: bool = False,
     log_level: str = "debug",
@@ -33,6 +85,7 @@ async def run_workflow(
     e2e_mode: bool = False,
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
+    cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -41,6 +94,7 @@ async def run_workflow(
         config_file: Path to the workflow configuration file
         verbose: Whether to enable verbose output
         auth_service: Whether to enable authentication service integration
+        cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -49,6 +103,9 @@ async def run_workflow(
         # Load configuration
         config = load_workflow_config(config_file)
         workflow_dir = os.path.dirname(os.path.abspath(config_file))
+
+        # Merge CLI-provided remote nodes with YAML config
+        config = merge_remote_nodes_config(config, cli_remote_nodes or {})
 
         # Allow workflow YAML to opt into no-docker mode
         yaml_no_docker = bool(config.get("no_docker", False))
@@ -64,9 +121,20 @@ async def run_workflow(
             )
             return False
 
+        # Check if this is a remote-only workflow (no local nodes)
+        # Local nodes are defined in 'nodes' config key
+        has_local_nodes = "nodes" in config and config.get("nodes")
+        has_remote_nodes = "remote_nodes" in config and config.get("remote_nodes")
+        is_remote_only = has_remote_nodes and not has_local_nodes
+
         # Create and execute workflow
-        # Choose manager implementation based on effective_no_docker
-        if effective_no_docker:
+        # Choose manager implementation based on mode
+        if is_remote_only:
+            # Remote-only mode: no Docker or binary manager needed
+            manager = None
+            # Auth service and mock relayer don't apply to remote-only
+            auth_service = False
+        elif effective_no_docker:
             from merobox.commands.binary_manager import BinaryManager
 
             manager = BinaryManager(binary_path=effective_binary_path)
@@ -146,6 +214,7 @@ def run_workflow_sync(
     e2e_mode: bool = False,
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
+    cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -154,6 +223,7 @@ def run_workflow_sync(
         config_file: Path to the workflow configuration file
         verbose: Whether to enable verbose output
         auth_service: Whether to enable authentication service integration
+        cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -175,5 +245,6 @@ def run_workflow_sync(
             e2e_mode=e2e_mode,
             near_devnet=near_devnet,
             contracts_dir=contracts_dir,
+            cli_remote_nodes=cli_remote_nodes,
         )
     )

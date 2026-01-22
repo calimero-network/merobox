@@ -21,11 +21,18 @@ from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def get_proposal_via_admin_api(
-    rpc_url: str, context_id: str, proposal_id: str
+    rpc_url: str, context_id: str, proposal_id: str, node_name: str = None
 ) -> dict:
-    """Get a specific proposal using calimero-client-py."""
+    """Get a specific proposal using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        context_id: Context ID.
+        proposal_id: Proposal ID to get.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
         result = client.get_proposal(context_id=context_id, proposal_id=proposal_id)
         return ok(
             result,
@@ -37,9 +44,16 @@ async def get_proposal_via_admin_api(
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def list_proposals_via_admin_api(
-    rpc_url: str, context_id: str, args: Optional[str] = None
+    rpc_url: str, context_id: str, args: Optional[str] = None, node_name: str = None
 ) -> dict:
-    """Get proposals list using calimero-client-py."""
+    """Get proposals list using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        context_id: Context ID.
+        args: Optional arguments for filtering proposals.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
         # If args is None or empty, use default pagination
         if not args or args == "{}":
@@ -50,7 +64,7 @@ async def list_proposals_via_admin_api(
         console.print(
             f"[cyan]🔍 Calling list_proposals with context_id: {context_id}, args: {args_to_pass}[/cyan]"
         )
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
         result = client.list_proposals(context_id=context_id, args=args_to_pass)
         console.print(f"[green]✓ list_proposals returned: {result}[/green]")
         return ok(
@@ -65,11 +79,18 @@ async def list_proposals_via_admin_api(
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def get_proposal_approvers_via_admin_api(
-    rpc_url: str, context_id: str, proposal_id: str
+    rpc_url: str, context_id: str, proposal_id: str, node_name: str = None
 ) -> dict:
-    """Get list of approvers for a proposal using calimero-client-py."""
+    """Get list of approvers for a proposal using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        context_id: Context ID.
+        proposal_id: Proposal ID to get approvers for.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
         result = client.get_proposal_approvers(
             context_id=context_id, proposal_id=proposal_id
         )

@@ -30,10 +30,16 @@ def _get_manager_and_rpc_url(node: str, no_docker: bool = False):
     return manager, rpc_url
 
 
-def _get_client_for_node(node: str, no_docker: bool = False):
-    """Get client for node using appropriate manager."""
+def _get_client_for_node(node: str, no_docker: bool = False, node_name: str = None):
+    """Get client for node using appropriate manager.
+
+    Args:
+        node: Node name to get client for.
+        no_docker: Use binary mode instead of Docker.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     _, rpc_url = _get_manager_and_rpc_url(node, no_docker)
-    client = get_client_for_rpc_url(rpc_url)
+    client = get_client_for_rpc_url(rpc_url, node_name=node_name)
     return client, rpc_url
 
 

@@ -7,6 +7,7 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 - [🚀 Quick Start](#-quick-start)
 - [✨ Features](#-features)
 - [🔐 Auth Service Integration](#-auth-service-integration)
+- [🌐 Remote Nodes](#-remote-nodes)
 - [📖 Workflow Guide](#-workflow-guide)
 - [🎯 Local Blockchain Environments](#-local-blockchain-environments)
 - [🔧 API Reference](#-api-reference)
@@ -67,6 +68,7 @@ merobox stop --all
 ## ✨ Features
 
 - **Node Management**: Start, stop, and monitor Calimero nodes in Docker
+- **Remote Node Support**: Connect to remote Calimero nodes with user/password or API key authentication
 - **Auth Service Integration**: Traefik proxy and authentication service with nip.io DNS
 - **Workflow Orchestration**: Execute complex multi-step workflows with YAML
 - **Context Management**: Create and manage blockchain contexts
@@ -152,6 +154,414 @@ Internet → Traefik (port 80) → Node Containers (calimero_web network)
 - **Public routes**: `/admin-dashboard` (no auth required)
 - **Protected routes**: `/admin-api/`, `/jsonrpc`, `/ws` (auth required)
 - **Auth routes**: `/auth/login`, `/admin/` (handled by auth service)
+
+---
+
+## 🌐 Remote Nodes
+
+Merobox supports connecting to remote Calimero nodes alongside local Docker/binary nodes. This enables running workflows against production or staging nodes with proper authentication.
+
+### Quick Start with Remote Nodes
+
+```bash
+# Register a remote node
+merobox remote register prod-node https://prod.example.com \
+  --auth-method user_password \
+  --username admin
+
+# Login (stores token for future use)
+merobox remote login prod-node
+
+# Test connectivity
+merobox remote test prod-node
+
+# Check status
+merobox remote status
+
+# Run a workflow against the remote node
+merobox bootstrap run workflow.yml
+```
+
+### Remote Node CLI Commands
+
+#### `merobox remote register`
+
+Register a remote node with a friendly name:
+
+```bash
+merobox remote register <name> <url> [OPTIONS]
+```
+
+**Options:**
+- `--auth-method/-m`: Authentication method (`user_password`, `api_key`, `none`)
+- `--username/-u`: Username for user_password auth
+- `--description/-d`: Human-readable description
+
+**Examples:**
+```bash
+# Register with user/password auth
+merobox remote register prod https://prod.example.com -m user_password -u admin
+
+# Register with API key auth
+merobox remote register staging https://staging.example.com -m api_key
+
+# Register without auth
+merobox remote register local-remote https://localhost:8080 -m none
+```
+
+#### `merobox remote login`
+
+Authenticate with a remote node and cache the token:
+
+```bash
+merobox remote login <url_or_name> [OPTIONS]
+```
+
+**Options:**
+- `--username/-u`: Username (prompts if not provided)
+- `--password/-p`: Password (prompts if not provided)
+- `--api-key/-k`: API key for api_key auth method
+- `--method/-m`: Auth method override
+
+**Examples:**
+```bash
+# Login with prompts
+merobox remote login prod-node
+
+# Login with credentials
+merobox remote login prod-node -u admin -p secret
+
+# Login with API key
+merobox remote login staging-node -k sk-your-api-key
+
+# Login to unregistered URL
+merobox remote login https://prod.example.com -u admin
+```
+
+#### `merobox remote logout`
+
+Remove cached authentication:
+
+```bash
+merobox remote logout <url_or_name>
+merobox remote logout --all  # Remove all cached tokens
+```
+
+#### `merobox remote status`
+
+Display registered nodes and cached tokens:
+
+```bash
+merobox remote status
+```
+
+Shows:
+- Registered remote nodes with URLs and auth methods
+- Cached tokens with expiration status (valid/expired)
+
+#### `merobox remote test`
+
+Test connectivity and authentication:
+
+```bash
+merobox remote test <url_or_name> [OPTIONS]
+```
+
+**Options:**
+- `--username/-u`: Username for testing
+- `--password/-p`: Password for testing
+- `--api-key/-k`: API key for testing
+
+Tests performed:
+1. Network connectivity
+2. Auth requirement detection
+3. Authentication (if required)
+4. API access verification
+
+#### `merobox remote list`
+
+List all registered remote nodes:
+
+```bash
+merobox remote list
+```
+
+#### `merobox remote unregister`
+
+Remove a registered remote node:
+
+```bash
+merobox remote unregister <name> [--remove-token]
+```
+
+**Options:**
+- `--remove-token`: Also remove cached authentication token
+
+### Remote Nodes in Workflows
+
+Define remote nodes in your workflow YAML using the `remote_nodes` key:
+
+```yaml
+name: Remote Workflow Example
+description: Workflow using remote nodes
+
+# Remote nodes configuration
+remote_nodes:
+  prod-node:
+    url: https://prod.example.com
+    auth:
+      method: user_password
+      username: ${PROD_USERNAME}
+      # Password from environment or cached token
+
+  staging-node:
+    url: https://staging.example.com
+    auth:
+      method: api_key
+      key: ${STAGING_API_KEY}
+
+  public-node:
+    url: https://public.example.com
+    auth:
+      method: none
+
+steps:
+  - name: Install Application
+    type: install_application
+    node: prod-node  # Reference remote node by name
+    url: https://example.com/app.wasm
+    outputs:
+      app_id: applicationId
+
+  - name: Create Context
+    type: create_context
+    node: prod-node
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+```
+
+#### Environment Variable Expansion
+
+Auth fields support `${ENV_VAR}` and `${ENV_VAR:-default}` syntax:
+
+```yaml
+remote_nodes:
+  prod:
+    url: https://prod.example.com
+    auth:
+      method: user_password
+      username: ${MEROBOX_USERNAME:-admin}
+      # Password read from MEROBOX_PASSWORD env var or cached token
+```
+
+#### Mixed Local and Remote Nodes
+
+Workflows can use both local Docker nodes and remote nodes:
+
+```yaml
+name: Mixed Workflow
+
+nodes:
+  count: 2
+  prefix: local-node
+
+remote_nodes:
+  production:
+    url: https://prod.example.com
+    auth:
+      method: user_password
+      username: admin
+
+steps:
+  - name: Setup on Local Node
+    type: create_context
+    node: local-node-1
+    application_id: "{{app_id}}"
+
+  - name: Verify on Remote
+    type: call
+    node: production
+    context_id: "{{context_id}}"
+    method: get_status
+```
+
+### Bootstrap CLI Options for Remote Nodes
+
+Pass remote nodes directly via CLI without modifying workflow files:
+
+```bash
+# Add remote node for this run
+merobox bootstrap run workflow.yml \
+  --remote-node prod=https://prod.example.com
+
+# Add authentication
+merobox bootstrap run workflow.yml \
+  --remote-node prod=https://prod.example.com \
+  --remote-auth prod=admin:secret123
+
+# Multiple remote nodes
+merobox bootstrap run workflow.yml \
+  --remote-node prod=https://prod.example.com \
+  --remote-node staging=https://staging.example.com \
+  --remote-auth prod=admin:pass1 \
+  --remote-auth staging=apikey:sk-xxx
+
+# Default API key for all nodes
+merobox bootstrap run workflow.yml \
+  --remote-node prod=https://prod.example.com \
+  --api-key sk-default-key
+```
+
+**CLI Options:**
+- `--remote-node NAME=URL` (repeatable): Register a remote node
+- `--remote-auth NAME=AUTH` (repeatable): Set authentication
+  - `name=user:password` for user_password auth
+  - `name=apikey:KEY` for API key auth
+- `--api-key KEY`: Default API key for nodes without explicit auth
+
+### Authentication Methods
+
+#### User/Password Authentication
+
+Uses the `/auth/token` endpoint with username and password:
+
+```yaml
+auth:
+  method: user_password
+  username: admin
+  # Password from: CLI flag, environment, or interactive prompt
+```
+
+**Credential Resolution Order:**
+1. CLI flags (`--password`, `-p`)
+2. Environment variable (`MEROBOX_PASSWORD`)
+3. Interactive prompt
+
+#### API Key Authentication
+
+Uses a pre-generated API key:
+
+```yaml
+auth:
+  method: api_key
+  key: ${API_KEY}  # From environment
+```
+
+#### No Authentication
+
+For public nodes:
+
+```yaml
+auth:
+  method: none
+```
+
+### Token Caching
+
+Tokens are automatically cached to avoid repeated authentication:
+
+- **Cache Location:** `~/.merobox/auth_cache/`
+- **File Format:** `{node-slug}-{hash}.json`
+- **Permissions:** Restrictive (0o600)
+
+**How It Works:**
+1. First authentication saves token to cache
+2. Subsequent requests use cached token
+3. Expired tokens are automatically refreshed
+4. `calimero-client-py` handles refresh on 401 responses
+
+**Token Lifecycle:**
+```bash
+# Initial login caches token
+merobox remote login prod-node -u admin -p secret
+
+# Subsequent commands use cached token (no prompts)
+merobox bootstrap run workflow.yml
+
+# Check token status
+merobox remote status
+
+# Force re-authentication
+merobox remote logout prod-node
+merobox remote login prod-node
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `MEROBOX_USERNAME` | Default username for user_password auth |
+| `MEROBOX_PASSWORD` | Default password for user_password auth |
+| `MEROBOX_API_KEY` | Default API key |
+
+**Example:**
+```bash
+export MEROBOX_USERNAME=admin
+export MEROBOX_PASSWORD=secret
+merobox remote login prod-node  # Uses env vars, no prompts
+```
+
+### Installing Applications on Remote Nodes
+
+Remote nodes require applications to be installed from URLs (not local paths):
+
+```yaml
+steps:
+  - name: Install Application
+    type: install_application
+    node: remote-node
+    # Use URL for remote nodes (not path)
+    url: https://example.com/releases/app.wasm
+    outputs:
+      app_id: applicationId
+```
+
+**Note:** The `path` and `dev: true` options are only for local Docker/binary nodes where the file can be copied into the container or accessed from the host filesystem.
+
+### Troubleshooting Remote Nodes
+
+#### Connection Issues
+
+```bash
+# Test basic connectivity
+merobox remote test prod-node
+
+# Check if auth is required
+curl -I https://prod.example.com/admin-api/health
+```
+
+#### Authentication Issues
+
+```bash
+# Clear cached token and re-authenticate
+merobox remote logout prod-node
+merobox remote login prod-node -u admin
+
+# Check token status
+merobox remote status
+```
+
+#### Token Expired
+
+Tokens are automatically refreshed, but if issues persist:
+
+```bash
+# Force fresh authentication
+merobox remote logout prod-node
+merobox remote login prod-node
+```
+
+#### Environment Variable Issues
+
+```bash
+# Verify environment
+echo $MEROBOX_USERNAME
+echo $MEROBOX_PASSWORD
+
+# Test with explicit credentials
+merobox remote login prod-node -u admin -p secret
+```
 
 ---
 
@@ -625,6 +1035,7 @@ outputs:
 ### Example Workflows
 
 - **Basic Workflow**: `workflow-examples/workflow-example.yml` - Complete example with dynamic variables
+- **Remote Node Workflow**: `workflow-examples/workflow-remote-node-example.yml` - Using remote nodes with authentication
 - **Negative Testing**: `workflow-examples/workflow-negative-testing-example.yml` - Testing error scenarios with expected failures
 - **Assertions**: `workflow-examples/workflow-assert-example.yml` - Assertion and JSON assertion examples
 - **Fuzzy Load Testing**: `workflow-examples/workflow-fuzzy-kv-store.yml` - Long-running load test with randomized operations
@@ -1106,6 +1517,82 @@ merobox nuke [OPTIONS]
 - `--verbose, -v`: Show verbose output
 - `--prefix TEXT`: Filter nodes by prefix (e.g., 'calimero-node-' or 'test-node-')
 - `--help`: Show help message
+
+#### `merobox remote`
+
+Manage remote Calimero nodes with authentication.
+
+```bash
+merobox remote [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+
+- `register`: Register a remote node
+- `unregister`: Remove a registered node
+- `login`: Authenticate with a remote node
+- `logout`: Remove cached authentication
+- `status`: Show registered nodes and cached tokens
+- `test`: Test connectivity and authentication
+- `list`: List registered remote nodes
+
+**Register Command:**
+
+```bash
+merobox remote register <name> <url> [OPTIONS]
+```
+
+**Options:**
+- `--auth-method/-m`: Authentication method (`user_password`, `api_key`, `none`)
+- `--username/-u`: Username for user_password auth
+- `--description/-d`: Human-readable description
+
+**Login Command:**
+
+```bash
+merobox remote login <url_or_name> [OPTIONS]
+```
+
+**Options:**
+- `--username/-u`: Username
+- `--password/-p`: Password
+- `--api-key/-k`: API key
+- `--method/-m`: Auth method override
+
+**Logout Command:**
+
+```bash
+merobox remote logout <url_or_name>
+merobox remote logout --all
+```
+
+**Test Command:**
+
+```bash
+merobox remote test <url_or_name> [OPTIONS]
+```
+
+**Options:**
+- `--username/-u`: Username for testing
+- `--password/-p`: Password for testing
+- `--api-key/-k`: API key for testing
+
+**Examples:**
+
+```bash
+# Register and login
+merobox remote register prod https://prod.example.com -m user_password -u admin
+merobox remote login prod
+
+# Check status
+merobox remote status
+
+# Test connectivity
+merobox remote test prod
+
+# Logout
+merobox remote logout prod
+```
 
 ### Configuration Files
 

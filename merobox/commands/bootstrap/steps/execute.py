@@ -7,7 +7,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.call import call_function
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import console
 
 
 class ExecuteStep(BaseStep):
@@ -36,7 +36,8 @@ class ExecuteStep(BaseStep):
 
         # Validate context_id is a string
         if not isinstance(self.config.get("context_id"), str):
-            raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+            raise ValueError(
+                f"Step '{step_name}': 'context_id' must be a string")
 
         # Validate method is a string
         if not isinstance(self.config.get("method"), str):
@@ -44,7 +45,8 @@ class ExecuteStep(BaseStep):
 
         # Validate args is a dict if provided
         if "args" in self.config and not isinstance(self.config["args"], dict):
-            raise ValueError(f"Step '{step_name}': 'args' must be a dictionary")
+            raise ValueError(
+                f"Step '{step_name}': 'args' must be a dictionary")
 
         # Validate executor_public_key is a string if provided
         if "executor_public_key" in self.config and not isinstance(
@@ -56,7 +58,8 @@ class ExecuteStep(BaseStep):
 
         # Validate exec_type is a string if provided
         if "exec_type" in self.config and not isinstance(self.config["exec_type"], str):
-            raise ValueError(f"Step '{step_name}': 'exec_type' must be a string")
+            raise ValueError(
+                f"Step '{step_name}': 'exec_type' must be a string")
 
         # Validate expected_failure is a boolean if provided
         if "expected_failure" in self.config and not isinstance(
@@ -104,7 +107,8 @@ class ExecuteStep(BaseStep):
         # Get executor public key from config or extract from context
         executor_public_key = (
             self._resolve_dynamic_value(
-                self.config.get("executor_public_key"), workflow_results, dynamic_values
+                self.config.get(
+                    "executor_public_key"), workflow_results, dynamic_values
             )
             if self.config.get("executor_public_key")
             else None
@@ -115,14 +119,16 @@ class ExecuteStep(BaseStep):
             # Extract node name from the original context_id placeholder (e.g., {{context.calimero-node-1}})
             original_context_id = self.config["context_id"]
             if "{{context." in original_context_id and "}}" in original_context_id:
-                context_node = original_context_id.split("{{context.")[1].split("}}")[0]
+                context_node = original_context_id.split(
+                    "{{context.")[1].split("}}")[0]
                 context_key = f"context_{context_node}"
                 console.print(
                     f"[blue]Debug: Looking for context key: {context_key}[/blue]"
                 )
                 if context_key in workflow_results:
                     context_data = workflow_results[context_key]
-                    console.print(f"[blue]Debug: Context data: {context_data}[/blue]")
+                    console.print(
+                        f"[blue]Debug: Context data: {context_data}[/blue]")
                     if isinstance(context_data, dict) and "data" in context_data:
                         executor_public_key = context_data["data"].get(
                             "memberPublicKey"
@@ -150,18 +156,20 @@ class ExecuteStep(BaseStep):
         console.print(f"  args: {resolved_args}")
         console.print(f"  executor_public_key: {executor_public_key}")
 
+        # Resolve node (gets URL and ensures authentication)
         try:
-            if self.manager is not None:
-                manager = self.manager
+            resolved = self._resolve_node(node_name)
+            if resolved:
+                rpc_url = resolved.url
+                # Use the stable node name from resolver (matches what was used for auth)
+                stable_node_name = resolved.node_name
             else:
-                from merobox.commands.manager import DockerManager
-
-                manager = DockerManager()
-
-            rpc_url = get_node_rpc_url(node_name, manager)
+                # Legacy path for local nodes
+                rpc_url = self._get_node_rpc_url(node_name)
+                stable_node_name = node_name
         except Exception as e:
             console.print(
-                f"[red]Failed to get RPC URL for node {node_name}: {str(e)}[/red]"
+                f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
             )
             return False
 
@@ -175,16 +183,19 @@ class ExecuteStep(BaseStep):
             expected_failure = self.config.get("expected_failure", False)
 
             max_state_retries = int(self.config.get("state_retry_attempts", 5))
-            state_retry_delay = float(self.config.get("state_retry_delay", 3.0))
+            state_retry_delay = float(
+                self.config.get("state_retry_delay", 3.0))
             retry_attempt = 1
 
             while retry_attempt <= max_state_retries:
                 if exec_type in ["contract_call", "view_call", "function_call"]:
                     result = await call_function(
-                        rpc_url, context_id, method, resolved_args, executor_public_key
+                        rpc_url, context_id, method, resolved_args, executor_public_key,
+                        node_name=stable_node_name
                     )
                 else:
-                    console.print(f"[red]Unknown execution type: {exec_type}[/red]")
+                    console.print(
+                        f"[red]Unknown execution type: {exec_type}[/red]")
                     return False
 
                 # Log detailed API response
@@ -237,7 +248,8 @@ class ExecuteStep(BaseStep):
                             f"[red]❌ Execution failed: {error_message}[/red]"
                         )
                         # Print node logs to help with debugging
-                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
+                        self._print_node_logs_on_failure(
+                            node_name=node_name, lines=50)
                         return False
 
                 # Check if the JSON-RPC response contains an error
@@ -284,7 +296,8 @@ class ExecuteStep(BaseStep):
                             "[red]❌ Unexpected JSON-RPC error detected[/red]"
                         )
                         # Print node logs to help with debugging
-                        self._print_node_logs_on_failure(node_name=node_name, lines=50)
+                        self._print_node_logs_on_failure(
+                            node_name=node_name, lines=50)
                         return False
 
                 # Store result for later use
@@ -325,7 +338,8 @@ class ExecuteStep(BaseStep):
 
                 # Export variables using the new standardized approach
                 # Note: We need to handle the method dynamically for the export
-                self._export_variables(result["data"], node_name, dynamic_values)
+                self._export_variables(
+                    result["data"], node_name, dynamic_values)
 
                 return True
 
@@ -378,13 +392,15 @@ class ExecuteStep(BaseStep):
                 if isinstance(exception, dict):
                     error_info["exception_type"] = exception.get("type")
                     error_info["exception_message"] = exception.get("message")
-                    error_info["exception_traceback"] = exception.get("traceback")
+                    error_info["exception_traceback"] = exception.get(
+                        "traceback")
 
             # Check if there's a nested JSON-RPC error in the data field
             if "data" in error_data and isinstance(error_data["data"], dict):
                 if "error" in error_data["data"]:
                     rpc_error = error_data["data"]["error"]
-                    error_info.update(self._extract_jsonrpc_error_details(rpc_error))
+                    error_info.update(
+                        self._extract_jsonrpc_error_details(rpc_error))
 
             error_info["data"] = error_data.get("data")
 
@@ -440,7 +456,8 @@ class ExecuteStep(BaseStep):
                 data_value = rpc_error.get("data")
                 if data_value is not None:
                     details["error_message"] = (
-                        data_value if isinstance(data_value, str) else str(data_value)
+                        data_value if isinstance(
+                            data_value, str) else str(data_value)
                     )
                 else:
                     details["error_message"] = None
@@ -508,7 +525,8 @@ class ExecuteStep(BaseStep):
                         target_key = exported_var
                     else:
                         target_key = assigned_var.get("target", exported_var)
-                        target_key = target_key.replace("{node_name}", node_name)
+                        target_key = target_key.replace(
+                            "{node_name}", node_name)
 
                     # Always mark error field exports as protected
                     # This prevents subsequent result data from overwriting them
@@ -570,7 +588,8 @@ class ExecuteStep(BaseStep):
 
         if isinstance(error_info, dict):
             error_type = str(error_info.get("type") or "")
-            message = str(error_info.get("data") or error_info.get("message") or "")
+            message = str(error_info.get("data")
+                          or error_info.get("message") or "")
         elif error_info:
             message = str(error_info)
 
