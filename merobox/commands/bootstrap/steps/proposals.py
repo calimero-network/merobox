@@ -66,16 +66,21 @@ class GetProposalStep(BaseStep):
             resolved = self._resolve_node(node_name)
             if resolved:
                 rpc_url = resolved.url
-                stable_node_name = resolved.node_name
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
+                # Legacy path for local nodes - no auth needed
                 rpc_url = self._get_node_rpc_url(node_name)
-                stable_node_name = node_name
+                client_node_name = None
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         result = await get_proposal_via_admin_api(
-            rpc_url, context_id, proposal_id, node_name=stable_node_name
+            rpc_url, context_id, proposal_id, node_name=client_node_name
         )
 
         console.print(f"[cyan]🔍 Get Proposal API Response for {node_name}:[/cyan]")
@@ -155,16 +160,21 @@ class ListProposalsStep(BaseStep):
             resolved = self._resolve_node(node_name)
             if resolved:
                 rpc_url = resolved.url
-                stable_node_name = resolved.node_name
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
+                # Legacy path for local nodes - no auth needed
                 rpc_url = self._get_node_rpc_url(node_name)
-                stable_node_name = node_name
+                client_node_name = None
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         result = await list_proposals_via_admin_api(
-            rpc_url, context_id, args, node_name=stable_node_name
+            rpc_url, context_id, args, node_name=client_node_name
         )
 
         console.print(f"[cyan]🔍 List Proposals API Response for {node_name}:[/cyan]")
@@ -254,16 +264,21 @@ class GetProposalApproversStep(BaseStep):
             resolved = self._resolve_node(node_name)
             if resolved:
                 rpc_url = resolved.url
-                stable_node_name = resolved.node_name
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
+                # Legacy path for local nodes - no auth needed
                 rpc_url = self._get_node_rpc_url(node_name)
-                stable_node_name = node_name
+                client_node_name = None
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
         result = await get_proposal_approvers_via_admin_api(
-            rpc_url, context_id, proposal_id, node_name=stable_node_name
+            rpc_url, context_id, proposal_id, node_name=client_node_name
         )
 
         console.print(

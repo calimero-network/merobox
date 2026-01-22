@@ -119,10 +119,15 @@ class WaitForSyncStep(BaseStep):
             resolved = self._resolve_node(node_name)
             if resolved:
                 rpc_url = resolved.url
-                stable_node_name = resolved.node_name
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
+                # Legacy path for local nodes - no auth needed
                 rpc_url = self._get_node_rpc_url(node_name)
-                stable_node_name = node_name
+                client_node_name = None
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return node_name, None
@@ -133,7 +138,7 @@ class WaitForSyncStep(BaseStep):
                 if retry > 0:
                     await asyncio.sleep(retry_delay)
 
-                client = get_client_for_rpc_url(rpc_url, node_name=stable_node_name)
+                client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
                 # Optionally trigger sync to ensure root_hash is up-to-date
                 if trigger_sync:

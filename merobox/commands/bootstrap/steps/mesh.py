@@ -117,10 +117,14 @@ class CreateMeshStep(BaseStep):
             resolved = self._resolve_node(context_node)
             if resolved:
                 context_rpc_url = resolved.url
-                stable_context_node = resolved.node_name
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_context_node = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
                 context_rpc_url = self._get_node_rpc_url(context_node)
-                stable_context_node = context_node
+                client_context_node = None
         except Exception as e:
             console.print(
                 f"[red]Failed to resolve context node {context_node}: {str(e)}[/red]"
@@ -139,7 +143,7 @@ class CreateMeshStep(BaseStep):
 
         try:
             client = get_client_for_rpc_url(
-                context_rpc_url, node_name=stable_context_node
+                context_rpc_url, node_name=client_context_node
             )
             protocol = self.config.get("protocol", DEFAULT_PROTOCOL)
             api_result = client.create_context(
@@ -247,17 +251,21 @@ class CreateMeshStep(BaseStep):
                 resolved = self._resolve_node(node_name)
                 if resolved:
                     node_rpc_url = resolved.url
-                    stable_node_name = resolved.node_name
+                    # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                    # For local nodes without auth, pass None to skip auth flow
+                    client_node_name = (
+                        resolved.node_name if resolved.auth_required else None
+                    )
                 else:
                     node_rpc_url = self._get_node_rpc_url(node_name)
-                    stable_node_name = node_name
+                    client_node_name = None
             except Exception as e:
                 console.print(
                     f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"
                 )
                 return False
             identity_result = await generate_identity_via_admin_api(
-                node_rpc_url, node_name=stable_node_name
+                node_rpc_url, node_name=client_node_name
             )
 
             if not identity_result.get("success"):
@@ -334,7 +342,7 @@ class CreateMeshStep(BaseStep):
                 member_public_key,
                 public_key,
                 capability,
-                node_name=stable_context_node,
+                node_name=client_context_node,
             )
 
             if not invite_result.get("success"):
@@ -370,7 +378,7 @@ class CreateMeshStep(BaseStep):
                 context_id,
                 public_key,
                 invitation,
-                node_name=stable_node_name,
+                node_name=client_node_name,
             )
 
             if not join_result.get("success"):

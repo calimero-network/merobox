@@ -664,6 +664,21 @@ class BaseStep:
             # No node associated with this step, skip log printing
             return
 
+        # Check if this is a remote node - can't get logs from remote nodes
+        if self.resolver is not None:
+            entry = self.resolver.remote_manager.get(node_name)
+            if entry is not None:
+                console.print(
+                    f"[dim]📋 Cannot retrieve logs for remote node '{node_name}'[/dim]"
+                )
+                return
+            # Also check if it's a URL
+            if self.resolver.remote_manager.is_url(node_name):
+                console.print(
+                    f"[dim]📋 Cannot retrieve logs for URL-based node '{node_name}'[/dim]"
+                )
+                return
+
         if not self.manager:
             # No manager available, skip log printing
             return

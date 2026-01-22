@@ -124,12 +124,15 @@ class InviteOpenStep(BaseStep):
             resolved = self._resolve_node(node_name)
             if resolved:
                 rpc_url = resolved.url
-                # Use the stable node name from resolver (matches what was used for auth)
-                stable_node_name = resolved.node_name
+                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
+                # For local nodes without auth, pass None to skip auth flow
+                client_node_name = (
+                    resolved.node_name if resolved.auth_required else None
+                )
             else:
-                # Legacy path for local nodes
+                # Legacy path for local nodes - no auth needed
                 rpc_url = self._get_node_rpc_url(node_name)
-                stable_node_name = node_name
+                client_node_name = None
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
@@ -143,7 +146,7 @@ class InviteOpenStep(BaseStep):
             context_id,
             granter_id,
             valid_for_blocks,
-            node_name=stable_node_name,
+            node_name=client_node_name,
         )
 
         console.print(f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")

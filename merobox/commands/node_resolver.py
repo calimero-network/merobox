@@ -126,12 +126,18 @@ class NodeResolver:
 
         # Check if auth is required for remote URLs
         if resolved.source in ("remote", "url"):
-            auth_required, detected_method = await self._detect_auth_requirement(
-                resolved.url
-            )
-            resolved.auth_required = auth_required
+            # If registry already specifies auth is required, trust it
+            # Only use health check detection for unregistered URLs or when registry says no auth
+            if not resolved.auth_required:
+                auth_required, detected_method = await self._detect_auth_requirement(
+                    resolved.url
+                )
+                resolved.auth_required = auth_required
+            else:
+                # Registry says auth is required - use registry's auth method
+                detected_method = resolved.auth_method
 
-            if auth_required:
+            if resolved.auth_required:
                 # Determine auth method
                 resolved.auth_method = self._determine_auth_method(
                     node_ref, detected_method, api_key
