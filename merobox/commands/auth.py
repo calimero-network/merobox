@@ -486,23 +486,24 @@ class AuthManager:
         cached_token = self.get_cached_token(node_name)
 
         if cached_token:
-            # Check if token is still valid
-            if not cached_token.is_expired():
-                return cached_token
+            if cached_token.auth_method == AUTH_METHOD_USER_PASSWORD:
+                # Check if token is still valid
+                if not cached_token.is_expired():
+                    return cached_token
 
-            # Try to refresh if we have a refresh token
-            if cached_token.refresh_token:
-                try:
-                    new_token = await self.refresh(node_url, cached_token)
-                    self.save_token(new_token, node_name)
-                    return new_token
-                except AuthenticationError as e:
-                    console.print(f"[yellow]Token refresh failed: {e}[/yellow]")
-                    # Fall through to re-authenticate
+                # Try to refresh if we have a refresh token
+                if cached_token.refresh_token:
+                    try:
+                        new_token = await self.refresh(node_url, cached_token)
+                        self.save_token(new_token, node_name)
+                        return new_token
+                    except AuthenticationError as e:
+                        console.print(f"[yellow]Token refresh failed: {e}[/yellow]")
+                        # Fall through to re-authenticate
 
-            # Get username from cached token if not provided
-            if username is None and cached_token.username:
-                username = cached_token.username
+                # Get username from cached token if not provided
+                if username is None and cached_token.username:
+                    username = cached_token.username
 
         # Need to authenticate
         if username is None or password is None:
