@@ -417,7 +417,7 @@ class NodeResolver:
         Credential resolution order:
         1. Explicit parameters
         2. Environment variables
-        3. Registered node config (username only)
+        3. Registered node config (username, password, api_key)
         4. Interactive prompt
 
         Args:
@@ -435,7 +435,7 @@ class NodeResolver:
         """
         # Handle API key auth
         if auth_method == AUTH_METHOD_API_KEY:
-            resolved_api_key = self._resolve_api_key(api_key)
+            resolved_api_key = self._resolve_api_key(api_key, node_ref)
             if resolved_api_key:
                 # Store API key as an AuthToken for consistent handling
                 token = AuthToken(
@@ -512,17 +512,36 @@ class NodeResolver:
 
         return None
 
-    def _resolve_api_key(self, explicit_key: Optional[str]) -> Optional[str]:
-        """Resolve API key from explicit value or environment.
+    def _resolve_api_key(
+        self, explicit_key: Optional[str], node_ref: Optional[str] = None
+    ) -> Optional[str]:
+        """Resolve API key from explicit value, registered node config, or environment.
+
+        Priority:
+        1. Explicit parameter
+        2. Registered node config
+        3. Environment variable
 
         Args:
             explicit_key: Explicitly provided API key.
+            node_ref: Node reference for registry lookup.
 
         Returns:
             Resolved API key or None.
         """
         if explicit_key:
             return explicit_key
+
+        # Check registered node config
+        if node_ref:
+            entry = self.remote_manager.get(node_ref)
+            if entry and entry.auth and entry.auth.api_key:
+                return entry.auth.api_key
+            elif self.remote_manager.is_url(node_ref):
+                entry = self.remote_manager.get_by_url(node_ref)
+                if entry and entry.auth and entry.auth.api_key:
+                    return entry.auth.api_key
+
         return os.getenv(ENV_MEROBOX_API_KEY)
 
     def _resolve_credentials(
@@ -536,7 +555,7 @@ class NodeResolver:
         Priority:
         1. Explicit parameters
         2. Environment variables
-        3. Registered node config (username only)
+        3. Registered node config (username and password)
 
         Args:
             explicit_username: Explicitly provided username.
@@ -556,15 +575,21 @@ class NodeResolver:
         if not password:
             password = os.getenv(ENV_MEROBOX_PASSWORD)
 
-        # Fall back to registered node config (username only)
-        if not username and node_ref:
+        # Fall back to registered node config (username and password)
+        if node_ref:
             entry = self.remote_manager.get(node_ref)
-            if entry and entry.auth.username:
-                username = entry.auth.username
+            if entry and entry.auth:
+                if not username and entry.auth.username:
+                    username = entry.auth.username
+                if not password and entry.auth.password:
+                    password = entry.auth.password
             elif self.remote_manager.is_url(node_ref):
                 entry = self.remote_manager.get_by_url(node_ref)
-                if entry and entry.auth.username:
-                    username = entry.auth.username
+                if entry and entry.auth:
+                    if not username and entry.auth.username:
+                        username = entry.auth.username
+                    if not password and entry.auth.password:
+                        password = entry.auth.password
 
         return username, password
 

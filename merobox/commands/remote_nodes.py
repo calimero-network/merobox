@@ -35,9 +35,15 @@ class RemoteNodeAuthConfig:
 
     method: str = AUTH_METHOD_NONE  # user_password, api_key, or none
     username: Optional[str] = None  # For user_password auth
+    password: Optional[str] = None  # For user_password auth (not persisted to disk)
+    api_key: Optional[str] = None  # For api_key auth (not persisted to disk)
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
+        """Convert to dictionary for JSON serialization.
+
+        Note: password and api_key are excluded for security reasons.
+        They are only stored in-memory during workflow execution.
+        """
         result = {"method": self.method}
         if self.username is not None:
             result["username"] = self.username
@@ -45,7 +51,10 @@ class RemoteNodeAuthConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RemoteNodeAuthConfig":
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Note: password and api_key are not loaded from disk for security.
+        """
         return cls(
             method=data.get("method", AUTH_METHOD_NONE),
             username=data.get("username"),
@@ -181,6 +190,8 @@ class RemoteNodeManager:
         url: str,
         auth_method: str = AUTH_METHOD_NONE,
         username: Optional[str] = None,
+        password: Optional[str] = None,
+        api_key: Optional[str] = None,
         description: Optional[str] = None,
     ) -> bool:
         """Register a remote node.
@@ -190,6 +201,8 @@ class RemoteNodeManager:
             url: The base URL of the node (e.g., "https://node1.example.com").
             auth_method: Authentication method (user_password, api_key, or none).
             username: Username for user_password auth.
+            password: Password for user_password auth (stored in-memory only, not persisted).
+            api_key: API key for api_key auth (stored in-memory only, not persisted).
             description: Optional human-readable description.
 
         Returns:
@@ -212,7 +225,9 @@ class RemoteNodeManager:
         normalized_url = url.rstrip("/")
 
         # Create entry
-        auth_config = RemoteNodeAuthConfig(method=auth_method, username=username)
+        auth_config = RemoteNodeAuthConfig(
+            method=auth_method, username=username, password=password, api_key=api_key
+        )
         entry = RemoteNodeEntry(
             name=name, url=normalized_url, auth=auth_config, description=description
         )

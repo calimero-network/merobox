@@ -126,8 +126,22 @@ class BaseStep:
         # Try resolver first (handles both remote and local nodes)
         if self.resolver is not None:
             try:
+                # Extract credentials from registered node config if available
+                username = None
+                password = None
+                api_key = None
+
+                entry = self.resolver.remote_manager.get(node_name)
+                if entry and entry.auth:
+                    username = entry.auth.username
+                    password = entry.auth.password
+                    api_key = entry.auth.api_key
+
                 resolved = self.resolver.resolve_sync(
                     node_name,
+                    username=username,
+                    password=password,
+                    api_key=api_key,
                     prompt_for_credentials=True,
                     skip_auth=False,
                 )
