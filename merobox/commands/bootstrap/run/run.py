@@ -124,6 +124,28 @@ async def run_workflow(
         effective_no_docker = no_docker or yaml_no_docker
         effective_binary_path = binary_path or yaml_binary_path
 
+        # Determine effective auth_mode (CLI takes precedence over YAML)
+        yaml_auth_mode = config.get("auth_mode")
+        effective_auth_mode = auth_mode or yaml_auth_mode
+
+        # Validate auth_mode configuration
+        if effective_auth_mode:
+            if not effective_no_docker:
+                console.print(
+                    "[red]auth_mode is only supported with --no-docker (binary mode) or no_docker: true in workflow config. "
+                    "For Docker mode, use --auth-service instead.[/red]"
+                )
+                return False
+
+            if effective_auth_mode == "embedded" and not (
+                auth_username and auth_password
+            ):
+                console.print(
+                    "[red]When using auth_mode=embedded (from CLI or workflow config), you must provide --auth-username and --auth-password "
+                    "for workflow authentication.[/red]"
+                )
+                return False
+
         if mock_relayer and effective_no_docker:
             console.print(
                 "[red]--mock-relayer requires Docker mode; remove --no-docker or yaml no_docker flag[/red]"
@@ -184,7 +206,7 @@ async def run_workflow(
             workflow_dir=workflow_dir,
             near_devnet=near_devnet,
             contracts_dir=contracts_dir,
-            auth_mode=auth_mode,
+            auth_mode=effective_auth_mode,
             auth_username=auth_username,
             auth_password=auth_password,
         )
