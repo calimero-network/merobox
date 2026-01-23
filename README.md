@@ -43,8 +43,11 @@ brew install merobox
 # Start Calimero nodes
 merobox run --count 2
 
-# Start nodes with authentication service
+# Start nodes with authentication service (Docker mode)
 merobox run --auth-service
+
+# Start nodes with embedded auth (binary mode)
+merobox run --no-docker --binary-path /path/to/merod --auth-mode embedded
 
 # Check node status
 merobox list
@@ -80,7 +83,14 @@ merobox stop --all
 
 ---
 
-## 🔐 Auth Service Integration
+## 🔐 Authentication
+
+Merobox supports two authentication modes for securing your Calimero nodes:
+
+1. **Auth Service (Docker Mode)**: Traefik proxy with external authentication service - best for production deployments
+2. **Embedded Auth (Binary Mode)**: Built-in authentication directly in merod - best for local development and testing
+
+### Auth Service Integration (Docker Mode)
 
 Merobox supports integrated authentication services with Traefik proxy and nip.io DNS resolution, enabling secure access to your Calimero nodes through web URLs.
 
@@ -154,6 +164,112 @@ Internet → Traefik (port 80) → Node Containers (calimero_web network)
 - **Public routes**: `/admin-dashboard` (no auth required)
 - **Protected routes**: `/admin-api/`, `/jsonrpc`, `/ws` (auth required)
 - **Auth routes**: `/auth/login`, `/admin/` (handled by auth service)
+
+### Embedded Authentication (Binary Mode)
+
+When running nodes in binary mode (`--no-docker`), you can enable embedded authentication directly in `merod`. This provides JWT-based protection for all API endpoints without requiring Docker containers or external services.
+
+#### Quick Start with Embedded Auth
+
+```bash
+# Start a node with embedded auth enabled
+merobox run --no-docker --binary-path /path/to/merod --auth-mode embedded
+
+# Start multiple nodes with embedded auth
+merobox run --no-docker --binary-path /path/to/merod --count 2 --auth-mode embedded
+
+# Run workflow with embedded auth (requires credentials for API calls)
+merobox bootstrap run workflow.yml \
+  --no-docker \
+  --binary-path /path/to/merod \
+  --auth-mode embedded \
+  --auth-username admin \
+  --auth-password password123
+```
+
+**Note**: When running workflows with `--auth-mode embedded`, you must provide `--auth-username` and `--auth-password`. These credentials are used to authenticate with each node before executing workflow steps. Users are automatically created on first authentication.
+
+#### What Gets Enabled
+
+When you use `--auth-mode embedded`:
+
+1. **JWT Protection**: All API endpoints (`/jsonrpc`, `/admin-api/`, `/ws`) require valid JWT tokens
+2. **Built-in Auth Service**: Authentication endpoints available at `/auth/*`
+3. **User Management**: Username/password provider enabled by default
+4. **Persistent Storage**: Auth data stored in `<node_home>/auth/` directory (RocksDB)
+
+#### Authentication Endpoints
+
+With embedded auth enabled, the following endpoints are available:
+
+- **Auth Health**: `http://localhost:2528/auth/health` - Check auth service status
+- **Auth Providers**: `http://localhost:2528/auth/providers` - List available auth providers
+- **Auth Login UI**: `http://localhost:2528/auth/login` - Web-based login interface
+- **Token Endpoint**: `http://localhost:2528/auth/token` - Programmatic token generation
+
+#### Getting a JWT Token
+
+**Option 1: Using the REST API**
+
+```bash
+curl -X POST http://localhost:2528/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "auth_method": "user_password",
+    "public_key": "your-public-key",
+    "client_name": "my-client",
+    "timestamp": 1234567890,
+    "permissions": [],
+    "provider_data": {
+      "username": "admin",
+      "password": "password123"
+    }
+  }'
+```
+
+**Option 2: Using the Web UI**
+
+Navigate to `http://localhost:2528/auth/login` in your browser to use the interactive authentication interface.
+
+#### Using JWT Tokens
+
+Once you have a token, include it in API requests:
+
+```bash
+curl http://localhost:2528/jsonrpc \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### Important Notes
+
+- **Binary Mode Only**: `--auth-mode` only works with `--no-docker`. For Docker mode, use `--auth-service` instead.
+- **Storage Location**: Auth data (users, tokens) is stored at `<node_home>/auth/` by default.
+- **Default Provider**: Embedded auth uses username/password provider by default. Users are created automatically on first authentication.
+
+#### Workflow Integration
+
+Enable embedded auth in workflows:
+
+```yaml
+name: "Embedded Auth Workflow"
+description: "Workflow with embedded authentication"
+
+# Enable embedded auth (binary mode only)
+auth_mode: embedded
+
+nodes:
+  count: 1
+  base_port: 2428
+  base_rpc_port: 2528
+  chain_id: "testnet-1"
+
+steps:
+  - name: "Wait for startup"
+    type: "wait"
+    seconds: 5
+```
+
+**Note**: When using `auth_mode: embedded` in workflows, you must also use `--no-docker` flag and provide `--binary-path`.
 
 ---
 
@@ -1249,8 +1365,11 @@ merobox run [OPTIONS]
 - `--restart`: Restart existing nodes
 - `--image TEXT`: Custom Docker image to use
 - `--force-pull`: Force pull Docker image even if it exists locally
-- `--auth-service`: Enable authentication service with Traefik proxy
+- `--no-docker`: Run nodes as native processes instead of Docker containers
+- `--binary-path PATH`: Path to merod binary (required when using `--no-docker`)
+- `--auth-service`: Enable authentication service with Traefik proxy (Docker mode only)
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
+- `--auth-mode [embedded|proxy]`: Authentication mode for merod (binary mode only). `embedded` enables built-in auth with JWT protection on all endpoints. Default is `proxy` (no embedded auth).
 - `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
 - `--rust-backtrace TEXT`: Set the RUST_BACKTRACE level for Calimero nodes (default: 0).
 - `--help`: Show help message
@@ -1323,8 +1442,11 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 
 **Run Command Options:**
 
-- `--auth-service`: Enable authentication service with Traefik proxy
+- `--auth-service`: Enable authentication service with Traefik proxy (Docker mode only)
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
+- `--auth-mode [embedded|proxy]`: Authentication mode for merod (binary mode only). `embedded` enables built-in auth with JWT protection on all endpoints. Default is `proxy` (no embedded auth).
+- `--auth-username TEXT`: Username for embedded auth authentication. Required when `--auth-mode=embedded` for workflow execution.
+- `--auth-password TEXT`: Password for embedded auth authentication. Required when `--auth-mode=embedded` for workflow execution.
 - `--near-devnet`: Spin up a local NEAR sandbox and configure nodes to use it.
 - `--contracts-dir PATH`: Directory containing Near Context Config and Near Context Proxy contracts (required if using `--near-devnet`).
 - `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
