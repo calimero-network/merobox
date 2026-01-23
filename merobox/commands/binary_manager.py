@@ -142,6 +142,7 @@ class BinaryManager:
         config_path: Optional[str] = None,  # custom config.toml path
         near_devnet_config: dict = None,  # Enable NEAR Devnet
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
+        auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -154,6 +155,8 @@ class BinaryManager:
             data_dir: Data directory (defaults to ./data/{node_name})
             log_level: Rust log level
             rust_backtrace: RUST_BACKTRACE level
+            auth_mode: Authentication mode ('embedded' or 'proxy'). When 'embedded',
+                enables built-in auth with JWT protection on all endpoints.
 
         Returns:
             True if successful, False otherwise
@@ -225,6 +228,14 @@ class BinaryManager:
             console.print(f"[cyan]  P2P port: {port}[/cyan]")
             console.print(f"[cyan]  RPC port: {rpc_port}[/cyan]")
             console.print(f"[cyan]  Log file: {log_file}[/cyan]")
+            if auth_mode == "embedded":
+                console.print(
+                    f"[cyan]  Auth mode: {auth_mode} (JWT protection enabled on all endpoints)[/cyan]"
+                )
+                console.print(
+                    "[yellow]  Note: Embedded auth uses username/password provider by default. "
+                    "Auth data stored at <node_home>/auth/[/yellow]"
+                )
 
             # Prepare environment
             env = os.environ.copy()
@@ -252,7 +263,10 @@ class BinaryManager:
                         "--swarm-port",
                         str(port),
                     ]
-                    with open(log_file, "a") as log_f:
+                    # Add auth mode to init command if specified
+                    if auth_mode:
+                        init_cmd.extend(["--auth-mode", auth_mode])
+                    with open(log_file, "a", encoding="utf-8") as log_f:
                         try:
                             subprocess.run(
                                 init_cmd,
@@ -348,7 +362,7 @@ class BinaryManager:
                 # For e2e mode, don't create new session to match e2e test behavior
                 # (process should be managed together with parent, not detached)
                 # For regular mode, create new session so process survives parent death
-                with open(log_file, "a") as log_f:
+                with open(log_file, "a", encoding="utf-8") as log_f:
                     popen_kwargs = {
                         "env": env,
                         "stdin": subprocess.DEVNULL,
@@ -377,6 +391,13 @@ class BinaryManager:
                 console.print(
                     f"[cyan]  Admin Dashboard: http://localhost:{rpc_port}/admin-dashboard[/cyan]"
                 )
+                if auth_mode == "embedded":
+                    console.print(
+                        f"[cyan]  Auth endpoints: http://localhost:{rpc_port}/auth (register/login)[/cyan]"
+                    )
+                    console.print(
+                        "[yellow]  All API endpoints require a valid JWT token when embedded auth is enabled[/yellow]"
+                    )
 
                 # Wait a moment to check if process stays alive
                 time.sleep(2)
@@ -581,7 +602,7 @@ class BinaryManager:
             if not config_path.exists():
                 return None
 
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 content = f.read()
             # Try a few common patterns
             patterns = [
@@ -627,7 +648,7 @@ class BinaryManager:
 
         try:
             # Read last N lines
-            with open(log_file) as f:
+            with open(log_file, encoding="utf-8") as f:
                 all_lines = f.readlines()
                 return "".join(all_lines[-lines:])
         except Exception as e:
@@ -658,7 +679,7 @@ class BinaryManager:
                 )
                 return False
 
-            with open(log_file) as f:
+            with open(log_file, encoding="utf-8") as f:
                 # Seek to show last `tail` lines first
                 if tail is not None and tail > 0:
                     try:
@@ -719,6 +740,7 @@ class BinaryManager:
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,  # Enable NEAR Devnet
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
+        auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -735,6 +757,7 @@ class BinaryManager:
             webui_use_cached: Ignored
             log_level: RUST_LOG level
             rust_backtrace: RUST_BACKTRACE level
+            auth_mode: Authentication mode ('embedded' or 'proxy')
 
         Returns:
             True if all nodes started successfully
@@ -797,6 +820,7 @@ class BinaryManager:
                 e2e_mode=e2e_mode,
                 near_devnet_config=node_specific_near_config,
                 bootstrap_nodes=bootstrap_nodes,
+                auth_mode=auth_mode,
             ):
                 success_count += 1
             else:
@@ -848,7 +872,7 @@ class BinaryManager:
                 console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
                 return
 
-            with open(config_file) as f:
+            with open(config_file, encoding="utf-8") as f:
                 config = toml.load(f)
 
             self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
@@ -858,7 +882,7 @@ class BinaryManager:
             if config_file.exists():
                 config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
 
-            with open(config_file, "w") as f:
+            with open(config_file, "w", encoding="utf-8") as f:
                 toml.dump(config, f)
 
             console.print(
@@ -892,7 +916,7 @@ class BinaryManager:
                 return
 
             # Load existing config
-            with open(config_file) as f:
+            with open(config_file, encoding="utf-8") as f:
                 config = toml.load(f)
 
             # Apply e2e-style defaults for reliable testing
@@ -926,7 +950,7 @@ class BinaryManager:
             if config_file.exists():
                 config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
 
-            with open(config_file, "w") as f:
+            with open(config_file, "w", encoding="utf-8") as f:
                 toml.dump(config, f)
 
             console.print(

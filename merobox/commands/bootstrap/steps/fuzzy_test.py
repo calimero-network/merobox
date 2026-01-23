@@ -53,13 +53,14 @@ class FuzzyTestStep(BaseStep):
         config: dict[str, Any],
         manager: object | None = None,
         resolver: object | None = None,
+        auth_mode: str | None = None,
     ):
         # Initialize instance attributes used during execution
         self._context_id: str = ""
         self._nodes: list[dict] = []
         self._operations: list[dict] = []
         self._total_weight: float = 0
-        super().__init__(config, manager, resolver)
+        super().__init__(config, manager, resolver, auth_mode=auth_mode)
 
     def _get_required_fields(self) -> list[str]:
         """Define required fields for this step."""
@@ -551,14 +552,19 @@ class FuzzyTestStep(BaseStep):
 
     def _create_pattern_step_executor(self, step_type: str, step_config: dict):
         """Create a step executor for pattern steps."""
+        # Common kwargs for all step types - includes auth_mode for embedded auth support
+        common_kwargs = {
+            "manager": self.manager,
+            "resolver": self.resolver,
+            "auth_mode": self.auth_mode,
+        }
+
         if step_type == "call":
-            return ExecuteStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "assert":
-            return AssertStep(step_config, manager=self.manager, resolver=self.resolver)
+            return AssertStep(step_config, **common_kwargs)
         elif step_type == "wait":
-            return WaitStep(step_config, manager=self.manager, resolver=self.resolver)
+            return WaitStep(step_config, **common_kwargs)
         else:
             return None
 

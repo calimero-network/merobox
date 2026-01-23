@@ -114,17 +114,9 @@ class CreateMeshStep(BaseStep):
         console.print(f"\n[bold]Step 1: Creating context on {context_node}[/bold]")
         # Resolve node to get URL and stable name for token caching
         try:
-            resolved = self._resolve_node(context_node)
-            if resolved:
-                context_rpc_url = resolved.url
-                # Only pass node_name for authenticated nodes (enables token caching in Rust client)
-                # For local nodes without auth, pass None to skip auth flow
-                client_context_node = (
-                    resolved.node_name if resolved.auth_required else None
-                )
-            else:
-                context_rpc_url = self._get_node_rpc_url(context_node)
-                client_context_node = None
+            context_rpc_url, client_context_node = self._resolve_node_for_client(
+                context_node
+            )
         except Exception as e:
             console.print(
                 f"[red]Failed to resolve context node {context_node}: {str(e)}[/red]"
@@ -248,17 +240,9 @@ class CreateMeshStep(BaseStep):
             console.print(f"  [cyan]Creating identity on {node_name}...[/cyan]")
             # Resolve node to get URL and stable name for token caching
             try:
-                resolved = self._resolve_node(node_name)
-                if resolved:
-                    node_rpc_url = resolved.url
-                    # Only pass node_name for authenticated nodes (enables token caching in Rust client)
-                    # For local nodes without auth, pass None to skip auth flow
-                    client_node_name = (
-                        resolved.node_name if resolved.auth_required else None
-                    )
-                else:
-                    node_rpc_url = self._get_node_rpc_url(node_name)
-                    client_node_name = None
+                node_rpc_url, client_node_name = self._resolve_node_for_client(
+                    node_name
+                )
             except Exception as e:
                 console.print(
                     f"[red]Failed to resolve node {node_name}: {str(e)}[/red]"

@@ -55,8 +55,16 @@ class JsonAssertStep(BaseStep):
         # Statement syntax only
         return ["statements"]
 
-    def __init__(self, config: dict[str, Any], manager: object | None = None):
-        super().__init__(config, manager=manager)
+    def __init__(
+        self,
+        config: dict[str, Any],
+        manager: object | None = None,
+        resolver: object | None = None,
+        auth_mode: str | None = None,
+    ):
+        super().__init__(
+            config, manager=manager, resolver=resolver, auth_mode=auth_mode
+        )
 
     def _validate_field_types(self) -> None:
         statements = self.config.get("statements", [])

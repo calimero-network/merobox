@@ -89,6 +89,9 @@ async def run_workflow(
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
+    auth_mode: Optional[str] = None,
+    auth_username: Optional[str] = None,
+    auth_password: Optional[str] = None,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -98,6 +101,9 @@ async def run_workflow(
         verbose: Whether to enable verbose output
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
+        auth_mode: Authentication mode for merod (binary mode only)
+        auth_username: Username for embedded auth authentication
+        auth_password: Password for embedded auth authentication
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -117,6 +123,28 @@ async def run_workflow(
         # CLI flag takes precedence, otherwise fall back to YAML
         effective_no_docker = no_docker or yaml_no_docker
         effective_binary_path = binary_path or yaml_binary_path
+
+        # Determine effective auth_mode (CLI takes precedence over YAML)
+        yaml_auth_mode = config.get("auth_mode")
+        effective_auth_mode = auth_mode or yaml_auth_mode
+
+        # Validate auth_mode configuration
+        if effective_auth_mode:
+            if not effective_no_docker:
+                console.print(
+                    "[red]auth_mode is only supported with --no-docker (binary mode) or no_docker: true in workflow config. "
+                    "For Docker mode, use --auth-service instead.[/red]"
+                )
+                return False
+
+            if effective_auth_mode == "embedded" and not (
+                auth_username and auth_password
+            ):
+                console.print(
+                    "[red]When using auth_mode=embedded (from CLI or workflow config), you must provide --auth-username and --auth-password "
+                    "for workflow authentication.[/red]"
+                )
+                return False
 
         if mock_relayer and effective_no_docker:
             console.print(
@@ -178,6 +206,9 @@ async def run_workflow(
             workflow_dir=workflow_dir,
             near_devnet=near_devnet,
             contracts_dir=contracts_dir,
+            auth_mode=effective_auth_mode,
+            auth_username=auth_username,
+            auth_password=auth_password,
         )
 
         # Execute workflow
@@ -218,6 +249,9 @@ def run_workflow_sync(
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
+    auth_mode: Optional[str] = None,
+    auth_username: Optional[str] = None,
+    auth_password: Optional[str] = None,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -227,6 +261,9 @@ def run_workflow_sync(
         verbose: Whether to enable verbose output
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
+        auth_mode: Authentication mode for merod (binary mode only)
+        auth_username: Username for embedded auth authentication
+        auth_password: Password for embedded auth authentication
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -249,5 +286,8 @@ def run_workflow_sync(
             near_devnet=near_devnet,
             contracts_dir=contracts_dir,
             cli_remote_nodes=cli_remote_nodes,
+            auth_mode=auth_mode,
+            auth_username=auth_username,
+            auth_password=auth_password,
         )
     )
