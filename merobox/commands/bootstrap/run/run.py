@@ -89,6 +89,9 @@ async def run_workflow(
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
+    auth_mode: Optional[str] = None,
+    auth_username: Optional[str] = None,
+    auth_password: Optional[str] = None,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -98,6 +101,9 @@ async def run_workflow(
         verbose: Whether to enable verbose output
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
+        auth_mode: Authentication mode for merod (binary mode only)
+        auth_username: Username for embedded auth authentication
+        auth_password: Password for embedded auth authentication
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -178,6 +184,9 @@ async def run_workflow(
             workflow_dir=workflow_dir,
             near_devnet=near_devnet,
             contracts_dir=contracts_dir,
+            auth_mode=auth_mode,
+            auth_username=auth_username,
+            auth_password=auth_password,
         )
 
         # Execute workflow
@@ -218,6 +227,9 @@ def run_workflow_sync(
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
+    auth_mode: Optional[str] = None,
+    auth_username: Optional[str] = None,
+    auth_password: Optional[str] = None,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -227,6 +239,9 @@ def run_workflow_sync(
         verbose: Whether to enable verbose output
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
+        auth_mode: Authentication mode for merod (binary mode only)
+        auth_username: Username for embedded auth authentication
+        auth_password: Password for embedded auth authentication
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -249,5 +264,8 @@ def run_workflow_sync(
             near_devnet=near_devnet,
             contracts_dir=contracts_dir,
             cli_remote_nodes=cli_remote_nodes,
+            auth_mode=auth_mode,
+            auth_username=auth_username,
+            auth_password=auth_password,
         )
     )

@@ -221,6 +221,20 @@ def bootstrap():
     "--api-key",
     help="Default API key to use for remote nodes without explicit auth configuration.",
 )
+@click.option(
+    "--auth-mode",
+    type=click.Choice(["embedded", "proxy"], case_sensitive=False),
+    default=None,
+    help="Authentication mode for merod (binary mode only). 'embedded' enables built-in auth with JWT protection on all endpoints. Default is 'proxy' (no embedded auth).",
+)
+@click.option(
+    "--auth-username",
+    help="Username for embedded auth authentication. Required when --auth-mode=embedded for workflow execution.",
+)
+@click.option(
+    "--auth-password",
+    help="Password for embedded auth authentication. Required when --auth-mode=embedded for workflow execution.",
+)
 def run(
     config_file,
     verbose,
@@ -240,6 +254,9 @@ def run(
     remote_node,
     remote_auth,
     api_key,
+    auth_mode,
+    auth_username,
+    auth_password,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -259,6 +276,22 @@ def run(
     These CLI-specified remote nodes are merged with any remote_nodes
     defined in the workflow YAML file, with CLI options taking precedence.
     """
+    # Validate --auth-mode is only used with --no-docker (binary mode)
+    if auth_mode and not no_docker:
+        console.print(
+            "[red]--auth-mode is only supported with --no-docker (binary mode). "
+            "For Docker mode, use --auth-service instead.[/red]"
+        )
+        sys.exit(1)
+
+    # Validate that auth credentials are provided when --auth-mode=embedded
+    if auth_mode == "embedded" and not (auth_username and auth_password):
+        console.print(
+            "[red]When using --auth-mode=embedded, you must provide --auth-username and --auth-password "
+            "for workflow authentication.[/red]"
+        )
+        sys.exit(1)
+
     # Parse remote node CLI options
     cli_remote_nodes = parse_remote_nodes(remote_node)
     cli_remote_nodes = parse_remote_auth(remote_auth, cli_remote_nodes, api_key)
@@ -280,6 +313,9 @@ def run(
         near_devnet=near_devnet,
         contracts_dir=contracts_dir,
         cli_remote_nodes=cli_remote_nodes,
+        auth_mode=auth_mode,
+        auth_username=auth_username,
+        auth_password=auth_password,
     )
     if not success:
         sys.exit(1)

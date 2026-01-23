@@ -18,11 +18,37 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from merobox.commands.auth import AUTH_METHOD_NONE, AuthenticationError, AuthManager
+from merobox.commands.bootstrap.steps import (
+    CreateContextStep,
+    CreateIdentityStep,
+    ExecuteStep,
+    InstallApplicationStep,
+    InviteIdentityStep,
+    InviteOpenStep,
+    JoinContextStep,
+    JoinOpenStep,
+    ParallelStep,
+    RepeatStep,
+    ScriptStep,
+    UploadBlobStep,
+    WaitForSyncStep,
+    WaitStep,
+)
+from merobox.commands.bootstrap.steps.assertion import AssertStep
+from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+from merobox.commands.bootstrap.steps.proposals import (
+    GetProposalApproversStep,
+    GetProposalStep,
+    ListProposalsStep,
+)
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 from merobox.commands.manager import DockerManager
 from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
-from merobox.commands.utils import console
+from merobox.commands.utils import console, get_node_rpc_url
 
 
 class WorkflowExecutor:
@@ -44,12 +70,19 @@ class WorkflowExecutor:
         workflow_dir: str = None,
         near_devnet: bool = False,
         contracts_dir: str = None,
+        auth_mode: Optional[str] = None,
+        auth_username: Optional[str] = None,
+        auth_password: Optional[str] = None,
     ):
         self.config = config
         self.manager = manager
         self.workflow_dir = workflow_dir or "."
         self.sandbox = None
         self.near_config = {}
+
+        # Embedded auth credentials
+        self.auth_username = auth_username
+        self.auth_password = auth_password
 
         # Determine if we're in binary mode
         self.is_binary_mode = (
@@ -94,6 +127,9 @@ class WorkflowExecutor:
 
         self.near_devnet = near_devnet or config.get("near_devnet", False)
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
+
+        # Auth mode for binary mode (can be set by CLI or workflow config, CLI takes precedence)
+        self.auth_mode = auth_mode or config.get("auth_mode", None)
 
         # Remote nodes configuration
         self.remote_nodes_config = config.get("remote_nodes", {})
@@ -297,6 +333,23 @@ class WorkflowExecutor:
                     if stop_all_nodes:
                         self._stop_nodes_on_failure()
                     return False
+
+                # Step 3b: Authenticate with nodes if embedded auth is enabled
+                if (
+                    self.auth_mode == "embedded"
+                    and self.auth_username
+                    and self.auth_password
+                ):
+                    console.print(
+                        "\n[bold yellow]Step 3b: Authenticating with embedded auth nodes...[/bold yellow]"
+                    )
+                    if not await self._authenticate_with_embedded_auth_nodes():
+                        console.print(
+                            "[red]❌ Failed to authenticate with nodes - stopping workflow[/red]"
+                        )
+                        if stop_all_nodes:
+                            self._stop_nodes_on_failure()
+                        return False
             else:
                 console.print(
                     "\n[bold blue]Steps 1-3: Skipped (no local nodes to manage)[/bold blue]"
@@ -580,7 +633,10 @@ class WorkflowExecutor:
                     "near_devnet_config": node_near_config,
                     "bootstrap_nodes": self.bootstrap_nodes,
                 }
-                if not self.is_binary_mode:
+                if self.is_binary_mode:
+                    if self.auth_mode:
+                        run_multiple_kwargs["auth_mode"] = self.auth_mode
+                else:
                     run_multiple_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
                 if not self.manager.run_multiple_nodes(**run_multiple_kwargs):
@@ -632,7 +688,10 @@ class WorkflowExecutor:
                         "near_devnet_config": node_near_config,
                         "bootstrap_nodes": self.bootstrap_nodes,
                     }
-                    if not self.is_binary_mode:
+                    if self.is_binary_mode:
+                        if self.auth_mode:
+                            run_node_kwargs["auth_mode"] = self.auth_mode
+                    else:
                         run_node_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
                     if not self.manager.run_node(**run_node_kwargs):
@@ -735,7 +794,10 @@ class WorkflowExecutor:
                         "near_devnet_config": node_near_config,
                         "bootstrap_nodes": self.bootstrap_nodes,
                     }
-                    if not self.is_binary_mode:
+                    if self.is_binary_mode:
+                        if self.auth_mode:
+                            run_node_kwargs["auth_mode"] = self.auth_mode
+                    else:
                         run_node_kwargs["use_image_entrypoint"] = (
                             node_use_image_entrypoint
                         )
@@ -770,7 +832,10 @@ class WorkflowExecutor:
                     "near_devnet_config": node_near_config,
                     "bootstrap_nodes": self.bootstrap_nodes,
                 }
-                if not self.is_binary_mode:
+                if self.is_binary_mode:
+                    if self.auth_mode:
+                        run_node_kwargs["auth_mode"] = self.auth_mode
+                else:
                     run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
 
                 if not self.manager.run_node(**run_node_kwargs):
@@ -836,6 +901,74 @@ class WorkflowExecutor:
             missing_nodes = set(node_names) - ready_nodes
             console.print(f"[red]❌ Nodes not ready: {', '.join(missing_nodes)}[/red]")
             return False
+
+    async def _authenticate_with_embedded_auth_nodes(self) -> bool:
+        """Authenticate with all local nodes running embedded auth.
+
+        This method authenticates with each node using the provided credentials
+        and caches the tokens so that subsequent API calls will succeed.
+
+        Returns:
+            True if authentication succeeded for all nodes, False otherwise.
+        """
+        if not self.auth_username or not self.auth_password:
+            console.print("[red]Cannot authenticate: missing auth credentials[/red]")
+            return False
+
+        node_names = list(self._get_local_node_names())
+        if not node_names:
+            console.print("[yellow]No local nodes to authenticate with[/yellow]")
+            return True
+
+        auth_manager = AuthManager()
+        authenticated_nodes = []
+        failed_nodes = []
+
+        console.print(
+            f"[cyan]Authenticating with {len(node_names)} nodes using embedded auth...[/cyan]"
+        )
+
+        for node_name in node_names:
+            try:
+                # Get the RPC URL for this node
+                rpc_url = get_node_rpc_url(node_name, self.manager)
+                console.print(
+                    f"[cyan]  Authenticating with {node_name} at {rpc_url}...[/cyan]"
+                )
+
+                # Authenticate and get token
+                token = await auth_manager.authenticate(
+                    rpc_url,
+                    self.auth_username,
+                    self.auth_password,
+                )
+
+                # Save token to cache (so calimero-client can use it)
+                auth_manager.save_token(token, node_name)
+                authenticated_nodes.append(node_name)
+                console.print(f"[green]  ✓ Authenticated with {node_name}[/green]")
+
+            except AuthenticationError as e:
+                console.print(
+                    f"[red]  ✗ Failed to authenticate with {node_name}: {e}[/red]"
+                )
+                failed_nodes.append(node_name)
+            except Exception as e:
+                console.print(
+                    f"[red]  ✗ Error authenticating with {node_name}: {e}[/red]"
+                )
+                failed_nodes.append(node_name)
+
+        if failed_nodes:
+            console.print(
+                f"[red]❌ Authentication failed for nodes: {', '.join(failed_nodes)}[/red]"
+            )
+            return False
+
+        console.print(
+            f"[green]✓ Successfully authenticated with {len(authenticated_nodes)} nodes[/green]"
+        )
+        return True
 
     def _get_local_node_names(self) -> set[str]:
         """Get the set of valid local (docker/binary) node names based on nodes configuration."""
@@ -905,8 +1038,6 @@ class WorkflowExecutor:
 
         # Register remote nodes from workflow config
         if self.remote_nodes_config:
-            from merobox.commands.auth import AUTH_METHOD_NONE
-
             for node_name, node_config in self.remote_nodes_config.items():
                 if not isinstance(node_config, dict):
                     console.print(
@@ -1059,127 +1190,58 @@ class WorkflowExecutor:
     def _create_step_executor(self, step_type: str, step_config: dict[str, Any]):
         """Create a step executor based on the step type.
 
-        All step executors receive the manager and resolver to support both
-        local (docker/binary) and remote node resolution.
+        All step executors receive the manager, resolver, and auth_mode to support both
+        local (docker/binary) and remote node resolution with optional embedded auth.
         """
+        # Common kwargs for all steps
+        common_kwargs = {
+            "manager": self.manager,
+            "resolver": self.resolver,
+            "auth_mode": self.auth_mode,
+        }
+
         if step_type == "install_application":
-            from merobox.commands.bootstrap.steps import InstallApplicationStep
-
-            return InstallApplicationStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return InstallApplicationStep(step_config, **common_kwargs)
         elif step_type == "create_context":
-            from merobox.commands.bootstrap.steps import CreateContextStep
-
-            return CreateContextStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return CreateContextStep(step_config, **common_kwargs)
         elif step_type == "create_identity":
-            from merobox.commands.bootstrap.steps import CreateIdentityStep
-
-            return CreateIdentityStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return CreateIdentityStep(step_config, **common_kwargs)
         elif step_type == "invite_identity":
-            from merobox.commands.bootstrap.steps import InviteIdentityStep
-
-            return InviteIdentityStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return InviteIdentityStep(step_config, **common_kwargs)
         elif step_type == "join_context":
-            from merobox.commands.bootstrap.steps import JoinContextStep
-
-            return JoinContextStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "invite_open":
-            from merobox.commands.bootstrap.steps import InviteOpenStep
-
-            return InviteOpenStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return InviteOpenStep(step_config, **common_kwargs)
         elif step_type == "join_open":
-            from merobox.commands.bootstrap.steps import JoinOpenStep
-
-            return JoinOpenStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return JoinOpenStep(step_config, **common_kwargs)
         elif step_type == "call":
-            from merobox.commands.bootstrap.steps import ExecuteStep
-
-            return ExecuteStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":
-            from merobox.commands.bootstrap.steps import WaitStep
-
-            return WaitStep(step_config, manager=self.manager, resolver=self.resolver)
+            return WaitStep(step_config, **common_kwargs)
         elif step_type == "wait_for_sync":
-            from merobox.commands.bootstrap.steps import WaitForSyncStep
-
-            return WaitForSyncStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return WaitForSyncStep(step_config, **common_kwargs)
         elif step_type == "repeat":
-            from merobox.commands.bootstrap.steps import RepeatStep
-
-            return RepeatStep(step_config, manager=self.manager, resolver=self.resolver)
+            return RepeatStep(step_config, **common_kwargs)
         elif step_type == "parallel":
-            from merobox.commands.bootstrap.steps import ParallelStep
-
-            return ParallelStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return ParallelStep(step_config, **common_kwargs)
         elif step_type == "script":
-            from merobox.commands.bootstrap.steps import ScriptStep
-
-            return ScriptStep(step_config, manager=self.manager, resolver=self.resolver)
+            return ScriptStep(step_config, **common_kwargs)
         elif step_type == "assert":
-            from merobox.commands.bootstrap.steps.assertion import AssertStep
-
-            return AssertStep(step_config, manager=self.manager, resolver=self.resolver)
+            return AssertStep(step_config, **common_kwargs)
         elif step_type == "json_assert":
-            from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
-
-            return JsonAssertStep(step_config)
+            return JsonAssertStep(step_config, **common_kwargs)
         elif step_type == "get_proposal":
-            from merobox.commands.bootstrap.steps.proposals import GetProposalStep
-
-            return GetProposalStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return GetProposalStep(step_config, **common_kwargs)
         elif step_type == "list_proposals":
-            from merobox.commands.bootstrap.steps.proposals import ListProposalsStep
-
-            return ListProposalsStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return ListProposalsStep(step_config, **common_kwargs)
         elif step_type == "get_proposal_approvers":
-            from merobox.commands.bootstrap.steps.proposals import (
-                GetProposalApproversStep,
-            )
-
-            return GetProposalApproversStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return GetProposalApproversStep(step_config, **common_kwargs)
         elif step_type == "upload_blob":
-            from merobox.commands.bootstrap.steps import UploadBlobStep
-
-            return UploadBlobStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return UploadBlobStep(step_config, **common_kwargs)
         elif step_type == "create_mesh":
-            from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
-
-            return CreateMeshStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return CreateMeshStep(step_config, **common_kwargs)
         elif step_type == "fuzzy_test":
-            from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
-
-            return FuzzyTestStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return FuzzyTestStep(step_config, **common_kwargs)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

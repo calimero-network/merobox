@@ -88,6 +88,12 @@ console = Console()
     is_flag=True,
     help="Preserve Docker image's entrypoint instead of running merod directly",
 )
+@click.option(
+    "--auth-mode",
+    type=click.Choice(["embedded", "proxy"], case_sensitive=False),
+    default=None,
+    help="Authentication mode for merod (binary mode only). 'embedded' enables built-in auth with JWT protection on all endpoints. Default is 'proxy' (no embedded auth).",
+)
 def run(
     count,
     base_port,
@@ -108,8 +114,17 @@ def run(
     foreground,
     mock_relayer,
     use_image_entrypoint,
+    auth_mode,
 ):
     """Run Calimero node(s)."""
+    # Validate --auth-mode is only used with --no-docker (binary mode)
+    if auth_mode and not no_docker:
+        console.print(
+            "[red]--auth-mode is only supported with --no-docker (binary mode). "
+            "For Docker mode, use --auth-service instead.[/red]"
+        )
+        sys.exit(1)
+
     if mock_relayer and no_docker:
         console.print(
             "[red]--mock-relayer is only supported with Docker mode (omit --no-docker)[/red]"
@@ -171,6 +186,8 @@ def run(
 
         if no_docker:
             run_kwargs["foreground"] = foreground
+            if auth_mode:
+                run_kwargs["auth_mode"] = auth_mode
         else:
             # Only applicable in Docker mode
             run_kwargs["use_image_entrypoint"] = use_image_entrypoint
@@ -197,7 +214,10 @@ def run(
             "rust_backtrace": rust_backtrace,
             "mock_relayer": mock_relayer,
         }
-        if not no_docker:
+        if no_docker:
+            if auth_mode:
+                run_multiple_kwargs["auth_mode"] = auth_mode
+        else:
             run_multiple_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
         success = calimero_manager.run_multiple_nodes(**run_multiple_kwargs)
