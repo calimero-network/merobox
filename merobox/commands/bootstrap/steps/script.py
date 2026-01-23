@@ -21,8 +21,9 @@ class ScriptStep(BaseStep):
         config: dict[str, Any],
         manager: object | None = None,
         resolver: object | None = None,
+        auth_mode: str | None = None,
     ):
-        super().__init__(config, manager, resolver)
+        super().__init__(config, manager, resolver, auth_mode=auth_mode)
         self.script_path = config.get("script")
         self.target = config.get("target", "image")  # 'image' or 'nodes'
         self.description = config.get(

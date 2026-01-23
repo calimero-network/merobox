@@ -350,64 +350,47 @@ class RepeatStep(BaseStep):
 
     def _create_nested_step_executor(self, step_type: str, step_config: dict[str, Any]):
         """Create a nested step executor based on the step type."""
+        # Common kwargs for all step types - includes auth_mode for embedded auth support
+        common_kwargs = {
+            "manager": self.manager,
+            "resolver": self.resolver,
+            "auth_mode": self.auth_mode,
+        }
+
         if step_type == "install_application":
-            return InstallApplicationStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return InstallApplicationStep(step_config, **common_kwargs)
         elif step_type == "create_context":
-            return CreateContextStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return CreateContextStep(step_config, **common_kwargs)
         elif step_type == "create_identity":
-            return CreateIdentityStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return CreateIdentityStep(step_config, **common_kwargs)
         elif step_type == "invite_identity":
-            return InviteIdentityStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return InviteIdentityStep(step_config, **common_kwargs)
         elif step_type == "join_context":
-            return JoinContextStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "invite_open":
             from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 
-            return InviteOpenStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return InviteOpenStep(step_config, **common_kwargs)
         elif step_type == "join_open":
             from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 
-            return JoinOpenStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return JoinOpenStep(step_config, **common_kwargs)
         elif step_type == "call":
-            return ExecuteStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":
-            return WaitStep(step_config, manager=self.manager, resolver=self.resolver)
+            return WaitStep(step_config, **common_kwargs)
         elif step_type == "wait_for_sync":
             from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
 
-            return WaitForSyncStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return WaitForSyncStep(step_config, **common_kwargs)
         elif step_type == "script":
-            return ScriptStep(step_config, manager=self.manager, resolver=self.resolver)
+            return ScriptStep(step_config, **common_kwargs)
         elif step_type == "get_proposal":
-            return GetProposalStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return GetProposalStep(step_config, **common_kwargs)
         elif step_type == "list_proposals":
-            return ListProposalsStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return ListProposalsStep(step_config, **common_kwargs)
         elif step_type == "get_proposal_approvers":
-            return GetProposalApproversStep(
-                step_config, manager=self.manager, resolver=self.resolver
-            )
+            return GetProposalApproversStep(step_config, **common_kwargs)
         else:
             console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None

@@ -21,11 +21,14 @@ class BaseStep:
         config: dict[str, Any],
         manager: object | None = None,
         resolver: Optional["NodeResolver"] = None,
+        auth_mode: Optional[str] = None,
     ):
         self.config = config
 
         self.manager = manager
         self.resolver = resolver
+        # Auth mode for embedded auth support (e.g., "embedded", "proxy")
+        self.auth_mode = auth_mode
         # Define which variables this step can export and their mapping
         self.exportable_variables = self._get_exportable_variables()
         # Validate required fields before proceeding
@@ -170,6 +173,41 @@ class BaseStep:
                 f"Cannot resolve node '{node_name}': no manager available. "
                 f"For remote nodes, ensure the node is configured in remote_nodes."
             )
+
+    def _resolve_node_for_client(self, node_name: str) -> tuple[str, Optional[str]]:
+        """
+        Resolve a node and return (rpc_url, client_node_name) for client creation.
+
+        This consolidates the common pattern of resolving a node and determining
+        whether to pass the node_name to the client for token caching.
+
+        Args:
+            node_name: The node name or reference to resolve
+
+        Returns:
+            Tuple of (rpc_url, client_node_name) where:
+            - rpc_url: The RPC URL for the node
+            - client_node_name: The node name for token caching (None if no auth needed)
+
+        Raises:
+            Exception: If the node cannot be resolved
+        """
+        resolved = self._resolve_node(node_name)
+        if resolved:
+            rpc_url = resolved.url
+            # Pass node_name for authenticated nodes OR when embedded auth is enabled
+            client_node_name = (
+                resolved.node_name
+                if (resolved.auth_required or self.auth_mode == "embedded")
+                else None
+            )
+        else:
+            # Legacy path for local nodes
+            rpc_url = self._get_node_rpc_url(node_name)
+            # If embedded auth mode is enabled, pass node_name so client can use cached tokens
+            client_node_name = node_name if self.auth_mode == "embedded" else None
+
+        return rpc_url, client_node_name
 
     def _try_parse_json(self, value: Any) -> Any:
         """Parse JSON string to Python object with fallback strategies.
