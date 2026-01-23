@@ -36,13 +36,13 @@ jobs:
 
     - name: Build source distribution
       run: |
-        python -m build --sdist --outdir dist
+        python -m build --outdir dist
 
     - name: Upload source artifacts
       uses: actions/upload-artifact@v4
       with:
         name: source-distribution
-        path: dist/*.tar.gz
+        path: dist/*
         retention-days: 1
 
     - name: Test package installation (PR only)
@@ -352,16 +352,23 @@ jobs:
         name: source-distribution
         path: dist/
 
-    - name: Verify source distribution
+    - name: Verify distributions
       run: |
-        echo "Source distributions found:"
+        echo "Distributions found:"
         ls -la dist/
-        echo "Total source distribution count: $(ls dist/*.tar.gz 2>/dev/null | wc -l)"
+        echo "Total source distributions: $(ls dist/*.tar.gz 2>/dev/null | wc -l)"
+        echo "Total wheel distributions: $(ls dist/*.whl 2>/dev/null | wc -l)"
 
         # Verify the source distribution
         for file in dist/*.tar.gz; do
-          echo "Checking $file"
+          echo "Checking sdist: $file"
           tar -tzf "$file" | head -10
+        done
+
+        # Verify the wheel
+        for file in dist/*.whl; do
+          echo "Checking wheel: $file"
+          unzip -l "$file" | head -15
         done
 
     - name: Publish to PyPI
