@@ -44,7 +44,6 @@ jobs:
     name: Check version bump
     runs-on: ubuntu-latest
     needs: [build-source]
-    if: github.ref == 'refs/heads/master'
     permissions:
       contents: write
       actions: write
@@ -60,14 +59,22 @@ jobs:
       run: |
         CURRENT_VERSION=$(grep '^__version__ = ' merobox/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
         echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-        PREVIOUS_VERSION=$(git show HEAD~1:merobox/__init__.py | grep '^__version__ = ' | sed 's/__version__ = "\(.*\)"/\1/' || echo "0.0.0")
-        if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          echo "PR dry-run mode: treating as version bumped"
           echo "bumped=true" >> $GITHUB_OUTPUT
         else
-          echo "bumped=false" >> $GITHUB_OUTPUT
+          PREVIOUS_VERSION=$(git show HEAD~1:merobox/__init__.py | grep '^__version__ = ' | sed 's/__version__ = "\(.*\)"/\1/' || echo "0.0.0")
+          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            echo "bumped=true" >> $GITHUB_OUTPUT
+          else
+            echo "bumped=false" >> $GITHUB_OUTPUT
+          fi
         fi
     - name: Create and push tag
-      if: steps.check.outputs.bumped == 'true'
+      if: |
+        steps.check.outputs.bumped == 'true' &&
+        github.ref == 'refs/heads/master' &&
+        github.event_name != 'pull_request'
       run: |
         TAG="v${{ steps.check.outputs.current_version }}"
         if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
@@ -92,8 +99,8 @@ jobs:
     needs: check-version
     if: |
       always() &&
-      github.ref == 'refs/heads/master' &&
-      needs.check-version.outputs.version-bumped == 'true'
+      (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master' || github.event_name == 'pull_request') &&
+      (needs.check-version.outputs.version-bumped == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
     strategy:
       matrix:
         include:
@@ -182,7 +189,8 @@ jobs:
       always() &&
       needs.build-binaries.result == 'success' &&
       github.ref == 'refs/heads/master' &&
-      needs.check-version.outputs.version-bumped == 'true'
+      needs.check-version.outputs.version-bumped == 'true' &&
+      github.event_name != 'pull_request'
     permissions:
       contents: write
     steps:
@@ -240,8 +248,8 @@ jobs:
     if: |
       always() &&
       needs.build-binaries.result == 'success' &&
-      github.ref == 'refs/heads/master' &&
-      needs.check-version.outputs.version-bumped == 'true'
+      (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master' || github.event_name == 'pull_request') &&
+      (needs.check-version.outputs.version-bumped == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
     steps:
       - uses: actions/checkout@v4
       - name: Determine version
@@ -277,7 +285,18 @@ jobs:
         with:
           name: debian-packages
           path: debs/*.deb
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
+      - name: Show package info (PR dry-run)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "=== PR Dry-Run: Built .deb packages ==="
+          for deb in debs/*.deb; do
+            echo "Package: $(basename $deb)"
+            dpkg-deb --info "$deb" | grep -E "Package|Version|Architecture"
+          done
+          echo ""
+          echo "These packages are available as artifacts for download."
+          echo "No publishing will occur on PRs."
 
   publish-apt-repo:
     name: Publish APT repository
@@ -288,7 +307,8 @@ jobs:
       needs.package-deb.result == 'success' &&
       needs.create-release.result == 'success' &&
       github.ref == 'refs/heads/master' &&
-      needs.check-version.outputs.version-bumped == 'true'
+      needs.check-version.outputs.version-bumped == 'true' &&
+      github.event_name != 'pull_request'
     concurrency:
       group: apt-repo-publish
       cancel-in-progress: false
@@ -386,6 +406,32 @@ jobs:
             git push -u origin gh-pages --force-with-lease 2>/dev/null || git push -u origin gh-pages --force
           fi
 
+  test-deb-packages:
+    name: Test .deb packages (PR dry-run)
+    runs-on: ubuntu-latest
+    needs: [check-version, package-deb]
+    if: |
+      always() &&
+      needs.package-deb.result == 'success' &&
+      github.event_name == 'pull_request'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: debian-packages
+          path: debs
+      - name: Install and test packages
+        run: |
+          echo "=== Testing .deb packages (PR dry-run) ==="
+          for deb in debs/*.deb; do
+            echo "Testing: $(basename $deb)"
+            dpkg-deb --info "$deb"
+            sudo dpkg -i "$deb" || sudo apt-get install -f -y
+            merobox --version
+            merobox --help | head -5
+            sudo dpkg -r merobox || true
+          done
+          echo "All packages tested successfully (no publishing on PRs)"
+
   test-apt-install:
     name: Test APT installation (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -394,7 +440,8 @@ jobs:
       always() &&
       needs.publish-apt-repo.result == 'success' &&
       github.ref == 'refs/heads/master' &&
-      needs.check-version.outputs.version-bumped == 'true'
+      needs.check-version.outputs.version-bumped == 'true' &&
+      github.event_name != 'pull_request'
     strategy:
       matrix:
         include:
