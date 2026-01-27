@@ -348,17 +348,11 @@ jobs:
           APT_GPG_FINGERPRINT: ${{ env.APT_GPG_FINGERPRINT }}
           APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
         run: |
-          mkdir -p gh-pages-repo/conf
-          envsubst < packaging/apt/reprepro/conf/distributions > gh-pages-repo/conf/distributions
-          echo "verbose" > gh-pages-repo/conf/options
+          chmod +x packaging/apt/publish-repo.sh
           gpg --list-keys --with-keygrip "$APT_GPG_FINGERPRINT" | grep Keygrip | awk '{print $3}' | while read keygrip; do
             [ -n "$keygrip" ] && /usr/lib/gnupg/gpg-preset-passphrase --preset "$keygrip" <<< "$APT_GPG_PASSPHRASE" 2>/dev/null || true
           done
-          for deb in debs/*.deb; do
-            reprepro -b gh-pages-repo includedeb stable "$deb"
-          done
-          reprepro -b gh-pages-repo export stable
-          rm -rf gh-pages-repo/conf gh-pages-repo/db
+          packaging/apt/publish-repo.sh gh-pages-repo debs/*.deb
       - name: Verify repository structure
         run: |
           for file in dists/stable/Release dists/stable/InRelease; do
