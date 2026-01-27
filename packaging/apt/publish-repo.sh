@@ -41,4 +41,7 @@ for FILE in Release Release.gpg InRelease; do
     fi
 done
 
-rm -rf "${REPO_DIR}/conf" "${REPO_DIR}/db"
+# Remove conf/ directory (regenerated from templates each run)
+# Keep db/ directory - it's essential for reprepro to track all packages across releases
+# Without db/, reprepro would create a fresh database and orphan old packages in pool/
+rm -rf "${REPO_DIR}/conf"
