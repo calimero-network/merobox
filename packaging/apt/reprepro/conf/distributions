@@ -1,0 +1,8 @@
+Origin: merobox
+Label: merobox
+Codename: stable
+Suite: stable
+Architectures: amd64 arm64
+Components: main
+Description: Merobox APT Repository - CLI tool for Calimero node management
+SignWith: ${APT_GPG_FINGERPRINT}

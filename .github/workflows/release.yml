@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-
   pull_request:
     branches:
       - master
@@ -15,47 +14,34 @@ permissions:
   id-token: write
 
 jobs:
-  # Job 1: Build source distribution
   build-source:
     name: Build source distribution
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-
     - name: Install build tools
       run: |
         python -m pip install --upgrade pip
         pip install build twine
-
     - name: Build source distribution
-      run: |
-        python -m build --outdir dist
-
-    - name: Upload source artifacts
-      uses: actions/upload-artifact@v4
+      run: python -m build --outdir dist
+    - uses: actions/upload-artifact@v4
       with:
         name: source-distribution
         path: dist/*
         retention-days: 1
-
-    - name: Test package installation (PR only)
+    - name: Test package installation
       if: github.event_name == 'pull_request'
       run: |
         pip install -r requirements.txt
         pip install -e .
         merobox --version
-        merobox --help
 
-  # Job 2: Check if version was bumped
   check-version:
-    name: Check if version was bumped
+    name: Check version bump
     runs-on: ubuntu-latest
     needs: [build-source]
     if: github.ref == 'refs/heads/master'
@@ -65,62 +51,42 @@ jobs:
     outputs:
       version-bumped: ${{ steps.check.outputs.bumped }}
       current-version: ${{ steps.check.outputs.current_version }}
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 2
-
     - name: Check version changes
       id: check
       run: |
-        # Get current version from __init__.py
         CURRENT_VERSION=$(grep '^__version__ = ' merobox/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
-        echo "Current version: $CURRENT_VERSION"
         echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-
-        # Get previous version from git history
         PREVIOUS_VERSION=$(git show HEAD~1:merobox/__init__.py | grep '^__version__ = ' | sed 's/__version__ = "\(.*\)"/\1/' || echo "0.0.0")
-        echo "Previous version: $PREVIOUS_VERSION"
-
-        # Check if version was bumped
         if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
-          echo "Version bumped from $PREVIOUS_VERSION to $CURRENT_VERSION"
           echo "bumped=true" >> $GITHUB_OUTPUT
         else
-          echo "No version change detected"
           echo "bumped=false" >> $GITHUB_OUTPUT
         fi
-
     - name: Create and push tag
       if: steps.check.outputs.bumped == 'true'
       run: |
         TAG="v${{ steps.check.outputs.current_version }}"
-
-        # Check if tag already exists
         if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
-          echo "⏭️  Tag $TAG already exists, skipping"
+          echo "Tag $TAG already exists"
         else
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git tag -a "$TAG" -m "Release $TAG (auto-tagged)"
+          git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
-
-          echo "✅ Created and pushed tag: $TAG"
         fi
-
     - name: Comment on commit
       if: steps.check.outputs.bumped == 'true'
       uses: peter-evans/commit-comment@v3
       with:
         body: |
-          🎉 **Auto-tagged release v${{ steps.check.outputs.current_version }}**
+          **Auto-tagged release v${{ steps.check.outputs.current_version }}**
 
-          Release pipeline is now running. Monitor: [Actions](https://github.com/${{ github.repository }}/actions)
+          Release pipeline running: [Actions](https://github.com/${{ github.repository }}/actions)
 
-  # Job 3: Build binaries for all platforms
   build-binaries:
     runs-on: ${{ matrix.os }}
     needs: check-version
@@ -139,134 +105,63 @@ jobs:
             target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-
       - name: Install system dependencies (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
-
       - name: Install system dependencies (macOS)
         if: startsWith(matrix.os, 'macos')
         run: brew install gcc
-
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
-
       - name: Build executable
-        run: |
-          pyinstaller merobox.spec
-
+        run: pyinstaller merobox.spec
       - name: Test executable
-        run: |
-          if [ -f "./dist/merobox" ]; then
-            ./dist/merobox --version
-          else
-            echo "Binary not found in dist/"
-            ls -la dist/
-          fi
-
+        run: ./dist/merobox --version
       - name: Verify architecture
         run: |
           file_output=$(file ./dist/merobox)
-          echo "Binary architecture: $file_output"
-
-          # Verify correct architecture based on target
           case "${{ matrix.target }}" in
             "aarch64-unknown-linux-gnu")
-              if [[ "$file_output" == *"aarch64"* ]]; then
-                echo "✅ Correct aarch64 architecture detected"
-              else
-                echo "❌ Expected aarch64, got: $file_output"
-                exit 1
-              fi
-              ;;
+              [[ "$file_output" == *"aarch64"* ]] || exit 1 ;;
             "x86_64-unknown-linux-gnu")
-              if [[ "$file_output" == *"x86-64"* ]] || [[ "$file_output" == *"x86_64"* ]]; then
-                echo "✅ Correct x86-64 architecture detected"
-              else
-                echo "❌ Expected x86-64, got: $file_output"
-                exit 1
-              fi
-              ;;
+              [[ "$file_output" == *"x86-64"* ]] || [[ "$file_output" == *"x86_64"* ]] || exit 1 ;;
             "aarch64-apple-darwin")
-              if [[ "$file_output" == *"arm64"* ]]; then
-                echo "✅ Correct arm64 architecture detected"
-              else
-                echo "❌ Expected arm64, got: $file_output"
-                exit 1
-              fi
-              ;;
+              [[ "$file_output" == *"arm64"* ]] || exit 1 ;;
             "x86_64-apple-darwin")
-              if [[ "$file_output" == *"x86_64"* ]]; then
-                echo "✅ Correct x86_64 architecture detected"
-              else
-                echo "❌ Expected x86_64, got: $file_output"
-                exit 1
-              fi
-              ;;
+              [[ "$file_output" == *"x86_64"* ]] || exit 1 ;;
           esac
-
       - name: Determine version tag
         id: version
-        shell: bash
-        run: |
-          echo "tag=v${{ needs.check-version.outputs.current-version }}" >> $GITHUB_OUTPUT
-
+        run: echo "tag=v${{ needs.check-version.outputs.current-version }}" >> $GITHUB_OUTPUT
       - name: Name artifact
-        shell: bash
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          # Convert target to simpler naming convention
           case "${{ matrix.target }}" in
-            "x86_64-unknown-linux-gnu")
-              TARGET_NAME="linux-x86-64"
-              ;;
-            "aarch64-unknown-linux-gnu")
-              TARGET_NAME="linux-aarch64"
-              ;;
-            "x86_64-apple-darwin")
-              TARGET_NAME="darwin-x86-64"
-              ;;
-            "aarch64-apple-darwin")
-              TARGET_NAME="darwin-aarch64"
-              ;;
+            "x86_64-unknown-linux-gnu") TARGET_NAME="linux-x86-64" ;;
+            "aarch64-unknown-linux-gnu") TARGET_NAME="linux-aarch64" ;;
+            "x86_64-apple-darwin") TARGET_NAME="darwin-x86-64" ;;
+            "aarch64-apple-darwin") TARGET_NAME="darwin-aarch64" ;;
           esac
-          NAME="merobox-${TAG}-${TARGET_NAME}"
-          mv "dist/merobox" "dist/${NAME}"
-
+          mv "dist/merobox" "dist/merobox-${TAG}-${TARGET_NAME}"
       - name: Generate checksum
-        shell: bash
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          # Convert target to simpler naming convention
           case "${{ matrix.target }}" in
-            "x86_64-unknown-linux-gnu")
-              TARGET_NAME="linux-x86-64"
-              ;;
-            "aarch64-unknown-linux-gnu")
-              TARGET_NAME="linux-aarch64"
-              ;;
-            "x86_64-apple-darwin")
-              TARGET_NAME="darwin-x86-64"
-              ;;
-            "aarch64-apple-darwin")
-              TARGET_NAME="darwin-aarch64"
-              ;;
+            "x86_64-unknown-linux-gnu") TARGET_NAME="linux-x86-64" ;;
+            "aarch64-unknown-linux-gnu") TARGET_NAME="linux-aarch64" ;;
+            "x86_64-apple-darwin") TARGET_NAME="darwin-x86-64" ;;
+            "aarch64-apple-darwin") TARGET_NAME="darwin-aarch64" ;;
           esac
           FILE="dist/merobox-${TAG}-${TARGET_NAME}"
           if command -v sha256sum >/dev/null 2>&1; then
@@ -274,16 +169,12 @@ jobs:
           else
             shasum -a 256 "${FILE}" | awk '{print $1 "  " FILENAME}' FILENAME="${FILE##dist/}" > "${FILE}.sha256"
           fi
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: merobox-${{ matrix.target }}
-          path: |
-            dist/merobox-*
+          path: dist/merobox-*
           retention-days: 30
 
-  # Job 4: Create GitHub Release
   create-release:
     needs: [check-version, build-binaries]
     runs-on: ubuntu-latest
@@ -294,34 +185,21 @@ jobs:
       needs.check-version.outputs.version-bumped == 'true'
     permissions:
       contents: write
-
     steps:
       - name: Determine version tag
         id: version
-        run: |
-          echo "tag=v${{ needs.check-version.outputs.current-version }}" >> $GITHUB_OUTPUT
-
+        run: echo "tag=v${{ needs.check-version.outputs.current-version }}" >> $GITHUB_OUTPUT
       - name: Validate tag format
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ Invalid tag format: $TAG"
-            exit 1
-          fi
-          echo "✅ Valid tag: $TAG"
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           path: release-assets
           pattern: merobox-*
           merge-multiple: true
-
-      - name: Create and publish GitHub release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           files: release-assets/*
@@ -331,7 +209,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Job 5: Publish to PyPI
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
@@ -344,58 +221,219 @@ jobs:
     permissions:
       contents: read
       id-token: write
-
     steps:
-    - name: Download source artifacts
-      uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v4
       with:
         name: source-distribution
         path: dist/
-
     - name: Verify distributions
-      run: |
-        echo "Distributions found:"
-        ls -la dist/
-        echo "Total source distributions: $(ls dist/*.tar.gz 2>/dev/null | wc -l)"
-        echo "Total wheel distributions: $(ls dist/*.whl 2>/dev/null | wc -l)"
-
-        # Verify the source distribution
-        for file in dist/*.tar.gz; do
-          echo "Checking sdist: $file"
-          tar -tzf "$file" | head -10
-        done
-
-        # Verify the wheel
-        for file in dist/*.whl; do
-          echo "Checking wheel: $file"
-          unzip -l "$file" | head -15
-        done
-
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+      run: ls -la dist/
+    - uses: pypa/gh-action-pypi-publish@release/v1
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
         packages-dir: dist/
 
-  # Job 6: Notify completion
+  package-deb:
+    name: Package Debian packages
+    runs-on: ubuntu-latest
+    needs: [check-version, build-binaries]
+    if: |
+      always() &&
+      needs.build-binaries.result == 'success' &&
+      github.ref == 'refs/heads/master' &&
+      needs.check-version.outputs.version-bumped == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="${{ needs.check-version.outputs.current-version }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: merobox-*-unknown-linux-gnu
+          merge-multiple: true
+      - name: Build .deb packages
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          chmod +x packaging/apt/build-deb.sh
+          mkdir -p debs
+          AMD64_BINARY=$(find artifacts -name "merobox-${TAG}-linux-x86-64" -type f | head -1)
+          [ -n "$AMD64_BINARY" ] && OUTPUT_DIR=debs ./packaging/apt/build-deb.sh "$VERSION" "$AMD64_BINARY" "amd64"
+          ARM64_BINARY=$(find artifacts -name "merobox-${TAG}-linux-aarch64" -type f | head -1)
+          [ -n "$ARM64_BINARY" ] && OUTPUT_DIR=debs ./packaging/apt/build-deb.sh "$VERSION" "$ARM64_BINARY" "arm64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-packages
+          path: debs/*.deb
+          retention-days: 30
+
+  publish-apt-repo:
+    name: Publish APT repository
+    runs-on: ubuntu-latest
+    needs: [check-version, package-deb, create-release]
+    if: |
+      always() &&
+      needs.package-deb.result == 'success' &&
+      needs.create-release.result == 'success' &&
+      github.ref == 'refs/heads/master' &&
+      needs.check-version.outputs.version-bumped == 'true'
+    concurrency:
+      group: apt-repo-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-repo
+          fetch-depth: 0
+        continue-on-error: true
+      - name: Initialize gh-pages if needed
+        run: |
+          if [ ! -d "gh-pages-repo/.git" ]; then
+            mkdir -p gh-pages-repo
+            cd gh-pages-repo
+            git init
+            git checkout -b gh-pages
+            echo "# Merobox APT Repository" > README.md
+            git add README.md
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "Initialize gh-pages branch"
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: debian-packages
+          path: debs
+      - name: Install reprepro
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y reprepro gettext-base
+      - name: Import GPG key
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          export GNUPGHOME=$(mktemp -d)
+          echo "GNUPGHOME=${GNUPGHOME}" >> $GITHUB_ENV
+          cat > "${GNUPGHOME}/gpg-agent.conf" << EOF
+          allow-loopback-pinentry
+          allow-preset-passphrase
+          EOF
+          cat > "${GNUPGHOME}/gpg.conf" << EOF
+          pinentry-mode loopback
+          EOF
+          gpgconf --kill gpg-agent || true
+          gpg-agent --daemon || true
+          if [ -n "$APT_GPG_PASSPHRASE" ]; then
+            echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --passphrase "$APT_GPG_PASSPHRASE" --import
+          else
+            echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          fi
+          FINGERPRINT=$(gpg --list-keys --with-colons | grep "^fpr" | head -1 | cut -d: -f10)
+          echo "${FINGERPRINT}:6:" | gpg --import-ownertrust
+          echo "APT_GPG_FINGERPRINT=${FINGERPRINT}" >> $GITHUB_ENV
+          echo "$APT_GPG_PASSPHRASE" > "${GNUPGHOME}/.passphrase"
+          chmod 600 "${GNUPGHOME}/.passphrase"
+      - name: Export public key
+        run: gpg --export "$APT_GPG_FINGERPRINT" > gh-pages-repo/gpg.key
+      - name: Publish packages to APT repository
+        env:
+          APT_GPG_FINGERPRINT: ${{ env.APT_GPG_FINGERPRINT }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          mkdir -p gh-pages-repo/conf
+          envsubst < packaging/apt/reprepro/conf/distributions > gh-pages-repo/conf/distributions
+          echo "verbose" > gh-pages-repo/conf/options
+          gpg --list-keys --with-keygrip "$APT_GPG_FINGERPRINT" | grep Keygrip | awk '{print $3}' | while read keygrip; do
+            [ -n "$keygrip" ] && /usr/lib/gnupg/gpg-preset-passphrase --preset "$keygrip" <<< "$APT_GPG_PASSPHRASE" 2>/dev/null || true
+          done
+          for deb in debs/*.deb; do
+            reprepro -b gh-pages-repo includedeb stable "$deb"
+          done
+          reprepro -b gh-pages-repo export stable
+          rm -rf gh-pages-repo/conf gh-pages-repo/db
+      - name: Verify repository structure
+        run: |
+          for file in dists/stable/Release dists/stable/InRelease; do
+            [ -f "gh-pages-repo/$file" ] || exit 1
+          done
+          FOUND=false
+          for arch in amd64 arm64; do
+            [ -f "gh-pages-repo/dists/stable/main/binary-${arch}/Packages.gz" ] && FOUND=true
+          done
+          [ "$FOUND" = true ] || exit 1
+      - name: Push to gh-pages
+        working-directory: gh-pages-repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" || \
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git add -A
+          VERSION="${{ needs.check-version.outputs.current-version }}"
+          if ! git diff --staged --quiet; then
+            git commit -m "Update APT repository for v${VERSION}"
+            git push -u origin gh-pages --force-with-lease 2>/dev/null || git push -u origin gh-pages --force
+          fi
+
+  test-apt-install:
+    name: Test APT installation (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: [check-version, publish-apt-repo]
+    if: |
+      always() &&
+      needs.publish-apt-repo.result == 'success' &&
+      github.ref == 'refs/heads/master' &&
+      needs.check-version.outputs.version-bumped == 'true'
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - name: Wait for GitHub Pages deployment
+        run: sleep 60
+      - name: Configure APT repository
+        run: |
+          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          curl -fsSL "${REPO_URL}/gpg.key" | sudo tee /usr/share/keyrings/merobox.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/merobox.gpg] ${REPO_URL} stable main" | sudo tee /etc/apt/sources.list.d/merobox.list
+      - name: Install merobox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y merobox
+      - name: Verify installation
+        run: |
+          EXPECTED_VERSION="${{ needs.check-version.outputs.current-version }}"
+          INSTALLED_VERSION=$(merobox --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          [ "$INSTALLED_VERSION" = "$EXPECTED_VERSION" ] || exit 1
+          merobox --help
+
   notify-completion:
-    needs: [build-source, check-version, build-binaries, create-release, publish-pypi]
+    needs: [build-source, check-version, build-binaries, create-release, publish-pypi, package-deb, publish-apt-repo, test-apt-install]
     runs-on: ubuntu-latest
     if: always()
-
     steps:
       - name: Report status
         run: |
-          VERSION="${{ needs.check-version.outputs.current-version }}"
-          echo "🎉 Release Pipeline Complete!"
-          echo "Version: $VERSION"
-          echo ""
-          echo "Status:"
-          echo "  Build Source: ${{ needs.build-source.result }}"
-          echo "  Check Version: ${{ needs.check-version.result }}"
-          echo "  Build Binaries: ${{ needs.build-binaries.result }}"
-          echo "  Create Release: ${{ needs.create-release.result }}"
-          echo "  Publish PyPI: ${{ needs.publish-pypi.result }}"
-          echo ""
-          echo "📦 Package: https://pypi.org/project/merobox/${VERSION}/"
-          echo "📥 Release: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+          echo "Release Pipeline Complete"
+          echo "Version: ${{ needs.check-version.outputs.current-version }}"
+          echo "Build Source: ${{ needs.build-source.result }}"
+          echo "Check Version: ${{ needs.check-version.result }}"
+          echo "Build Binaries: ${{ needs.build-binaries.result }}"
+          echo "Create Release: ${{ needs.create-release.result }}"
+          echo "Publish PyPI: ${{ needs.publish-pypi.result }}"
+          echo "Package Deb: ${{ needs.package-deb.result }}"
+          echo "Publish APT: ${{ needs.publish-apt-repo.result }}"
+          echo "Test APT Install: ${{ needs.test-apt-install.result }}"
