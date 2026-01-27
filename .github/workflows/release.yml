@@ -422,15 +422,25 @@ jobs:
       - name: Install and test packages
         run: |
           echo "=== Testing .deb packages (PR dry-run) ==="
+          SYSTEM_ARCH=$(dpkg --print-architecture)
+          echo "System architecture: ${SYSTEM_ARCH}"
           for deb in debs/*.deb; do
-            echo "Testing: $(basename $deb)"
-            dpkg-deb --info "$deb"
-            sudo dpkg -i "$deb" || sudo apt-get install -f -y
-            merobox --version
-            merobox --help | head -5
-            sudo dpkg -r merobox || true
+            PACKAGE_ARCH=$(dpkg-deb --info "$deb" | grep "^ Architecture:" | awk '{print $2}')
+            echo "Package: $(basename $deb) (arch: ${PACKAGE_ARCH})"
+            dpkg-deb --info "$deb" | grep -E "Package|Version|Architecture|Description"
+            if [ "$PACKAGE_ARCH" = "$SYSTEM_ARCH" ]; then
+              echo "  Installing and testing ${PACKAGE_ARCH} package..."
+              sudo dpkg -i "$deb" || sudo apt-get install -f -y
+              merobox --version
+              merobox --help | head -5
+              sudo dpkg -r merobox || true
+              echo "${PACKAGE_ARCH} package tested successfully"
+            else
+              echo "Skipping ${PACKAGE_ARCH} package (system is ${SYSTEM_ARCH})"
+            fi
+            echo ""
           done
-          echo "All packages tested successfully (no publishing on PRs)"
+          echo "Package validation complete (no publishing on PRs)"
 
   test-apt-install:
     name: Test APT installation (${{ matrix.arch }})
