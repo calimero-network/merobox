@@ -1,0 +1,48 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: merobox
+Label: merobox
+Suite: stable
+Codename: stable
+Date: Tue, 27 Jan 2026 15:40:12 UTC
+Architectures: amd64 arm64
+Components: main
+Description: Merobox APT Repository - CLI tool for Calimero node management
+MD5Sum:
+ 27aadf4d822a76aed8a98a686cc21a27 650 main/binary-amd64/Packages
+ 8530038d26b7ca7824e00483ba918729 436 main/binary-amd64/Packages.gz
+ fc8c8c4c2b13812baa5ca99eb12e3def 159 main/binary-amd64/Release
+ 60af7ed4562faefc6573e9c3974d8923 650 main/binary-arm64/Packages
+ c7da91aa8016befa28c37f80724ec72e 437 main/binary-arm64/Packages.gz
+ 6cb2ee5976d0e3c67d700b74d96e22e6 159 main/binary-arm64/Release
+SHA1:
+ 01d575546d8e38ec74d53c499929bca79c7d31f4 650 main/binary-amd64/Packages
+ a795e3d6ed44bf3b807181f6d33aeed3dbd096fe 436 main/binary-amd64/Packages.gz
+ 8544a1880e8d5d51cb86ec2bbf209b0619664bbc 159 main/binary-amd64/Release
+ 62e47a65a06a8a9ecc48ed2992ec68657e72728e 650 main/binary-arm64/Packages
+ e9875e6a57678269734f419dc42b6b534328618d 437 main/binary-arm64/Packages.gz
+ 8d5816038e534a525dedc582dc9615e572f5e85d 159 main/binary-arm64/Release
+SHA256:
+ 2e5115fe3aa1ee219abc7dff6c57250ea8f1eaf6c05795ed8fa01446df29d3e3 650 main/binary-amd64/Packages
+ 106ebcddc0e841ac2b90b2c69daea431c06b3f34247a85ed0b1a0009cf72c3c2 436 main/binary-amd64/Packages.gz
+ 482163097ec79c422de19f2f83e2658676455df766518086a6a371a945e0dfd4 159 main/binary-amd64/Release
+ 409bc3f64d812b9c8e7b16e8c55608088a8176dc82cf981df2ffe747636358b2 650 main/binary-arm64/Packages
+ 0a1d8c64864a4175129193aabc1208b0c6db6e01687b95693c60da96fb606483 437 main/binary-arm64/Packages.gz
+ 7fff0e368c5cb547b671cbeae400cab9b56bb3866ace12626f1fd0a4123cd25b 159 main/binary-arm64/Release
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEE+zZEiSHgyUTXS1K/nT+EKbOK2CEFAml43FwACgkQnT+EKbOK
+2CFdfw//RjeCu03EEwL0tK/f+skhrno+pnGy+YxR4Bs6TLTt8fFxxCv3PjNNz1fW
+g4t09bH+VXw4lr1i7zzMYb5uPo1Z1qMFOCKRJI1ANWzI9B+/NvL76akDeT0nqE2f
+X5GQ9IZCLykBFWNZqeAew782JkE7+n4zEQRKMWE6FSzIInwYSW78Os960CkcFEg5
+BOG/2hac74R39hpn7ohOXKK8nZRCVE8aYxE3JJ69KXYmLw3XS5iaEr8ePm8Sbwyf
+yqQ4iLJLWuk9JJprQyLRqkjQnXs182BTeyjScDTK7IdFNI86C/EoO1wooF2mOWtv
+oc7BV7LIUTyGLQhaVyg9Ej3uFK9yHtqE3vqHBWpiMEzPdDS+ZrTkUb9FjJ5X3NnT
+6KDW6vAIMxuEXxA8bEKSJY9Bjlb6yAFMs3Ii/eXAbM7q2Gy3H3OQGkN563v2Fs7+
+80VJHvjA+rgxizTPoB8WuuQqbU0uBH/+E9HUn/Zn5ZmqwD0GaC9/Hi4Pg6QyAy+W
+xlRwVEQx3rW/HGyaG2HX9WysbH35d/TbQgfU3WxXgSFsKEpSqGOjkY8GN9tr6A14
+ll8foFJvmlmrgNDioPPVGQwhLlgTf6KYRdQfb2D8VBimGs1oaHMKLrnQtWaXWPyM
+o3iCCyQasfYFX8f/4rRT8nNnTBDBaXA6e+QH09BotsysWrFsVJ0=
+=Y3NF
+-----END PGP SIGNATURE-----

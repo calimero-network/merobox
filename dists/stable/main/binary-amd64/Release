@@ -1,0 +1,6 @@
+Archive: stable
+Component: main
+Origin: merobox
+Label: merobox
+Architecture: amd64
+Description: Merobox APT Repository - CLI tool for Calimero node management
