@@ -262,9 +262,17 @@ jobs:
           chmod +x packaging/apt/build-deb.sh
           mkdir -p debs
           AMD64_BINARY=$(find artifacts -name "merobox-${TAG}-linux-x86-64" -type f | head -1)
-          [ -n "$AMD64_BINARY" ] && OUTPUT_DIR=debs ./packaging/apt/build-deb.sh "$VERSION" "$AMD64_BINARY" "amd64"
+          if [ -z "$AMD64_BINARY" ]; then
+            echo "Error: AMD64 binary not found for tag ${TAG}"
+            exit 1
+          fi
+          OUTPUT_DIR=debs ./packaging/apt/build-deb.sh "$VERSION" "$AMD64_BINARY" "amd64"
           ARM64_BINARY=$(find artifacts -name "merobox-${TAG}-linux-aarch64" -type f | head -1)
-          [ -n "$ARM64_BINARY" ] && OUTPUT_DIR=debs ./packaging/apt/build-deb.sh "$VERSION" "$ARM64_BINARY" "arm64"
+          if [ -z "$ARM64_BINARY" ]; then
+            echo "Error: ARM64 binary not found for tag ${TAG}"
+            exit 1
+          fi
+          OUTPUT_DIR=debs ./packaging/apt/build-deb.sh "$VERSION" "$ARM64_BINARY" "arm64"
       - uses: actions/upload-artifact@v4
         with:
           name: debian-packages
@@ -339,8 +347,6 @@ jobs:
           FINGERPRINT=$(gpg --list-keys --with-colons | grep "^fpr" | head -1 | cut -d: -f10)
           echo "${FINGERPRINT}:6:" | gpg --import-ownertrust
           echo "APT_GPG_FINGERPRINT=${FINGERPRINT}" >> $GITHUB_ENV
-          echo "$APT_GPG_PASSPHRASE" > "${GNUPGHOME}/.passphrase"
-          chmod 600 "${GNUPGHOME}/.passphrase"
       - name: Export public key
         run: gpg --export "$APT_GPG_FINGERPRINT" > gh-pages-repo/gpg.key
       - name: Publish packages to APT repository
@@ -358,11 +364,12 @@ jobs:
           for file in dists/stable/Release dists/stable/InRelease; do
             [ -f "gh-pages-repo/$file" ] || exit 1
           done
-          FOUND=false
           for arch in amd64 arm64; do
-            [ -f "gh-pages-repo/dists/stable/main/binary-${arch}/Packages.gz" ] && FOUND=true
+            if [ ! -f "gh-pages-repo/dists/stable/main/binary-${arch}/Packages.gz" ]; then
+              echo "Error: Missing Packages.gz for architecture ${arch}"
+              exit 1
+            fi
           done
-          [ "$FOUND" = true ] || exit 1
       - name: Push to gh-pages
         working-directory: gh-pages-repo
         env:
