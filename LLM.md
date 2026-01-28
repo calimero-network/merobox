@@ -12,7 +12,22 @@ Merobox is a Python CLI tool for managing Calimero nodes in Docker containers. I
 
 ## Installation
 
-**Option 1: Using Homebrew**
+**Option 1: Using APT (Ubuntu/Debian - Recommended for Linux)**
+
+```bash
+# Add repository and install
+curl -fsSL https://calimero-network.github.io/merobox/gpg.key \
+  | sudo tee /usr/share/keyrings/merobox.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/merobox.gpg] https://calimero-network.github.io/merobox stable main" \
+  | sudo tee /etc/apt/sources.list.d/merobox.list
+sudo apt update
+sudo apt install merobox
+
+# Verify installation
+merobox --version
+```
+
+**Option 2: Using Homebrew (macOS)**
 
 ```bash
 # Install via Homebrew
@@ -22,7 +37,7 @@ brew install merobox
 merobox --version
 ```
 
-**Option 2: Using pipx (recommended for non-Homebrew users)**
+**Option 3: Using pipx (recommended for non-Homebrew/non-APT users)**
 
 First, ensure you have pipx installed:
 
@@ -240,6 +255,7 @@ steps:
 ```
 
 **Features:**
+
 - Shared config for all nodes or per-node overrides
 - Skips node initialization when custom config is provided
 - Works with both Docker and binary (`no_docker: true`) modes
