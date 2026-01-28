@@ -1,0 +1,93 @@
+name: Test DEB Package
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  test-deb-package:
+    name: Test .deb package installation and runtime
+    runs-on: ubuntu-24.04-8cpu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential dpkg-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller merobox.spec
+          ./dist/merobox --version
+
+      - name: Determine version
+        id: version
+        run: |
+          VERSION=$(grep '^__version__ = ' merobox/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
+      - name: Build .deb package
+        run: |
+          chmod +x packaging/apt/build-deb.sh
+          mkdir -p debs
+          OUTPUT_DIR=debs ./packaging/apt/build-deb.sh "${{ steps.version.outputs.version }}" ./dist/merobox amd64
+
+      - name: Install .deb package
+        run: |
+          echo "=== Installing .deb package ==="
+          sudo dpkg -i debs/*.deb || sudo apt-get install -f -y
+          dpkg -l | grep merobox
+
+      - name: Test merobox --version
+        run: |
+          echo "=== Testing merobox --version ==="
+          merobox --version
+
+      - name: Download Context contracts
+        run: |
+          echo "Downloading contracts..."
+          ./workflow-examples/scripts/download_contracts.sh
+
+      - name: Install merod binary
+        run: |
+          echo "Downloading merod binary..."
+          VERSION="0.10.0-rc.25"
+          ARCH="x86_64"
+          PLATFORM="unknown-linux-gnu"
+          TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
+          DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
+          curl -L -o "${TARBALL}" "${DOWNLOAD_URL}"
+          tar -xzf "${TARBALL}"
+          chmod +x merod
+          sudo mv merod /usr/local/bin/
+          rm "${TARBALL}"
+          merod --version
+
+      - name: Test merobox bootstrap run workflow
+        run: |
+          echo "=== Testing merobox bootstrap run workflow-example.yml ==="
+          merobox bootstrap run workflow-examples/workflow-example.yml \
+            --no-docker \
+            --e2e-mode \
+            --near-devnet \
+            --contracts-dir "$GITHUB_WORKSPACE/contracts/near"
+          echo "Workflow completed successfully"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          merobox stop --all --no-docker || true
+          merobox nuke -f || true
+          sudo dpkg -r merobox || true
