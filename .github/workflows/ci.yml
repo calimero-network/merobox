@@ -116,12 +116,11 @@ jobs:
             [ ${#failed_workflows[@]} -eq 0 ] && break
             echo "Retry $retry for ${#failed_workflows[@]} failed workflow(s)..."
             sleep 2
-            
+
             still_failed=()
             for f in "${failed_workflows[@]}"; do
               if ! merobox bootstrap run "$f" \
                 --no-docker \
-                --binary-path ../../target/debug/merod \
                 --e2e-mode \
                 --near-devnet \
                 --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
