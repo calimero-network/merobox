@@ -40,24 +40,133 @@ steps:
 
   # =============================================================================
   # PHASE 2: Write 5000 key/value pairs on Node 1 (bulk data for snapshot sync)
+  # Uses 10 parallel groups of 500 iterations each for true parallelism
   # =============================================================================
 
-  - name: "[Bulk Write] Writing 5000 key/value pairs on Node 1 (parallel)"
+  - name: "[Bulk Write] Writing 5000 key/value pairs on Node 1 (10 parallel groups)"
     type: parallel
     mode: burst
     groups:
-      - name: Bulk_Write_Operations
-        count: 5000
+      - name: Bulk_Write_Group_0
+        count: 500
         steps:
-          - name: "Write key {{iteration}}"
+          - name: "Write key g0_{{iteration}}"
             type: call
             node: snapshot-node-1
             context_id: "{{context_id}}"
             executor_public_key: "{{member_public_key}}"
             method: set
             args:
-              key: "snapshot_key_{{iteration}}"
-              value: "snapshot_value_{{iteration}}"
+              key: "snapshot_key_0_{{iteration}}"
+              value: "snapshot_value_0_{{iteration}}"
+      - name: Bulk_Write_Group_1
+        count: 500
+        steps:
+          - name: "Write key g1_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_1_{{iteration}}"
+              value: "snapshot_value_1_{{iteration}}"
+      - name: Bulk_Write_Group_2
+        count: 500
+        steps:
+          - name: "Write key g2_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_2_{{iteration}}"
+              value: "snapshot_value_2_{{iteration}}"
+      - name: Bulk_Write_Group_3
+        count: 500
+        steps:
+          - name: "Write key g3_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_3_{{iteration}}"
+              value: "snapshot_value_3_{{iteration}}"
+      - name: Bulk_Write_Group_4
+        count: 500
+        steps:
+          - name: "Write key g4_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_4_{{iteration}}"
+              value: "snapshot_value_4_{{iteration}}"
+      - name: Bulk_Write_Group_5
+        count: 500
+        steps:
+          - name: "Write key g5_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_5_{{iteration}}"
+              value: "snapshot_value_5_{{iteration}}"
+      - name: Bulk_Write_Group_6
+        count: 500
+        steps:
+          - name: "Write key g6_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_6_{{iteration}}"
+              value: "snapshot_value_6_{{iteration}}"
+      - name: Bulk_Write_Group_7
+        count: 500
+        steps:
+          - name: "Write key g7_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_7_{{iteration}}"
+              value: "snapshot_value_7_{{iteration}}"
+      - name: Bulk_Write_Group_8
+        count: 500
+        steps:
+          - name: "Write key g8_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_8_{{iteration}}"
+              value: "snapshot_value_8_{{iteration}}"
+      - name: Bulk_Write_Group_9
+        count: 500
+        steps:
+          - name: "Write key g9_{{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_9_{{iteration}}"
+              value: "snapshot_value_9_{{iteration}}"
 
   - name: Verify last key written on Node 1
     type: call
@@ -66,14 +175,14 @@ steps:
     executor_public_key: "{{member_public_key}}"
     method: get
     args:
-      key: "snapshot_key_5000"
+      key: "snapshot_key_9_500"
     outputs:
       verify_node1_last_key: result
 
   - name: Assert last key exists on Node 1
     type: json_assert
     statements:
-      - 'json_subset({{verify_node1_last_key}}, {"output": "snapshot_value_5000"})'
+      - 'json_subset({{verify_node1_last_key}}, {"output": "snapshot_value_9_500"})'
 
   # =============================================================================
   # PHASE 3: Node 2 joins context - should trigger snapshot sync
@@ -131,7 +240,7 @@ steps:
     executor_public_key: "{{public_key_node2}}"
     method: get
     args:
-      key: "snapshot_key_1"
+      key: "snapshot_key_0_1"
     outputs:
       verify_first_key: result
 
@@ -142,7 +251,7 @@ steps:
     executor_public_key: "{{public_key_node2}}"
     method: get
     args:
-      key: "snapshot_key_2500"
+      key: "snapshot_key_5_1"
     outputs:
       verify_middle_key: result
 
@@ -153,16 +262,16 @@ steps:
     executor_public_key: "{{public_key_node2}}"
     method: get
     args:
-      key: "snapshot_key_5000"
+      key: "snapshot_key_9_500"
     outputs:
       verify_last_key: result
 
   - name: Assert Node 2 has synced all keys
     type: json_assert
     statements:
-      - 'json_subset({{verify_first_key}}, {"output": "snapshot_value_1"})'
-      - 'json_subset({{verify_middle_key}}, {"output": "snapshot_value_2500"})'
-      - 'json_subset({{verify_last_key}}, {"output": "snapshot_value_5000"})'
+      - 'json_subset({{verify_first_key}}, {"output": "snapshot_value_0_1"})'
+      - 'json_subset({{verify_middle_key}}, {"output": "snapshot_value_5_1"})'
+      - 'json_subset({{verify_last_key}}, {"output": "snapshot_value_9_500"})'
 
   # =============================================================================
   # PHASE 5: Send more data from both nodes and verify cross-propagation
