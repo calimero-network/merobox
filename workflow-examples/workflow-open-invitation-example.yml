@@ -160,6 +160,11 @@ steps:
     check_interval: 2
     trigger_sync: true
 
+  # Wait for update to propagate to all nodes ( CI sometimes fails if we call the get too soon even after root hash is updated)
+  - name: Wait
+    type: wait
+    seconds: 3
+
   # Verify all members see the update
   - name: Get Update - Node 1 (Inviter)
     type: call
