@@ -24,17 +24,35 @@ A comprehensive Python CLI tool for managing Calimero nodes in Docker containers
 
 ### Installation
 
-```bash
-# From PyPI
-pipx install merobox
+**APT (Ubuntu/Debian):**
 
-# From source
+```bash
+curl -fsSL https://calimero-network.github.io/merobox/gpg.key \
+  | sudo tee /usr/share/keyrings/merobox.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/merobox.gpg] https://calimero-network.github.io/merobox stable main" \
+  | sudo tee /etc/apt/sources.list.d/merobox.list
+sudo apt update
+sudo apt install merobox
+```
+
+**PyPI:**
+
+```bash
+pipx install merobox
+```
+
+**Homebrew:**
+
+```bash
+brew install merobox
+```
+
+**From source:**
+
+```bash
 git clone https://github.com/calimero-network/merobox.git
 cd merobox
 pipx install -e .
-
-# From Homebrew
-brew install merobox
 ```
 
 ### Basic Usage
@@ -309,11 +327,13 @@ merobox remote register <name> <url> [OPTIONS]
 ```
 
 **Options:**
+
 - `--auth-method/-m`: Authentication method (`user_password`, `api_key`, `none`)
 - `--username/-u`: Username for user_password auth
 - `--description/-d`: Human-readable description
 
 **Examples:**
+
 ```bash
 # Register with user/password auth
 merobox remote register prod https://prod.example.com -m user_password -u admin
@@ -334,12 +354,14 @@ merobox remote login <url_or_name> [OPTIONS]
 ```
 
 **Options:**
+
 - `--username/-u`: Username (prompts if not provided)
 - `--password/-p`: Password (prompts if not provided)
 - `--api-key/-k`: API key for api_key auth method
 - `--method/-m`: Auth method override
 
 **Examples:**
+
 ```bash
 # Login with prompts
 merobox remote login prod-node
@@ -372,6 +394,7 @@ merobox remote status
 ```
 
 Shows:
+
 - Registered remote nodes with URLs and auth methods
 - Cached tokens with expiration status (valid/expired)
 
@@ -384,11 +407,13 @@ merobox remote test <url_or_name> [OPTIONS]
 ```
 
 **Options:**
+
 - `--username/-u`: Username for testing
 - `--password/-p`: Password for testing
 - `--api-key/-k`: API key for testing
 
 Tests performed:
+
 1. Network connectivity
 2. Auth requirement detection
 3. Authentication (if required)
@@ -411,6 +436,7 @@ merobox remote unregister <name> [--remove-token]
 ```
 
 **Options:**
+
 - `--remove-token`: Also remove cached authentication token
 
 ### Remote Nodes in Workflows
@@ -444,7 +470,7 @@ remote_nodes:
 steps:
   - name: Install Application
     type: install_application
-    node: prod-node  # Reference remote node by name
+    node: prod-node # Reference remote node by name
     url: https://example.com/app.wasm
     outputs:
       app_id: applicationId
@@ -530,6 +556,7 @@ merobox bootstrap run workflow.yml \
 ```
 
 **CLI Options:**
+
 - `--remote-node NAME=URL` (repeatable): Register a remote node
 - `--remote-auth NAME=AUTH` (repeatable): Set authentication
   - `name=user:password` for user_password auth
@@ -550,6 +577,7 @@ auth:
 ```
 
 **Credential Resolution Order:**
+
 1. CLI flags (`--password`, `-p`)
 2. Environment variable (`MEROBOX_PASSWORD`)
 3. Interactive prompt
@@ -561,7 +589,7 @@ Uses a pre-generated API key:
 ```yaml
 auth:
   method: api_key
-  key: ${API_KEY}  # From environment
+  key: ${API_KEY} # From environment
 ```
 
 #### No Authentication
@@ -582,12 +610,14 @@ Tokens are automatically cached to avoid repeated authentication:
 - **Permissions:** Restrictive (0o600)
 
 **How It Works:**
+
 1. First authentication saves token to cache
 2. Subsequent requests use cached token
 3. Expired tokens are automatically refreshed
 4. `calimero-client-py` handles refresh on 401 responses
 
 **Token Lifecycle:**
+
 ```bash
 # Initial login caches token
 merobox remote login prod-node -u admin -p secret
@@ -605,13 +635,14 @@ merobox remote login prod-node
 
 ### Environment Variables
 
-| Variable | Description |
-|----------|-------------|
+| Variable           | Description                             |
+| ------------------ | --------------------------------------- |
 | `MEROBOX_USERNAME` | Default username for user_password auth |
 | `MEROBOX_PASSWORD` | Default password for user_password auth |
-| `MEROBOX_API_KEY` | Default API key |
+| `MEROBOX_API_KEY`  | Default API key                         |
 
 **Example:**
+
 ```bash
 export MEROBOX_USERNAME=admin
 export MEROBOX_PASSWORD=secret
@@ -1296,12 +1327,14 @@ Example:
 Merobox offers two ways to run isolated tests without connecting to public networks. **These options are mutually exclusive.**
 
 1. **Local NEAR Sandbox** (`--near-devnet`)
-A real, ephemeral NEAR blockchain instance running locally.
+   A real, ephemeral NEAR blockchain instance running locally.
+
 - **Best for:** Full E2E testing and contract logic verification.
 - **Behavior:** Executes actual WASM smart contracts and state transitions.
 
 2. **Mock Relayer** (`--mock-relayer`)
-A lightweight service that mimics the Relayer API.
+   A lightweight service that mimics the Relayer API.
+
 - **Best for:** Fast connectivity checks and node startup validation.
 - **Behavior:** Returns successful responses without executing real logic.
 
@@ -1313,11 +1346,14 @@ Merobox allows you to run workflows against a local ephemeral NEAR blockchain (S
 This enables faster E2E testing without needing testnet tokens or RPC access.
 
 #### Requirements
+
 You need the compiled WebAssembly (`.wasm`) files for the Calimero context contracts:
+
 1. `calimero_context_config_near.wasm`
 2. `calimero_context_proxy_near.wasm`
 
 #### How to Run
+
 Use the `--near-devnet` flag and point to your contracts directory:
 
 ```bash
@@ -1327,6 +1363,7 @@ merobox bootstrap run workflows/my-test.yml \
 ```
 
 **What happens during the run:**
+
 1. **Sandbox Start**: Merobox downloads and starts `near-sandbox` locally on port 3030.
 2. **Contract Deployment**: It creates a root account (`calimero.test.near`) and deploys the registry contracts.
 3. **Node Configuration**: It generates funded NEAR accounts for every node in your workflow (e.g., `node-1.test.near`).
@@ -1665,6 +1702,7 @@ merobox remote register <name> <url> [OPTIONS]
 ```
 
 **Options:**
+
 - `--auth-method/-m`: Authentication method (`user_password`, `api_key`, `none`)
 - `--username/-u`: Username for user_password auth
 - `--description/-d`: Human-readable description
@@ -1676,6 +1714,7 @@ merobox remote login <url_or_name> [OPTIONS]
 ```
 
 **Options:**
+
 - `--username/-u`: Username
 - `--password/-p`: Password
 - `--api-key/-k`: API key
@@ -1695,6 +1734,7 @@ merobox remote test <url_or_name> [OPTIONS]
 ```
 
 **Options:**
+
 - `--username/-u`: Username for testing
 - `--password/-p`: Password for testing
 - `--api-key/-k`: API key for testing
@@ -1819,7 +1859,7 @@ You can specify a custom config path at two levels:
 
 ```yaml
 nodes:
-  config_path: ./custom-config.toml  # All nodes use this config
+  config_path: ./custom-config.toml # All nodes use this config
   calimero-node-1:
     port: 2428
     rpc_port: 2528
@@ -1832,7 +1872,7 @@ nodes:
 
 ```yaml
 nodes:
-  config_path: ./default-config.toml  # Default for all nodes
+  config_path: ./default-config.toml # Default for all nodes
   calimero-node-1:
     port: 2428
     rpc_port: 2528
@@ -1840,7 +1880,7 @@ nodes:
   calimero-node-2:
     port: 2429
     rpc_port: 2529
-    config_path: ./special-config.toml  # Override for this node
+    config_path: ./special-config.toml # Override for this node
 ```
 
 #### **Features**
@@ -2579,8 +2619,8 @@ merobox/
 
 - **Python**: 3.9 - 3.11
   - **Note**: Python 3.12+ is currently not supported. The Near Sandbox feature uses `py-near` dependency relies
-  on `ed25519` package (that uses `SafeConfigParser`, which was removed in Python 3.12) that is limited by Python 3.11.
-  Please use Python 3.11 or older.
+    on `ed25519` package (that uses `SafeConfigParser`, which was removed in Python 3.12) that is limited by Python 3.11.
+    Please use Python 3.11 or older.
 - **Docker**: 20.10+ for Calimero nodes
 - **OS**: Linux, macOS, Windows
   - **Note**: Linux/macOS required for near-sandbox local devnet. Windows platform is not currently supported (you may try using WSL).
@@ -2612,19 +2652,16 @@ git push origin master
 #### What Happens Automatically
 
 1. **Auto-Tagging** (~ 5 seconds)
-
    - Detects version change in `__init__.py`
    - Creates and pushes tag `vX.Y.Z`
    - Comments on commit with status
 
 2. **Build Binaries** (~ 5-10 minutes)
-
    - macOS x64 & arm64
    - Linux x64 & arm64
    - Generates SHA256 checksums
 
 3. **Create Release** (~ 30 seconds)
-
    - Publishes GitHub release with binaries
    - Auto-generates release notes
 
