@@ -42,21 +42,22 @@ steps:
   # PHASE 2: Write 5000 key/value pairs on Node 1 (bulk data for snapshot sync)
   # =============================================================================
 
-  - name: "[Bulk Write] Writing 5000 key/value pairs on Node 1"
-    type: repeat
-    count: 5000
-    outputs:
-      i: iteration
-    steps:
-      - name: "Write key {{i}}"
-        type: call
-        node: snapshot-node-1
-        context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
-        method: set
-        args:
-          key: "snapshot_key_{{i}}"
-          value: "snapshot_value_{{i}}"
+  - name: "[Bulk Write] Writing 5000 key/value pairs on Node 1 (parallel)"
+    type: parallel
+    mode: burst
+    groups:
+      - name: Bulk_Write_Operations
+        count: 5000
+        steps:
+          - name: "Write key {{iteration}}"
+            type: call
+            node: snapshot-node-1
+            context_id: "{{context_id}}"
+            executor_public_key: "{{member_public_key}}"
+            method: set
+            args:
+              key: "snapshot_key_{{iteration}}"
+              value: "snapshot_value_{{iteration}}"
 
   - name: Verify last key written on Node 1
     type: call
