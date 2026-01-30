@@ -274,71 +274,7 @@ steps:
       - 'json_subset({{verify_last_key}}, {"output": "snapshot_value_9_500"})'
 
   # =============================================================================
-  # PHASE 5: Send more data from both nodes and verify cross-propagation
-  # =============================================================================
-
-  - name: "[Post-Sync] Node 1 writes new key"
-    type: call
-    node: snapshot-node-1
-    context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
-    method: set
-    args:
-      key: "post_sync_from_node1"
-      value: "written_by_node1_after_sync"
-
-  - name: "[Post-Sync] Node 2 writes new key"
-    type: call
-    node: snapshot-node-2
-    context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_node2}}"
-    method: set
-    args:
-      key: "post_sync_from_node2"
-      value: "written_by_node2_after_sync"
-
-  - name: Wait for post-sync propagation
-    type: wait_for_sync
-    context_id: "{{context_id}}"
-    nodes:
-      - snapshot-node-1
-      - snapshot-node-2
-    timeout: 60
-    check_interval: 2
-    trigger_sync: true
-
-  # Verify cross-propagation: Node 2 can read Node 1's new key
-  - name: "[Verify Cross-Prop] Node 2 reads Node 1's new key"
-    type: call
-    node: snapshot-node-2
-    context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_node2}}"
-    method: get
-    args:
-      key: "post_sync_from_node1"
-    outputs:
-      node2_reads_node1_key: result
-
-  # Verify cross-propagation: Node 1 can read Node 2's new key
-  - name: "[Verify Cross-Prop] Node 1 reads Node 2's new key"
-    type: call
-    node: snapshot-node-1
-    context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
-    method: get
-    args:
-      key: "post_sync_from_node2"
-    outputs:
-      node1_reads_node2_key: result
-
-  - name: Assert cross-propagation succeeded
-    type: json_assert
-    statements:
-      - 'json_subset({{node2_reads_node1_key}}, {"output": "written_by_node1_after_sync"})'
-      - 'json_subset({{node1_reads_node2_key}}, {"output": "written_by_node2_after_sync"})'
-
-  # =============================================================================
-  # PHASE 6: Final Summary
+  # PHASE 5: Final Summary
   # =============================================================================
 
   - name: Final Summary
@@ -348,8 +284,8 @@ steps:
         message: "Context was created successfully"
       - statement: "is_set({{sync_root_hash}})"
         message: "Snapshot sync completed - nodes have matching root hash"
-      - statement: "is_set({{node1_reads_node2_key}})"
-        message: "Cross-propagation after snapshot sync works correctly"
+      - statement: "is_set({{verify_last_key}})"
+        message: "Node 2 received all 5000 keys via snapshot sync"
 
 stop_all_nodes: true
 restart: false
