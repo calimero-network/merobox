@@ -186,6 +186,13 @@ def bootstrap():
     help="Set custom path to merod binary (used with --no-docker). Defaults to searching PATH and common locations (/usr/local/bin, /usr/bin, ~/bin).",
 )
 @click.option(
+    "--merod-args",
+    type=str,
+    default=None,
+    help="Additional arguments to pass to merod run command (binary mode only). "
+    'Example: --merod-args="--sync-strategy delta"',
+)
+@click.option(
     "--mock-relayer",
     is_flag=True,
     help="Start a local mock relayer (Docker only) and wire nodes to it",
@@ -247,6 +254,7 @@ def run(
     rust_backtrace,
     no_docker,
     binary_path,
+    merod_args,
     mock_relayer,
     e2e_mode,
     near_devnet,
@@ -292,6 +300,14 @@ def run(
         )
         sys.exit(1)
 
+    # Warn if --merod-args is used without --no-docker
+    if merod_args and not no_docker:
+        console.print(
+            "[yellow]⚠ --merod-args is only supported with --no-docker (binary mode). "
+            "Flag will be ignored.[/yellow]"
+        )
+        merod_args = None
+
     # Parse remote node CLI options
     cli_remote_nodes = parse_remote_nodes(remote_node)
     cli_remote_nodes = parse_remote_auth(remote_auth, cli_remote_nodes, api_key)
@@ -308,6 +324,7 @@ def run(
         rust_backtrace=rust_backtrace,
         no_docker=no_docker,
         binary_path=binary_path,
+        merod_args=merod_args,
         mock_relayer=mock_relayer,
         e2e_mode=e2e_mode,
         near_devnet=near_devnet,
