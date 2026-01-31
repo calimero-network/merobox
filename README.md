@@ -51,6 +51,10 @@ merobox run --auth-service
 # Start with embedded auth (binary mode)
 merobox run --no-docker --binary-path /path/to/merod --auth-mode embedded
 
+# Pass extra arguments straight to `merod run` (binary mode only)
+merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
+  --merod-args="--sync-strategy delta --state-sync-strategy hash"
+
 # Check node status
 merobox health
 
