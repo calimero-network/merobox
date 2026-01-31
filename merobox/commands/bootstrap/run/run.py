@@ -84,6 +84,7 @@ async def run_workflow(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
+    merod_args: Optional[str] = None,
     e2e_mode: bool = False,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
     auth_mode: Optional[str] = None,
@@ -198,6 +199,7 @@ async def run_workflow(
             auth_username=auth_username,
             auth_password=auth_password,
             dry_run=dry_run,
+            merod_args=merod_args,
         )
 
         # Execute workflow
@@ -237,6 +239,7 @@ def run_workflow_sync(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
+    merod_args: Optional[str] = None,
     e2e_mode: bool = False,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
     auth_mode: Optional[str] = None,
@@ -273,6 +276,7 @@ def run_workflow_sync(
             rust_backtrace=rust_backtrace,
             no_docker=no_docker,
             binary_path=binary_path,
+            merod_args=merod_args,
             e2e_mode=e2e_mode,
             cli_remote_nodes=cli_remote_nodes,
             auth_mode=auth_mode,

@@ -114,6 +114,7 @@ class WorkflowExecutor:
         auth_username: Optional[str] = None,
         auth_password: Optional[str] = None,
         dry_run: bool = False,
+        merod_args: Optional[str] = None,
     ):
         self.config = config
         self.manager = manager
@@ -164,6 +165,9 @@ class WorkflowExecutor:
 
         # Auth mode for binary mode (can be set by CLI or workflow config, CLI takes precedence)
         self.auth_mode = auth_mode or config.get("auth_mode", None)
+
+        # Merod args for binary mode (CLI only, not from config)
+        self.merod_args = merod_args
 
         # Remote nodes configuration
         self.remote_nodes_config = config.get("remote_nodes", {})
@@ -868,6 +872,8 @@ class WorkflowExecutor:
                     if self.is_binary_mode:
                         if self.auth_mode:
                             run_node_kwargs["auth_mode"] = self.auth_mode
+                        if self.merod_args:
+                            run_node_kwargs["merod_args"] = self.merod_args
                     else:
                         run_node_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
@@ -958,6 +964,8 @@ class WorkflowExecutor:
                     if self.is_binary_mode:
                         if self.auth_mode:
                             run_node_kwargs["auth_mode"] = self.auth_mode
+                        if self.merod_args:
+                            run_node_kwargs["merod_args"] = self.merod_args
                     else:
                         run_node_kwargs["use_image_entrypoint"] = (
                             node_use_image_entrypoint
@@ -993,6 +1001,8 @@ class WorkflowExecutor:
                 if self.is_binary_mode:
                     if self.auth_mode:
                         run_node_kwargs["auth_mode"] = self.auth_mode
+                    if self.merod_args:
+                        run_node_kwargs["merod_args"] = self.merod_args
                 else:
                     run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
 

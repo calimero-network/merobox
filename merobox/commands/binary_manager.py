@@ -4,6 +4,7 @@ Binary Manager - Manages Calimero nodes as native processes (no Docker).
 
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -191,6 +192,7 @@ class BinaryManager(CleanupMixin):
         config_path: Optional[str] = None,  # custom config.toml path
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
+        merod_args: Optional[str] = None,  # Additional arguments to pass to merod run
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -204,6 +206,8 @@ class BinaryManager(CleanupMixin):
             rust_backtrace: RUST_BACKTRACE level
             auth_mode: Authentication mode ('embedded' or 'proxy'). When 'embedded',
                 enables built-in auth with JWT protection on all endpoints.
+            merod_args: Additional arguments to pass to merod run command.
+                Example: "--sync-strategy delta --state-sync-strategy hash"
 
         Returns:
             True if successful, False otherwise
@@ -352,6 +356,10 @@ class BinaryManager(CleanupMixin):
                 node_name,
                 "run",
             ]
+
+            # Append additional merod arguments if provided
+            if merod_args:
+                cmd.extend(shlex.split(merod_args))
 
             if foreground:
                 # Start attached in foreground (inherit stdio)
