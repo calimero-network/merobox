@@ -26,6 +26,8 @@ from merobox.commands.bootstrap.steps.proposals import (
 )
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
+from merobox.commands.bootstrap.steps.start_node import StartNodeStep
+from merobox.commands.bootstrap.steps.stop_node import StopNodeStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 
@@ -163,14 +165,25 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = GetProposalApproversStep
         elif step_type == "fuzzy_test":
             step_class = FuzzyTestStep
+        elif step_type == "stop_node":
+            step_class = StopNodeStep
+        elif step_type == "start_node":
+            step_class = StartNodeStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors
 
         # Create a temporary step instance to trigger validation
         # This will catch any validation errors without executing
+        # Note: start_node requires executor/workflow_config, so we skip validation for it
+        # It will be validated at runtime
         try:
-            step_class(step)
+            if step_type == "start_node":
+                # start_node requires executor and workflow_config, skip validation here
+                # It will be validated at runtime when executor creates it
+                pass
+            else:
+                step_class(step)
         except Exception as e:
             errors.append(f"Step '{step_name}' validation failed: {str(e)}")
 

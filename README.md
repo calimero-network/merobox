@@ -67,6 +67,12 @@ merobox run --auth-service
 # Start nodes with embedded auth (binary mode)
 merobox run --no-docker --binary-path /path/to/merod --auth-mode embedded
 
+# Run workflow with custom merod arguments (binary mode)
+merobox bootstrap run workflow.yml \
+  --no-docker \
+  --binary-path ./merod \
+  --merod-args="--sync-strategy delta --state-sync-strategy hash"
+
 # Check node status
 merobox list
 merobox health
@@ -940,6 +946,93 @@ Waits for nodes to reach consensus by verifying they have the same root hash. Th
     elapsed_seconds: "sync_time"
 ```
 
+#### Stop Node Step
+
+Stops one or more nodes during workflow execution. Useful for testing node recovery, benchmarking, or simulating node failures.
+
+```yaml
+- name: "Stop Node for Benchmark"
+  type: "stop_node"
+  nodes: calimero-node-1  # Single node (string)
+  # OR
+  nodes:                  # Multiple nodes (list)
+    - calimero-node-1
+    - calimero-node-2
+```
+
+**Use Cases:**
+- **Benchmarking**: Stop nodes to measure performance without them
+- **Recovery Testing**: Test how workflows handle node failures
+- **Resource Management**: Temporarily free up resources during long workflows
+
+**Parameters:**
+- `nodes`: Node name (string) or list of node names to stop
+- Supports dynamic variables: `nodes: "{{node_name}}"`
+
+**Note:** This step only works with local nodes (Docker or binary mode). Remote nodes cannot be stopped via workflow.
+
+#### Start Node Step
+
+Starts one or more nodes during workflow execution. Nodes are started with the same configuration as defined in the workflow's `nodes` section (ports, chain_id, etc.).
+
+```yaml
+- name: "Start Node After Benchmark"
+  type: "start_node"
+  nodes: calimero-node-1  # Single node (string)
+  # OR
+  nodes:                  # Multiple nodes (list)
+    - calimero-node-1
+    - calimero-node-2
+  wait_for_ready: true    # Wait for nodes to be ready (default: true)
+  wait_timeout: 30        # Timeout in seconds (default: 30)
+```
+
+**Use Cases:**
+- **Restart After Stop**: Start nodes that were previously stopped
+- **Dynamic Node Management**: Add nodes to the workflow mid-execution
+- **Recovery Scenarios**: Restart nodes after failures
+
+**Parameters:**
+- `nodes`: Node name (string) or list of node names to start
+- `wait_for_ready`: Boolean, whether to wait for nodes to be ready (default: `true`)
+- `wait_timeout`: Integer, maximum seconds to wait for readiness (default: `30`)
+- Supports dynamic variables: `nodes: "{{node_name}}"`
+
+**Node Configuration:**
+Nodes are started with configuration from the workflow's `nodes` section:
+- Ports (base_port, base_rpc_port or node-specific)
+- Chain ID
+- Image (Docker mode)
+- Log level and other settings from workflow config
+
+**Example: Stop and Start Workflow**
+
+```yaml
+steps:
+  # ... initial workflow steps ...
+  
+  - name: "Stop Node for Benchmark"
+    type: "stop_node"
+    nodes: calimero-node-1
+  
+  - name: "Run Benchmark Operations"
+    type: "call"
+    node: calimero-node-2  # Use other nodes while node-1 is stopped
+    context_id: "{{context_id}}"
+    executor_public_key: "{{member_public_key}}"
+    method: benchmark
+    args:
+      iterations: 1000
+  
+  - name: "Start Node After Benchmark"
+    type: "start_node"
+    nodes: calimero-node-1
+    wait_for_ready: true
+    wait_timeout: 30
+  
+  # ... continue with more steps ...
+```
+
 **Key Features:**
 
 - Verifies root hash consensus across specified nodes
@@ -1404,6 +1497,7 @@ merobox run [OPTIONS]
 - `--force-pull`: Force pull Docker image even if it exists locally
 - `--no-docker`: Run nodes as native processes instead of Docker containers
 - `--binary-path PATH`: Path to merod binary (required when using `--no-docker`)
+- `--merod-args TEXT`: Additional arguments to pass to merod run command (binary mode only). Example: `--merod-args="--sync-strategy delta --state-sync-strategy hash"`. Only works with `--no-docker` mode.
 - `--auth-service`: Enable authentication service with Traefik proxy (Docker mode only)
 - `--auth-image TEXT`: Custom Docker image for the auth service (default: ghcr.io/calimero-network/mero-auth:edge)
 - `--auth-mode [embedded|proxy]`: Authentication mode for merod (binary mode only). `embedded` enables built-in auth with JWT protection on all endpoints. Default is `proxy` (no embedded auth).
