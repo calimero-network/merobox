@@ -63,7 +63,7 @@ jobs:
       - name: Install merod binary
         run: |
           echo "Downloading merod binary..."
-          VERSION="0.10.0-rc.25"
+          VERSION="0.10.0-rc.38"
           ARCH="x86_64"
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
