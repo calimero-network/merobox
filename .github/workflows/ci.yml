@@ -63,7 +63,7 @@ jobs:
           echo "Downloading merod binary from specific release..."
 
           # Use specific release version
-          VERSION="0.10.0-rc.38"
+          VERSION="0.10.0-rc.39"
           echo "Using version: $VERSION"
 
           ARCH="x86_64"
