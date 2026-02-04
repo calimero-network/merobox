@@ -9,10 +9,10 @@ These tests verify:
 - register_remote() method for adding nodes to the registry
 """
 
-from unittest.mock import MagicMock
 import importlib.util
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
