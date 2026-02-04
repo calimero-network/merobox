@@ -81,8 +81,993 @@ class BaseStep:
         """
         Validate that fields have the correct types.
         Override this method in subclasses to add type validation.
+        Use the _validate_* helper methods for comprehensive validation.
         """
         pass
+
+    # =========================================================================
+    # Field Validation Helper Methods
+    # =========================================================================
+    # These methods provide comprehensive validation for common field types.
+    # Use them in subclass _validate_field_types() implementations.
+    # =========================================================================
+
+    def _get_step_name(self) -> str:
+        """Get the step name for error messages."""
+        return self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+
+    def _validate_string_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+        allow_empty: bool = False,
+        min_length: Optional[int] = None,
+        max_length: Optional[int] = None,
+        pattern: Optional[str] = None,
+        pattern_description: Optional[str] = None,
+    ) -> None:
+        """
+        Validate a string field with comprehensive checks.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+            allow_empty: If False, empty strings are rejected (default False)
+            min_length: Minimum string length (after stripping whitespace)
+            max_length: Maximum string length
+            pattern: Regex pattern the value must match
+            pattern_description: Human-readable description of the pattern
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return  # Optional field not present, skip further validation
+
+        # Type check
+        if not isinstance(value, str):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a string")
+
+        # Empty string check
+        if not allow_empty and not value.strip():
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' cannot be empty or whitespace-only"
+            )
+
+        # Length checks
+        stripped_len = len(value.strip())
+        if min_length is not None and stripped_len < min_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at least {min_length} "
+                f"characters (got {stripped_len})"
+            )
+        if max_length is not None and len(value) > max_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at most {max_length} "
+                f"characters (got {len(value)})"
+            )
+
+        # Pattern check
+        if pattern is not None:
+            if not re.match(pattern, value):
+                desc = pattern_description or f"pattern '{pattern}'"
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' must match {desc} (got '{value}')"
+                )
+
+    def _validate_integer_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+        positive: bool = False,
+        non_negative: bool = False,
+    ) -> None:
+        """
+        Validate an integer field with comprehensive checks.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+            min_value: Minimum allowed value (inclusive)
+            max_value: Maximum allowed value (inclusive)
+            positive: If True, value must be > 0
+            non_negative: If True, value must be >= 0
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return  # Optional field not present
+
+        # Type check - allow both int and float that are whole numbers
+        if isinstance(value, bool):
+            # bool is subclass of int, reject it explicitly
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be an integer")
+        if isinstance(value, float):
+            if not value.is_integer():
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' must be an integer (got {value})"
+                )
+            value = int(value)
+        elif not isinstance(value, int):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be an integer")
+
+        # Positive check
+        if positive and value <= 0:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a positive integer (got {value})"
+            )
+
+        # Non-negative check
+        if non_negative and value < 0:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a non-negative integer (got {value})"
+            )
+
+        # Range checks
+        if min_value is not None and value < min_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at least {min_value} (got {value})"
+            )
+        if max_value is not None and value > max_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at most {max_value} (got {value})"
+            )
+
+    def _validate_port_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+        allow_privileged: bool = True,
+    ) -> None:
+        """
+        Validate a port number field.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+            allow_privileged: If True, allow ports 1-1023 (default True)
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        # Use integer validation for basic checks
+        min_port = 1 if allow_privileged else 1024
+        self._validate_integer_field(
+            field_name,
+            required=required,
+            min_value=min_port,
+            max_value=65535,
+        )
+
+        # Additional error message for port context
+        if isinstance(value, int) and (value < min_port or value > 65535):
+            if not allow_privileged and value < 1024:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' must be a non-privileged port "
+                    f"(1024-65535, got {value})"
+                )
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a valid port number "
+                f"({min_port}-65535, got {value})"
+            )
+
+    def _validate_number_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+        min_value: Optional[float] = None,
+        max_value: Optional[float] = None,
+        positive: bool = False,
+        non_negative: bool = False,
+    ) -> None:
+        """
+        Validate a numeric field (int or float) with comprehensive checks.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+            min_value: Minimum allowed value (inclusive)
+            max_value: Maximum allowed value (inclusive)
+            positive: If True, value must be > 0
+            non_negative: If True, value must be >= 0
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        # Type check
+        if isinstance(value, bool):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a number")
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a number")
+
+        # Positive check
+        if positive and value <= 0:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a positive number (got {value})"
+            )
+
+        # Non-negative check
+        if non_negative and value < 0:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a non-negative number (got {value})"
+            )
+
+        # Range checks
+        if min_value is not None and value < min_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at least {min_value} (got {value})"
+            )
+        if max_value is not None and value > max_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at most {max_value} (got {value})"
+            )
+
+    def _validate_boolean_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+    ) -> None:
+        """
+        Validate a boolean field.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        # Type check
+        if not isinstance(value, bool):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a boolean")
+
+    def _validate_list_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+        allow_empty: bool = False,
+        min_length: Optional[int] = None,
+        max_length: Optional[int] = None,
+        element_type: Optional[type] = None,
+        element_validator: Optional[callable] = None,
+        unique_elements: bool = False,
+    ) -> None:
+        """
+        Validate a list field with comprehensive checks.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+            allow_empty: If False, empty lists are rejected (default False)
+            min_length: Minimum list length
+            max_length: Maximum list length
+            element_type: If provided, all elements must be of this type
+            element_validator: Optional callback to validate each element
+            unique_elements: If True, all elements must be unique
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        # Type check
+        if not isinstance(value, list):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a list")
+
+        # Empty check
+        if not allow_empty and len(value) == 0:
+            raise ValueError(f"Step '{step_name}': '{field_name}' cannot be empty")
+
+        # Length checks
+        if min_length is not None and len(value) < min_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must have at least {min_length} "
+                f"elements (got {len(value)})"
+            )
+        if max_length is not None and len(value) > max_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must have at most {max_length} "
+                f"elements (got {len(value)})"
+            )
+
+        # Element type check
+        if element_type is not None:
+            for i, elem in enumerate(value):
+                if not isinstance(elem, element_type):
+                    raise ValueError(
+                        f"Step '{step_name}': '{field_name}[{i}]' must be a "
+                        f"{element_type.__name__} (got {type(elem).__name__})"
+                    )
+
+        # Element validator check
+        if element_validator is not None:
+            for i, elem in enumerate(value):
+                try:
+                    element_validator(elem, i, field_name)
+                except ValueError:
+                    raise
+                except Exception as e:
+                    raise ValueError(
+                        f"Step '{step_name}': '{field_name}[{i}]' validation failed: {e}"
+                    ) from e
+
+        # Uniqueness check
+        if unique_elements:
+            # Handle unhashable elements by comparing directly
+            try:
+                if len(value) != len(set(value)):
+                    raise ValueError(
+                        f"Step '{step_name}': '{field_name}' must contain unique elements"
+                    )
+            except TypeError:
+                # Elements are not hashable, do pairwise comparison
+                for i in range(len(value)):
+                    for j in range(i + 1, len(value)):
+                        if value[i] == value[j]:
+                            raise ValueError(
+                                f"Step '{step_name}': '{field_name}' must contain unique "
+                                f"elements (duplicate at indices {i} and {j})"
+                            ) from None
+
+    def _validate_dict_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+        allow_empty: bool = True,
+        required_keys: Optional[list[str]] = None,
+        allowed_keys: Optional[list[str]] = None,
+    ) -> None:
+        """
+        Validate a dictionary field with comprehensive checks.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+            allow_empty: If False, empty dicts are rejected (default True)
+            required_keys: List of keys that must be present
+            allowed_keys: If provided, only these keys are allowed
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        # Type check
+        if not isinstance(value, dict):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a dictionary")
+
+        # Empty check
+        if not allow_empty and len(value) == 0:
+            raise ValueError(f"Step '{step_name}': '{field_name}' cannot be empty")
+
+        # Required keys check
+        if required_keys:
+            missing_keys = [key for key in required_keys if key not in value]
+            if missing_keys:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is missing required keys: "
+                    f"{', '.join(missing_keys)}"
+                )
+
+        # Allowed keys check
+        if allowed_keys is not None:
+            invalid_keys = [key for key in value.keys() if key not in allowed_keys]
+            if invalid_keys:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' contains invalid keys: "
+                    f"{', '.join(invalid_keys)}. Allowed keys: {', '.join(allowed_keys)}"
+                )
+
+    def _validate_json_string_field(
+        self,
+        field_name: str,
+        *,
+        required: bool = True,
+    ) -> None:
+        """
+        Validate a field that should contain a valid JSON string.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must exist (default True)
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        # Type check
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a JSON string"
+            )
+
+        # JSON parsing check
+        try:
+            json.loads(value)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be valid JSON: {e}"
+            ) from e
+
+    def _validate_enum_field(
+        self,
+        field_name: str,
+        allowed_values: list[Any],
+        *,
+        required: bool = True,
+        case_sensitive: bool = True,
+    ) -> None:
+        """
+        Validate a field against a list of allowed values.
+
+        Args:
+            field_name: Name of the field to validate
+            allowed_values: List of valid values
+            required: If True, field must exist (default True)
+            case_sensitive: If False, string comparisons are case-insensitive
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        # Check if field exists
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        # Comparison
+        if not case_sensitive and isinstance(value, str):
+            value_lower = value.lower()
+            allowed_lower = [
+                v.lower() if isinstance(v, str) else v for v in allowed_values
+            ]
+            if value_lower not in allowed_lower:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' must be one of "
+                    f"{allowed_values} (got '{value}')"
+                )
+        else:
+            if value not in allowed_values:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' must be one of "
+                    f"{allowed_values} (got '{value}')"
+                )
+
+    # ========================================================================
+    # Field Validation Helpers
+    # ========================================================================
+    # These methods provide comprehensive validation for common field types.
+    # Use them in subclass _validate_field_types() implementations.
+    # ========================================================================
+
+    def _get_step_name(self) -> str:
+        """Get a descriptive name for error messages."""
+        return self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+
+    def _validate_string_field(
+        self,
+        field_name: str,
+        required: bool = True,
+        allow_empty: bool = False,
+        min_length: int | None = None,
+        max_length: int | None = None,
+        pattern: str | None = None,
+    ) -> None:
+        """
+        Validate a string field with comprehensive checks.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+            allow_empty: If False, empty strings are rejected
+            min_length: Minimum string length (after stripping whitespace)
+            max_length: Maximum string length
+            pattern: Optional regex pattern the string must match
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, str):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a string")
+
+        if not allow_empty and (not value or not value.strip()):
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' cannot be empty or whitespace-only"
+            )
+
+        stripped_len = len(value.strip()) if value else 0
+        if min_length is not None and stripped_len < min_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at least {min_length} characters"
+            )
+
+        if max_length is not None and len(value) > max_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must not exceed {max_length} characters"
+            )
+
+        if pattern is not None:
+            if not re.match(pattern, value):
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' must match pattern: {pattern}"
+                )
+
+    def _validate_positive_integer(
+        self,
+        field_name: str,
+        required: bool = True,
+        min_value: int = 1,
+        max_value: int | None = None,
+    ) -> None:
+        """
+        Validate a positive integer field.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+            min_value: Minimum allowed value (default: 1, i.e., strictly positive)
+            max_value: Maximum allowed value
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be an integer")
+
+        if value < min_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at least {min_value}"
+            )
+
+        if max_value is not None and value > max_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must not exceed {max_value}"
+            )
+
+    def _validate_non_negative_integer(
+        self,
+        field_name: str,
+        required: bool = True,
+        max_value: int | None = None,
+    ) -> None:
+        """
+        Validate a non-negative integer field (>= 0).
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+            max_value: Maximum allowed value
+
+        Raises:
+            ValueError: If validation fails
+        """
+        self._validate_positive_integer(
+            field_name, required=required, min_value=0, max_value=max_value
+        )
+
+    def _validate_port_number(
+        self,
+        field_name: str,
+        required: bool = True,
+    ) -> None:
+        """
+        Validate a network port number (1-65535).
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be an integer port number"
+            )
+
+        if value < 1 or value > 65535:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a valid port number (1-65535)"
+            )
+
+    def _validate_positive_number(
+        self,
+        field_name: str,
+        required: bool = True,
+        min_value: float = 0.0,
+        max_value: float | None = None,
+        allow_zero: bool = False,
+    ) -> None:
+        """
+        Validate a positive number (int or float).
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+            min_value: Minimum allowed value
+            max_value: Maximum allowed value
+            allow_zero: If True, zero is allowed; if False, value must be > 0
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a number")
+
+        if not allow_zero and value <= 0:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a positive number"
+            )
+        elif allow_zero and value < 0:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a non-negative number"
+            )
+
+        if value < min_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be at least {min_value}"
+            )
+
+        if max_value is not None and value > max_value:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must not exceed {max_value}"
+            )
+
+    def _validate_boolean(
+        self,
+        field_name: str,
+        required: bool = True,
+    ) -> None:
+        """
+        Validate a boolean field.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, bool):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a boolean")
+
+    def _validate_non_empty_list(
+        self,
+        field_name: str,
+        required: bool = True,
+        min_length: int = 1,
+        max_length: int | None = None,
+    ) -> None:
+        """
+        Validate a non-empty list field.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+            min_length: Minimum number of elements (default: 1)
+            max_length: Maximum number of elements
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, list):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a list")
+
+        if len(value) < min_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must contain at least {min_length} item(s)"
+            )
+
+        if max_length is not None and len(value) > max_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must not exceed {max_length} item(s)"
+            )
+
+    def _validate_string_list(
+        self,
+        field_name: str,
+        required: bool = True,
+        min_length: int = 1,
+        allow_empty_strings: bool = False,
+    ) -> None:
+        """
+        Validate a list of strings.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+            min_length: Minimum number of elements (default: 1)
+            allow_empty_strings: If False, empty strings in the list are rejected
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, list):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a list")
+
+        if len(value) < min_length:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must contain at least {min_length} item(s)"
+            )
+
+        for i, item in enumerate(value):
+            if not isinstance(item, str):
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}[{i}]' must be a string"
+                )
+            if not allow_empty_strings and (not item or not item.strip()):
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}[{i}]' cannot be empty or whitespace-only"
+                )
+
+    def _validate_dict_field(
+        self,
+        field_name: str,
+        required: bool = True,
+        allow_empty: bool = False,
+    ) -> None:
+        """
+        Validate a dictionary field.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+            allow_empty: If False, empty dicts are rejected
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, dict):
+            raise ValueError(f"Step '{step_name}': '{field_name}' must be a dictionary")
+
+        if not allow_empty and len(value) == 0:
+            raise ValueError(f"Step '{step_name}': '{field_name}' cannot be empty")
+
+    def _validate_enum_field(
+        self,
+        field_name: str,
+        allowed_values: set[str] | list[str],
+        required: bool = True,
+    ) -> None:
+        """
+        Validate a field against a set of allowed values.
+
+        Args:
+            field_name: Name of the field to validate
+            allowed_values: Set or list of allowed string values
+            required: If True, field must be present in config
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        allowed_set = set(allowed_values)
+        if value not in allowed_set:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be one of: {', '.join(sorted(allowed_set))}"
+            )
+
+    def _validate_json_string(
+        self,
+        field_name: str,
+        required: bool = True,
+    ) -> None:
+        """
+        Validate that a field contains a valid JSON string.
+
+        Args:
+            field_name: Name of the field to validate
+            required: If True, field must be present in config
+
+        Raises:
+            ValueError: If validation fails
+        """
+        step_name = self._get_step_name()
+        value = self.config.get(field_name)
+
+        if value is None:
+            if required:
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' is required but not provided"
+                )
+            return
+
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a JSON string"
+            )
+
+        try:
+            json.loads(value)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be valid JSON: {e}"
+            ) from e
 
     def _get_node_rpc_url(self, node_name: str) -> str:
         """
