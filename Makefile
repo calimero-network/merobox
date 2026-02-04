@@ -15,10 +15,10 @@ test: ## Run all tests
 	pytest
 
 test-unit: ## Run unit tests only
-	pytest tests/unit/ -v
+	pytest merobox/tests/unit -v
 
 test-integration: ## Run integration tests only
-	pytest tests/integration/ -v
+	pytest example-project/tests -v
 
 test-coverage: ## Run tests with coverage
 	pytest --cov=merobox --cov-report=html --cov-report=term
