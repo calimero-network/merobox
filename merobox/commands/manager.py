@@ -468,7 +468,9 @@ class DockerManager:
                 "image": image_to_use,
                 "detach": True,
                 "user": "root",  # Override the default user in the image
-                "privileged": True,  # Run in privileged mode to avoid permission issues
+                # Note: Privileged mode removed for security. Docker's default capabilities
+                # (CHOWN, DAC_OVERRIDE, FOWNER, etc.) are sufficient when running as root
+                # with properly configured volume permissions (0o777 on data directories).
                 "environment": node_env,
                 "ports": {
                     # Map external P2P port to internal P2P port (0.0.0.0:2428)
