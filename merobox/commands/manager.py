@@ -11,19 +11,13 @@ from pathlib import Path
 from typing import Optional
 
 import docker
-import toml
 from rich.console import Console
 from rich.table import Table
 
-from merobox.commands.config_utils import apply_near_devnet_config_to_file
-from merobox.commands.constants import (
-    ANVIL_DEFAULT_PORT,
-    DFX_DEFAULT_PORT,
-    ETHEREUM_LOCAL_ACCOUNT_ID,
-    ETHEREUM_LOCAL_CONTRACT_ID,
-    ETHEREUM_LOCAL_SECRET_KEY,
-    ICP_LOCAL_CONTRACT_ID,
-    NETWORK_LOCAL,
+from merobox.commands.config_utils import (
+    apply_bootstrap_nodes,
+    apply_e2e_defaults,
+    apply_near_devnet_config_to_file,
 )
 
 console = Console()
@@ -667,18 +661,28 @@ class DockerManager:
                     # Only fix permissions if not already fixed (when near_devnet_config is provided)
                     if not near_devnet_config:
                         self._fix_permissions(node_data_dir)
-                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(
+                        config_file,
+                        node_name,
+                        workflow_id,
+                        docker_host_url_fn=self._get_docker_host_url,
+                    )
 
                 # Apply bootstrap nodes configuration (works regardless of e2e_mode)
                 if bootstrap_nodes:
-                    self._apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
+                    apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
 
             except Exception:
                 if e2e_mode:
                     console.print(
                         f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
                     )
-                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(
+                        config_file,
+                        node_name,
+                        workflow_id,
+                        docker_host_url_fn=self._get_docker_host_url,
+                    )
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
@@ -1516,44 +1520,6 @@ class DockerManager:
             )
             return False
 
-    def _apply_bootstrap_nodes(
-        self,
-        config_file: str,
-        node_name: str,
-        bootstrap_nodes: list[str],
-    ):
-        """Apply bootstrap nodes configuration."""
-        try:
-            from pathlib import Path
-
-            import toml
-
-            config_path = Path(config_file)
-            if not config_path.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            with open(config_path) as f:
-                config = toml.load(f)
-
-            self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
-
-            with open(config_path, "w") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
-            )
-
     def _get_docker_host_url(self, port: int) -> str:
         """Get Docker host URL for a given port.
 
@@ -1565,92 +1531,6 @@ class DockerManager:
         # When merobox uses --image flag, nodes run in Docker
         # Use host.docker.internal to reach host services
         return f"http://host.docker.internal:{port}"
-
-    def _apply_e2e_defaults(
-        self,
-        config_file: str,
-        node_name: str,
-        workflow_id: str,
-    ):
-        """Apply e2e-style defaults for reliable testing."""
-        try:
-            # Generate unique workflow ID if not provided
-            if not workflow_id:
-                workflow_id = str(uuid.uuid4())[:8]
-
-            config_path = Path(config_file)
-            if not config_path.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            # Load existing config
-            with open(config_path) as f:
-                config = toml.load(f)
-
-            # Use Docker host URLs when nodes run in Docker (they always do with --image flag)
-            eth_rpc_url = self._get_docker_host_url(ANVIL_DEFAULT_PORT)
-            icp_rpc_url = self._get_docker_host_url(DFX_DEFAULT_PORT)
-
-            # Apply e2e-style defaults for reliable testing
-            e2e_config = {
-                # Disable bootstrap nodes for test isolation
-                "bootstrap.nodes": [],
-                # Use unique rendezvous namespace per workflow (like e2e tests)
-                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-                # Keep mDNS as backup (like e2e tests)
-                "discovery.mdns": True,
-                # Aggressive sync settings from e2e tests for reliable testing
-                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-                # 500ms between syncs (very aggressive for tests)
-                "sync.interval_ms": 500,
-                # 1s periodic checks (ensures rapid sync in tests)
-                "sync.frequency_ms": 1000,
-                # Ethereum local devnet configuration (uses Anvil default account #0)
-                "context.config.ethereum.network": NETWORK_LOCAL,
-                "context.config.ethereum.contract_id": ETHEREUM_LOCAL_CONTRACT_ID,
-                "context.config.ethereum.signer": "self",
-                "context.config.signer.self.ethereum.local.rpc_url": eth_rpc_url,
-                "context.config.signer.self.ethereum.local.account_id": ETHEREUM_LOCAL_ACCOUNT_ID,
-                "context.config.signer.self.ethereum.local.secret_key": ETHEREUM_LOCAL_SECRET_KEY,
-                # ICP local devnet configuration (for consistency)
-                "context.config.icp.network": NETWORK_LOCAL,
-                "context.config.icp.contract_id": ICP_LOCAL_CONTRACT_ID,
-                "context.config.icp.signer": "self",
-                "context.config.signer.self.icp.local.rpc_url": icp_rpc_url,
-            }
-
-            # Apply each configuration
-            for key, value in e2e_config.items():
-                self._set_nested_config(config, key, value)
-
-            # Write back to file
-            with open(config_path, "w") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
-            )
-
-    def _set_nested_config(self, config: dict, key: str, value):
-        """Set nested configuration value using dot notation."""
-        keys = key.split(".")
-        current = config
-        for k in keys[:-1]:
-            if k not in current:
-                current[k] = {}
-            current = current[k]
-
-        current[keys[-1]] = value
-        console.print(f"[cyan]  {key} = {value}[/cyan]")
 
     def _apply_near_devnet_config(
         self,
