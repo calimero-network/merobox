@@ -255,7 +255,7 @@ class BinaryManager:
                         self.binary_path,
                         "--home",
                         str(node_data_dir.absolute()),
-                        "--node-name",
+                        "--node",
                         node_name,
                         "init",
                         "--server-port",
@@ -326,7 +326,7 @@ class BinaryManager:
                 self.binary_path,
                 "--home",
                 str(node_data_dir.absolute()),
-                "--node-name",
+                "--node",
                 node_name,
                 "run",
             ]
