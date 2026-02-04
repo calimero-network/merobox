@@ -15,6 +15,11 @@ Token Cache Integration:
     This ensures that:
     1. Merobox-written tokens are found by calimero-client-py's auto-refresh
     2. Tokens refreshed by the Rust client are visible to merobox
+
+Connection Pooling:
+    This module implements connection pooling via SessionManager to improve
+    performance by reusing HTTP connections instead of creating new ones
+    for each request.
 """
 
 import base64
@@ -35,6 +40,128 @@ from merobox.commands.constants import (
 )
 
 console = Console()
+
+
+class SessionManager:
+    """Manages a shared aiohttp ClientSession for connection pooling.
+
+    This class provides a singleton-like session manager that reuses HTTP
+    connections across multiple requests, reducing connection overhead.
+
+    Usage:
+        # As context manager (recommended for short-lived usage):
+        async with SessionManager() as session:
+            async with session.post(url, json=data) as response:
+                ...
+
+        # For long-lived usage with explicit lifecycle management:
+        manager = SessionManager()
+        session = await manager.get_session()
+        try:
+            # Use session for multiple requests
+            ...
+        finally:
+            await manager.close()
+
+        # Using the global shared session:
+        session = await get_shared_session()
+        # ... use session ...
+        # Call close_shared_session() when done with all requests
+    """
+
+    _instance: Optional["SessionManager"] = None
+    _session: Optional[aiohttp.ClientSession] = None
+
+    def __init__(
+        self,
+        timeout: Optional[aiohttp.ClientTimeout] = None,
+        connector: Optional[aiohttp.TCPConnector] = None,
+    ):
+        """Initialize SessionManager.
+
+        Args:
+            timeout: Optional custom timeout configuration.
+            connector: Optional custom TCP connector for connection pooling settings.
+        """
+        self._timeout = timeout or aiohttp.ClientTimeout(
+            total=DEFAULT_READ_TIMEOUT,
+            connect=DEFAULT_CONNECTION_TIMEOUT,
+        )
+        self._connector = connector
+        self._owned_session: Optional[aiohttp.ClientSession] = None
+
+    async def get_session(self) -> aiohttp.ClientSession:
+        """Get or create a shared aiohttp ClientSession.
+
+        Returns:
+            An aiohttp ClientSession instance with connection pooling enabled.
+        """
+        if self._owned_session is None or self._owned_session.closed:
+            connector = self._connector or aiohttp.TCPConnector(
+                limit=100,  # Maximum number of connections
+                limit_per_host=10,  # Maximum connections per host
+                ttl_dns_cache=300,  # DNS cache TTL in seconds
+                enable_cleanup_closed=True,
+            )
+            self._owned_session = aiohttp.ClientSession(
+                timeout=self._timeout,
+                connector=connector,
+            )
+        return self._owned_session
+
+    async def close(self) -> None:
+        """Close the managed session and release resources."""
+        if self._owned_session is not None and not self._owned_session.closed:
+            await self._owned_session.close()
+            self._owned_session = None
+
+    async def __aenter__(self) -> aiohttp.ClientSession:
+        """Async context manager entry."""
+        return await self.get_session()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit."""
+        await self.close()
+
+    @classmethod
+    async def get_shared_instance(cls) -> "SessionManager":
+        """Get the global shared SessionManager instance.
+
+        Returns:
+            The singleton SessionManager instance.
+        """
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    async def close_shared_instance(cls) -> None:
+        """Close the global shared SessionManager instance."""
+        if cls._instance is not None:
+            await cls._instance.close()
+            cls._instance = None
+
+
+async def get_shared_session() -> aiohttp.ClientSession:
+    """Get the global shared aiohttp ClientSession.
+
+    This is a convenience function for getting the shared session
+    from the global SessionManager instance.
+
+    Returns:
+        An aiohttp ClientSession with connection pooling enabled.
+    """
+    manager = await SessionManager.get_shared_instance()
+    return await manager.get_session()
+
+
+async def close_shared_session() -> None:
+    """Close the global shared aiohttp ClientSession.
+
+    Call this when completely done with HTTP requests to release resources.
+    """
+    await SessionManager.close_shared_instance()
+
 
 # Auth endpoints
 AUTH_TOKEN_ENDPOINT = "/auth/token"
@@ -105,14 +232,36 @@ class AuthManager:
         exactly between merobox and the Rust client. This enables:
         - Tokens written by merobox to be auto-loaded by calimero-client-py
         - Tokens refreshed by calimero-client-py to be visible to merobox
+
+    Connection Pooling:
+        Uses SessionManager for connection pooling, reusing HTTP connections
+        across multiple requests to improve performance.
     """
 
-    def __init__(self):
+    def __init__(self, session_manager: Optional[SessionManager] = None):
         """Initialize AuthManager.
+
+        Args:
+            session_manager: Optional SessionManager for connection pooling.
+                If not provided, uses the global shared session manager.
 
         Uses calimero-client-py's cache directory (~/.merobox/auth_cache/).
         """
         self.cache_dir = Path(get_token_cache_dir())
+        self._session_manager = session_manager
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get an aiohttp ClientSession for making HTTP requests.
+
+        Uses the provided session manager or falls back to the global
+        shared session manager for connection pooling.
+
+        Returns:
+            An aiohttp ClientSession instance.
+        """
+        if self._session_manager is not None:
+            return await self._session_manager.get_session()
+        return await get_shared_session()
 
     def _ensure_cache_dir(self) -> None:
         """Ensure the cache directory exists with appropriate permissions."""
@@ -236,42 +385,42 @@ class AuthManager:
         auth_endpoint = f"{normalized_url}{AUTH_TOKEN_ENDPOINT}"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    auth_endpoint,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(
-                        total=timeout, connect=DEFAULT_CONNECTION_TIMEOUT
-                    ),
-                ) as response:
-                    response_text = await response.text()
+            session = await self._get_session()
+            async with session.post(
+                auth_endpoint,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(
+                    total=timeout, connect=DEFAULT_CONNECTION_TIMEOUT
+                ),
+            ) as response:
+                response_text = await response.text()
 
-                    if response.status == 200:
-                        try:
-                            response_data = json.loads(response_text)
-                            token = self._parse_token_response(
-                                response_data, normalized_url, username
-                            )
-                            console.print(
-                                f"[green]✓ Authenticated with {normalized_url}[/green]"
-                            )
-                            return token
-                        except json.JSONDecodeError as e:
-                            raise AuthenticationError(
-                                f"Invalid JSON response from auth endpoint: {e}"
-                            ) from e
-                    elif response.status == 401:
-                        raise AuthenticationError(
-                            "Invalid credentials: username or password incorrect"
+                if response.status == 200:
+                    try:
+                        response_data = json.loads(response_text)
+                        token = self._parse_token_response(
+                            response_data, normalized_url, username
                         )
-                    elif response.status == 403:
-                        raise AuthenticationError(
-                            "Access forbidden: account may be disabled or locked"
+                        console.print(
+                            f"[green]✓ Authenticated with {normalized_url}[/green]"
                         )
-                    else:
+                        return token
+                    except json.JSONDecodeError as e:
                         raise AuthenticationError(
-                            f"Authentication failed with status {response.status}: {response_text}"
-                        )
+                            f"Invalid JSON response from auth endpoint: {e}"
+                        ) from e
+                elif response.status == 401:
+                    raise AuthenticationError(
+                        "Invalid credentials: username or password incorrect"
+                    )
+                elif response.status == 403:
+                    raise AuthenticationError(
+                        "Access forbidden: account may be disabled or locked"
+                    )
+                else:
+                    raise AuthenticationError(
+                        f"Authentication failed with status {response.status}: {response_text}"
+                    )
 
         except aiohttp.ClientError as e:
             raise AuthenticationError(
@@ -311,38 +460,38 @@ class AuthManager:
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    refresh_endpoint,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(
-                        total=timeout, connect=DEFAULT_CONNECTION_TIMEOUT
-                    ),
-                ) as response:
-                    response_text = await response.text()
+            session = await self._get_session()
+            async with session.post(
+                refresh_endpoint,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(
+                    total=timeout, connect=DEFAULT_CONNECTION_TIMEOUT
+                ),
+            ) as response:
+                response_text = await response.text()
 
-                    if response.status == 200:
-                        try:
-                            response_data = json.loads(response_text)
-                            new_token = self._parse_token_response(
-                                response_data, normalized_url, token.username
-                            )
-                            console.print(
-                                f"[green]✓ Token refreshed for {normalized_url}[/green]"
-                            )
-                            return new_token
-                        except json.JSONDecodeError as e:
-                            raise AuthenticationError(
-                                f"Invalid JSON response from refresh endpoint: {e}"
-                            ) from e
-                    elif response.status == 401:
-                        raise AuthenticationError(
-                            "Refresh token expired or invalid. Please re-authenticate."
+                if response.status == 200:
+                    try:
+                        response_data = json.loads(response_text)
+                        new_token = self._parse_token_response(
+                            response_data, normalized_url, token.username
                         )
-                    else:
-                        raise AuthenticationError(
-                            f"Token refresh failed with status {response.status}: {response_text}"
+                        console.print(
+                            f"[green]✓ Token refreshed for {normalized_url}[/green]"
                         )
+                        return new_token
+                    except json.JSONDecodeError as e:
+                        raise AuthenticationError(
+                            f"Invalid JSON response from refresh endpoint: {e}"
+                        ) from e
+                elif response.status == 401:
+                    raise AuthenticationError(
+                        "Refresh token expired or invalid. Please re-authenticate."
+                    )
+                else:
+                    raise AuthenticationError(
+                        f"Token refresh failed with status {response.status}: {response_text}"
+                    )
 
         except aiohttp.ClientError as e:
             raise AuthenticationError(f"Network error during token refresh: {e}") from e
