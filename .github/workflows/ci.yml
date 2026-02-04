@@ -9,6 +9,7 @@ on:
 env:
   # Or you can use 'prerelease-{PR-NUMBER}'
   CALIMERO_CONTRACTS_VERSION: "latest"
+  MEROD_BINARY_VERSION: "edge"
 
 jobs:
   format:
@@ -58,12 +59,33 @@ jobs:
         run: |
           pip install -e .
 
-      - name: Install merod binary (specific release)
+      - name: Install merod binary (edge)
         run: |
-          echo "Downloading merod binary from specific release..."
+          echo "Downloading merod binary..."
+          VERSION="${MEROD_BINARY_VERSION:-edge}"
+          if [ "$VERSION" = "edge" ]; then
+            echo "Resolving edge merod release tag..."
+            VERSION=$(python - <<'PY'
+import json
+import urllib.request
 
-          # Use specific release version
-          VERSION="0.10.0-rc.39"
+url = "https://api.github.com/repos/calimero-network/core/releases"
+with urllib.request.urlopen(url) as resp:
+    releases = json.load(resp)
+
+for release in releases:
+    if release.get("draft"):
+        continue
+    print(release.get("tag_name", ""))
+    break
+PY
+)
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "Failed to resolve merod release tag"
+            exit 1
+          fi
           echo "Using version: $VERSION"
 
           ARCH="x86_64"

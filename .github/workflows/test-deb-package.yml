@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [master]
 
+env:
+  MEROD_BINARY_VERSION: "edge"
+
 jobs:
   test-deb-package:
     name: Test .deb package installation and runtime
@@ -63,7 +66,31 @@ jobs:
       - name: Install merod binary
         run: |
           echo "Downloading merod binary..."
-          VERSION="0.10.0-rc.39"
+          VERSION="${MEROD_BINARY_VERSION:-edge}"
+          if [ "$VERSION" = "edge" ]; then
+            echo "Resolving edge merod release tag..."
+            VERSION=$(python - <<'PY'
+import json
+import urllib.request
+
+url = "https://api.github.com/repos/calimero-network/core/releases"
+with urllib.request.urlopen(url) as resp:
+    releases = json.load(resp)
+
+for release in releases:
+    if release.get("draft"):
+        continue
+    print(release.get("tag_name", ""))
+    break
+PY
+)
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "Failed to resolve merod release tag"
+            exit 1
+          fi
+          echo "Using version: $VERSION"
           ARCH="x86_64"
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
