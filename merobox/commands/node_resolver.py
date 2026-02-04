@@ -28,10 +28,10 @@ from merobox.commands.auth import (
     AUTH_METHOD_API_KEY,
     AUTH_METHOD_NONE,
     AUTH_METHOD_USER_PASSWORD,
-    AuthenticationError,
     AuthManager,
     AuthToken,
 )
+from merobox.commands.errors import AuthenticationError, NodeResolutionError
 from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_READ_TIMEOUT,
@@ -683,8 +683,8 @@ class NodeResolver:
         return resolved.url
 
 
-class NodeResolutionError(Exception):
-    """Raised when a node cannot be resolved."""
+# NodeResolutionError is now imported from merobox.commands.errors
+# Keeping this comment for backward compatibility reference
 
 
 def get_resolver(

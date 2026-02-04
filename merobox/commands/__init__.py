@@ -8,6 +8,20 @@ from merobox.commands.blob import blob
 from merobox.commands.bootstrap import bootstrap
 from merobox.commands.call import call
 from merobox.commands.context import context
+from merobox.commands.errors import (
+    AuthenticationError,
+    AuthError,
+    ClientError,
+    ConfigurationError,
+    MeroboxError,
+    NodeError,
+    NodeResolutionError,
+    StepExecutionError,
+    StepValidationError,
+    TimeoutError,
+    ValidationError,
+    WorkflowError,
+)
 from merobox.commands.health import health
 from merobox.commands.identity import identity
 from merobox.commands.install import install
@@ -22,6 +36,7 @@ from merobox.commands.run import run
 from merobox.commands.stop import stop
 
 __all__ = [
+    # Commands
     "DockerManager",
     "run",
     "stop",
@@ -40,4 +55,17 @@ __all__ = [
     "proposals",
     "remote",
     "near",
+    # Error classes
+    "MeroboxError",
+    "NodeError",
+    "NodeResolutionError",
+    "AuthError",
+    "AuthenticationError",
+    "WorkflowError",
+    "StepValidationError",
+    "StepExecutionError",
+    "ValidationError",
+    "ClientError",
+    "TimeoutError",
+    "ConfigurationError",
 ]

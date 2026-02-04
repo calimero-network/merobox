@@ -33,6 +33,7 @@ from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_READ_TIMEOUT,
 )
+from merobox.commands.errors import AuthenticationError
 
 console = Console()
 
@@ -517,5 +518,5 @@ class AuthManager:
             return None
 
 
-class AuthenticationError(Exception):
-    """Raised when authentication fails."""
+# AuthenticationError is now imported from merobox.commands.errors
+# Keeping this comment for backward compatibility reference
