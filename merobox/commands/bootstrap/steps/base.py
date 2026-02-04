@@ -476,7 +476,7 @@ class BaseStep:
                             raise ValueError(
                                 f"Step '{step_name}': '{field_name}' must contain unique "
                                 f"elements (duplicate at indices {i} and {j})"
-                            )
+                            ) from None
 
     def _validate_dict_field(
         self,
@@ -1067,7 +1067,7 @@ class BaseStep:
         except json.JSONDecodeError as e:
             raise ValueError(
                 f"Step '{step_name}': '{field_name}' must be valid JSON: {e}"
-            )
+            ) from e
 
     def _get_node_rpc_url(self, node_name: str) -> str:
         """

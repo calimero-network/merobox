@@ -458,9 +458,9 @@ class TestBaseStepValidationIntegration:
 
         def validate_non_empty_string(elem, idx, field_name):
             if not isinstance(elem, str):
-                raise ValueError(f"Element must be a string")
+                raise ValueError("Element must be a string")
             if not elem.strip():
-                raise ValueError(f"Element cannot be empty")
+                raise ValueError("Element cannot be empty")
 
         with pytest.raises(ValueError, match="cannot be empty"):
             step._validate_list_field(
