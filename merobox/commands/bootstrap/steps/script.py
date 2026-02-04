@@ -4,6 +4,7 @@ Script execution step for bootstrap workflow.
 
 import io
 import os
+import re
 import subprocess
 import tarfile
 import time
@@ -11,6 +12,88 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
+
+
+# Constants for environment variable sanitization
+MAX_ENV_VAR_NAME_LENGTH = 256
+MAX_ENV_VAR_VALUE_LENGTH = 131072  # 128KB max value length
+# Valid environment variable name pattern: alphanumeric and underscore, not starting with digit
+ENV_VAR_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _sanitize_env_var_name(name: str) -> str | None:
+    """
+    Sanitize and validate an environment variable name.
+
+    Args:
+        name: The raw variable name to sanitize.
+
+    Returns:
+        The sanitized name if valid, None if the name cannot be made valid.
+
+    Environment variable names must:
+    - Only contain alphanumeric characters and underscores
+    - Not start with a digit
+    - Not be empty
+    - Not exceed maximum length
+    """
+    if not name or not isinstance(name, str):
+        return None
+
+    # Convert to uppercase and replace common special characters
+    sanitized = name.upper().replace("-", "_").replace(".", "_")
+
+    # Remove any remaining invalid characters
+    sanitized = re.sub(r"[^A-Z0-9_]", "", sanitized)
+
+    # Ensure it doesn't start with a digit
+    if sanitized and sanitized[0].isdigit():
+        sanitized = "_" + sanitized
+
+    # Check if empty after sanitization
+    if not sanitized:
+        return None
+
+    # Enforce length limit
+    if len(sanitized) > MAX_ENV_VAR_NAME_LENGTH:
+        sanitized = sanitized[:MAX_ENV_VAR_NAME_LENGTH]
+
+    # Final validation
+    if not ENV_VAR_NAME_PATTERN.match(sanitized):
+        return None
+
+    return sanitized
+
+
+def _sanitize_env_var_value(value: Any) -> str:
+    """
+    Sanitize an environment variable value.
+
+    Args:
+        value: The value to sanitize (will be converted to string).
+
+    Returns:
+        The sanitized string value.
+
+    Sanitization includes:
+    - Converting to string
+    - Removing null bytes (which can cause issues in C-based programs)
+    - Truncating to maximum length to prevent DoS
+    """
+    if value is None:
+        return ""
+
+    # Convert to string
+    str_value = str(value)
+
+    # Remove null bytes which can cause issues
+    str_value = str_value.replace("\x00", "")
+
+    # Truncate to maximum length
+    if len(str_value) > MAX_ENV_VAR_VALUE_LENGTH:
+        str_value = str_value[:MAX_ENV_VAR_VALUE_LENGTH]
+
+    return str_value
 
 
 class ScriptStep(BaseStep):
@@ -192,11 +275,18 @@ class ScriptStep(BaseStep):
             # This allows scripts to access workflow variables via $VAR_NAME
             env = os.environ.copy()
 
-            # Add dynamic values as environment variables (with uppercase conversion)
+            # Add dynamic values as environment variables with proper sanitization
+            # to prevent environment variable injection attacks
             for key, value in dynamic_values.items():
-                # Convert to uppercase and replace special chars with underscores
-                env_key = key.upper().replace("-", "_").replace(".", "_")
-                env[env_key] = str(value) if value is not None else ""
+                # Sanitize the environment variable name
+                env_key = _sanitize_env_var_name(key)
+                if env_key is None:
+                    console.print(
+                        f"[yellow]⚠️  Skipping invalid env var name: {key}[/yellow]"
+                    )
+                    continue
+                # Sanitize the value to prevent injection attacks
+                env[env_key] = _sanitize_env_var_value(value)
 
             # Run the script using /bin/sh
             start_time = time.time()
