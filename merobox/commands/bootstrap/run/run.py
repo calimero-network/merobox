@@ -84,6 +84,7 @@ async def run_workflow(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
+    merod_args: Optional[str] = None,
     mock_relayer: bool = False,
     e2e_mode: bool = False,
     near_devnet: bool = False,
@@ -209,6 +210,7 @@ async def run_workflow(
             auth_mode=effective_auth_mode,
             auth_username=auth_username,
             auth_password=auth_password,
+            merod_args=merod_args,
         )
 
         # Execute workflow
@@ -244,6 +246,7 @@ def run_workflow_sync(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
+    merod_args: Optional[str] = None,
     mock_relayer: bool = False,
     e2e_mode: bool = False,
     near_devnet: bool = False,
@@ -281,6 +284,7 @@ def run_workflow_sync(
             rust_backtrace=rust_backtrace,
             no_docker=no_docker,
             binary_path=binary_path,
+            merod_args=merod_args,
             mock_relayer=mock_relayer,
             e2e_mode=e2e_mode,
             near_devnet=near_devnet,

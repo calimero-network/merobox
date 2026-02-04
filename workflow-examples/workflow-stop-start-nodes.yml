@@ -1,0 +1,50 @@
+description: Test stop_node and start_node steps
+name: Test Stop/Start Nodes
+
+nodes:
+  count: 2
+  prefix: test-node
+  chain_id: testnet-1
+  image: ghcr.io/calimero-network/merod:edge
+
+steps:
+  - name: Install Application
+    type: install_application
+    node: test-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Context
+    type: create_context
+    node: test-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      context_id: contextId
+
+  - name: Stop Node 1
+    type: stop_node
+    nodes: test-node-1
+
+  - name: Wait After Stop
+    type: wait
+    seconds: 3
+
+  - name: Start Node 1 Again
+    type: start_node
+    nodes: test-node-1
+    wait_for_ready: true
+    wait_timeout: 30
+
+  - name: Verify Node 1 is Running
+    type: call
+    node: test-node-1
+    context_id: "{{context_id}}"
+    executor_public_key: "test"
+    method: get
+    args:
+      key: test
+
+stop_all_nodes: true
+restart: false
