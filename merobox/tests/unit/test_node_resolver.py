@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-
 # Constants to match the auth module
 AUTH_METHOD_NONE = "none"
 AUTH_METHOD_API_KEY = "api_key"
@@ -48,18 +47,20 @@ _mock_constants.DEFAULT_RPC_PORT = 2528
 _mock_remote_nodes = MagicMock()
 
 # Install mocks
-sys.modules['merobox.commands.auth'] = _mock_auth
-sys.modules['merobox.commands.constants'] = _mock_constants
-sys.modules['merobox.commands.remote_nodes'] = _mock_remote_nodes
-sys.modules['aiohttp'] = MagicMock()
-sys.modules['rich'] = MagicMock()
-sys.modules['rich.console'] = MagicMock()
-sys.modules['rich.prompt'] = MagicMock()
+sys.modules["merobox.commands.auth"] = _mock_auth
+sys.modules["merobox.commands.constants"] = _mock_constants
+sys.modules["merobox.commands.remote_nodes"] = _mock_remote_nodes
+sys.modules["aiohttp"] = MagicMock()
+sys.modules["rich"] = MagicMock()
+sys.modules["rich.console"] = MagicMock()
+sys.modules["rich.prompt"] = MagicMock()
 
 # Load node_resolver directly
 _workspace = Path(__file__).parent.parent.parent.parent
 _node_resolver_path = _workspace / "merobox" / "commands" / "node_resolver.py"
-_module, _spec = _load_module_directly("merobox.commands.node_resolver", str(_node_resolver_path))
+_module, _spec = _load_module_directly(
+    "merobox.commands.node_resolver", str(_node_resolver_path)
+)
 _spec.loader.exec_module(_module)
 
 NodeResolver = _module.NodeResolver
@@ -85,7 +86,9 @@ def resolver(mock_remote_manager):
 class TestIsRegisteredRemote:
     """Tests for is_registered_remote method."""
 
-    def test_returns_true_when_node_registered_by_name(self, resolver, mock_remote_manager):
+    def test_returns_true_when_node_registered_by_name(
+        self, resolver, mock_remote_manager
+    ):
         """Test that is_registered_remote returns True for registered node names."""
         mock_entry = MagicMock()
         mock_remote_manager.get.return_value = mock_entry
@@ -95,7 +98,9 @@ class TestIsRegisteredRemote:
         assert result is True
         mock_remote_manager.get.assert_called_with("my-node")
 
-    def test_returns_false_when_node_not_registered(self, resolver, mock_remote_manager):
+    def test_returns_false_when_node_not_registered(
+        self, resolver, mock_remote_manager
+    ):
         """Test that is_registered_remote returns False for unregistered nodes."""
         mock_remote_manager.get.return_value = None
         mock_remote_manager.is_url.return_value = False
