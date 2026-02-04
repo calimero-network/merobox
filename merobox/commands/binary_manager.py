@@ -7,7 +7,6 @@ import re
 import shutil
 import signal
 import socket
-import stat
 import subprocess
 import sys
 import time
@@ -15,10 +14,13 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-import toml
 from rich.console import Console
 
-from merobox.commands.config_utils import apply_near_devnet_config_to_file
+from merobox.commands.config_utils import (
+    apply_bootstrap_nodes,
+    apply_e2e_defaults,
+    apply_near_devnet_config_to_file,
+)
 
 console = Console()
 
@@ -294,13 +296,11 @@ class BinaryManager:
 
             # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
             if e2e_mode:
-                self._apply_e2e_defaults(actual_config_file, node_name, workflow_id)
+                apply_e2e_defaults(actual_config_file, node_name, workflow_id)
 
             # Apply bootstrap nodes configuration (works regardless of e2e_mode)
             if bootstrap_nodes:
-                self._apply_bootstrap_nodes(
-                    actual_config_file, node_name, bootstrap_nodes
-                )
+                apply_bootstrap_nodes(actual_config_file, node_name, bootstrap_nodes)
 
             # Apply NEAR Devnet config if provided
             if near_devnet_config:
@@ -858,114 +858,6 @@ class BinaryManager:
         # For binary mode, just check if the process is running
         return self.is_node_running(node_name)
 
-    def _apply_bootstrap_nodes(
-        self,
-        config_file: Path,
-        node_name: str,
-        bootstrap_nodes: list[str],
-    ):
-        """Apply bootstrap nodes configuration."""
-        try:
-            import toml
-
-            if not config_file.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            with open(config_file, encoding="utf-8") as f:
-                config = toml.load(f)
-
-            self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
-
-            import stat
-
-            if config_file.exists():
-                config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
-
-            with open(config_file, "w", encoding="utf-8") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
-            )
-
-    def _apply_e2e_defaults(
-        self,
-        config_file: Path,
-        node_name: str,
-        workflow_id: Optional[str],
-    ):
-        """Apply e2e-style defaults for reliable testing."""
-        try:
-            # Generate unique workflow ID if not provided
-            if not workflow_id:
-                workflow_id = str(uuid.uuid4())[:8]
-
-            # Check if config file exists
-            if not config_file.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            # Load existing config
-            with open(config_file, encoding="utf-8") as f:
-                config = toml.load(f)
-
-            # Apply e2e-style defaults for reliable testing
-            e2e_config = {
-                # Disable bootstrap nodes for test isolation
-                "bootstrap.nodes": [],
-                # Use unique rendezvous namespace per workflow (like e2e tests)
-                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-                # Keep mDNS as backup (like e2e tests)
-                "discovery.mdns": True,
-                # Aggressive sync settings from e2e tests for reliable testing
-                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-                # 500ms between syncs (very aggressive for tests)
-                "sync.interval_ms": 500,
-                # 1s periodic checks (ensures rapid sync in tests)
-                "sync.frequency_ms": 1000,
-                # Ethereum local devnet configuration (same as e2e tests)
-                "context.config.ethereum.network": "sepolia",
-                "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-                "context.config.ethereum.signer": "self",
-                "context.config.signer.self.ethereum.sepolia.rpc_url": "http://127.0.0.1:8545",
-                "context.config.signer.self.ethereum.sepolia.account_id": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-                "context.config.signer.self.ethereum.sepolia.secret_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-            }
-
-            # Apply each configuration
-            for key, value in e2e_config.items():
-                self._set_nested_config(config, key, value)
-
-            # Write back to file (ensure it's writable first)
-            if config_file.exists():
-                config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
-
-            with open(config_file, "w", encoding="utf-8") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
-            )
-
     def _find_available_ports(self, count: int) -> list[int]:
         """Find available ports for dynamic allocation."""
         ports = []
@@ -990,18 +882,6 @@ class BinaryManager:
             raise RuntimeError(f"Could not find {count} available ports")
 
         return ports
-
-    def _set_nested_config(self, config: dict, key: str, value):
-        """Set nested configuration value using dot notation."""
-        keys = key.split(".")
-        current = config
-        for k in keys[:-1]:
-            if k not in current:
-                current[k] = {}
-            current = current[k]
-
-        current[keys[-1]] = value
-        console.print(f"[cyan]  {key} = {value}[/cyan]")
 
     def _apply_near_devnet_config(
         self,
