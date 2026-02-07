@@ -66,20 +66,20 @@ jobs:
           if [ "$VERSION" = "edge" ]; then
             echo "Resolving edge merod release tag..."
             VERSION=$(python - <<'PY'
-import json
-import urllib.request
+            import json
+            import urllib.request
 
-url = "https://api.github.com/repos/calimero-network/core/releases"
-with urllib.request.urlopen(url) as resp:
-    releases = json.load(resp)
+            url = "https://api.github.com/repos/calimero-network/core/releases"
+            with urllib.request.urlopen(url) as resp:
+                releases = json.load(resp)
 
-for release in releases:
-    if release.get("draft"):
-        continue
-    print(release.get("tag_name", ""))
-    break
-PY
-)
+            for release in releases:
+                if release.get("draft"):
+                    continue
+                print(release.get("tag_name", ""))
+                break
+            PY
+            )
           fi
 
           if [ -z "$VERSION" ]; then
