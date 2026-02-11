@@ -1575,10 +1575,12 @@ merobox context create --node NODE_NAME --application-id APPLICATION_ID [OPTIONS
 
 - `--node`, `-n`: Node name to create context on (required)
 - `--application-id`, `-a`: Application ID to create context for (required)
-- `--protocol`, `-p`: Protocol type (default: "near")
+- `--protocol`, `-p`: Protocol type (optional, only `near` is supported)
 - `--params`: Initialization parameters as JSON string (optional)
 - `--verbose`, `-v`: Show verbose output
 - `--help`: Show help message
+
+`merobox context create` is NEAR-only. If you need local chain testing, use `--near-devnet` with workflow execution.
 
 **List Command:**
 
@@ -1611,8 +1613,8 @@ merobox context show --node NODE_NAME --context-id CONTEXT_ID [--verbose]
 # Create a context
 merobox context create --node my-node --application-id app-123
 
-# Create with custom protocol and params
-merobox context create --node my-node --application-id app-123 --protocol ethereum --params '{"key": "value"}'
+# Create with explicit NEAR protocol and params (optional; NEAR is the default)
+merobox context create --node my-node --application-id app-123 --protocol near --params '{"key": "value"}'
 
 # List all contexts
 merobox context list --node my-node
