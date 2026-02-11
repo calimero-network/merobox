@@ -337,7 +337,6 @@ class TestSessionManager:
         # But resources should be cleared
         assert manager._session is None
         assert manager._connector is None
-        assert manager._lock is None
         assert manager._loop_id is None
 
     @pytest.mark.asyncio

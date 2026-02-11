@@ -26,10 +26,13 @@ Token Cache Integration:
 """
 
 import asyncio
+import atexit
 import base64
 import json
 import os
+import threading
 import time
+import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -58,7 +61,7 @@ class SessionManager:
     - Maintaining a single shared session across multiple requests
     - Using a TCPConnector with connection pooling for better performance
     - Properly handling session lifecycle (creation, reuse, cleanup)
-    - Thread-safe session creation using asyncio.Lock
+    - Thread-safe singleton creation and session access
     - Event loop aware: automatically recreates resources when loop changes
     - Cookie isolation: uses DummyCookieJar to prevent cookie leakage between nodes
 
@@ -89,6 +92,7 @@ class SessionManager:
     """
 
     _instance: Optional["SessionManager"] = None
+    _instance_lock: threading.Lock = threading.Lock()  # Thread-safe singleton creation
 
     def __init__(
         self,
@@ -108,8 +112,9 @@ class SessionManager:
         self._keepalive_timeout = keepalive_timeout
         self._connector: Optional[aiohttp.TCPConnector] = None
         self._session: Optional[aiohttp.ClientSession] = None
-        self._lock: Optional[asyncio.Lock] = None
+        self._async_lock: Optional[asyncio.Lock] = None
         self._loop_id: Optional[int] = None  # Track which event loop owns resources
+        self._sync_lock = threading.Lock()  # Protects _async_lock creation
 
     def _get_current_loop_id(self) -> int:
         """Get the ID of the current running event loop."""
@@ -126,16 +131,16 @@ class SessionManager:
             return False
         return self._loop_id == self._get_current_loop_id()
 
-    def _ensure_lock(self) -> asyncio.Lock:
-        """Ensure we have a lock for the current event loop.
+    def _get_async_lock(self) -> asyncio.Lock:
+        """Get or create the asyncio.Lock for the current event loop.
 
-        Creates a new lock if none exists or if the event loop has changed.
+        Thread-safe: uses a threading.Lock to protect creation.
         """
         current_loop_id = self._get_current_loop_id()
-        if self._lock is None or self._loop_id != current_loop_id:
-            self._lock = asyncio.Lock()
-            self._loop_id = current_loop_id
-        return self._lock
+        with self._sync_lock:
+            if self._async_lock is None or self._loop_id != current_loop_id:
+                self._async_lock = asyncio.Lock()
+            return self._async_lock
 
     def _create_connector(self) -> aiohttp.TCPConnector:
         """Create a TCPConnector with connection pooling settings."""
@@ -169,49 +174,59 @@ class SessionManager:
         Returns:
             The shared aiohttp.ClientSession instance with connection pooling.
         """
-        # Check if we need to recreate due to event loop change
-        if not self._is_same_loop():
-            # Event loop changed - need to recreate resources
-            # Old resources are orphaned but will be GC'd
-            self._session = None
-            self._connector = None
+        current_loop_id = self._get_current_loop_id()
 
-        # Fast path: if session exists and is open, return it
-        if self._session is not None and not self._session.closed:
-            return self._session
-
-        # Slow path: acquire lock and create session if needed
-        lock = self._ensure_lock()
+        # Always acquire lock to prevent race with close()
+        lock = self._get_async_lock()
         async with lock:
-            # Double-check after acquiring lock (another coroutine may have created it)
+            # Check if we need to recreate due to event loop change
+            if self._loop_id is not None and self._loop_id != current_loop_id:
+                # Event loop changed - old resources are orphaned
+                # Log warning about orphaned resources
+                if self._session is not None and not self._session.closed:
+                    warnings.warn(
+                        "SessionManager: Event loop changed, orphaning unclosed session. "
+                        "This may cause 'Unclosed client session' warnings.",
+                        ResourceWarning,
+                        stacklevel=2,
+                    )
+                self._session = None
+                self._connector = None
+
+            # Create session if needed
             if self._session is None or self._session.closed:
                 self._connector = self._create_connector()
                 self._session = self._create_session(self._connector)
-                self._loop_id = self._get_current_loop_id()
+                self._loop_id = current_loop_id
+
             return self._session
 
     async def close(self) -> None:
         """Close the session and release all connections.
 
         This method is thread-safe and ensures proper cleanup of resources.
-        Only closes resources if we're in the same event loop where they were created.
         """
-        # Only close if we're in the same loop (otherwise resources are already orphaned)
-        if not self._is_same_loop():
-            self._session = None
-            self._connector = None
-            self._lock = None
-            self._loop_id = None
-            return
+        current_loop_id = self._get_current_loop_id()
+        lock = self._get_async_lock()
 
-        lock = self._ensure_lock()
         async with lock:
+            # Only close if we're in the same loop
+            if self._loop_id is not None and self._loop_id != current_loop_id:
+                # Different loop - just clear references
+                self._session = None
+                self._connector = None
+                self._loop_id = None
+                return
+
             if self._session is not None and not self._session.closed:
                 await self._session.close()
-                self._session = None
+            self._session = None
+
             if self._connector is not None and not self._connector.closed:
                 await self._connector.close()
-                self._connector = None
+            self._connector = None
+
+            self._loop_id = None
 
     async def __aenter__(self) -> aiohttp.ClientSession:
         """Async context manager entry - returns the session."""
@@ -225,14 +240,16 @@ class SessionManager:
     def get_shared_instance(cls) -> "SessionManager":
         """Get the global shared SessionManager instance.
 
-        Note: This method is not async and uses a simple check-then-create pattern.
-        The instance will automatically handle event loop changes internally.
+        Thread-safe: uses a threading.Lock to protect singleton creation.
 
         Returns:
             The global SessionManager instance (creates one if needed).
         """
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._instance_lock:
+                # Double-check after acquiring lock
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     @classmethod
@@ -242,9 +259,27 @@ class SessionManager:
         Call this during application shutdown to properly release all
         HTTP connections and prevent resource leaks.
         """
-        if cls._instance is not None:
-            await cls._instance.close()
-            cls._instance = None
+        with cls._instance_lock:
+            if cls._instance is not None:
+                await cls._instance.close()
+                cls._instance = None
+
+
+def _cleanup_shared_session() -> None:
+    """Atexit handler to warn about unclosed shared session."""
+    if SessionManager._instance is not None:
+        instance = SessionManager._instance
+        if instance._session is not None and not instance._session.closed:
+            warnings.warn(
+                "SessionManager: Shared session was not closed before exit. "
+                "Call close_shared_session() during shutdown to avoid resource leaks.",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
+
+# Register cleanup handler
+atexit.register(_cleanup_shared_session)
 
 
 async def get_shared_session() -> aiohttp.ClientSession:
@@ -266,6 +301,25 @@ async def close_shared_session() -> None:
     release all HTTP connections.
     """
     await SessionManager.close_shared_instance()
+
+
+async def _get_session(
+    session_manager: Optional[SessionManager] = None,
+) -> aiohttp.ClientSession:
+    """Get an aiohttp session from the provided manager or shared instance.
+
+    This is a helper function to reduce duplication in authenticate/refresh methods.
+
+    Args:
+        session_manager: Optional SessionManager for connection pooling.
+            If not provided, uses the global shared session.
+
+    Returns:
+        An aiohttp.ClientSession instance.
+    """
+    if session_manager is not None:
+        return await session_manager.get_session()
+    return await get_shared_session()
 
 
 # Auth endpoints
@@ -471,11 +525,7 @@ class AuthManager:
         auth_endpoint = f"{normalized_url}{AUTH_TOKEN_ENDPOINT}"
 
         try:
-            # Use provided session manager or get the shared session
-            if session_manager is not None:
-                session = await session_manager.get_session()
-            else:
-                session = await get_shared_session()
+            session = await _get_session(session_manager)
 
             async with session.post(
                 auth_endpoint,
@@ -554,11 +604,7 @@ class AuthManager:
         }
 
         try:
-            # Use provided session manager or get the shared session
-            if session_manager is not None:
-                session = await session_manager.get_session()
-            else:
-                session = await get_shared_session()
+            session = await _get_session(session_manager)
 
             async with session.post(
                 refresh_endpoint,
