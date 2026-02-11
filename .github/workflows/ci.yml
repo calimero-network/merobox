@@ -60,26 +60,18 @@ jobs:
           pip install -e .
 
       - name: Install merod binary (edge)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "Downloading merod binary..."
           VERSION="${MEROD_BINARY_VERSION:-edge}"
+          ARCH="x86_64"
+          PLATFORM="unknown-linux-gnu"
+          TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
+
           if [ "$VERSION" = "edge" ]; then
             echo "Resolving edge merod release tag..."
-            VERSION=$(python - <<'PY'
-          import json
-          import urllib.request
-
-          url = "https://api.github.com/repos/calimero-network/core/releases"
-          with urllib.request.urlopen(url) as resp:
-              releases = json.load(resp)
-
-          for release in releases:
-              if release.get("draft"):
-                  continue
-              print(release.get("tag_name", ""))
-              break
-          PY
-            )
+            VERSION="$(bash .github/scripts/resolve-merod-version.sh "calimero-network/core" "$TARBALL")"
           fi
 
           if [ -z "$VERSION" ]; then
@@ -88,9 +80,6 @@ jobs:
           fi
           echo "Using version: $VERSION"
 
-          ARCH="x86_64"
-          PLATFORM="unknown-linux-gnu"
-          TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
           DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
 
           # Download and extract
@@ -143,7 +132,6 @@ jobs:
             for f in "${failed_workflows[@]}"; do
               if ! merobox bootstrap run "$f" \
                 --no-docker \
-                --binary-path ../../target/debug/merod \
                 --e2e-mode \
                 --near-devnet \
                 --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
