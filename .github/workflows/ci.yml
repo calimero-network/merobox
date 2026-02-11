@@ -9,7 +9,7 @@ on:
 env:
   # Or you can use 'prerelease-{PR-NUMBER}'
   CALIMERO_CONTRACTS_VERSION: "latest"
-  MEROD_BINARY_VERSION: "latest"
+  MEROD_BINARY_VERSION: "master"
 
 jobs:
   format:
@@ -59,18 +59,22 @@ jobs:
         run: |
           pip install -e .
 
-      - name: Install merod binary (edge)
+      - name: Install merod binary (master)
         id: merod-binary
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "Downloading merod binary..."
-          VERSION="${MEROD_BINARY_VERSION:-edge}"
+          VERSION="${MEROD_BINARY_VERSION:-master}"
           ARCH="x86_64"
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
 
-          if [ "$VERSION" = "edge" ] || [ "$VERSION" = "latest" ]; then
+          if [ "$VERSION" = "master" ]; then
+            echo "Resolving master merod build..."
+            MASTER_SHA="$(bash .github/scripts/download-merod-master.sh "calimero-network/core" "$TARBALL")"
+            VERSION="master-${MASTER_SHA:0:7}"
+          elif [ "$VERSION" = "edge" ] || [ "$VERSION" = "latest" ]; then
             echo "Resolving ${VERSION} merod release tag..."
             VERSION="$(bash .github/scripts/resolve-merod-version.sh "calimero-network/core" "$TARBALL" "$VERSION")"
           fi
@@ -83,10 +87,12 @@ jobs:
           echo "merod_version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Merod binary: $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
-          DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
+          if [ "$MEROD_BINARY_VERSION" != "master" ]; then
+            DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
 
-          # Download and extract
-          curl -L -o "${TARBALL}" "${DOWNLOAD_URL}"
+            # Download and extract
+            curl -L -o "${TARBALL}" "${DOWNLOAD_URL}"
+          fi
           tar -xzf "${TARBALL}"
           chmod +x merod
 
