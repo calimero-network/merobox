@@ -9,7 +9,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-releases_json="$(gh api "repos/${REPO}/releases" -F per_page=50)"
+releases_json="$(gh api "repos/${REPO}/releases?per_page=50")"
 
 if [ -z "$releases_json" ]; then
   echo "No releases found for ${REPO}" >&2
