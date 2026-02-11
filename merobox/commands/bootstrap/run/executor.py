@@ -65,7 +65,6 @@ class WorkflowExecutor:
         webui_use_cached: bool = False,
         log_level: str = "debug",
         rust_backtrace: str = "0",
-        mock_relayer: bool = False,
         e2e_mode: bool = False,
         workflow_dir: str = None,
         near_devnet: bool = False,
@@ -113,9 +112,6 @@ class WorkflowExecutor:
             if rust_backtrace is not None
             else config.get("rust_backtrace", "0")
         )
-        # Mock relayer can be enabled by CLI flag or workflow config (CLI takes precedence)
-        self.mock_relayer = mock_relayer or config.get("mock_relayer", False)
-
         # E2E mode can be enabled by CLI flag or workflow config (CLI takes precedence)
         self.e2e_mode = e2e_mode or config.get("e2e_mode", False)
 
@@ -138,13 +134,6 @@ class WorkflowExecutor:
         # Will be set up properly after manager is confirmed
         self.resolver: Optional[NodeResolver] = None
 
-        # Forbid having Near Devnet (sandbox) configuration and mock relayer at the same time
-        if self.mock_relayer and self.near_devnet:
-            console.print(
-                "[red]Configuration Error: --mock-relayer and --near-devnet cannot be enabled simultaneously.[/red]"
-            )
-            sys.exit(1)
-
         if self.near_devnet and not self.contracts_dir:
             console.print(
                 "[red] Config Error: near_devnet requires contracts_dir to be specified[/red]"
@@ -164,11 +153,6 @@ class WorkflowExecutor:
             console.print(
                 f"[cyan]WorkflowExecutor: resolved rust_backtrace='{self.rust_backtrace}', binary_mode={self.is_binary_mode}[/cyan]"
             )
-        except Exception:
-            pass
-        try:
-            if self.mock_relayer:
-                console.print("[cyan]WorkflowExecutor: mock relayer enabled[/cyan]")
         except Exception:
             pass
         self.workflow_results = {}
@@ -571,11 +555,10 @@ class WorkflowExecutor:
         config_path = self._resolve_config_path(nodes_config.get("config_path"))
         use_image_entrypoint = nodes_config.get("use_image_entrypoint", False)
 
-        # Ensure nodes are restarted when Near Devnet or Mock Relayer is requested so wiring is fresh
-        if (self.near_devnet or self.mock_relayer) and not restart:
-            feature = "NEAR Devnet" if self.near_devnet else "Mock Relayer"
+        # Ensure nodes are restarted when Near Devnet is requested so wiring is fresh
+        if self.near_devnet and not restart:
             console.print(
-                f"[yellow]{feature} requested; forcing restart to wire nodes to the relayer[/yellow]"
+                "[yellow]NEAR Devnet requested; forcing restart to wire nodes to the relayer[/yellow]"
             )
             restart = True
 
@@ -627,7 +610,6 @@ class WorkflowExecutor:
                     "webui_use_cached": self.webui_use_cached,
                     "log_level": self.log_level,
                     "rust_backtrace": self.rust_backtrace,
-                    "mock_relayer": self.mock_relayer,
                     "workflow_id": self.workflow_id,
                     "e2e_mode": self.e2e_mode,
                     "near_devnet_config": node_near_config,
@@ -682,7 +664,6 @@ class WorkflowExecutor:
                         "webui_use_cached": self.webui_use_cached,
                         "log_level": self.log_level,
                         "rust_backtrace": self.rust_backtrace,
-                        "mock_relayer": self.mock_relayer,
                         "workflow_id": self.workflow_id,
                         "e2e_mode": self.e2e_mode,
                         "near_devnet_config": node_near_config,
@@ -787,7 +768,6 @@ class WorkflowExecutor:
                         "webui_use_cached": self.webui_use_cached,
                         "log_level": self.log_level,
                         "rust_backtrace": self.rust_backtrace,
-                        "mock_relayer": self.mock_relayer,
                         "workflow_id": self.workflow_id,
                         "e2e_mode": self.e2e_mode,
                         "config_path": node_config_path,
@@ -825,7 +805,6 @@ class WorkflowExecutor:
                     "webui_use_cached": self.webui_use_cached,
                     "log_level": self.log_level,
                     "rust_backtrace": self.rust_backtrace,
-                    "mock_relayer": self.mock_relayer,
                     "workflow_id": self.workflow_id,
                     "e2e_mode": self.e2e_mode,
                     "config_path": node_config_path,

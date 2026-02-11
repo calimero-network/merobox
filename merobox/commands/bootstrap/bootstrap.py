@@ -186,11 +186,6 @@ def bootstrap():
     help="Set custom path to merod binary (used with --no-docker). Defaults to searching PATH and common locations (/usr/local/bin, /usr/bin, ~/bin).",
 )
 @click.option(
-    "--mock-relayer",
-    is_flag=True,
-    help="Start a local mock relayer (Docker only) and wire nodes to it",
-)
-@click.option(
     "--e2e-mode",
     is_flag=True,
     help="Enable e2e test mode with aggressive sync settings and test isolation (disables bootstrap nodes, uses unique rendezvous namespaces)",
@@ -247,7 +242,6 @@ def run(
     rust_backtrace,
     no_docker,
     binary_path,
-    mock_relayer,
     e2e_mode,
     near_devnet,
     contracts_dir,
@@ -308,7 +302,6 @@ def run(
         rust_backtrace=rust_backtrace,
         no_docker=no_docker,
         binary_path=binary_path,
-        mock_relayer=mock_relayer,
         e2e_mode=e2e_mode,
         near_devnet=near_devnet,
         contracts_dir=contracts_dir,

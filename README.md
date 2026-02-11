@@ -79,9 +79,6 @@ merobox bootstrap run workflow.yml \
   --near-devnet \
   --contracts-dir ./contracts/res
 
-# Run everything against the local mock relayer
-merobox bootstrap run workflow.yml --mock-relayer
-
 # Stop all nodes and auth services
 merobox stop --all
 ```
@@ -96,8 +93,7 @@ merobox stop --all
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
 - **Dynamic Variables**: Advanced placeholder resolution with embedded support
-- **Local NEAR Devnet**: Use local instance of NEAR blockchain (Sandbox) for zero-cost and quick local testing
-- **Mock Relayer Support**: One flag (`--mock-relayer`) spins up ghcr.io/calimero-network/mero-relayer:8ee178e and wires nodes to it
+- **Local NEAR Devnet**: Use local instance of NEAR blockchain (Sandbox) for zero-cost and quick local testing (use `--near-devnet` with `--contracts-dir`)
 
 ---
 
@@ -1331,14 +1327,6 @@ Merobox offers two ways to run isolated tests without connecting to public netwo
 
 - **Best for:** Full E2E testing and contract logic verification.
 - **Behavior:** Executes actual WASM smart contracts and state transitions.
-
-2. **Mock Relayer** (`--mock-relayer`)
-   A lightweight service that mimics the Relayer API.
-
-- **Best for:** Fast connectivity checks and node startup validation.
-- **Behavior:** Returns successful responses without executing real logic.
-
-> **❌ Restriction**: You cannot use `--mock-relayer` and `--near-devnet` simultaneously. The workflow will fail if both are enabled.
 
 ### Local NEAR Sandbox
 

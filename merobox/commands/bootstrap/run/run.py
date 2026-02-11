@@ -84,7 +84,6 @@ async def run_workflow(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
-    mock_relayer: bool = False,
     e2e_mode: bool = False,
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
@@ -146,12 +145,6 @@ async def run_workflow(
                 )
                 return False
 
-        if mock_relayer and effective_no_docker:
-            console.print(
-                "[red]--mock-relayer requires Docker mode; remove --no-docker or yaml no_docker flag[/red]"
-            )
-            return False
-
         # Check if this is a remote-only workflow (no local nodes)
         # Local nodes are defined in 'nodes' config key
         has_local_nodes = "nodes" in config and config.get("nodes")
@@ -186,8 +179,6 @@ async def run_workflow(
             _console.print(
                 f"[cyan]run_workflow: incoming rust_backtrace='{rust_backtrace}'[/cyan]"
             )
-            if mock_relayer:
-                _console.print("[cyan]run_workflow: mock relayer requested[/cyan]")
         except Exception:
             pass
 
@@ -201,7 +192,6 @@ async def run_workflow(
             webui_use_cached,
             log_level,
             rust_backtrace,
-            mock_relayer,
             e2e_mode,
             workflow_dir=workflow_dir,
             near_devnet=near_devnet,
@@ -244,7 +234,6 @@ def run_workflow_sync(
     rust_backtrace: str = "0",
     no_docker: bool = False,
     binary_path: Optional[str] = None,
-    mock_relayer: bool = False,
     e2e_mode: bool = False,
     near_devnet: bool = False,
     contracts_dir: Optional[str] = None,
@@ -281,7 +270,6 @@ def run_workflow_sync(
             rust_backtrace=rust_backtrace,
             no_docker=no_docker,
             binary_path=binary_path,
-            mock_relayer=mock_relayer,
             e2e_mode=e2e_mode,
             near_devnet=near_devnet,
             contracts_dir=contracts_dir,

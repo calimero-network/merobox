@@ -136,7 +136,6 @@ class BinaryManager:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         foreground: bool = False,
-        mock_relayer: bool = False,  # Ignored in binary mode
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         config_path: Optional[str] = None,  # custom config.toml path
@@ -162,10 +161,6 @@ class BinaryManager:
             True if successful, False otherwise
         """
         try:
-            if mock_relayer:
-                console.print(
-                    "[yellow]⚠ Mock relayer is not supported in binary mode (--no-docker); flag will be ignored[/yellow]"
-                )
             # Default ports if None provided
             if port is None:
                 port = 2428
@@ -735,7 +730,6 @@ class BinaryManager:
         webui_use_cached: bool = False,  # Ignored
         log_level: str = "debug",
         rust_backtrace: str = "0",
-        mock_relayer: bool = False,  # Ignored
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,  # Enable NEAR Devnet
@@ -815,7 +809,6 @@ class BinaryManager:
                 chain_id=chain_id,
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
-                mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
                 near_devnet_config=node_specific_near_config,
