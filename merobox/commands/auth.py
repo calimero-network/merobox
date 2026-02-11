@@ -59,6 +59,8 @@ class SessionManager:
     - Using a TCPConnector with connection pooling for better performance
     - Properly handling session lifecycle (creation, reuse, cleanup)
     - Thread-safe session creation using asyncio.Lock
+    - Event loop aware: automatically recreates resources when loop changes
+    - Cookie isolation: uses DummyCookieJar to prevent cookie leakage between nodes
 
     Usage:
         # Option 1: Use as async context manager (recommended)
@@ -87,7 +89,6 @@ class SessionManager:
     """
 
     _instance: Optional["SessionManager"] = None
-    _instance_lock: asyncio.Lock = None  # Class-level lock for singleton
 
     def __init__(
         self,
@@ -107,7 +108,34 @@ class SessionManager:
         self._keepalive_timeout = keepalive_timeout
         self._connector: Optional[aiohttp.TCPConnector] = None
         self._session: Optional[aiohttp.ClientSession] = None
-        self._lock: asyncio.Lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+        self._loop_id: Optional[int] = None  # Track which event loop owns resources
+
+    def _get_current_loop_id(self) -> int:
+        """Get the ID of the current running event loop."""
+        try:
+            loop = asyncio.get_running_loop()
+            return id(loop)
+        except RuntimeError:
+            # No running loop
+            return 0
+
+    def _is_same_loop(self) -> bool:
+        """Check if we're running in the same event loop as when resources were created."""
+        if self._loop_id is None:
+            return False
+        return self._loop_id == self._get_current_loop_id()
+
+    def _ensure_lock(self) -> asyncio.Lock:
+        """Ensure we have a lock for the current event loop.
+
+        Creates a new lock if none exists or if the event loop has changed.
+        """
+        current_loop_id = self._get_current_loop_id()
+        if self._lock is None or self._loop_id != current_loop_id:
+            self._lock = asyncio.Lock()
+            self._loop_id = current_loop_id
+        return self._lock
 
     def _create_connector(self) -> aiohttp.TCPConnector:
         """Create a TCPConnector with connection pooling settings."""
@@ -118,33 +146,66 @@ class SessionManager:
             enable_cleanup_closed=True,
         )
 
+    def _create_session(self, connector: aiohttp.TCPConnector) -> aiohttp.ClientSession:
+        """Create a ClientSession with disabled cookies.
+
+        Uses DummyCookieJar to prevent cookies from being shared between
+        different node authentications, which could cause auth state leakage.
+        """
+        return aiohttp.ClientSession(
+            connector=connector,
+            cookie_jar=aiohttp.DummyCookieJar(),
+        )
+
     async def get_session(self) -> aiohttp.ClientSession:
         """Get or create the shared aiohttp.ClientSession.
 
         This method is thread-safe and uses a lock to prevent race conditions
         when multiple coroutines try to create a session concurrently.
 
+        The session is automatically recreated if the event loop has changed,
+        preventing cross-loop errors.
+
         Returns:
             The shared aiohttp.ClientSession instance with connection pooling.
         """
+        # Check if we need to recreate due to event loop change
+        if not self._is_same_loop():
+            # Event loop changed - need to recreate resources
+            # Old resources are orphaned but will be GC'd
+            self._session = None
+            self._connector = None
+
         # Fast path: if session exists and is open, return it
         if self._session is not None and not self._session.closed:
             return self._session
 
         # Slow path: acquire lock and create session if needed
-        async with self._lock:
+        lock = self._ensure_lock()
+        async with lock:
             # Double-check after acquiring lock (another coroutine may have created it)
             if self._session is None or self._session.closed:
                 self._connector = self._create_connector()
-                self._session = aiohttp.ClientSession(connector=self._connector)
+                self._session = self._create_session(self._connector)
+                self._loop_id = self._get_current_loop_id()
             return self._session
 
     async def close(self) -> None:
         """Close the session and release all connections.
 
         This method is thread-safe and ensures proper cleanup of resources.
+        Only closes resources if we're in the same event loop where they were created.
         """
-        async with self._lock:
+        # Only close if we're in the same loop (otherwise resources are already orphaned)
+        if not self._is_same_loop():
+            self._session = None
+            self._connector = None
+            self._lock = None
+            self._loop_id = None
+            return
+
+        lock = self._ensure_lock()
+        async with lock:
             if self._session is not None and not self._session.closed:
                 await self._session.close()
                 self._session = None
@@ -165,7 +226,7 @@ class SessionManager:
         """Get the global shared SessionManager instance.
 
         Note: This method is not async and uses a simple check-then-create pattern.
-        For truly concurrent access at startup, consider using get_shared_instance_async().
+        The instance will automatically handle event loop changes internally.
 
         Returns:
             The global SessionManager instance (creates one if needed).
