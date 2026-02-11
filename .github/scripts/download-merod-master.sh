@@ -40,7 +40,7 @@ if [ -z "$run_id" ] || [ -z "$run_sha" ]; then
 fi
 
 artifact_id="$(gh api "repos/${REPO}/actions/runs/${run_id}/artifacts" \
-  --jq --arg name "$ARTIFACT_NAME" '.artifacts[] | select(.name == $name) | .id' | head -n 1)"
+  | jq -r --arg name "$ARTIFACT_NAME" '.artifacts[] | select(.name == $name) | .id' | head -n 1)"
 
 if [ -z "$artifact_id" ]; then
   echo "Artifact ${ARTIFACT_NAME} not found for run ${run_id}" >&2
