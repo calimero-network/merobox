@@ -25,6 +25,7 @@ Token Cache Integration:
     2. Tokens refreshed by the Rust client are visible to merobox
 """
 
+import asyncio
 import base64
 import json
 import os
@@ -57,6 +58,7 @@ class SessionManager:
     - Maintaining a single shared session across multiple requests
     - Using a TCPConnector with connection pooling for better performance
     - Properly handling session lifecycle (creation, reuse, cleanup)
+    - Thread-safe session creation using asyncio.Lock
 
     Usage:
         # Option 1: Use as async context manager (recommended)
@@ -77,10 +79,15 @@ class SessionManager:
         session = await get_shared_session()
         async with session.get(url) as response:
             data = await response.json()
+
+    Note:
+        When using the global shared instance via get_shared_session(),
+        call close_shared_session() during application shutdown to
+        properly release all HTTP connections.
     """
 
     _instance: Optional["SessionManager"] = None
-    _session: Optional[aiohttp.ClientSession] = None
+    _instance_lock: asyncio.Lock = None  # Class-level lock for singleton
 
     def __init__(
         self,
@@ -99,6 +106,8 @@ class SessionManager:
         self._pool_connections_per_host = pool_connections_per_host
         self._keepalive_timeout = keepalive_timeout
         self._connector: Optional[aiohttp.TCPConnector] = None
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     def _create_connector(self) -> aiohttp.TCPConnector:
         """Create a TCPConnector with connection pooling settings."""
@@ -112,22 +121,36 @@ class SessionManager:
     async def get_session(self) -> aiohttp.ClientSession:
         """Get or create the shared aiohttp.ClientSession.
 
+        This method is thread-safe and uses a lock to prevent race conditions
+        when multiple coroutines try to create a session concurrently.
+
         Returns:
             The shared aiohttp.ClientSession instance with connection pooling.
         """
-        if self._session is None or self._session.closed:
-            self._connector = self._create_connector()
-            self._session = aiohttp.ClientSession(connector=self._connector)
-        return self._session
+        # Fast path: if session exists and is open, return it
+        if self._session is not None and not self._session.closed:
+            return self._session
+
+        # Slow path: acquire lock and create session if needed
+        async with self._lock:
+            # Double-check after acquiring lock (another coroutine may have created it)
+            if self._session is None or self._session.closed:
+                self._connector = self._create_connector()
+                self._session = aiohttp.ClientSession(connector=self._connector)
+            return self._session
 
     async def close(self) -> None:
-        """Close the session and release all connections."""
-        if self._session is not None and not self._session.closed:
-            await self._session.close()
-            self._session = None
-        if self._connector is not None and not self._connector.closed:
-            await self._connector.close()
-            self._connector = None
+        """Close the session and release all connections.
+
+        This method is thread-safe and ensures proper cleanup of resources.
+        """
+        async with self._lock:
+            if self._session is not None and not self._session.closed:
+                await self._session.close()
+                self._session = None
+            if self._connector is not None and not self._connector.closed:
+                await self._connector.close()
+                self._connector = None
 
     async def __aenter__(self) -> aiohttp.ClientSession:
         """Async context manager entry - returns the session."""
@@ -141,6 +164,9 @@ class SessionManager:
     def get_shared_instance(cls) -> "SessionManager":
         """Get the global shared SessionManager instance.
 
+        Note: This method is not async and uses a simple check-then-create pattern.
+        For truly concurrent access at startup, consider using get_shared_instance_async().
+
         Returns:
             The global SessionManager instance (creates one if needed).
         """
@@ -150,7 +176,11 @@ class SessionManager:
 
     @classmethod
     async def close_shared_instance(cls) -> None:
-        """Close the global shared SessionManager instance."""
+        """Close the global shared SessionManager instance.
+
+        Call this during application shutdown to properly release all
+        HTTP connections and prevent resource leaks.
+        """
         if cls._instance is not None:
             await cls._instance.close()
             cls._instance = None

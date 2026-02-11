@@ -1,33 +1,67 @@
 """Unit tests for SessionManager connection pooling."""
 
+import asyncio
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Mock dependencies before importing auth module to avoid import chain issues
-sys.modules["calimero_client_py"] = MagicMock()
-sys.modules["ed25519"] = MagicMock()
-sys.modules["base58"] = MagicMock()
-sys.modules["py_near"] = MagicMock()
+# Store original modules to restore later
+_original_modules = {}
 
-# Mock the near module imports
-sys.modules["merobox.commands.near"] = MagicMock()
-sys.modules["merobox.commands.near.client"] = MagicMock()
-sys.modules["merobox.commands.near.sandbox"] = MagicMock()
 
-# Import constants used by the auth module
-DEFAULT_CONNECTION_TIMEOUT = 10.0
-DEFAULT_READ_TIMEOUT = 30.0
+def _mock_modules():
+    """Mock modules that are problematic to import in test environment."""
+    modules_to_mock = [
+        "calimero_client_py",
+        "ed25519",
+        "base58",
+        "py_near",
+        "merobox.commands.near",
+        "merobox.commands.near.client",
+        "merobox.commands.near.sandbox",
+    ]
 
-# Mock the constants module
-mock_constants = MagicMock()
-mock_constants.DEFAULT_CONNECTION_TIMEOUT = DEFAULT_CONNECTION_TIMEOUT
-mock_constants.DEFAULT_READ_TIMEOUT = DEFAULT_READ_TIMEOUT
-sys.modules["merobox.commands.constants"] = mock_constants
+    for mod_name in modules_to_mock:
+        if mod_name in sys.modules:
+            _original_modules[mod_name] = sys.modules[mod_name]
+        sys.modules[mod_name] = MagicMock()
 
-# Now import just the auth module directly (not through merobox.commands)
-# We need to reload it to pick up the mocks
+    # Mock the constants module with actual values
+    mock_constants = MagicMock()
+    mock_constants.DEFAULT_CONNECTION_TIMEOUT = 10.0
+    mock_constants.DEFAULT_READ_TIMEOUT = 30.0
+    if "merobox.commands.constants" in sys.modules:
+        _original_modules["merobox.commands.constants"] = sys.modules[
+            "merobox.commands.constants"
+        ]
+    sys.modules["merobox.commands.constants"] = mock_constants
+
+
+def _restore_modules():
+    """Restore original modules."""
+    modules_to_restore = [
+        "calimero_client_py",
+        "ed25519",
+        "base58",
+        "py_near",
+        "merobox.commands.near",
+        "merobox.commands.near.client",
+        "merobox.commands.near.sandbox",
+        "merobox.commands.constants",
+    ]
+
+    for mod_name in modules_to_restore:
+        if mod_name in _original_modules:
+            sys.modules[mod_name] = _original_modules[mod_name]
+        elif mod_name in sys.modules:
+            del sys.modules[mod_name]
+
+
+# Setup mocks before importing auth module
+_mock_modules()
+
+# Now import just the auth module directly
 import importlib  # noqa: E402
 
 import merobox.commands.auth  # noqa: E402
@@ -42,6 +76,25 @@ from merobox.commands.auth import (  # noqa: E402
     close_shared_session,
     get_shared_session,
 )
+
+
+@pytest.fixture(autouse=True)
+def cleanup_session_manager():
+    """Reset SessionManager singleton state before and after each test."""
+    # Reset before test
+    SessionManager._instance = None
+
+    yield
+
+    # Reset after test
+    SessionManager._instance = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup_modules():
+    """Restore original modules after test module completes."""
+    yield
+    _restore_modules()
 
 
 class TestSessionManager:
@@ -138,6 +191,36 @@ class TestSessionManager:
                 mock_session.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_get_session_thread_safe(self):
+        """Test get_session is thread-safe with concurrent calls."""
+        manager = SessionManager()
+        call_count = 0
+
+        original_create_connector = manager._create_connector
+
+        def counting_create_connector():
+            nonlocal call_count
+            call_count += 1
+            return original_create_connector()
+
+        with patch.object(manager, "_create_connector", counting_create_connector):
+            with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
+                mock_session_instance = MagicMock()
+                mock_session_instance.closed = False
+                mock_session.return_value = mock_session_instance
+
+                # Call get_session concurrently multiple times
+                tasks = [manager.get_session() for _ in range(10)]
+                results = await asyncio.gather(*tasks)
+
+                # All results should be the same session
+                for result in results:
+                    assert result == mock_session_instance
+
+                # Connector should only be created once due to lock
+                assert call_count == 1
+
+    @pytest.mark.asyncio
     async def test_close_releases_resources(self):
         """Test close properly releases session and connector."""
         manager = SessionManager()
@@ -193,23 +276,14 @@ class TestSessionManager:
 
     def test_get_shared_instance_singleton(self):
         """Test get_shared_instance returns singleton."""
-        # Reset singleton
-        SessionManager._instance = None
-
         instance1 = SessionManager.get_shared_instance()
         instance2 = SessionManager.get_shared_instance()
 
         assert instance1 is instance2
 
-        # Clean up
-        SessionManager._instance = None
-
     @pytest.mark.asyncio
     async def test_close_shared_instance(self):
         """Test close_shared_instance cleans up singleton."""
-        # Reset singleton
-        SessionManager._instance = None
-
         instance = SessionManager.get_shared_instance()
         assert SessionManager._instance is not None
 
@@ -228,9 +302,6 @@ class TestModuleFunctions:
     @pytest.mark.asyncio
     async def test_get_shared_session(self):
         """Test get_shared_session returns session from shared instance."""
-        # Reset singleton
-        SessionManager._instance = None
-
         with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
             with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
                 mock_connector_instance = MagicMock()
@@ -244,18 +315,9 @@ class TestModuleFunctions:
 
                 assert session == mock_session_instance
 
-        # Clean up
-        if SessionManager._instance:
-            SessionManager._instance._session = None
-            SessionManager._instance._connector = None
-        SessionManager._instance = None
-
     @pytest.mark.asyncio
     async def test_close_shared_session(self):
         """Test close_shared_session cleans up shared instance."""
-        # Reset singleton
-        SessionManager._instance = None
-
         # Create instance
         instance = SessionManager.get_shared_instance()
         instance.close = AsyncMock()
