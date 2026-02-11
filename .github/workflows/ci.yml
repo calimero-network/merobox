@@ -9,7 +9,7 @@ on:
 env:
   # Or you can use 'prerelease-{PR-NUMBER}'
   CALIMERO_CONTRACTS_VERSION: "latest"
-  MEROD_BINARY_VERSION: "edge"
+  MEROD_BINARY_VERSION: "latest"
 
 jobs:
   format:
@@ -70,9 +70,9 @@ jobs:
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
 
-          if [ "$VERSION" = "edge" ]; then
-            echo "Resolving edge merod release tag..."
-            VERSION="$(bash .github/scripts/resolve-merod-version.sh "calimero-network/core" "$TARBALL")"
+          if [ "$VERSION" = "edge" ] || [ "$VERSION" = "latest" ]; then
+            echo "Resolving ${VERSION} merod release tag..."
+            VERSION="$(bash .github/scripts/resolve-merod-version.sh "calimero-network/core" "$TARBALL" "$VERSION")"
           fi
 
           if [ -z "$VERSION" ]; then

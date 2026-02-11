@@ -5,7 +5,7 @@ on:
     branches: [master]
 
 env:
-  MEROD_BINARY_VERSION: "edge"
+  MEROD_BINARY_VERSION: "latest"
 
 jobs:
   test-deb-package:
@@ -74,9 +74,9 @@ jobs:
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
 
-          if [ "$VERSION" = "edge" ]; then
-            echo "Resolving edge merod release tag..."
-            VERSION="$(bash .github/scripts/resolve-merod-version.sh "calimero-network/core" "$TARBALL")"
+          if [ "$VERSION" = "edge" ] || [ "$VERSION" = "latest" ]; then
+            echo "Resolving ${VERSION} merod release tag..."
+            VERSION="$(bash .github/scripts/resolve-merod-version.sh "calimero-network/core" "$TARBALL" "$VERSION")"
           fi
 
           if [ -z "$VERSION" ]; then

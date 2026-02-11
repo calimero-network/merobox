@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${1:?Usage: resolve-merod-version.sh <repo> <asset-name>}"
-ASSET_NAME="${2:?Usage: resolve-merod-version.sh <repo> <asset-name>}"
+REPO="${1:?Usage: resolve-merod-version.sh <repo> <asset-name> [edge|latest]}"
+ASSET_NAME="${2:?Usage: resolve-merod-version.sh <repo> <asset-name> [edge|latest]}"
+CHANNEL="${3:-edge}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq is required to resolve releases" >&2
@@ -17,8 +18,9 @@ if [ -z "$releases_json" ]; then
 fi
 
 # "edge" prefers prereleases (e.g., -rc) before stable tags.
+# "latest" prefers stable tags before prereleases.
 tag="$(
-  echo "$releases_json" | jq -r --arg asset "$ASSET_NAME" '
+  echo "$releases_json" | jq -r --arg asset "$ASSET_NAME" --arg channel "$CHANNEL" '
     [
       .[]
       | select(.draft == false)
@@ -28,7 +30,13 @@ tag="$(
           assets: (.assets // [] | map(.name))
         }
     ]
-    | (map(select(.prerelease == true)) + map(select(.prerelease == false)))
+    | (
+        if $channel == "edge" then
+          (map(select(.prerelease == true)) + map(select(.prerelease == false)))
+        else
+          (map(select(.prerelease == false)) + map(select(.prerelease == true)))
+        end
+      )
     | map(select(.assets | index($asset)))
     | .[0].tag // empty
   '
