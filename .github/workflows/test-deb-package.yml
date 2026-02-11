@@ -64,6 +64,7 @@ jobs:
           ./workflow-examples/scripts/download_contracts.sh
 
       - name: Install merod binary
+        id: merod-binary
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -83,6 +84,8 @@ jobs:
             exit 1
           fi
           echo "Using version: $VERSION"
+          echo "merod_version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Merod binary: $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
           DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
           curl -L -o "${TARBALL}" "${DOWNLOAD_URL}"
