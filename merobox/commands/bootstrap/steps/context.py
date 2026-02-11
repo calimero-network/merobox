@@ -6,7 +6,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL
+from merobox.commands.constants import DEFAULT_PROTOCOL, PROTOCOL_NEAR
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -42,6 +42,17 @@ class CreateContextStep(BaseStep):
         # Validate params is JSON string if provided
         if "params" in self.config and not isinstance(self.config["params"], str):
             raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
+
+        # Validate protocol is NEAR-only when explicitly provided
+        if "protocol" in self.config:
+            protocol = self.config["protocol"]
+            if not isinstance(protocol, str):
+                raise ValueError(f"Step '{step_name}': 'protocol' must be a string")
+            if protocol.strip().lower() != PROTOCOL_NEAR:
+                raise ValueError(
+                    f"Step '{step_name}': unsupported protocol '{protocol}'. "
+                    f"Only '{PROTOCOL_NEAR}' is supported."
+                )
 
     def _get_exportable_variables(self):
         """
@@ -115,7 +126,7 @@ class CreateContextStep(BaseStep):
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-            protocol = self.config.get("protocol", DEFAULT_PROTOCOL)
+            protocol = self.config.get("protocol", DEFAULT_PROTOCOL).strip().lower()
             api_result = client.create_context(
                 application_id=application_id,
                 protocol=protocol,

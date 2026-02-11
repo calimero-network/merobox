@@ -10,7 +10,7 @@ from rich import box
 from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL
+from merobox.commands.constants import DEFAULT_PROTOCOL, PROTOCOL_NEAR
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
@@ -37,6 +37,13 @@ async def create_context_via_admin_api(
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
         protocol = protocol or DEFAULT_PROTOCOL
+        if not isinstance(protocol, str):
+            raise ValueError("'protocol' must be a string")
+        protocol = protocol.strip().lower()
+        if protocol != PROTOCOL_NEAR:
+            raise ValueError(
+                f"Unsupported protocol '{protocol}'. Only '{PROTOCOL_NEAR}' is supported."
+            )
         api_result = client.create_context(
             application_id=application_id, protocol=protocol, params=params
         )
@@ -124,8 +131,11 @@ def context():
 @click.option(
     "--protocol",
     "-p",
-    default=DEFAULT_PROTOCOL,
-    help=f"Protocol type (default: {DEFAULT_PROTOCOL})",
+    default=None,
+    help=(
+        f"Protocol type (optional, only '{PROTOCOL_NEAR}' is supported; "
+        f"defaults to '{DEFAULT_PROTOCOL}')"
+    ),
 )
 @click.option(
     "--params",
@@ -135,6 +145,19 @@ def context():
 def create(node, application_id, protocol, params, verbose):
     """Create a new context for an application."""
     manager = DockerManager()
+    protocol = protocol or DEFAULT_PROTOCOL
+    if not isinstance(protocol, str):
+        console.print("[red]✗ Invalid protocol value. Expected a string.[/red]")
+        sys.exit(1)
+    protocol = protocol.strip().lower()
+
+    if protocol != PROTOCOL_NEAR:
+        console.print(
+            f"[red]✗ Unsupported protocol '{protocol}'. "
+            f"Only '{PROTOCOL_NEAR}' is supported. "
+            "Use NEAR defaults or '--near-devnet' for local sandbox workflows.[/red]"
+        )
+        sys.exit(1)
 
     # Validate params if provided
     params_json = None
