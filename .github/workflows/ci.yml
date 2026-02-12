@@ -104,7 +104,7 @@ jobs:
             merobox nuke -f || true
           done
 
-          # Retry failed workflows (max 2 retries)
+          # Retry failed workflows (max 2 retries); use same args as first run (merod from PATH)
           for retry in 1 2; do
             [ ${#failed_workflows[@]} -eq 0 ] && break
             echo "Retry $retry for ${#failed_workflows[@]} failed workflow(s)..."
@@ -114,7 +114,6 @@ jobs:
             for f in "${failed_workflows[@]}"; do
               if ! merobox bootstrap run "$f" \
                 --no-docker \
-                --binary-path ../../target/debug/merod \
                 --e2e-mode; then
                 still_failed+=("$f")
               fi
