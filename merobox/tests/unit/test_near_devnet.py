@@ -18,12 +18,18 @@ def mock_manager():
     return MagicMock(spec=DockerManager)
 
 
-def test_config_overrides_cli_near_devnet(mock_manager):
-    """YAML near_devnet overrides CLI default (enable_relayer=False -> near_devnet=True)."""
-    # Config forces near_devnet=True; CLI would pass near_devnet=False when --enable-relayer.
+def test_near_devnet_from_config_when_cli_omitted(mock_manager):
+    """When CLI does not set near_devnet (None), YAML near_devnet is used."""
+    config = {"near_devnet": True, "nodes": {}}
+    executor = WorkflowExecutor(config, mock_manager, near_devnet=None)
+    assert executor.near_devnet is True
+
+
+def test_near_devnet_cli_overrides_config(mock_manager):
+    """When CLI sets near_devnet (e.g. --enable-relayer), CLI takes precedence over YAML."""
     config = {"near_devnet": True, "nodes": {}}
     executor = WorkflowExecutor(config, mock_manager, near_devnet=False)
-    assert executor.near_devnet is True
+    assert executor.near_devnet is False
 
 
 def test_resolve_contracts_dir_calls_ensure_when_none(mock_manager):
@@ -36,9 +42,9 @@ def test_resolve_contracts_dir_calls_ensure_when_none(mock_manager):
         "merobox.commands.bootstrap.run.executor.ensure_calimero_near_contracts"
     ) as mock_ensure:
         mock_ensure.return_value = "/tmp/contracts"
-        ctx_path, proxy_path = executor._resolve_contracts_dir()
+        contracts_dir, ctx_path, proxy_path = executor._resolve_contracts_dir()
     mock_ensure.assert_called_once()
-    assert executor.contracts_dir == "/tmp/contracts"
+    assert contracts_dir == "/tmp/contracts"
     assert ctx_path.endswith("calimero_context_config_near.wasm")
     assert proxy_path.endswith("calimero_context_proxy_near.wasm")
 

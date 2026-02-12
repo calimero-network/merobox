@@ -192,8 +192,16 @@ def bootstrap():
 )
 @click.option(
     "--enable-relayer",
-    is_flag=True,
-    help="Use the relayer/testnet for NEAR (default is a local NEAR sandbox; contracts are downloaded automatically).",
+    "enable_relayer",
+    flag_value=True,
+    default=None,
+    help="Use the relayer/testnet for NEAR. If omitted, workflow YAML near_devnet is used (default: local sandbox).",
+)
+@click.option(
+    "--no-enable-relayer",
+    "enable_relayer",
+    flag_value=False,
+    help="Use local NEAR sandbox (explicit). Overrides workflow YAML near_devnet.",
 )
 @click.option(
     "--contracts-dir",

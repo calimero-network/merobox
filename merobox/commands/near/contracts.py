@@ -22,6 +22,14 @@ except ImportError:
 
 console = Console()
 
+
+def _warn_no_filelock():
+    if FileLock is None:
+        console.print(
+            "[yellow]Warning: filelock not available, concurrent downloads may conflict[/yellow]"
+        )
+
+
 CONTRACTS_REPO_OWNER = "calimero-network"
 CONTRACTS_REPO_NAME = "contracts"
 NEAR_ASSET_NAME = "near.tar.gz"
@@ -58,10 +66,11 @@ def _verify_sha256(file_path: Path, expected_hex: str) -> None:
 
 
 def _safe_tar_extract(tar: tarfile.TarFile, extract_base: Path) -> None:
-    """Extract tar members into extract_base, rejecting path traversal (tar slip)."""
+    """Extract tar members into extract_base, rejecting path traversal and symlinks."""
     base_resolved = extract_base.resolve()
     for member in tar.getmembers():
-        # Resolve destination path and ensure it stays under extract_base
+        if member.issym() or member.islnk():
+            continue  # Skip symlinks/hardlinks; only regular files/dirs needed
         dest = (extract_base / member.name).resolve()
         try:
             dest.relative_to(base_resolved)
@@ -98,6 +107,7 @@ def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
     if FileLock is not None:
         with FileLock(lock_path, timeout=300):
             return _download_and_extract()
+    _warn_no_filelock()
     return _download_and_extract()
 
 
@@ -171,15 +181,21 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         try:
             with requests.get(checksum_url, timeout=30) as cs_resp:
                 cs_resp.raise_for_status()
-                # Expect first token to be 64-char hex (sha256)
                 line = (cs_resp.text or "").strip().split()
                 expected_hex = line[0] if line else ""
-                if len(expected_hex) == 64 and all(
+                if len(expected_hex) != 64 or not all(
                     c in "0123456789abcdefABCDEF" for c in expected_hex
                 ):
+                    console.print(
+                        "[yellow]Warning: checksum file format invalid, proceeding without verification[/yellow]"
+                    )
+                else:
                     _verify_sha256(tar_path, expected_hex)
-        except requests.RequestException:
-            pass  # Optional verification; skip if checksum fetch fails
+        except requests.RequestException as e:
+            console.print(
+                "[yellow]Warning: Could not verify checksum, proceeding without verification[/yellow]"
+            )
+            console.print(f"[dim]{type(e).__name__}: {e}[/dim]")
         except RuntimeError:
             if tar_path.exists():
                 try:
@@ -205,12 +221,17 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
             f"Failed to extract contracts ({type(e).__name__}): {e}"
         ) from e
 
-    # Find dir that contains both wasm files
+    # Find dir that contains both wasm files; normalize to cache_dir so next call hits cache
     try:
         if _dir_has_contracts(cache_dir):
             pass
         elif _dir_has_contracts(extract_base):
-            cache_dir = extract_base
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            for f in extract_base.iterdir():
+                if f.name != NEAR_ASSET_NAME and not f.name.startswith("."):
+                    dest = cache_dir / f.name
+                    if not dest.exists():
+                        f.rename(dest)
         else:
             # Check for single top-level folder (e.g. "near" or "near-0.5.0")
             for name in names:

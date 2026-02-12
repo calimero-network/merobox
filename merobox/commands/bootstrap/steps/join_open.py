@@ -145,7 +145,12 @@ class JoinOpenStep(BaseStep):
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
         except Exception as exc:
-            console.print(f"[red]Failed to resolve node {node_name}: {exc}[/red]")
+            if os.environ.get("MEROBOX_DEBUG"):
+                console.print(f"[red]Failed to resolve node {node_name}: {exc}[/red]")
+            else:
+                console.print(
+                    f"[red]Failed to resolve node {node_name} (set MEROBOX_DEBUG=1 for details)[/red]"
+                )
             return False
 
         # Execute join via open invitation
@@ -160,11 +165,19 @@ class JoinOpenStep(BaseStep):
                 console.print(f"  Detailed Errors: {result['errors']}")
             exc_info = result.get("exception")
             if exc_info:
-                console.print(
-                    f"[red]  Exception: {exc_info.get('type', '?')}: {exc_info.get('message', '')}[/red]"
-                )
-                if exc_info.get("traceback") and os.environ.get("MEROBOX_DEBUG"):
-                    console.print("[dim]" + exc_info["traceback"].strip() + "[/dim]")
+                exc_type = exc_info.get("type", "?")
+                if os.environ.get("MEROBOX_DEBUG"):
+                    console.print(
+                        f"[red]  Exception: {exc_type}: {exc_info.get('message', '')}[/red]"
+                    )
+                    if exc_info.get("traceback"):
+                        console.print(
+                            "[dim]" + exc_info["traceback"].strip() + "[/dim]"
+                        )
+                else:
+                    console.print(
+                        f"[red]  Exception: {exc_type} (set MEROBOX_DEBUG=1 for details)[/red]"
+                    )
 
         if result["success"]:
             # Check if the JSON-RPC response contains an error

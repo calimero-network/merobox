@@ -61,6 +61,10 @@ def cluster(
 ) -> ClusterEnv:
     """Run a cluster of Calimero nodes as pretest setup and tear down automatically.
 
+    .. note:: **Breaking change**: ``near_devnet`` defaults to ``True`` (local sandbox).
+        If your tests relied on the previous default (relayer/testnet), pass
+        ``near_devnet=False`` explicitly.
+
     Args:
         count: Number of nodes to start.
         prefix: Node name prefix.
