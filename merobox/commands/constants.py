@@ -74,10 +74,6 @@ STEP_GET_PROPOSAL_APPROVERS = "get_proposal_approvers"
 
 # Protocol types
 PROTOCOL_NEAR = "near"
-PROTOCOL_ETHEREUM = "ethereum"
-PROTOCOL_ICP = "icp"
-PROTOCOL_STARKNET = "starknet"
-PROTOCOL_STELLAR = "stellar"
 
 # Network types
 NETWORK_MAINNET = "mainnet"
@@ -86,11 +82,7 @@ NETWORK_LOCAL = "local"
 
 # Valid protocol networks mapping
 VALID_NETWORKS = {
-    PROTOCOL_ETHEREUM: [NETWORK_MAINNET, "sepolia", "goerli", NETWORK_LOCAL],
-    PROTOCOL_ICP: [NETWORK_MAINNET, NETWORK_TESTNET, NETWORK_LOCAL],
     PROTOCOL_NEAR: [NETWORK_MAINNET, NETWORK_TESTNET, NETWORK_LOCAL],
-    PROTOCOL_STARKNET: [NETWORK_MAINNET, "sepolia", "goerli", NETWORK_LOCAL],
-    PROTOCOL_STELLAR: [NETWORK_MAINNET, NETWORK_TESTNET, NETWORK_LOCAL],
 }
 
 # Container data directory patterns
@@ -112,25 +104,3 @@ ERROR_INVALID_URL = "Invalid URL: {url}"
 ERROR_INVALID_PORT = "Port must be between 1 and 65535"
 ERROR_FILE_NOT_FOUND = "File not found: {path}"
 ERROR_CONTAINER_DATA_DIR_NOT_FOUND = "Container data directory not found: {dir}"
-
-# Local devnet ports
-# These are the default ports used by local blockchain devnets
-ANVIL_DEFAULT_PORT = 8545  # Anvil (Ethereum local devnet) default RPC port
-DFX_DEFAULT_PORT = 4943  # dfx (ICP local devnet) default RPC port
-
-# Ethereum local devnet configuration (Anvil defaults)
-# Reference: https://getfoundry.sh/anvil/overview#getting-started
-# Anvil provides 10 default accounts with pre-funded balances for testing
-# These are the first account's credentials from Anvil's default account list
-ETHEREUM_LOCAL_CONTRACT_ID = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
-# Anvil default account #0 (first account)
-# Address: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-# Private key: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-ETHEREUM_LOCAL_ACCOUNT_ID = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-ETHEREUM_LOCAL_SECRET_KEY = (
-    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-)
-
-# ICP local devnet configuration (dfx defaults)
-# Reference: dfx local devnet uses this canister ID for the default context config
-ICP_LOCAL_CONTRACT_ID = "bkyz2-fmaaa-aaaaa-qaaaq-cai"

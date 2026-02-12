@@ -18,50 +18,6 @@ def mock_manager():
     return MagicMock(spec=DockerManager)
 
 
-def test_exclusivity_check_cli(mock_manager):
-    """Test that enabling both via CLI args raises error."""
-    config = {"name": "test", "nodes": {}}
-
-    # Configure mock_exit to raise SystemExit so execution actually stops
-    with (
-        patch("sys.exit", side_effect=SystemExit(1)),
-        patch("merobox.commands.utils.console.print") as mock_print,
-    ):
-
-        with pytest.raises(SystemExit):
-            WorkflowExecutor(
-                config,
-                mock_manager,
-                mock_relayer=True,
-                near_devnet=True,
-                contracts_dir="/tmp",
-            )
-
-        # Now check the print calls to find the error message
-        # We search through all calls because multiple prints might happen
-        print_calls = [args[0] for args, _ in mock_print.call_args_list]
-        assert any(
-            "cannot be enabled simultaneously" in str(msg) for msg in print_calls
-        )
-
-
-def test_near_sandbox_and_mock_relayer_exclusivity_check_config(mock_manager):
-    """Test that enabling via config + CLI args raises error."""
-    config = {"near_devnet": True, "nodes": {}}
-
-    with patch("sys.exit") as mock_exit, patch("merobox.commands.utils.console.print"):
-        try:
-            WorkflowExecutor(
-                config,
-                mock_manager,
-                mock_relayer=True,  # CLI overrides/adds
-                contracts_dir="/tmp",
-            )
-        except Exception:
-            pass
-        mock_exit.assert_called_with(1)
-
-
 def test_validation_attributes(mock_manager):
     """Ensure validation uses resolved attributes, not just CLI args."""
     # Config has near_devnet=True, but CLI arg is default (False).

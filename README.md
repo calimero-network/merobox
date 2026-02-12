@@ -79,9 +79,6 @@ merobox bootstrap run workflow.yml \
   --near-devnet \
   --contracts-dir ./contracts/res
 
-# Run everything against the local mock relayer
-merobox bootstrap run workflow.yml --mock-relayer
-
 # Stop all nodes and auth services
 merobox stop --all
 ```
@@ -96,8 +93,7 @@ merobox stop --all
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
 - **Dynamic Variables**: Advanced placeholder resolution with embedded support
-- **Local NEAR Devnet**: Use local instance of NEAR blockchain (Sandbox) for zero-cost and quick local testing
-- **Mock Relayer Support**: One flag (`--mock-relayer`) spins up ghcr.io/calimero-network/mero-relayer:8ee178e and wires nodes to it
+- **Local NEAR Devnet**: Use local instance of NEAR blockchain (Sandbox) for zero-cost and quick local testing (use `--near-devnet` with `--contracts-dir`)
 
 ---
 
@@ -1332,14 +1328,6 @@ Merobox offers two ways to run isolated tests without connecting to public netwo
 - **Best for:** Full E2E testing and contract logic verification.
 - **Behavior:** Executes actual WASM smart contracts and state transitions.
 
-2. **Mock Relayer** (`--mock-relayer`)
-   A lightweight service that mimics the Relayer API.
-
-- **Best for:** Fast connectivity checks and node startup validation.
-- **Behavior:** Returns successful responses without executing real logic.
-
-> **❌ Restriction**: You cannot use `--mock-relayer` and `--near-devnet` simultaneously. The workflow will fail if both are enabled.
-
 ### Local NEAR Sandbox
 
 Merobox allows you to run workflows against a local ephemeral NEAR blockchain (Sandbox) instead of the public Testnet.
@@ -1575,10 +1563,12 @@ merobox context create --node NODE_NAME --application-id APPLICATION_ID [OPTIONS
 
 - `--node`, `-n`: Node name to create context on (required)
 - `--application-id`, `-a`: Application ID to create context for (required)
-- `--protocol`, `-p`: Protocol type (default: "near")
+- `--protocol`, `-p`: Protocol type (optional, only `near` is supported)
 - `--params`: Initialization parameters as JSON string (optional)
 - `--verbose`, `-v`: Show verbose output
 - `--help`: Show help message
+
+`merobox context create` is NEAR-only. If you need local chain testing, use `--near-devnet` with workflow execution.
 
 **List Command:**
 
@@ -1611,8 +1601,8 @@ merobox context show --node NODE_NAME --context-id CONTEXT_ID [--verbose]
 # Create a context
 merobox context create --node my-node --application-id app-123
 
-# Create with custom protocol and params
-merobox context create --node my-node --application-id app-123 --protocol ethereum --params '{"key": "value"}'
+# Create with explicit NEAR protocol and params (optional; NEAR is the default)
+merobox context create --node my-node --application-id app-123 --protocol near --params '{"key": "value"}'
 
 # List all contexts
 merobox context list --node my-node

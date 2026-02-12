@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Consolidated protocol behavior to NEAR-only across CLI and workflow guidance.
+- `context create` usage now documents NEAR as the default protocol, with `--near-devnet` as the local-chain path.
+
+### Removed
+- Non-NEAR protocol examples from user-facing docs/workflow guidance (including legacy `--protocol ethereum` usage).
+- Non-NEAR E2E/default configuration guidance references from current docs in favor of NEAR-only defaults.
+
 ## [0.2.10] - 2024-11-27
 
 ### Added
