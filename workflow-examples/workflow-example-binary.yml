@@ -24,9 +24,6 @@ no_docker: true
 # Keep the `image` field for compatibility, but it will be ignored by BinaryManager.
 force_pull_image: false
 
-near_devnet: true
-contracts_dir: contracts/near
-
 nodes:
   chain_id: testnet-1
   count: 3

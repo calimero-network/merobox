@@ -1,9 +1,6 @@
 description: Demonstrates exporting variables from an execute (call) step and reusing them
 name: Execute Variables Example Workflow
 
-near_devnet: true
-contracts_dir: contracts/near
-
 nodes:
   chain_id: testnet-1
   count: 2

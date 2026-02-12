@@ -3,8 +3,6 @@ description: A workflow demonstrating the Calimero blob API for file sharing
 
 # Force pull Docker images even if they exist locally
 force_pull_image: true
-near_devnet: true
-contracts_dir: contracts/near
 
 nodes:
   chain_id: testnet-1

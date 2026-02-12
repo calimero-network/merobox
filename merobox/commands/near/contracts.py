@@ -23,8 +23,13 @@ except ImportError:
 console = Console()
 
 
+_filelock_warning_shown = False
+
+
 def _warn_no_filelock():
-    if FileLock is None:
+    global _filelock_warning_shown
+    if FileLock is None and not _filelock_warning_shown:
+        _filelock_warning_shown = True
         console.print(
             "[yellow]Warning: filelock not available; concurrent downloads may corrupt the cache. "
             "Install with: pip install filelock[/yellow]"
@@ -77,7 +82,7 @@ def _locate_contracts_after_extract(
         return cache_dir
     if _dir_has_contracts(extract_base):
         cache_dir.mkdir(parents=True, exist_ok=True)
-        for f in extract_base.iterdir():
+        for f in list(extract_base.iterdir()):
             if f.is_dir() or f.name == cache_dir.name:
                 continue
             if f.is_file() and f.name != NEAR_ASSET_NAME and not f.name.startswith("."):
@@ -94,7 +99,7 @@ def _locate_contracts_after_extract(
                 if candidate.resolve() == cache_dir.resolve():
                     return cache_dir
                 cache_dir.mkdir(parents=True, exist_ok=True)
-                for f in candidate.iterdir():
+                for f in list(candidate.iterdir()):
                     if f.is_file():
                         dest = cache_dir / f.name
                         try:
@@ -224,7 +229,9 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
             f"Failed to download contracts ({type(e).__name__}): {e}"
         ) from e
 
-    skip_checksum = os.environ.get("MEROBOX_SKIP_CONTRACTS_CHECKSUM", "")
+    skip_checksum = os.environ.get(
+        "MEROBOX_SKIP_CONTRACTS_CHECKSUM", ""
+    ).strip().lower() in ("1", "true", "yes")
     if skip_checksum and checksum_url:
         console.print(
             "[bold red]SECURITY: MEROBOX_SKIP_CONTRACTS_CHECKSUM is set; downloaded contracts are NOT verified. "
@@ -260,6 +267,10 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
                 except OSError:
                     pass
             raise
+    elif checksum_url is None:
+        console.print(
+            "[yellow]Warning: No checksum file in release; contract integrity not verified[/yellow]"
+        )
 
     console.print("[yellow]Extracting...[/yellow]")
     try:

@@ -2,8 +2,6 @@ name: KV Store Benchmark - Throughput Testing
 description: Throughput testing for KV Store operations using timing metrics
 
 force_pull_image: true
-near_devnet: true
-contracts_dir: contracts/near
 
 nodes:
   chain_id: testnet-1

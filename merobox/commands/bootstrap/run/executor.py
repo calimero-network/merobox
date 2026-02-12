@@ -125,7 +125,7 @@ class WorkflowExecutor:
         # Generate unique workflow ID for test isolation (like e2e tests)
         self.workflow_id = str(uuid.uuid4())[:8]
 
-        # CLI takes precedence over YAML when explicitly set (near_devnet None = use config).
+        # CLI explicit value takes precedence; None means defer to config (default True).
         self.near_devnet = (
             config.get("near_devnet", True) if near_devnet is None else near_devnet
         )

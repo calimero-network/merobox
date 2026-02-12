@@ -253,8 +253,6 @@ steps:
               value: "burst_value_c_{{uuid}}"
 
 # Workflow configuration
-near_devnet: true
-contracts_dir: contracts/near
 stop_all_nodes: false # Keep nodes running for inspection
 restart: false
 wait_timeout: 120

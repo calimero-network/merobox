@@ -1,9 +1,6 @@
 description: A workflow example demonstrating custom outputs configuration for dynamic variables
 name: Custom Outputs Example Workflow
 
-near_devnet: true
-contracts_dir: contracts/near
-
 nodes:
   chain_id: testnet-1
   count: 2
