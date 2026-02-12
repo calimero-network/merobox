@@ -228,7 +228,14 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         elif _dir_has_contracts(extract_base):
             cache_dir.mkdir(parents=True, exist_ok=True)
             for f in extract_base.iterdir():
-                if f.name != NEAR_ASSET_NAME and not f.name.startswith("."):
+                # Only move regular files; skip dirs (e.g. "near") to avoid moving X into X/near
+                if f.is_dir() or f.name == cache_dir.name:
+                    continue
+                if (
+                    f.is_file()
+                    and f.name != NEAR_ASSET_NAME
+                    and not f.name.startswith(".")
+                ):
                     dest = cache_dir / f.name
                     if not dest.exists():
                         f.rename(dest)
