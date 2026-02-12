@@ -26,6 +26,23 @@ def test_config_overrides_cli_near_devnet(mock_manager):
     assert executor.near_devnet is True
 
 
+def test_resolve_contracts_dir_calls_ensure_when_none(mock_manager):
+    """When contracts_dir is None, _resolve_contracts_dir calls ensure_calimero_near_contracts."""
+    config = {"nodes": {}}
+    executor = WorkflowExecutor(
+        config, mock_manager, near_devnet=True, contracts_dir=None
+    )
+    with patch(
+        "merobox.commands.bootstrap.run.executor.ensure_calimero_near_contracts"
+    ) as mock_ensure:
+        mock_ensure.return_value = "/tmp/contracts"
+        ctx_path, proxy_path = executor._resolve_contracts_dir()
+    mock_ensure.assert_called_once()
+    assert executor.contracts_dir == "/tmp/contracts"
+    assert ctx_path.endswith("calimero_context_config_near.wasm")
+    assert proxy_path.endswith("calimero_context_proxy_near.wasm")
+
+
 @pytest.mark.asyncio
 async def test_unique_credentials_generation(mock_manager):
     """Bug 1 Fix: Ensure run_multiple_nodes receives distinct credentials map."""

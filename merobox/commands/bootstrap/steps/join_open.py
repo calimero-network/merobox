@@ -3,6 +3,7 @@ Join Open step executor - Join context using open invitation.
 """
 
 import json as json_lib
+import os
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -162,7 +163,7 @@ class JoinOpenStep(BaseStep):
                 console.print(
                     f"[red]  Exception: {exc_info.get('type', '?')}: {exc_info.get('message', '')}[/red]"
                 )
-                if exc_info.get("traceback"):
+                if exc_info.get("traceback") and os.environ.get("MEROBOX_DEBUG"):
                     console.print("[dim]" + exc_info["traceback"].strip() + "[/dim]")
 
         if result["success"]:

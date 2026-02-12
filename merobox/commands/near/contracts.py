@@ -6,6 +6,7 @@ and proxy WASM contracts from the calimero-network/contracts release so that
 users do not need to run a separate download script or provide --contracts-dir.
 """
 
+import hashlib
 import os
 import tarfile
 from pathlib import Path
@@ -34,6 +35,26 @@ def _contracts_cache_base():
 
 def _dir_has_contracts(dir_path: Path) -> bool:
     return (dir_path / CONFIG_WASM).is_file() and (dir_path / PROXY_WASM).is_file()
+
+
+def _get_checksum_url(assets: list) -> str | None:
+    """Return browser_download_url for NEAR_ASSET_NAME.sha256 if present."""
+    for a in assets:
+        if a.get("name") == f"{NEAR_ASSET_NAME}.sha256":
+            return a.get("browser_download_url")
+    return None
+
+
+def _verify_sha256(file_path: Path, expected_hex: str) -> None:
+    """Raise RuntimeError if file_path's SHA256 does not match expected_hex."""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    if h.hexdigest().lower() != expected_hex.lower():
+        raise RuntimeError(
+            f"SHA256 mismatch for {file_path.name}: expected {expected_hex}, got {h.hexdigest()}"
+        )
 
 
 def _safe_tar_extract(tar: tarfile.TarFile, extract_base: Path) -> None:
@@ -115,32 +136,77 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
             f"Available: {[a.get('name') for a in assets]}"
         )
 
+    checksum_url = _get_checksum_url(assets)
+    tar_path = cache_dir.parent / NEAR_ASSET_NAME
     console.print(f"[yellow]Downloading {NEAR_ASSET_NAME}...[/yellow]")
     try:
-        resp = requests.get(download_url, stream=True, timeout=60)
-        resp.raise_for_status()
-        total = int(resp.headers.get("content-length", 0))
-        tar_path = cache_dir.parent / NEAR_ASSET_NAME
-        with open(tar_path, "wb") as f, tqdm(
-            desc="Downloading",
-            total=total,
-            unit="iB",
-            unit_scale=True,
-            unit_divisor=1024,
-        ) as bar:
-            for chunk in resp.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    bar.update(len(chunk))
+        with requests.get(download_url, stream=True, timeout=60) as resp:
+            resp.raise_for_status()
+            total = int(resp.headers.get("content-length", 0))
+            with (
+                open(tar_path, "wb") as f,
+                tqdm(
+                    desc="Downloading",
+                    total=total,
+                    unit="iB",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                ) as bar,
+            ):
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        bar.update(len(chunk))
+    except requests.RequestException as e:
+        if tar_path.exists():
+            try:
+                tar_path.unlink()
+            except OSError:
+                pass
+        raise RuntimeError(
+            f"Failed to download contracts ({type(e).__name__}): {e}"
+        ) from e
 
-        console.print("[yellow]Extracting...[/yellow]")
+    if checksum_url:
+        try:
+            with requests.get(checksum_url, timeout=30) as cs_resp:
+                cs_resp.raise_for_status()
+                # Expect first token to be 64-char hex (sha256)
+                line = (cs_resp.text or "").strip().split()
+                expected_hex = line[0] if line else ""
+                if len(expected_hex) == 64 and all(
+                    c in "0123456789abcdefABCDEF" for c in expected_hex
+                ):
+                    _verify_sha256(tar_path, expected_hex)
+        except requests.RequestException:
+            pass  # Optional verification; skip if checksum fetch fails
+        except RuntimeError:
+            if tar_path.exists():
+                try:
+                    tar_path.unlink()
+                except OSError:
+                    pass
+            raise
+
+    console.print("[yellow]Extracting...[/yellow]")
+    try:
         extract_base = Path(cache_dir.parent)
         with tarfile.open(tar_path) as tar:
             names = tar.getnames()
             _safe_tar_extract(tar, extract_base)
         tar_path.unlink(missing_ok=True)
+    except (tarfile.TarError, OSError, RuntimeError) as e:
+        if tar_path.exists():
+            try:
+                tar_path.unlink()
+            except OSError:
+                pass
+        raise RuntimeError(
+            f"Failed to extract contracts ({type(e).__name__}): {e}"
+        ) from e
 
-        # Find dir that contains both wasm files
+    # Find dir that contains both wasm files
+    try:
         if _dir_has_contracts(cache_dir):
             pass
         elif _dir_has_contracts(extract_base):
@@ -158,14 +224,12 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
                     f"Extracted {NEAR_ASSET_NAME} does not contain "
                     f"{CONFIG_WASM} and {PROXY_WASM}"
                 )
-
-        console.print("[green]✓ Calimero NEAR contracts ready[/green]")
-        return str(cache_dir)
+    except RuntimeError:
+        raise
     except Exception as e:
-        if cache_dir.parent.exists():
-            try:
-                import shutil
-                shutil.rmtree(cache_dir.parent, ignore_errors=True)
-            except Exception:
-                pass
-        raise RuntimeError(f"Failed to download or extract contracts: {e}") from e
+        raise RuntimeError(
+            f"Unexpected error after extract ({type(e).__name__}): {e}"
+        ) from e
+
+    console.print("[green]✓ Calimero NEAR contracts ready[/green]")
+    return str(cache_dir)

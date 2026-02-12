@@ -4,7 +4,6 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 
 import asyncio
 import os
-import sys
 import time
 import uuid
 from typing import Any, Optional
@@ -229,25 +228,7 @@ class WorkflowExecutor:
                 try:
                     self.sandbox.start()
 
-                    ctx_name = "calimero_context_config_near.wasm"
-                    proxy_name = "calimero_context_proxy_near.wasm"
-
-                    if self.contracts_dir:
-                        ctx_path = os.path.join(self.contracts_dir, ctx_name)
-                        proxy_path = os.path.join(self.contracts_dir, proxy_name)
-                    else:
-                        ctx_path = None
-                        proxy_path = None
-
-                    if not (
-                        ctx_path
-                        and os.path.exists(ctx_path)
-                        and proxy_path
-                        and os.path.exists(proxy_path)
-                    ):
-                        self.contracts_dir = ensure_calimero_near_contracts()
-                        ctx_path = os.path.join(self.contracts_dir, ctx_name)
-                        proxy_path = os.path.join(self.contracts_dir, proxy_name)
+                    ctx_path, proxy_path = self._resolve_contracts_dir()
 
                     console.print(
                         f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
@@ -422,6 +403,24 @@ class WorkflowExecutor:
             console.print("[red]Failed to stop all nodes[/red]")
         else:
             console.print("[green]✓ All nodes stopped[/green]")
+
+    def _resolve_contracts_dir(self):
+        """
+        Resolve the contracts directory and WASM paths for NEAR sandbox.
+        Uses self.contracts_dir if set and valid; otherwise auto-downloads via ensure_calimero_near_contracts().
+        Returns (ctx_path, proxy_path) for sandbox setup.
+        """
+        ctx_name = "calimero_context_config_near.wasm"
+        proxy_name = "calimero_context_proxy_near.wasm"
+        if self.contracts_dir:
+            ctx_path = os.path.join(self.contracts_dir, ctx_name)
+            proxy_path = os.path.join(self.contracts_dir, proxy_name)
+            if os.path.exists(ctx_path) and os.path.exists(proxy_path):
+                return ctx_path, proxy_path
+        self.contracts_dir = ensure_calimero_near_contracts()
+        ctx_path = os.path.join(self.contracts_dir, ctx_name)
+        proxy_path = os.path.join(self.contracts_dir, proxy_name)
+        return ctx_path, proxy_path
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
