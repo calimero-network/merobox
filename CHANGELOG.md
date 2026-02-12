@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.7] - 2026-02-12
 
+### Breaking
+- **testing**: `merobox.testing.cluster()` and `merobox.testing.workflow()` now default `near_devnet=True` (local sandbox). Code that relied on the previous default (relayer/testnet) must pass `near_devnet=False` explicitly.
+
 ### Added
 - **Auto-download NEAR contracts**: `ensure_calimero_near_contracts()`; default contracts version 0.6.0; optional `contracts_dir` with env override `CALIMERO_CONTRACTS_VERSION`.
 - **Open invitation workflow**: `workflow-open-invitation-log-analysis.md`; join_open step surfaces underlying API/exception error and traceback.

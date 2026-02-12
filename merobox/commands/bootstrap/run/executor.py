@@ -416,17 +416,19 @@ class WorkflowExecutor:
         """
         Resolve the contracts directory and WASM paths for NEAR sandbox.
         Uses self.contracts_dir if set and valid; otherwise auto-downloads via ensure_calimero_near_contracts().
-        Returns (contracts_dir, ctx_path, proxy_path); caller should set self.contracts_dir.
+        Updates self.contracts_dir when resolving via download. Returns (contracts_dir, ctx_path, proxy_path).
         """
         if self.contracts_dir:
             ctx_path = os.path.join(self.contracts_dir, CONFIG_WASM)
             proxy_path = os.path.join(self.contracts_dir, PROXY_WASM)
             if os.path.exists(ctx_path) and os.path.exists(proxy_path):
                 return self.contracts_dir, ctx_path, proxy_path
-            console.print(
-                f"[yellow]Warning: contracts not found in {self.contracts_dir}, downloading...[/yellow]"
+            raise RuntimeError(
+                f"Contracts directory {self.contracts_dir!r} does not contain "
+                f"{CONFIG_WASM} and {PROXY_WASM}. Fix the path or omit --contracts-dir to auto-download."
             )
         contracts_dir = ensure_calimero_near_contracts()
+        self.contracts_dir = contracts_dir
         ctx_path = os.path.join(contracts_dir, CONFIG_WASM)
         proxy_path = os.path.join(contracts_dir, PROXY_WASM)
         if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):

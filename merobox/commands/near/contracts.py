@@ -26,7 +26,8 @@ console = Console()
 def _warn_no_filelock():
     if FileLock is None:
         console.print(
-            "[yellow]Warning: filelock not available, concurrent downloads may conflict[/yellow]"
+            "[yellow]Warning: filelock not available; concurrent downloads may corrupt the cache. "
+            "Install with: pip install filelock[/yellow]"
         )
 
 
@@ -81,8 +82,10 @@ def _locate_contracts_after_extract(
                 continue
             if f.is_file() and f.name != NEAR_ASSET_NAME and not f.name.startswith("."):
                 dest = cache_dir / f.name
-                if not dest.exists():
+                try:
                     f.rename(dest)
+                except FileExistsError:
+                    pass
         return cache_dir
     for name in names:
         if "/" not in name.strip("/"):
@@ -94,8 +97,10 @@ def _locate_contracts_after_extract(
                 for f in candidate.iterdir():
                     if f.is_file():
                         dest = cache_dir / f.name
-                        if not dest.exists():
+                        try:
                             f.rename(dest)
+                        except FileExistsError:
+                            pass
                 return cache_dir
     raise RuntimeError(
         f"Extracted {NEAR_ASSET_NAME} does not contain "
@@ -104,7 +109,8 @@ def _locate_contracts_after_extract(
 
 
 def _safe_tar_extract(tar: tarfile.TarFile, extract_base: Path) -> None:
-    """Extract tar members into extract_base, rejecting path traversal and symlinks."""
+    """Extract tar members into extract_base, rejecting path traversal and symlinks.
+    Uses per-member validation and extract() for Python <3.12 compatibility."""
     base_resolved = extract_base.resolve()
     for member in tar.getmembers():
         if member.issym() or member.islnk():
@@ -218,8 +224,13 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
             f"Failed to download contracts ({type(e).__name__}): {e}"
         ) from e
 
-    if checksum_url:
-        skip_checksum = os.environ.get("MEROBOX_SKIP_CONTRACTS_CHECKSUM", "")
+    skip_checksum = os.environ.get("MEROBOX_SKIP_CONTRACTS_CHECKSUM", "")
+    if skip_checksum and checksum_url:
+        console.print(
+            "[bold red]SECURITY: MEROBOX_SKIP_CONTRACTS_CHECKSUM is set; downloaded contracts are NOT verified. "
+            "Tampered or compromised WASM could be executed. Use only in trusted environments.[/bold red]"
+        )
+    if checksum_url and not skip_checksum:
         try:
             with requests.get(checksum_url, timeout=30) as cs_resp:
                 cs_resp.raise_for_status()
@@ -233,20 +244,15 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
                     )
                 _verify_sha256(tar_path, expected_hex)
         except requests.RequestException as e:
-            if skip_checksum:
-                console.print(
-                    "[yellow]Warning: Could not verify checksum (MEROBOX_SKIP_CONTRACTS_CHECKSUM=1)[/yellow]"
-                )
-            else:
-                if tar_path.exists():
-                    try:
-                        tar_path.unlink()
-                    except OSError:
-                        pass
-                raise RuntimeError(
-                    f"Checksum verification failed ({type(e).__name__}): {e}. "
-                    "Set MEROBOX_SKIP_CONTRACTS_CHECKSUM=1 to skip."
-                ) from e
+            if tar_path.exists():
+                try:
+                    tar_path.unlink()
+                except OSError:
+                    pass
+            raise RuntimeError(
+                f"Checksum verification failed ({type(e).__name__}): {e}. "
+                "Set MEROBOX_SKIP_CONTRACTS_CHECKSUM=1 to skip (not recommended; see security warning)."
+            ) from e
         except RuntimeError:
             if tar_path.exists():
                 try:

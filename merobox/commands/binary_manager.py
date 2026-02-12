@@ -34,7 +34,11 @@ class BinaryManager:
             binary_path: Path to the merod binary. If None, searches PATH.
             require_binary: If True, exit if binary not found. If False, set to None gracefully.
         """
-        if binary_path and os.path.isfile(binary_path) and os.access(binary_path, os.X_OK):
+        if (
+            binary_path
+            and os.path.isfile(binary_path)
+            and os.access(binary_path, os.X_OK)
+        ):
             self.binary_path = binary_path
         else:
             if binary_path:

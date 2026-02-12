@@ -182,7 +182,7 @@ async def run_workflow(
         except Exception:
             pass
 
-        # CLI takes precedence when set: None = use YAML near_devnet, True = relayer, False = sandbox.
+        # enable_relayer=True => use testnet/relayer (near_devnet=False); enable_relayer=False => sandbox (near_devnet=True); None => defer to YAML.
         near_devnet = None if enable_relayer is None else (not enable_relayer)
 
         executor = WorkflowExecutor(
