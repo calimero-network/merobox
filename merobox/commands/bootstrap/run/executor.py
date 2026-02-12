@@ -429,6 +429,8 @@ class WorkflowExecutor:
         contracts_dir = ensure_calimero_near_contracts()
         ctx_path = os.path.join(contracts_dir, CONFIG_WASM)
         proxy_path = os.path.join(contracts_dir, PROXY_WASM)
+        if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
+            raise RuntimeError(f"Contracts not found at {ctx_path!r} or {proxy_path!r}")
         return contracts_dir, ctx_path, proxy_path
 
     def _nuke_data(self, prefix: str = None) -> bool:

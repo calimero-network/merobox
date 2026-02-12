@@ -65,12 +65,53 @@ def _verify_sha256(file_path: Path, expected_hex: str) -> None:
         )
 
 
+def _locate_contracts_after_extract(
+    extract_base: Path, cache_dir: Path, names: list[str]
+) -> Path:
+    """
+    Find contracts in the extracted tree and normalize into cache_dir so
+    subsequent calls hit the cache. Returns cache_dir (always the same path).
+    """
+    if _dir_has_contracts(cache_dir):
+        return cache_dir
+    if _dir_has_contracts(extract_base):
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        for f in extract_base.iterdir():
+            if f.is_dir() or f.name == cache_dir.name:
+                continue
+            if f.is_file() and f.name != NEAR_ASSET_NAME and not f.name.startswith("."):
+                dest = cache_dir / f.name
+                if not dest.exists():
+                    f.rename(dest)
+        return cache_dir
+    for name in names:
+        if "/" not in name.strip("/"):
+            candidate = extract_base / name.strip("/")
+            if candidate.is_dir() and _dir_has_contracts(candidate):
+                if candidate.resolve() == cache_dir.resolve():
+                    return cache_dir
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                for f in candidate.iterdir():
+                    if f.is_file():
+                        dest = cache_dir / f.name
+                        if not dest.exists():
+                            f.rename(dest)
+                return cache_dir
+    raise RuntimeError(
+        f"Extracted {NEAR_ASSET_NAME} does not contain "
+        f"{CONFIG_WASM} and {PROXY_WASM}"
+    )
+
+
 def _safe_tar_extract(tar: tarfile.TarFile, extract_base: Path) -> None:
     """Extract tar members into extract_base, rejecting path traversal and symlinks."""
     base_resolved = extract_base.resolve()
     for member in tar.getmembers():
         if member.issym() or member.islnk():
-            continue  # Skip symlinks/hardlinks; only regular files/dirs needed
+            console.print(
+                f"[yellow]Warning: skipping symlink/hardlink in archive: {member.name!r}[/yellow]"
+            )
+            continue
         dest = (extract_base / member.name).resolve()
         try:
             dest.relative_to(base_resolved)
@@ -150,7 +191,7 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
     tar_path = cache_dir.parent / NEAR_ASSET_NAME
     console.print(f"[yellow]Downloading {NEAR_ASSET_NAME}...[/yellow]")
     try:
-        with requests.get(download_url, stream=True, timeout=60) as resp:
+        with requests.get(download_url, stream=True, timeout=(10, 60)) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
             with (
@@ -178,6 +219,7 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         ) from e
 
     if checksum_url:
+        skip_checksum = os.environ.get("MEROBOX_SKIP_CONTRACTS_CHECKSUM", "")
         try:
             with requests.get(checksum_url, timeout=30) as cs_resp:
                 cs_resp.raise_for_status()
@@ -186,16 +228,25 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
                 if len(expected_hex) != 64 or not all(
                     c in "0123456789abcdefABCDEF" for c in expected_hex
                 ):
-                    console.print(
-                        "[yellow]Warning: checksum file format invalid, proceeding without verification[/yellow]"
+                    raise RuntimeError(
+                        "Checksum file format invalid (expected 64 hex chars), cannot verify contracts"
                     )
-                else:
-                    _verify_sha256(tar_path, expected_hex)
+                _verify_sha256(tar_path, expected_hex)
         except requests.RequestException as e:
-            console.print(
-                "[yellow]Warning: Could not verify checksum, proceeding without verification[/yellow]"
-            )
-            console.print(f"[dim]{type(e).__name__}: {e}[/dim]")
+            if skip_checksum:
+                console.print(
+                    "[yellow]Warning: Could not verify checksum (MEROBOX_SKIP_CONTRACTS_CHECKSUM=1)[/yellow]"
+                )
+            else:
+                if tar_path.exists():
+                    try:
+                        tar_path.unlink()
+                    except OSError:
+                        pass
+                raise RuntimeError(
+                    f"Checksum verification failed ({type(e).__name__}): {e}. "
+                    "Set MEROBOX_SKIP_CONTRACTS_CHECKSUM=1 to skip."
+                ) from e
         except RuntimeError:
             if tar_path.exists():
                 try:
@@ -221,37 +272,8 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
             f"Failed to extract contracts ({type(e).__name__}): {e}"
         ) from e
 
-    # Find dir that contains both wasm files; normalize to cache_dir so next call hits cache
     try:
-        if _dir_has_contracts(cache_dir):
-            pass
-        elif _dir_has_contracts(extract_base):
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            for f in extract_base.iterdir():
-                # Only move regular files; skip dirs (e.g. "near") to avoid moving X into X/near
-                if f.is_dir() or f.name == cache_dir.name:
-                    continue
-                if (
-                    f.is_file()
-                    and f.name != NEAR_ASSET_NAME
-                    and not f.name.startswith(".")
-                ):
-                    dest = cache_dir / f.name
-                    if not dest.exists():
-                        f.rename(dest)
-        else:
-            # Check for single top-level folder (e.g. "near" or "near-0.5.0")
-            for name in names:
-                if "/" not in name.strip("/"):
-                    candidate = extract_base / name.strip("/")
-                    if candidate.is_dir() and _dir_has_contracts(candidate):
-                        cache_dir = candidate
-                        break
-            else:
-                raise RuntimeError(
-                    f"Extracted {NEAR_ASSET_NAME} does not contain "
-                    f"{CONFIG_WASM} and {PROXY_WASM}"
-                )
+        result = _locate_contracts_after_extract(extract_base, cache_dir, names)
     except RuntimeError:
         raise
     except Exception as e:
@@ -260,4 +282,4 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         ) from e
 
     console.print("[green]✓ Calimero NEAR contracts ready[/green]")
-    return str(cache_dir)
+    return str(result)
