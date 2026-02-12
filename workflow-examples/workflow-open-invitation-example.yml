@@ -3,13 +3,13 @@ name: Open Invitation Workflow
 
 # Force pull Docker images even if they exist locally
 force_pull_image: true
-near_devnet: true
-contracts_dir: contracts/near
+# Local NEAR sandbox is the default; no --contracts-dir needed (auto-download).
+# Run: merobox bootstrap run workflow-examples/workflow-open-invitation-example.yml --e2e-mode
 
-# TODO: update the image to the latest version
+# Testing image merod:3e23d21
 nodes:
   chain_id: testnet-1
-  count: 3
+  count: 2
   image: ghcr.io/calimero-network/merod:edge
   prefix: open-inv-node
 
@@ -94,10 +94,8 @@ steps:
       joined_context_id_2: contextId
       joined_member_key_2: memberPublicKey
 
-
-
-  # Wait for consensus
-  - name: Wait for Consensus
+  # Wait for all nodes to sync after join (root hash consensus)
+  - name: Wait for All Nodes to Sync After Join
     type: wait_for_sync
     context_id: "{{context_id}}"
     nodes:
@@ -106,6 +104,9 @@ steps:
     timeout: 60
     check_interval: 2
     trigger_sync: true
+    outputs:
+      sync_root_hash: root_hash
+      sync_time: elapsed_seconds
 
   # Verify all members can read initial state
   - name: Get State - Node 1 (Inviter)
@@ -149,8 +150,8 @@ steps:
       key: foo
       value: baz
 
-  # Wait for broadcast
-  - name: Wait for Broadcast
+  # Wait for state change to sync across all nodes (root hash consensus)
+  - name: Wait for State Change to Sync
     type: wait_for_sync
     context_id: "{{context_id}}"
     nodes:
@@ -159,11 +160,9 @@ steps:
     timeout: 60
     check_interval: 2
     trigger_sync: true
-
-  # Wait for update to propagate to all nodes ( CI sometimes fails if we call the get too soon even after root hash is updated)
-  - name: Wait
-    type: wait
-    seconds: 3
+    outputs:
+      update_sync_hash: root_hash
+      update_sync_time: elapsed_seconds
 
   # Verify all members see the update
   - name: Get Update - Node 1 (Inviter)
@@ -187,8 +186,6 @@ steps:
       key: foo
     outputs:
       get_update_node2: result
-
-
 
   - name: Assert All Members See Updated Value 'baz'
     type: json_assert

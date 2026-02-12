@@ -47,7 +47,7 @@ async def join_context_via_open_invitation(
         )
     except Exception as exc:
         return fail(
-            "join_context_via_open_invitation failed",
+            f"join_context_via_open_invitation failed: {exc!s}",
             error=exc,
             client_method="client.join_context_by_open_invitation",
             endpoint="calimero_client_py.join_context_by_open_invitation",
@@ -157,6 +157,13 @@ class JoinOpenStep(BaseStep):
                 console.print(f"  Tried Payloads: {result['tried_payloads']}")
             if "errors" in result:
                 console.print(f"  Detailed Errors: {result['errors']}")
+            exc_info = result.get("exception")
+            if exc_info:
+                console.print(
+                    f"[red]  Exception: {exc_info.get('type', '?')}: {exc_info.get('message', '')}[/red]"
+                )
+                if exc_info.get("traceback"):
+                    console.print("[dim]" + exc_info["traceback"].strip() + "[/dim]")
 
         if result["success"]:
             # Check if the JSON-RPC response contains an error

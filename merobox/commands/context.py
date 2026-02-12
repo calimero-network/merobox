@@ -144,7 +144,7 @@ def create(node, application_id, protocol, params, verbose):
     except ValueError as e:
         console.print(
             f"[red]✗ {e} "
-            "Use NEAR defaults or '--near-devnet' for local sandbox workflows.[/red]"
+            "Use NEAR defaults; workflow runs use a local sandbox by default, or use '--enable-relayer' for testnet.[/red]"
         )
         sys.exit(1)
 

@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Consolidated protocol behavior to NEAR-only across CLI and workflow guidance.
-- `context create` usage now documents NEAR as the default protocol, with `--near-devnet` as the local-chain path.
+- `context create` usage now documents NEAR as the default protocol; workflow runs use a local sandbox by default, or `--enable-relayer` for testnet.
+- Workflow execution now uses a local NEAR sandbox by default. Use `--enable-relayer` to use the relayer/testnet (replaces previous `--near-devnet` flag).
 
 ### Removed
 - Non-NEAR protocol examples from user-facing docs/workflow guidance (including legacy `--protocol ethereum` usage).

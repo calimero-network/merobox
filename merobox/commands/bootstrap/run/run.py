@@ -85,7 +85,7 @@ async def run_workflow(
     no_docker: bool = False,
     binary_path: Optional[str] = None,
     e2e_mode: bool = False,
-    near_devnet: bool = False,
+    enable_relayer: bool = False,
     contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
     auth_mode: Optional[str] = None,
@@ -182,6 +182,9 @@ async def run_workflow(
         except Exception:
             pass
 
+        # Default: local NEAR sandbox. --enable-relayer means use relayer/testnet.
+        near_devnet = not enable_relayer
+
         executor = WorkflowExecutor(
             config,
             manager,
@@ -235,7 +238,7 @@ def run_workflow_sync(
     no_docker: bool = False,
     binary_path: Optional[str] = None,
     e2e_mode: bool = False,
-    near_devnet: bool = False,
+    enable_relayer: bool = False,
     contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
     auth_mode: Optional[str] = None,
@@ -271,7 +274,7 @@ def run_workflow_sync(
             no_docker=no_docker,
             binary_path=binary_path,
             e2e_mode=e2e_mode,
-            near_devnet=near_devnet,
+            enable_relayer=enable_relayer,
             contracts_dir=contracts_dir,
             cli_remote_nodes=cli_remote_nodes,
             auth_mode=auth_mode,

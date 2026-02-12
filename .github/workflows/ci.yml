@@ -84,11 +84,6 @@ jobs:
           merod --version
           echo "merod installed successfully!"
 
-      - name: Download Context contracts
-        run: |
-          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
-          ./workflow-examples/scripts/download_contracts.sh
-
       - name: Test merobox CLI and workflow (All workflows)
         run: |
           merobox --version
@@ -102,9 +97,7 @@ jobs:
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
               --no-docker \
-              --e2e-mode \
-              --near-devnet \
-              --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+              --e2e-mode; then
               failed_workflows+=("$f")
             fi
             merobox stop --all --no-docker || true
@@ -122,9 +115,7 @@ jobs:
               if ! merobox bootstrap run "$f" \
                 --no-docker \
                 --binary-path ../../target/debug/merod \
-                --e2e-mode \
-                --near-devnet \
-                --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+                --e2e-mode; then
                 still_failed+=("$f")
               fi
               merobox stop --all --no-docker || true
@@ -169,13 +160,6 @@ jobs:
         run: |
           pip install -e .
 
-      - name: Download Context contracts
-        run: |
-          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
-          ls -la
-          pwd
-          ./workflow-examples/scripts/download_contracts.sh
-
       - name: Test merobox CLI and workflow with Docker (All workflows)
         run: |
           merobox --version
@@ -189,9 +173,7 @@ jobs:
             [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
-              --e2e-mode \
-              --near-devnet \
-              --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+              --e2e-mode; then
               failed_workflows+=("$f")
             fi
             merobox stop --all || true
@@ -207,9 +189,7 @@ jobs:
             still_failed=()
             for f in "${failed_workflows[@]}"; do
               if ! merobox bootstrap run "$f" \
-                --e2e-mode \
-                --near-devnet \
-                --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+                --e2e-mode; then
                 still_failed+=("$f")
               fi
               merobox stop --all || true
@@ -258,11 +238,6 @@ jobs:
         run: |
           cd example-project
           pip install -r requirements.txt
-
-      - name: Download Context contracts
-        run: |
-          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
-          ./workflow-examples/scripts/download_contracts.sh
 
       - name: Run merobox integration tests
         run: |

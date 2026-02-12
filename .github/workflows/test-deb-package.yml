@@ -55,11 +55,6 @@ jobs:
           echo "=== Testing merobox --version ==="
           merobox --version
 
-      - name: Download Context contracts
-        run: |
-          echo "Downloading contracts..."
-          ./workflow-examples/scripts/download_contracts.sh
-
       - name: Install merod binary
         run: |
           echo "Downloading merod binary..."
@@ -80,9 +75,7 @@ jobs:
           echo "=== Testing merobox bootstrap run workflow-example.yml ==="
           merobox bootstrap run workflow-examples/workflow-example.yml \
             --no-docker \
-            --e2e-mode \
-            --near-devnet \
-            --contracts-dir "$GITHUB_WORKSPACE/contracts/near"
+            --e2e-mode
           echo "Workflow completed successfully"
 
       - name: Cleanup

@@ -18,18 +18,12 @@ def mock_manager():
     return MagicMock(spec=DockerManager)
 
 
-def test_validation_attributes(mock_manager):
-    """Ensure validation uses resolved attributes, not just CLI args."""
-    # Config has near_devnet=True, but CLI arg is default (False).
-    # contracts_dir is missing entirely.
+def test_config_overrides_cli_near_devnet(mock_manager):
+    """YAML near_devnet overrides CLI default (enable_relayer=False -> near_devnet=True)."""
+    # Config forces near_devnet=True; CLI would pass near_devnet=False when --enable-relayer.
     config = {"near_devnet": True, "nodes": {}}
-
-    with patch("sys.exit") as mock_exit, patch("merobox.commands.utils.console.print"):
-        try:
-            WorkflowExecutor(config, mock_manager)
-        except Exception:
-            pass
-        mock_exit.assert_called_with(1)
+    executor = WorkflowExecutor(config, mock_manager, near_devnet=False)
+    assert executor.near_devnet is True
 
 
 @pytest.mark.asyncio

@@ -46,6 +46,7 @@ from merobox.commands.bootstrap.steps.proposals import (
 )
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 from merobox.commands.manager import DockerManager
+from merobox.commands.near.contracts import ensure_calimero_near_contracts
 from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import console, get_node_rpc_url
@@ -67,7 +68,7 @@ class WorkflowExecutor:
         rust_backtrace: str = "0",
         e2e_mode: bool = False,
         workflow_dir: str = None,
-        near_devnet: bool = False,
+        near_devnet: bool = True,
         contracts_dir: str = None,
         auth_mode: Optional[str] = None,
         auth_username: Optional[str] = None,
@@ -121,7 +122,8 @@ class WorkflowExecutor:
         # Generate unique workflow ID for test isolation (like e2e tests)
         self.workflow_id = str(uuid.uuid4())[:8]
 
-        self.near_devnet = near_devnet or config.get("near_devnet", False)
+        # Default: local sandbox. YAML can override with near_devnet: false (relayer).
+        self.near_devnet = config.get("near_devnet", near_devnet)
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 
         # Auth mode for binary mode (can be set by CLI or workflow config, CLI takes precedence)
@@ -133,12 +135,6 @@ class WorkflowExecutor:
         # Initialize node resolver with current manager
         # Will be set up properly after manager is confirmed
         self.resolver: Optional[NodeResolver] = None
-
-        if self.near_devnet and not self.contracts_dir:
-            console.print(
-                "[red] Config Error: near_devnet requires contracts_dir to be specified[/red]"
-            )
-            sys.exit(1)
 
         try:
             console.print(
@@ -233,12 +229,26 @@ class WorkflowExecutor:
                 try:
                     self.sandbox.start()
 
-                    ctx_path = os.path.join(
-                        self.contracts_dir, "calimero_context_config_near.wasm"
-                    )
-                    proxy_path = os.path.join(
-                        self.contracts_dir, "calimero_context_proxy_near.wasm"
-                    )
+                    ctx_name = "calimero_context_config_near.wasm"
+                    proxy_name = "calimero_context_proxy_near.wasm"
+                    ctx_path = os.path.join(self.contracts_dir or "", ctx_name)
+                    proxy_path = os.path.join(self.contracts_dir or "", proxy_name)
+
+                    if not self.contracts_dir or not (
+                        os.path.exists(ctx_path) and os.path.exists(proxy_path)
+                    ):
+                        contracts_version = os.environ.get(
+                            "CALIMERO_CONTRACTS_VERSION", "0.6.0"
+                        )
+                        self.contracts_dir = ensure_calimero_near_contracts(
+                            version=contracts_version
+                        )
+                        ctx_path = os.path.join(
+                            self.contracts_dir, ctx_name
+                        )
+                        proxy_path = os.path.join(
+                            self.contracts_dir, proxy_name
+                        )
 
                     console.print(
                         f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
@@ -246,11 +256,6 @@ class WorkflowExecutor:
                     console.print(
                         f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
                     )
-
-                    if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
-                        raise Exception(
-                            f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
-                        )
 
                     contract_id = await self.sandbox.setup_calimero(
                         ctx_path, proxy_path
