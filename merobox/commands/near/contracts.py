@@ -8,7 +8,9 @@ users do not need to run a separate download script or provide --contracts-dir.
 
 import hashlib
 import os
+import shutil
 import tarfile
+import tempfile
 from pathlib import Path
 
 import requests
@@ -41,6 +43,16 @@ CONTRACTS_REPO_NAME = "contracts"
 NEAR_ASSET_NAME = "near.tar.gz"
 CONFIG_WASM = "calimero_context_config_near.wasm"
 PROXY_WASM = "calimero_context_proxy_near.wasm"
+MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MiB cap to avoid disk exhaustion
+
+
+def _safe_unlink(path: Path) -> None:
+    """Remove file at path if it exists; ignore OSError."""
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
 
 
 def _contracts_cache_base():
@@ -87,10 +99,9 @@ def _locate_contracts_after_extract(
                 continue
             if f.is_file() and f.name != NEAR_ASSET_NAME and not f.name.startswith("."):
                 dest = cache_dir / f.name
-                try:
-                    f.rename(dest)
-                except FileExistsError:
-                    pass
+                if dest.exists():
+                    dest.unlink()
+                f.rename(dest)
         return cache_dir
     for name in names:
         if "/" not in name.strip("/"):
@@ -102,10 +113,9 @@ def _locate_contracts_after_extract(
                 for f in list(candidate.iterdir()):
                     if f.is_file():
                         dest = cache_dir / f.name
-                        try:
-                            f.rename(dest)
-                        except FileExistsError:
-                            pass
+                        if dest.exists():
+                            dest.unlink()
+                        f.rename(dest)
                 return cache_dir
     raise RuntimeError(
         f"Extracted {NEAR_ASSET_NAME} does not contain "
@@ -205,6 +215,11 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         with requests.get(download_url, stream=True, timeout=(10, 60)) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
+            if total > MAX_DOWNLOAD_BYTES:
+                raise RuntimeError(
+                    f"Contract tarball too large ({total} bytes > {MAX_DOWNLOAD_BYTES} limit). "
+                    "Refusing to download to avoid disk exhaustion."
+                )
             with (
                 open(tar_path, "wb") as f,
                 tqdm(
@@ -220,11 +235,7 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
                         f.write(chunk)
                         bar.update(len(chunk))
     except requests.RequestException as e:
-        if tar_path.exists():
-            try:
-                tar_path.unlink()
-            except OSError:
-                pass
+        _safe_unlink(tar_path)
         raise RuntimeError(
             f"Failed to download contracts ({type(e).__name__}): {e}"
         ) from e
@@ -251,21 +262,13 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
                     )
                 _verify_sha256(tar_path, expected_hex)
         except requests.RequestException as e:
-            if tar_path.exists():
-                try:
-                    tar_path.unlink()
-                except OSError:
-                    pass
+            _safe_unlink(tar_path)
             raise RuntimeError(
                 f"Checksum verification failed ({type(e).__name__}): {e}. "
                 "Set MEROBOX_SKIP_CONTRACTS_CHECKSUM=1 to skip (not recommended; see security warning)."
             ) from e
         except RuntimeError:
-            if tar_path.exists():
-                try:
-                    tar_path.unlink()
-                except OSError:
-                    pass
+            _safe_unlink(tar_path)
             raise
     elif checksum_url is None:
         console.print(
@@ -273,30 +276,26 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         )
 
     console.print("[yellow]Extracting...[/yellow]")
+    temp_dir = Path(tempfile.mkdtemp(dir=cache_dir.parent))
     try:
-        extract_base = Path(cache_dir.parent)
         with tarfile.open(tar_path) as tar:
             names = tar.getnames()
-            _safe_tar_extract(tar, extract_base)
-        tar_path.unlink(missing_ok=True)
+            _safe_tar_extract(tar, temp_dir)
+        _safe_unlink(tar_path)
+        result = _locate_contracts_after_extract(temp_dir, cache_dir, names)
     except (tarfile.TarError, OSError, RuntimeError) as e:
-        if tar_path.exists():
-            try:
-                tar_path.unlink()
-            except OSError:
-                pass
+        _safe_unlink(tar_path)
         raise RuntimeError(
             f"Failed to extract contracts ({type(e).__name__}): {e}"
         ) from e
-
-    try:
-        result = _locate_contracts_after_extract(extract_base, cache_dir, names)
-    except RuntimeError:
-        raise
     except Exception as e:
+        _safe_unlink(tar_path)
         raise RuntimeError(
             f"Unexpected error after extract ({type(e).__name__}): {e}"
         ) from e
+    finally:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     console.print("[green]✓ Calimero NEAR contracts ready[/green]")
     return str(result)

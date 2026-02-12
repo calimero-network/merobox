@@ -166,6 +166,7 @@ class JoinOpenStep(BaseStep):
             exc_info = result.get("exception")
             if exc_info:
                 exc_type = exc_info.get("type", "?")
+                # MEROBOX_DEBUG=1 shows full tracebacks; may expose paths, URLs, or tokens.
                 if os.environ.get("MEROBOX_DEBUG"):
                     console.print(
                         f"[red]  Exception: {exc_type}: {exc_info.get('message', '')}[/red]"

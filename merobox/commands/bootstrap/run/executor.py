@@ -129,6 +129,10 @@ class WorkflowExecutor:
         self.near_devnet = (
             config.get("near_devnet", True) if near_devnet is None else near_devnet
         )
+        if near_devnet is None and self.log_level == "debug":
+            console.print(
+                "[dim]Using default near_devnet=True (local sandbox); set in config or use --enable-relayer to override.[/dim]"
+            )
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 
         # Auth mode for binary mode (can be set by CLI or workflow config, CLI takes precedence)
