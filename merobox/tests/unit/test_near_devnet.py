@@ -38,9 +38,15 @@ def test_resolve_contracts_dir_calls_ensure_when_none(mock_manager):
     executor = WorkflowExecutor(
         config, mock_manager, near_devnet=True, contracts_dir=None
     )
-    with patch(
-        "merobox.commands.bootstrap.run.executor.ensure_calimero_near_contracts"
-    ) as mock_ensure:
+    with (
+        patch(
+            "merobox.commands.bootstrap.run.executor.ensure_calimero_near_contracts"
+        ) as mock_ensure,
+        patch(
+            "merobox.commands.bootstrap.run.executor.os.path.exists",
+            return_value=True,
+        ),
+    ):
         mock_ensure.return_value = "/tmp/contracts"
         contracts_dir, ctx_path, proxy_path = executor._resolve_contracts_dir()
     mock_ensure.assert_called_once()
