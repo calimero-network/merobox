@@ -34,9 +34,13 @@ class BinaryManager:
             binary_path: Path to the merod binary. If None, searches PATH.
             require_binary: If True, exit if binary not found. If False, set to None gracefully.
         """
-        if binary_path:
+        if binary_path and os.path.isfile(binary_path) and os.access(binary_path, os.X_OK):
             self.binary_path = binary_path
         else:
+            if binary_path:
+                console.print(
+                    f"[yellow]Warning: merod binary not found at {binary_path!r}, searching PATH[/yellow]"
+                )
             self.binary_path = self._find_binary(require=require_binary)
 
         self.processes = {}  # node_name -> subprocess.Popen

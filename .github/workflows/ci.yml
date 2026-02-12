@@ -89,6 +89,9 @@ jobs:
           merobox --version
           merobox --help
 
+          # Binary mode: do not pass --binary-path; merod is installed to /usr/local/bin (PATH).
+          # Workflow YAMLs must not set binary_path to a path that doesn't exist in CI.
+
           failed_workflows=()
 
           # Run all workflows (exclude fuzzy-kv-store)
