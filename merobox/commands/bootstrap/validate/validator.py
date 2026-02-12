@@ -28,7 +28,7 @@ from merobox.commands.bootstrap.steps.proposals import (
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
-from merobox.commands.constants import PROTOCOL_NEAR, RESERVED_NODE_CONFIG_KEYS
+from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 
 
 def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
@@ -126,9 +126,6 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
     """
     errors = []
 
-    if step_type in {"create_context", "create_mesh"}:
-        errors.extend(validate_step_protocol(step, step_name))
-
     # Import step classes dynamically to avoid circular imports
     try:
         if step_type == "install_application":
@@ -183,27 +180,6 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
     except ImportError as e:
         errors.append(
             f"Step '{step_name}' validation failed: Could not import step class for type '{step_type}': {str(e)}"
-        )
-
-    return errors
-
-
-def validate_step_protocol(step: dict, step_name: str) -> list[str]:
-    """Validate protocol values for NEAR-only workflow steps."""
-    errors = []
-    if "protocol" not in step:
-        return errors
-
-    protocol = step["protocol"]
-    if not isinstance(protocol, str):
-        errors.append(f"Step '{step_name}': 'protocol' must be a string")
-        return errors
-
-    normalized_protocol = protocol.strip().lower()
-    if normalized_protocol != PROTOCOL_NEAR:
-        errors.append(
-            f"Step '{step_name}': unsupported protocol '{protocol}'. "
-            f"Only '{PROTOCOL_NEAR}' is supported."
         )
 
     return errors

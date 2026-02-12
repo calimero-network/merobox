@@ -6,9 +6,10 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL, PROTOCOL_NEAR
+from merobox.commands.constants import DEFAULT_PROTOCOL
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
+from merobox.commands.validation_utils import validate_near_only_protocol
 
 
 class CreateContextStep(BaseStep):
@@ -45,14 +46,9 @@ class CreateContextStep(BaseStep):
 
         # Validate protocol is NEAR-only when explicitly provided
         if "protocol" in self.config:
-            protocol = self.config["protocol"]
-            if not isinstance(protocol, str):
-                raise ValueError(f"Step '{step_name}': 'protocol' must be a string")
-            if protocol.strip().lower() != PROTOCOL_NEAR:
-                raise ValueError(
-                    f"Step '{step_name}': unsupported protocol '{protocol}'. "
-                    f"Only '{PROTOCOL_NEAR}' is supported."
-                )
+            validate_near_only_protocol(
+                self.config["protocol"], context=f"Step '{step_name}'"
+            )
 
     def _get_exportable_variables(self):
         """
@@ -126,7 +122,9 @@ class CreateContextStep(BaseStep):
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-            protocol = self.config.get("protocol", DEFAULT_PROTOCOL).strip().lower()
+            protocol = validate_near_only_protocol(
+                self.config.get("protocol", DEFAULT_PROTOCOL)
+            )
             api_result = client.create_context(
                 application_id=application_id,
                 protocol=protocol,
