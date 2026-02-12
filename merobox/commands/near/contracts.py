@@ -214,17 +214,18 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
     try:
         with requests.get(download_url, stream=True, timeout=(10, 60)) as resp:
             resp.raise_for_status()
-            total = int(resp.headers.get("content-length", 0))
+            total = int(resp.headers.get("content-length", 0) or 0)
             if total > MAX_DOWNLOAD_BYTES:
                 raise RuntimeError(
                     f"Contract tarball too large ({total} bytes > {MAX_DOWNLOAD_BYTES} limit). "
                     "Refusing to download to avoid disk exhaustion."
                 )
+            downloaded = 0
             with (
                 open(tar_path, "wb") as f,
                 tqdm(
                     desc="Downloading",
-                    total=total,
+                    total=total if total > 0 else None,
                     unit="iB",
                     unit_scale=True,
                     unit_divisor=1024,
@@ -232,6 +233,13 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
             ):
                 for chunk in resp.iter_content(chunk_size=8192):
                     if chunk:
+                        downloaded += len(chunk)
+                        if downloaded > MAX_DOWNLOAD_BYTES:
+                            _safe_unlink(tar_path)
+                            raise RuntimeError(
+                                f"Contract tarball exceeds size limit (received {downloaded} bytes > {MAX_DOWNLOAD_BYTES} limit). "
+                                "Refusing to continue to avoid disk exhaustion."
+                            )
                         f.write(chunk)
                         bar.update(len(chunk))
     except requests.RequestException as e:

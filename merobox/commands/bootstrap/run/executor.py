@@ -130,8 +130,9 @@ class WorkflowExecutor:
             config.get("near_devnet", True) if near_devnet is None else near_devnet
         )
         if near_devnet is None and self.log_level == "debug":
+            mode = "local sandbox" if self.near_devnet else "relayer/testnet"
             console.print(
-                "[dim]Using default near_devnet=True (local sandbox); set in config or use --enable-relayer to override.[/dim]"
+                f"[dim]Using near_devnet={self.near_devnet} from config ({mode}); set in config or use --enable-relayer to override.[/dim]"
             )
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 

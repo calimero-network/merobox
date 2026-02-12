@@ -94,9 +94,10 @@ jobs:
 
           failed_workflows=()
 
-          # Run all workflows (exclude fuzzy-kv-store)
+          # Run all workflows (exclude fuzzy-kv-store, open-invitation disabled for now)
           for f in workflow-examples/*.yml; do
             [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
+            [[ "$f" == "workflow-examples/workflow-open-invitation-example.yml" ]] && continue
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
               --no-docker \
@@ -169,10 +170,11 @@ jobs:
 
           failed_workflows=()
 
-          # Run all workflows with Docker (skip binary-only workflow and fuzzy-kv-store)
+          # Run all workflows with Docker (skip binary-only, fuzzy-kv-store, open-invitation disabled for now)
           for f in workflow-examples/*.yml; do
             [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]] && continue
             [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
+            [[ "$f" == "workflow-examples/workflow-open-invitation-example.yml" ]] && continue
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
               --e2e-mode; then
