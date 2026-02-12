@@ -231,24 +231,23 @@ class WorkflowExecutor:
 
                     ctx_name = "calimero_context_config_near.wasm"
                     proxy_name = "calimero_context_proxy_near.wasm"
-                    ctx_path = os.path.join(self.contracts_dir or "", ctx_name)
-                    proxy_path = os.path.join(self.contracts_dir or "", proxy_name)
 
-                    if not self.contracts_dir or not (
-                        os.path.exists(ctx_path) and os.path.exists(proxy_path)
+                    if self.contracts_dir:
+                        ctx_path = os.path.join(self.contracts_dir, ctx_name)
+                        proxy_path = os.path.join(self.contracts_dir, proxy_name)
+                    else:
+                        ctx_path = None
+                        proxy_path = None
+
+                    if not (
+                        ctx_path
+                        and os.path.exists(ctx_path)
+                        and proxy_path
+                        and os.path.exists(proxy_path)
                     ):
-                        contracts_version = os.environ.get(
-                            "CALIMERO_CONTRACTS_VERSION", "0.6.0"
-                        )
-                        self.contracts_dir = ensure_calimero_near_contracts(
-                            version=contracts_version
-                        )
-                        ctx_path = os.path.join(
-                            self.contracts_dir, ctx_name
-                        )
-                        proxy_path = os.path.join(
-                            self.contracts_dir, proxy_name
-                        )
+                        self.contracts_dir = ensure_calimero_near_contracts()
+                        ctx_path = os.path.join(self.contracts_dir, ctx_name)
+                        proxy_path = os.path.join(self.contracts_dir, proxy_name)
 
                     console.print(
                         f"[cyan]Context Config contract path: {ctx_path}[/cyan]"

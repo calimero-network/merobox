@@ -14,6 +14,11 @@ import requests
 from rich.console import Console
 from tqdm import tqdm
 
+try:
+    from filelock import FileLock
+except ImportError:
+    FileLock = None
+
 console = Console()
 
 CONTRACTS_REPO_OWNER = "calimero-network"
@@ -31,6 +36,21 @@ def _dir_has_contracts(dir_path: Path) -> bool:
     return (dir_path / CONFIG_WASM).is_file() and (dir_path / PROXY_WASM).is_file()
 
 
+def _safe_tar_extract(tar: tarfile.TarFile, extract_base: Path) -> None:
+    """Extract tar members into extract_base, rejecting path traversal (tar slip)."""
+    base_resolved = extract_base.resolve()
+    for member in tar.getmembers():
+        # Resolve destination path and ensure it stays under extract_base
+        dest = (extract_base / member.name).resolve()
+        try:
+            dest.relative_to(base_resolved)
+        except ValueError:
+            raise RuntimeError(
+                f"Rejected path traversal in archive: member name {member.name!r}"
+            ) from None
+        tar.extract(member, path=extract_base)
+
+
 def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
     """
     Ensure NEAR context contracts are available; download from GitHub release if needed.
@@ -46,6 +66,25 @@ def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
         return str(cache_dir)
 
     cache_dir.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = cache_dir.parent / ".contracts.lock"
+
+    def _download_and_extract() -> str:
+        # Re-check after acquiring lock (another process may have finished)
+        if _dir_has_contracts(cache_dir):
+            return str(cache_dir)
+        return _download_and_extract_impl(cache_dir, version)
+
+    if FileLock is not None:
+        with FileLock(lock_path, timeout=300):
+            return _download_and_extract()
+    return _download_and_extract()
+
+
+def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
+    """Download and extract contracts; caller should hold lock if available."""
+    if _dir_has_contracts(cache_dir):
+        return str(cache_dir)
+
     api_url = (
         f"https://api.github.com/repos/{CONTRACTS_REPO_OWNER}/{CONTRACTS_REPO_NAME}"
         f"/releases/tags/{version}"
@@ -95,11 +134,10 @@ def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
                     bar.update(len(chunk))
 
         console.print("[yellow]Extracting...[/yellow]")
-        extract_base = cache_dir.parent
+        extract_base = Path(cache_dir.parent)
         with tarfile.open(tar_path) as tar:
-            # If tar has a single top-level dir (e.g. "near/"), use it
             names = tar.getnames()
-            tar.extractall(path=extract_base)
+            _safe_tar_extract(tar, extract_base)
         tar_path.unlink(missing_ok=True)
 
         # Find dir that contains both wasm files
