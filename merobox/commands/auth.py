@@ -33,9 +33,10 @@ import os
 import threading
 import time
 import warnings
+from collections.abc import Awaitable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 import aiohttp
 from calimero_client_py import get_token_cache_dir, get_token_cache_path
