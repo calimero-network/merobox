@@ -186,24 +186,28 @@ def bootstrap():
     help="Set custom path to merod binary (used with --no-docker). Defaults to searching PATH and common locations (/usr/local/bin, /usr/bin, ~/bin).",
 )
 @click.option(
-    "--mock-relayer",
-    is_flag=True,
-    help="Start a local mock relayer (Docker only) and wire nodes to it",
-)
-@click.option(
     "--e2e-mode",
     is_flag=True,
     help="Enable e2e test mode with aggressive sync settings and test isolation (disables bootstrap nodes, uses unique rendezvous namespaces)",
 )
 @click.option(
-    "--near-devnet",
-    is_flag=True,
-    help="Spin up a local NEAR sandbox and configure nodes to use it. Requires --contracts-dir.",
+    "--enable-relayer",
+    "enable_relayer",
+    flag_value=True,
+    default=None,
+    help="Use the relayer/testnet for NEAR. If omitted, workflow YAML near_devnet is used (default: local sandbox).",
+)
+@click.option(
+    "--no-enable-relayer",
+    "enable_relayer",
+    flag_value=False,
+    help="Use local NEAR sandbox (explicit). Overrides workflow YAML near_devnet.",
 )
 @click.option(
     "--contracts-dir",
     type=click.Path(exists=True),
-    help="Directory containing context_config_near.wasm and context_proxy_near.wasm",
+    default=None,
+    help="Directory containing calimero_context_config_near.wasm and calimero_context_proxy_near.wasm. If omitted, contracts are downloaded automatically (unless --enable-relayer).",
 )
 @click.option(
     "--remote-node",
@@ -247,9 +251,8 @@ def run(
     rust_backtrace,
     no_docker,
     binary_path,
-    mock_relayer,
     e2e_mode,
-    near_devnet,
+    enable_relayer,
     contracts_dir,
     remote_node,
     remote_auth,
@@ -308,9 +311,8 @@ def run(
         rust_backtrace=rust_backtrace,
         no_docker=no_docker,
         binary_path=binary_path,
-        mock_relayer=mock_relayer,
         e2e_mode=e2e_mode,
-        near_devnet=near_devnet,
+        enable_relayer=enable_relayer,
         contracts_dir=contracts_dir,
         cli_remote_nodes=cli_remote_nodes,
         auth_mode=auth_mode,

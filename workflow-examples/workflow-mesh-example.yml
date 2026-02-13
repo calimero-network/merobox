@@ -2,13 +2,11 @@ description: A workflow demonstrating the create_mesh step that creates a contex
 name: Create Mesh Workflow Example
 
 force_pull_image: true
-near_devnet: true
-contracts_dir: contracts/near
 
 nodes:
   chain_id: testnet-1
   count: 3
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
 
 steps:

@@ -8,19 +8,10 @@ import click
 
 from merobox import __version__
 from merobox.commands import (
-    application,
-    blob,
     bootstrap,
-    call,
-    context,
     health,
-    identity,
-    install,
-    join,
-    list,
     logs,
     nuke,
-    proposals,
     remote,
     run,
     stop,
@@ -34,23 +25,14 @@ def cli():
     pass
 
 
-# Add commands to the CLI group
+# Node management and workflow commands only
+cli.add_command(bootstrap)
+cli.add_command(health)
+cli.add_command(logs)
+cli.add_command(nuke)
+cli.add_command(remote)
 cli.add_command(run)
 cli.add_command(stop)
-cli.add_command(list)
-cli.add_command(logs)
-cli.add_command(health)
-cli.add_command(install)
-cli.add_command(application)
-cli.add_command(nuke)
-cli.add_command(identity)
-cli.add_command(context)
-cli.add_command(join)
-cli.add_command(call)
-cli.add_command(blob)
-cli.add_command(proposals)
-cli.add_command(bootstrap)
-cli.add_command(remote)
 
 
 def main():

@@ -3,13 +3,11 @@ name: Negative Testing Example
 
 # Force pull Docker images even if they exist locally
 force_pull_image: true
-near_devnet: true
-contracts_dir: contracts/near
 
 nodes:
   chain_id: testnet-1
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
 
 steps:
