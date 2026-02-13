@@ -79,11 +79,6 @@ console = Console()
     help="Run a single node in the foreground and attach to merod's interactive UI (binary mode only)",
 )
 @click.option(
-    "--mock-relayer",
-    is_flag=True,
-    help="Start a local mock relayer (ghcr.io/calimero-network/mero-relayer:8ee178e) and point nodes at it",
-)
-@click.option(
     "--use-image-entrypoint",
     is_flag=True,
     help="Preserve Docker image's entrypoint instead of running merod directly",
@@ -112,7 +107,6 @@ def run(
     no_docker,
     binary_path,
     foreground,
-    mock_relayer,
     use_image_entrypoint,
     auth_mode,
 ):
@@ -122,12 +116,6 @@ def run(
         console.print(
             "[red]--auth-mode is only supported with --no-docker (binary mode). "
             "For Docker mode, use --auth-service instead.[/red]"
-        )
-        sys.exit(1)
-
-    if mock_relayer and no_docker:
-        console.print(
-            "[red]--mock-relayer is only supported with Docker mode (omit --no-docker)[/red]"
         )
         sys.exit(1)
 
@@ -181,7 +169,6 @@ def run(
             "webui_use_cached": webui_use_cached,
             "log_level": log_level,
             "rust_backtrace": rust_backtrace,
-            "mock_relayer": mock_relayer,
         }
 
         if no_docker:
@@ -212,7 +199,6 @@ def run(
             "webui_use_cached": webui_use_cached,
             "log_level": log_level,
             "rust_backtrace": rust_backtrace,
-            "mock_relayer": mock_relayer,
         }
         if no_docker:
             if auth_mode:

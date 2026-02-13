@@ -292,17 +292,33 @@ class WaitForSyncStep(BaseStep):
             # Wait before next check
             await asyncio.sleep(check_interval)
 
-        # Timeout exceeded or max attempts reached
+        # Timeout exceeded or max attempts reached - fetch final state
         elapsed = time.time() - start_time
-        console.print(
-            f"[red]✗ Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
-        )
-
-        # Get final state
         tasks = [self._fetch_root_hash(node, context_id) for node in nodes]
         results = await asyncio.gather(*tasks)
         final_hashes = dict(results)
+        valid_final = {h for h in final_hashes.values() if h is not None}
+        failed_final = [n for n, h in final_hashes.items() if h is None]
 
+        # One more check: nodes may have synced between last attempt and this fetch.
+        # Require all nodes to have returned a hash (no unreachable) and one unique hash.
+        if not failed_final and len(valid_final) == 1:
+            synced_hash = list(valid_final)[0]
+            console.print(
+                f"[green]✓ All nodes synced after {elapsed:.2f}s ({attempt} attempts, verified on final check)[/green]"
+            )
+            console.print(f"[green]  Root hash: {synced_hash}[/green]")
+            return True, {
+                "synced": True,
+                "root_hash": synced_hash,
+                "elapsed_seconds": round(elapsed, 2),
+                "attempts": attempt,
+                "node_hashes": final_hashes,
+            }
+
+        console.print(
+            f"[red]✗ Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
+        )
         console.print("[red]  Final state:[/red]")
         for node, hash_val in final_hashes.items():
             console.print(f"[red]    {node}: {hash_val or 'N/A'}[/red]")

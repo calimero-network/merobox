@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.7] - 2026-02-12
+
+### Breaking
+- **testing**: `merobox.testing.cluster()` and `merobox.testing.workflow()` now default `near_devnet=True` (local sandbox). Code that relied on the previous default (relayer/testnet) must pass `near_devnet=False` explicitly.
+
+### Added
+- **Auto-download NEAR contracts**: `ensure_calimero_near_contracts()`; default contracts version 0.6.0; optional `contracts_dir` with env override `CALIMERO_CONTRACTS_VERSION`.
+- **Open invitation workflow**: `workflow-open-invitation-log-analysis.md`; join_open step surfaces underlying API/exception error and traceback.
+
+### Changed
+- **Default local NEAR sandbox**: Workflow runs use a local NEAR sandbox by default (no flag). Use `--enable-relayer` to use the relayer/testnet.
+- **CLI**: Expose only node-management commands (bootstrap, health, logs, nuke, remote, run, stop); application, blob, call, context, identity, install, join, list, proposals no longer in main CLI.
+- Consolidated protocol behavior to NEAR-only across CLI and workflow guidance.
+- `context create` usage documents NEAR as default; workflow runs use local sandbox by default or `--enable-relayer` for testnet.
+
+### Removed
+- `--near-devnet` flag (replaced by default sandbox + `--enable-relayer`).
+- `workflow-examples/scripts/download_contracts.sh` (contracts auto-downloaded).
+- Non-NEAR protocol examples from user-facing docs; non-NEAR E2E/default guidance references.
+
 ## [0.2.10] - 2024-11-27
 
 ### Added
