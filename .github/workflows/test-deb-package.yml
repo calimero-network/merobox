@@ -70,6 +70,16 @@ jobs:
           rm "${TARBALL}"
           merod --version
 
+      - name: Set up Rust (wasm32 target for workflow apps)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build workflow WASM apps (kv_store, blobs from calimero-network/core)
+        run: |
+          chmod +x workflow-examples/scripts/build_res_wasm.sh
+          ./workflow-examples/scripts/build_res_wasm.sh
+
       - name: Test merobox bootstrap run workflow
         run: |
           echo "=== Testing merobox bootstrap run workflow-example.yml ==="
