@@ -298,9 +298,11 @@ class WaitForSyncStep(BaseStep):
         results = await asyncio.gather(*tasks)
         final_hashes = dict(results)
         valid_final = {h for h in final_hashes.values() if h is not None}
+        failed_final = [n for n, h in final_hashes.items() if h is None]
 
-        # One more check: nodes may have synced between last attempt and this fetch
-        if len(valid_final) == 1:
+        # One more check: nodes may have synced between last attempt and this fetch.
+        # Require all nodes to have returned a hash (no unreachable) and one unique hash.
+        if not failed_final and len(valid_final) == 1:
             synced_hash = list(valid_final)[0]
             console.print(
                 f"[green]✓ All nodes synced after {elapsed:.2f}s ({attempt} attempts, verified on final check)[/green]"
