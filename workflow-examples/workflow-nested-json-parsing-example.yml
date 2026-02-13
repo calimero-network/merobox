@@ -1,13 +1,10 @@
 description: Test workflow demonstrating deep JSON nesting with automatic parsing
 name: Deep Nesting Test
 
-near_devnet: true
-contracts_dir: contracts/near
-
 nodes:
   chain_id: testnet-1
   count: 1
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: test-node
 
 steps:

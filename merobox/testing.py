@@ -56,10 +56,14 @@ def cluster(
     base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
-    near_devnet: bool = False,
+    near_devnet: bool = True,
     contracts_dir: str | None = None,
 ) -> ClusterEnv:
     """Run a cluster of Calimero nodes as pretest setup and tear down automatically.
+
+    .. note:: **Breaking change**: ``near_devnet`` defaults to ``True`` (local sandbox).
+        If your tests relied on the previous default (relayer/testnet), pass
+        ``near_devnet=False`` explicitly.
 
     Args:
         count: Number of nodes to start.
@@ -139,7 +143,7 @@ def workflow(
     base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
-    near_devnet: bool = False,
+    near_devnet: bool = True,
     contracts_dir: str | None = None,
 ) -> WorkflowEnv:
     """Run a Merobox workflow as pretest setup and tear down automatically.
@@ -412,11 +416,13 @@ def _setup_near_devnet(
     """
     Helper to spin up NEAR Sandbox, deploy contracts, and generate node accounts.
     Returns the sandbox instance and the configuration dictionary.
+    If contracts_dir is None, contracts are downloaded automatically.
     """
-    if not contracts_dir:
-        raise ValueError("contracts_dir is required when near_devnet is True")
-
+    from merobox.commands.near.contracts import ensure_calimero_near_contracts
     from merobox.commands.near.sandbox import SandboxManager
+
+    if not contracts_dir:
+        contracts_dir = ensure_calimero_near_contracts()
 
     # Start Sandbox
     sandbox = SandboxManager()

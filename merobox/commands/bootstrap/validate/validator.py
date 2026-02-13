@@ -18,6 +18,7 @@ from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
@@ -133,6 +134,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = CreateContextStep
         elif step_type == "create_identity":
             step_class = CreateIdentityStep
+        elif step_type == "create_mesh":
+            step_class = CreateMeshStep
         elif step_type == "invite_identity":
             step_class = InviteIdentityStep
         elif step_type == "join_context":

@@ -5,13 +5,11 @@ This file demonstrates the new, cleaner Merobox testing API.
 """
 
 import pytest
-import os
 
-from pathlib import Path
 from merobox.testing import nodes, run_workflow
 
-# Requires downloading the contracts, this is usually done in CI. For local development, match the path.
-CONTRACTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../contracts/near"))
+# None = merobox auto-downloads NEAR contracts when near_devnet is True
+CONTRACTS_DIR = None
 
 
 # ============================================================================
@@ -32,7 +30,11 @@ def multi_test_nodes():
 
 
 @run_workflow(
-    "./workflows/workflow-example.yml", prefix="shared-workflow", scope="session", near_devnet=True, contracts_dir=CONTRACTS_DIR
+    "./workflows/workflow-example.yml",
+    prefix="shared-workflow",
+    scope="session",
+    near_devnet=True,
+    contracts_dir=CONTRACTS_DIR,
 )
 def shared_workflow():
     """Shared workflow setup for advanced testing - session scoped for reuse"""
