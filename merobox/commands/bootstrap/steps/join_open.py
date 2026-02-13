@@ -3,6 +3,7 @@ Join Open step executor - Join context using open invitation.
 """
 
 import json as json_lib
+import os
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -47,7 +48,7 @@ async def join_context_via_open_invitation(
         )
     except Exception as exc:
         return fail(
-            "join_context_via_open_invitation failed",
+            f"join_context_via_open_invitation failed: {exc!s}",
             error=exc,
             client_method="client.join_context_by_open_invitation",
             endpoint="calimero_client_py.join_context_by_open_invitation",
@@ -144,7 +145,12 @@ class JoinOpenStep(BaseStep):
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
         except Exception as exc:
-            console.print(f"[red]Failed to resolve node {node_name}: {exc}[/red]")
+            if os.environ.get("MEROBOX_DEBUG"):
+                console.print(f"[red]Failed to resolve node {node_name}: {exc}[/red]")
+            else:
+                console.print(
+                    f"[red]Failed to resolve node {node_name} (set MEROBOX_DEBUG=1 for details)[/red]"
+                )
             return False
 
         # Execute join via open invitation
@@ -157,6 +163,22 @@ class JoinOpenStep(BaseStep):
                 console.print(f"  Tried Payloads: {result['tried_payloads']}")
             if "errors" in result:
                 console.print(f"  Detailed Errors: {result['errors']}")
+            exc_info = result.get("exception")
+            if exc_info:
+                exc_type = exc_info.get("type", "?")
+                # MEROBOX_DEBUG=1 shows full tracebacks; may expose paths, URLs, or tokens.
+                if os.environ.get("MEROBOX_DEBUG"):
+                    console.print(
+                        f"[red]  Exception: {exc_type}: {exc_info.get('message', '')}[/red]"
+                    )
+                    if exc_info.get("traceback"):
+                        console.print(
+                            "[dim]" + exc_info["traceback"].strip() + "[/dim]"
+                        )
+                else:
+                    console.print(
+                        f"[red]  Exception: {exc_type} (set MEROBOX_DEBUG=1 for details)[/red]"
+                    )
 
         if result["success"]:
             # Check if the JSON-RPC response contains an error

@@ -15,6 +15,7 @@ from merobox.commands.identity import (
 from merobox.commands.join import join_context_via_admin_api
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console, extract_nested_data
+from merobox.commands.validation_utils import validate_near_only_protocol
 
 
 class CreateMeshStep(BaseStep):
@@ -69,6 +70,12 @@ class CreateMeshStep(BaseStep):
         # Validate params is JSON string if provided
         if "params" in self.config and not isinstance(self.config["params"], str):
             raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
+
+        # Validate protocol is NEAR-only when explicitly provided
+        if "protocol" in self.config:
+            validate_near_only_protocol(
+                self.config["protocol"], context=f"Step '{step_name}'"
+            )
 
     def _get_exportable_variables(self):
         """
@@ -137,7 +144,9 @@ class CreateMeshStep(BaseStep):
             client = get_client_for_rpc_url(
                 context_rpc_url, node_name=client_context_node
             )
-            protocol = self.config.get("protocol", DEFAULT_PROTOCOL)
+            protocol = validate_near_only_protocol(
+                self.config.get("protocol", DEFAULT_PROTOCOL)
+            )
             api_result = client.create_context(
                 application_id=application_id,
                 protocol=protocol,

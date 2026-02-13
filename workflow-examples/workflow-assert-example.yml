@@ -1,14 +1,11 @@
 description: Example workflow showcasing assert and json_assert steps
 name: Assert and JSON Assert Example
 
-near_devnet: true
-contracts_dir: contracts/near
-
 # Keep it light: single node to speed up CI
 nodes:
   chain_id: testnet-1
   count: 1
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
   base_port: 9002
   base_rpc_port: 9102
