@@ -3,13 +3,11 @@ name: Proposals API Comprehensive Test
 
 # Force pull Docker images even if they exist locally
 force_pull_image: true
-near_devnet: true
-contracts_dir: contracts/near
 
 nodes:
   chain_id: calimero-testnet
   count: 3
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: prop-test
 
 steps:
@@ -17,11 +15,11 @@ steps:
   # Setup: Install blockchain integration app and create multi-node context
   # ============================================================================
 
-  # Step 1: Install the blockchain integration application
+  # Step 1: Install the blockchain integration application (built from core by workflow-examples/scripts/build_res_wasm.sh)
   - name: Install Blockchain Integration App
     type: install_application
     node: prop-test-1
-    url: "https://github.com/calimero-network/demo-blockchain-integrations/raw/refs/heads/master/logic/res/blockchain.wasm"
+    path: workflow-examples/res/blockchain.wasm
     dev: true
     outputs:
       app_id: applicationId # Export 'applicationId' as 'app_id'

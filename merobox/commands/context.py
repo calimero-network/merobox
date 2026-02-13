@@ -10,11 +10,12 @@ from rich import box
 from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL
+from merobox.commands.constants import DEFAULT_PROTOCOL, PROTOCOL_NEAR
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console, get_node_rpc_url, run_async_function
+from merobox.commands.validation_utils import validate_near_only_protocol
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
@@ -36,7 +37,7 @@ async def create_context_via_admin_api(
     """
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        protocol = protocol or DEFAULT_PROTOCOL
+        protocol = validate_near_only_protocol(protocol or DEFAULT_PROTOCOL)
         api_result = client.create_context(
             application_id=application_id, protocol=protocol, params=params
         )
@@ -124,8 +125,11 @@ def context():
 @click.option(
     "--protocol",
     "-p",
-    default=DEFAULT_PROTOCOL,
-    help=f"Protocol type (default: {DEFAULT_PROTOCOL})",
+    default=None,
+    help=(
+        f"Protocol type (optional, only '{PROTOCOL_NEAR}' is supported; "
+        f"defaults to '{DEFAULT_PROTOCOL}')"
+    ),
 )
 @click.option(
     "--params",
@@ -135,6 +139,14 @@ def context():
 def create(node, application_id, protocol, params, verbose):
     """Create a new context for an application."""
     manager = DockerManager()
+    try:
+        protocol = validate_near_only_protocol(protocol or DEFAULT_PROTOCOL)
+    except ValueError as e:
+        console.print(
+            f"[red]✗ {e} "
+            "Use NEAR defaults; workflow runs use a local sandbox by default, or use '--enable-relayer' for testnet.[/red]"
+        )
+        sys.exit(1)
 
     # Validate params if provided
     params_json = None
