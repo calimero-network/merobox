@@ -24,14 +24,11 @@ no_docker: true
 # Keep the `image` field for compatibility, but it will be ignored by BinaryManager.
 force_pull_image: false
 
-near_devnet: true
-contracts_dir: contracts/near
-
 nodes:
   chain_id: testnet-1
   count: 3
   # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
   # Optional: reserve base ports for native nodes (BinaryManager will auto-allocate if omitted)
   # base_port: 2428

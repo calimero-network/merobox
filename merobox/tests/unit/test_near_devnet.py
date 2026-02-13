@@ -18,62 +18,41 @@ def mock_manager():
     return MagicMock(spec=DockerManager)
 
 
-def test_exclusivity_check_cli(mock_manager):
-    """Test that enabling both via CLI args raises error."""
-    config = {"name": "test", "nodes": {}}
+def test_near_devnet_from_config_when_cli_omitted(mock_manager):
+    """When CLI does not set near_devnet (None), YAML near_devnet is used."""
+    config = {"near_devnet": True, "nodes": {}}
+    executor = WorkflowExecutor(config, mock_manager, near_devnet=None)
+    assert executor.near_devnet is True
 
-    # Configure mock_exit to raise SystemExit so execution actually stops
+
+def test_near_devnet_cli_overrides_config(mock_manager):
+    """When CLI sets near_devnet (e.g. --enable-relayer), CLI takes precedence over YAML."""
+    config = {"near_devnet": True, "nodes": {}}
+    executor = WorkflowExecutor(config, mock_manager, near_devnet=False)
+    assert executor.near_devnet is False
+
+
+def test_resolve_contracts_dir_calls_ensure_when_none(mock_manager):
+    """When contracts_dir is None, _resolve_contracts_dir calls ensure_calimero_near_contracts."""
+    config = {"nodes": {}}
+    executor = WorkflowExecutor(
+        config, mock_manager, near_devnet=True, contracts_dir=None
+    )
     with (
-        patch("sys.exit", side_effect=SystemExit(1)),
-        patch("merobox.commands.utils.console.print") as mock_print,
+        patch(
+            "merobox.commands.bootstrap.run.executor.ensure_calimero_near_contracts"
+        ) as mock_ensure,
+        patch(
+            "merobox.commands.bootstrap.run.executor.os.path.exists",
+            return_value=True,
+        ),
     ):
-
-        with pytest.raises(SystemExit):
-            WorkflowExecutor(
-                config,
-                mock_manager,
-                mock_relayer=True,
-                near_devnet=True,
-                contracts_dir="/tmp",
-            )
-
-        # Now check the print calls to find the error message
-        # We search through all calls because multiple prints might happen
-        print_calls = [args[0] for args, _ in mock_print.call_args_list]
-        assert any(
-            "cannot be enabled simultaneously" in str(msg) for msg in print_calls
-        )
-
-
-def test_near_sandbox_and_mock_relayer_exclusivity_check_config(mock_manager):
-    """Test that enabling via config + CLI args raises error."""
-    config = {"near_devnet": True, "nodes": {}}
-
-    with patch("sys.exit") as mock_exit, patch("merobox.commands.utils.console.print"):
-        try:
-            WorkflowExecutor(
-                config,
-                mock_manager,
-                mock_relayer=True,  # CLI overrides/adds
-                contracts_dir="/tmp",
-            )
-        except Exception:
-            pass
-        mock_exit.assert_called_with(1)
-
-
-def test_validation_attributes(mock_manager):
-    """Ensure validation uses resolved attributes, not just CLI args."""
-    # Config has near_devnet=True, but CLI arg is default (False).
-    # contracts_dir is missing entirely.
-    config = {"near_devnet": True, "nodes": {}}
-
-    with patch("sys.exit") as mock_exit, patch("merobox.commands.utils.console.print"):
-        try:
-            WorkflowExecutor(config, mock_manager)
-        except Exception:
-            pass
-        mock_exit.assert_called_with(1)
+        mock_ensure.return_value = "/tmp/contracts"
+        contracts_dir, ctx_path, proxy_path = executor._resolve_contracts_dir()
+    mock_ensure.assert_called_once()
+    assert contracts_dir == "/tmp/contracts"
+    assert ctx_path.endswith("calimero_context_config_near.wasm")
+    assert proxy_path.endswith("calimero_context_proxy_near.wasm")
 
 
 @pytest.mark.asyncio
