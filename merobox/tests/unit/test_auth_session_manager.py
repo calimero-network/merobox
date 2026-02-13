@@ -209,8 +209,8 @@ class TestSessionManager:
         mock_session = MagicMock()
         mock_session.closed = False
         manager._session = mock_session
-        # Set the loop_id to current loop so session is recognized as valid
-        manager._loop_id = manager._get_current_loop_id()
+        # Set the session_loop_id to current loop so session is recognized as valid
+        manager._session_loop_id = manager._get_current_loop_id()
 
         session = await manager.get_session()
 
@@ -221,11 +221,11 @@ class TestSessionManager:
         """Test get_session creates new session if existing one is closed."""
         manager = SessionManager()
 
-        # Set up a closed session with same loop_id
+        # Set up a closed session with same session_loop_id
         old_session = MagicMock()
         old_session.closed = True
         manager._session = old_session
-        manager._loop_id = manager._get_current_loop_id()
+        manager._session_loop_id = manager._get_current_loop_id()
 
         with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
             with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
@@ -289,7 +289,7 @@ class TestSessionManager:
         old_session = MagicMock()
         old_session.closed = False
         manager._session = old_session
-        manager._loop_id = 12345  # Different from current loop
+        manager._session_loop_id = 12345  # Different from current loop
 
         with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
             with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
@@ -321,8 +321,8 @@ class TestSessionManager:
         mock_connector.closed = False
         manager._connector = mock_connector
 
-        # Set loop_id so close() recognizes we're in the same loop
-        manager._loop_id = manager._get_current_loop_id()
+        # Set session_loop_id so close() recognizes we're in the same loop
+        manager._session_loop_id = manager._get_current_loop_id()
 
         await manager.close()
 
@@ -344,8 +344,8 @@ class TestSessionManager:
         mock_connector.closed = True
         manager._connector = mock_connector
 
-        # Set loop_id so close() recognizes we're in the same loop
-        manager._loop_id = manager._get_current_loop_id()
+        # Set session_loop_id so close() recognizes we're in the same loop
+        manager._session_loop_id = manager._get_current_loop_id()
 
         # Should not raise
         await manager.close()
@@ -363,8 +363,8 @@ class TestSessionManager:
         mock_connector.closed = False
         manager._connector = mock_connector
 
-        # Set loop_id to a different loop
-        manager._loop_id = 12345  # Different from current loop
+        # Set session_loop_id to a different loop
+        manager._session_loop_id = 12345  # Different from current loop
 
         await manager.close()
 
@@ -375,7 +375,7 @@ class TestSessionManager:
         # But resources should be cleared
         assert manager._session is None
         assert manager._connector is None
-        assert manager._loop_id is None
+        assert manager._session_loop_id is None
 
     @pytest.mark.asyncio
     async def test_context_manager(self):

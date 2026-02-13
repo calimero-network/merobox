@@ -66,13 +66,16 @@ class SessionManager:
     - Event loop aware: automatically recreates resources when loop changes
     - Cookie isolation: uses DummyCookieJar to prevent cookie leakage between nodes
 
-    Usage:
-        # Option 1: Use as async context manager (recommended)
+    Usage Patterns:
+
+        # Option 1: Context manager (short-lived, auto-cleanup)
+        # Note: This creates AND CLOSES a session when exiting the context.
+        # Use this for one-off requests where you want automatic cleanup.
         async with SessionManager() as session:
             async with session.get(url) as response:
                 data = await response.json()
 
-        # Option 2: Get shared session instance
+        # Option 2: Manual management (long-lived)
         manager = SessionManager()
         session = await manager.get_session()
         try:
@@ -81,15 +84,17 @@ class SessionManager:
         finally:
             await manager.close()
 
-        # Option 3: Use the global shared instance
+        # Option 3: Global shared instance (recommended for most use cases)
+        # Session persists across calls for connection reuse benefits.
         session = await get_shared_session()
         async with session.get(url) as response:
             data = await response.json()
 
-    Note:
-        When using the global shared instance via get_shared_session(),
-        call close_shared_session() during application shutdown to
-        properly release all HTTP connections.
+    Important:
+        - Context manager usage (Option 1) closes the session on exit.
+        - Shared instance usage (Option 3) keeps the session open for reuse.
+        - Call close_shared_session() during application shutdown to properly
+          release all HTTP connections when using the shared instance.
     """
 
     _instance: Optional["SessionManager"] = None
@@ -114,7 +119,8 @@ class SessionManager:
         self._connector: Optional[aiohttp.TCPConnector] = None
         self._session: Optional[aiohttp.ClientSession] = None
         self._async_lock: Optional[asyncio.Lock] = None
-        self._loop_id: Optional[int] = None  # Track which event loop owns resources
+        self._lock_loop_id: Optional[int] = None  # Track which loop owns the async lock
+        self._session_loop_id: Optional[int] = None  # Track which loop owns the session
         self._sync_lock = threading.Lock()  # Protects _async_lock creation
 
     def _get_current_loop_id(self) -> int:
@@ -126,21 +132,18 @@ class SessionManager:
             # No running loop
             return 0
 
-    def _is_same_loop(self) -> bool:
-        """Check if we're running in the same event loop as when resources were created."""
-        if self._loop_id is None:
-            return False
-        return self._loop_id == self._get_current_loop_id()
-
     def _get_async_lock(self) -> asyncio.Lock:
         """Get or create the asyncio.Lock for the current event loop.
 
         Thread-safe: uses a threading.Lock to protect creation.
+        When the event loop changes, creates a new lock for the new loop.
         """
         current_loop_id = self._get_current_loop_id()
         with self._sync_lock:
-            if self._async_lock is None or self._loop_id != current_loop_id:
+            if self._async_lock is None or self._lock_loop_id != current_loop_id:
                 self._async_lock = asyncio.Lock()
+                # Update lock_loop_id when creating new lock to prevent repeated creation
+                self._lock_loop_id = current_loop_id
             return self._async_lock
 
     def _create_connector(self) -> aiohttp.TCPConnector:
@@ -181,7 +184,10 @@ class SessionManager:
         lock = self._get_async_lock()
         async with lock:
             # Check if we need to recreate due to event loop change
-            if self._loop_id is not None and self._loop_id != current_loop_id:
+            if (
+                self._session_loop_id is not None
+                and self._session_loop_id != current_loop_id
+            ):
                 # Event loop changed - old resources are orphaned
                 # Log warning about orphaned resources
                 if self._session is not None and not self._session.closed:
@@ -198,7 +204,7 @@ class SessionManager:
             if self._session is None or self._session.closed:
                 self._connector = self._create_connector()
                 self._session = self._create_session(self._connector)
-                self._loop_id = current_loop_id
+                self._session_loop_id = current_loop_id
 
             return self._session
 
@@ -212,11 +218,14 @@ class SessionManager:
 
         async with lock:
             # Only close if we're in the same loop
-            if self._loop_id is not None and self._loop_id != current_loop_id:
+            if (
+                self._session_loop_id is not None
+                and self._session_loop_id != current_loop_id
+            ):
                 # Different loop - just clear references
                 self._session = None
                 self._connector = None
-                self._loop_id = None
+                self._session_loop_id = None
                 return
 
             if self._session is not None and not self._session.closed:
@@ -227,7 +236,7 @@ class SessionManager:
                 await self._connector.close()
             self._connector = None
 
-            self._loop_id = None
+            self._session_loop_id = None
 
     async def __aenter__(self) -> aiohttp.ClientSession:
         """Async context manager entry - returns the session."""
@@ -260,10 +269,17 @@ class SessionManager:
         Call this during application shutdown to properly release all
         HTTP connections and prevent resource leaks.
         """
+        # Get instance under lock, then release lock before await
+        # This prevents deadlock from holding threading.Lock across await
+        instance = None
         with cls._instance_lock:
             if cls._instance is not None:
-                await cls._instance.close()
+                instance = cls._instance
                 cls._instance = None
+
+        # Close outside the lock to avoid blocking event loop
+        if instance is not None:
+            await instance.close()
 
 
 def _cleanup_shared_session() -> None:
