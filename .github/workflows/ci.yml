@@ -84,6 +84,16 @@ jobs:
           merod --version
           echo "merod installed successfully!"
 
+      - name: Set up Rust (wasm32 target for workflow apps)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build workflow WASM apps (kv_store, blobs from calimero-network/core)
+        run: |
+          chmod +x workflow-examples/scripts/build_res_wasm.sh
+          ./workflow-examples/scripts/build_res_wasm.sh
+
       - name: Test merobox CLI and workflow (All workflows)
         run: |
           merobox --version
@@ -162,6 +172,16 @@ jobs:
       - name: Install merobox in development mode
         run: |
           pip install -e .
+
+      - name: Set up Rust (wasm32 target for workflow apps)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build workflow WASM apps (kv_store, blobs from calimero-network/core)
+        run: |
+          chmod +x workflow-examples/scripts/build_res_wasm.sh
+          ./workflow-examples/scripts/build_res_wasm.sh
 
       - name: Test merobox CLI and workflow with Docker (All workflows)
         run: |
