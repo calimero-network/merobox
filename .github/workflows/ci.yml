@@ -58,41 +58,44 @@ jobs:
         run: |
           pip install -e .
 
-      - name: Install merod binary (specific release)
+      - name: Install merod binary (latest prerelease)
         run: |
-          echo "Downloading merod binary from specific release..."
-
-          # Use specific release version
-          VERSION="0.10.0-rc.39"
+          echo "Downloading merod binary from latest prerelease..."
+          VERSION=$(curl -sL https://api.github.com/repos/calimero-network/core/releases | jq -r '[.[] | select(.prerelease == true)][0].tag_name')
+          if [[ "$VERSION" == "null" || -z "$VERSION" ]]; then
+            echo "Could not resolve latest prerelease (no prereleases or API error). VERSION=$VERSION"
+            exit 1
+          fi
           echo "Using version: $VERSION"
-
           ARCH="x86_64"
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
           DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
-
-          # Download and extract
-          curl -L -o "${TARBALL}" "${DOWNLOAD_URL}"
+          curl -fSL -o "${TARBALL}" "${DOWNLOAD_URL}"
           tar -xzf "${TARBALL}"
           chmod +x merod
-
-          # Move to a directory in PATH
           sudo mv merod /usr/local/bin/
           rm "${TARBALL}"
-
-          # Verify installation
           merod --version
           echo "merod installed successfully!"
 
-      - name: Download Context contracts
+      - name: Set up Rust (wasm32 target for workflow apps)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build workflow WASM apps (kv_store, blobs, blockchain from calimero-network/core)
         run: |
-          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
-          ./workflow-examples/scripts/download_contracts.sh
+          chmod +x workflow-examples/scripts/build_res_wasm.sh
+          ./workflow-examples/scripts/build_res_wasm.sh
 
       - name: Test merobox CLI and workflow (All workflows)
         run: |
           merobox --version
           merobox --help
+
+          # Binary mode: do not pass --binary-path; merod is installed to /usr/local/bin (PATH).
+          # Workflow YAMLs must not set binary_path to a path that doesn't exist in CI.
 
           failed_workflows=()
 
@@ -102,16 +105,14 @@ jobs:
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
               --no-docker \
-              --e2e-mode \
-              --near-devnet \
-              --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+              --e2e-mode; then
               failed_workflows+=("$f")
             fi
             merobox stop --all --no-docker || true
             merobox nuke -f || true
           done
 
-          # Retry failed workflows (max 2 retries)
+          # Retry failed workflows (max 2 retries); use same args as first run (merod from PATH)
           for retry in 1 2; do
             [ ${#failed_workflows[@]} -eq 0 ] && break
             echo "Retry $retry for ${#failed_workflows[@]} failed workflow(s)..."
@@ -121,10 +122,7 @@ jobs:
             for f in "${failed_workflows[@]}"; do
               if ! merobox bootstrap run "$f" \
                 --no-docker \
-                --binary-path ../../target/debug/merod \
-                --e2e-mode \
-                --near-devnet \
-                --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+                --e2e-mode; then
                 still_failed+=("$f")
               fi
               merobox stop --all --no-docker || true
@@ -169,12 +167,15 @@ jobs:
         run: |
           pip install -e .
 
-      - name: Download Context contracts
+      - name: Set up Rust (wasm32 target for workflow apps)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build workflow WASM apps (kv_store, blobs, blockchain from calimero-network/core)
         run: |
-          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
-          ls -la
-          pwd
-          ./workflow-examples/scripts/download_contracts.sh
+          chmod +x workflow-examples/scripts/build_res_wasm.sh
+          ./workflow-examples/scripts/build_res_wasm.sh
 
       - name: Test merobox CLI and workflow with Docker (All workflows)
         run: |
@@ -183,15 +184,13 @@ jobs:
 
           failed_workflows=()
 
-          # Run all workflows with Docker (skip binary-only workflow and fuzzy-kv-store)
+          # Run all workflows with Docker (skip binary-only, fuzzy-kv-store)
           for f in workflow-examples/*.yml; do
             [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]] && continue
             [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
-              --e2e-mode \
-              --near-devnet \
-              --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+              --e2e-mode; then
               failed_workflows+=("$f")
             fi
             merobox stop --all || true
@@ -207,9 +206,7 @@ jobs:
             still_failed=()
             for f in "${failed_workflows[@]}"; do
               if ! merobox bootstrap run "$f" \
-                --e2e-mode \
-                --near-devnet \
-                --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+                --e2e-mode; then
                 still_failed+=("$f")
               fi
               merobox stop --all || true
@@ -258,11 +255,6 @@ jobs:
         run: |
           cd example-project
           pip install -r requirements.txt
-
-      - name: Download Context contracts
-        run: |
-          echo "Downloading contracts, target version: $CALIMERO_CONTRACTS_VERSION"
-          ./workflow-examples/scripts/download_contracts.sh
 
       - name: Run merobox integration tests
         run: |

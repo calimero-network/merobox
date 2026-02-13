@@ -74,10 +74,9 @@ merobox health
 # Execute a workflow
 merobox bootstrap run workflow.yml
 
-# Run workflow against local NEAR Devnet (no testnet URL and no testnet tokens required)
-merobox bootstrap run workflow.yml \
-  --near-devnet \
-  --contracts-dir ./contracts/res
+# By default, workflows use a local NEAR sandbox (no testnet tokens required; contracts are downloaded automatically).
+# To use the relayer/testnet instead, pass --enable-relayer:
+merobox bootstrap run workflow.yml --enable-relayer
 
 # Stop all nodes and auth services
 merobox stop --all
@@ -93,7 +92,7 @@ merobox stop --all
 - **Identity Management**: Generate and manage cryptographic identities
 - **Function Calls**: Execute smart contract functions via JSON-RPC
 - **Dynamic Variables**: Advanced placeholder resolution with embedded support
-- **Local NEAR Devnet**: Use local instance of NEAR blockchain (Sandbox) for zero-cost and quick local testing (use `--near-devnet` with `--contracts-dir`)
+- **Local NEAR Sandbox (default)**: Use a local NEAR Sandbox for zero-cost testing; contracts are downloaded automatically. Use `--enable-relayer` to use the relayer/testnet instead.
 
 ---
 
@@ -1320,35 +1319,37 @@ Example:
 
 ## 🎯 Local Blockchain Environments
 
-Merobox offers two ways to run isolated tests without connecting to public networks. **These options are mutually exclusive.**
+Merobox supports two NEAR backends for workflows:
 
-1. **Local NEAR Sandbox** (`--near-devnet`)
-   A real, ephemeral NEAR blockchain instance running locally.
+1. **Local NEAR Sandbox** (default) — A real, ephemeral NEAR blockchain running locally. No testnet tokens or RPC required; contracts are downloaded automatically.
+2. **Relayer/Testnet** — Use `--enable-relayer` to connect nodes to the relayer and NEAR testnet instead of a local sandbox.
+
+**Local Sandbox (default):**
 
 - **Best for:** Full E2E testing and contract logic verification.
 - **Behavior:** Executes actual WASM smart contracts and state transitions.
 
 ### Local NEAR Sandbox
 
-Merobox allows you to run workflows against a local ephemeral NEAR blockchain (Sandbox) instead of the public Testnet.
+Merobox runs workflows against a local ephemeral NEAR blockchain (Sandbox) by default, instead of the public Testnet.
 This enables faster E2E testing without needing testnet tokens or RPC access.
 
 #### Requirements
 
-You need the compiled WebAssembly (`.wasm`) files for the Calimero context contracts:
+The compiled WebAssembly (`.wasm`) files for the Calimero context contracts are downloaded automatically. You can override with `--contracts-dir` if you have a local copy:
 
 1. `calimero_context_config_near.wasm`
 2. `calimero_context_proxy_near.wasm`
 
 #### How to Run
 
-Use the `--near-devnet` flag and point to your contracts directory:
+Local sandbox is the default. Just run your workflow; contracts are downloaded automatically if needed:
 
 ```bash
-merobox bootstrap run workflows/my-test.yml \
-  --near-devnet \
-  --contracts-dir ./path/to/wasm/files
+merobox bootstrap run workflows/my-test.yml
 ```
+
+To use the relayer/testnet instead, pass `--enable-relayer`.
 
 **What happens during the run:**
 
@@ -1472,8 +1473,8 @@ merobox bootstrap [OPTIONS] COMMAND [ARGS]...
 - `--auth-mode [embedded|proxy]`: Authentication mode for merod (binary mode only). `embedded` enables built-in auth with JWT protection on all endpoints. Default is `proxy` (no embedded auth).
 - `--auth-username TEXT`: Username for embedded auth authentication. Required when `--auth-mode=embedded` for workflow execution.
 - `--auth-password TEXT`: Password for embedded auth authentication. Required when `--auth-mode=embedded` for workflow execution.
-- `--near-devnet`: Spin up a local NEAR sandbox and configure nodes to use it.
-- `--contracts-dir PATH`: Directory containing Near Context Config and Near Context Proxy contracts (required if using `--near-devnet`).
+- `--enable-relayer`: Use the relayer/testnet for NEAR (default is a local NEAR sandbox; contracts are downloaded automatically).
+- `--contracts-dir PATH`: Directory containing Calimero NEAR context WASM contracts. If omitted, contracts are downloaded automatically (unless `--enable-relayer`).
 - `--log-level TEXT`: Set the RUST_LOG level for Calimero nodes (default: debug). Supports complex patterns like 'info,module::path=debug'
 - `--rust-backtrace TEXT`: Set the RUST_BACKTRACE level for Calimero nodes (default: 0).
 - `--verbose, -v`: Enable verbose output
@@ -1568,7 +1569,7 @@ merobox context create --node NODE_NAME --application-id APPLICATION_ID [OPTIONS
 - `--verbose`, `-v`: Show verbose output
 - `--help`: Show help message
 
-`merobox context create` is NEAR-only. If you need local chain testing, use `--near-devnet` with workflow execution.
+`merobox context create` is NEAR-only. Workflow execution uses a local NEAR sandbox by default; use `--enable-relayer` for testnet/relayer.
 
 **List Command:**
 
@@ -1789,8 +1790,8 @@ steps:
 - `force_pull_image`: When set to `true`, forces Docker to pull fresh images from registries, even if they exist locally. Useful for ensuring latest versions or during development.
 - `auth_service`: When set to `true`, enables authentication service integration with Traefik proxy. Nodes will be configured with authentication middleware and proper routing.
 - `config_path`: Specify custom `config.toml` path for nodes. Supports both shared config for all nodes and per-node overrides. Skips node initialization when custom config is provided. See [Custom Config Path](#custom-config-path) for details.
-- `near_devnet`: When set to `true`, spins up a local NEAR Sandbox that is used for context management during the workflow running.
-- `contracts_dir`: Path to directory containing required WASM contracts (required when `near_devnet` is true).
+- `near_devnet`: When set to `true`, uses a local NEAR Sandbox (default). Set to `false` to use the relayer/testnet. YAML can override the CLI default.
+- `contracts_dir`: Path to directory containing Calimero NEAR context WASM contracts. Optional (contracts are downloaded automatically when using local sandbox).
 - `bootstrap_nodes`: List of multiaddr strings for DHT bootstrap nodes. When specified, nodes will connect to these peers for network discovery. Works independently of `e2e_mode`. Each multiaddr must end with a `/p2p/<peer_id>` component (e.g., `"/ip4/63.181.86.34/tcp/4001/p2p/12D3KooW..."`).
 
 ### Docker Image Management

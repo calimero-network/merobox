@@ -191,14 +191,23 @@ def bootstrap():
     help="Enable e2e test mode with aggressive sync settings and test isolation (disables bootstrap nodes, uses unique rendezvous namespaces)",
 )
 @click.option(
-    "--near-devnet",
-    is_flag=True,
-    help="Spin up a local NEAR sandbox and configure nodes to use it. Requires --contracts-dir.",
+    "--enable-relayer",
+    "enable_relayer",
+    flag_value=True,
+    default=None,
+    help="Use the relayer/testnet for NEAR. If omitted, workflow YAML near_devnet is used (default: local sandbox).",
+)
+@click.option(
+    "--no-enable-relayer",
+    "enable_relayer",
+    flag_value=False,
+    help="Use local NEAR sandbox (explicit). Overrides workflow YAML near_devnet.",
 )
 @click.option(
     "--contracts-dir",
     type=click.Path(exists=True),
-    help="Directory containing context_config_near.wasm and context_proxy_near.wasm",
+    default=None,
+    help="Directory containing calimero_context_config_near.wasm and calimero_context_proxy_near.wasm. If omitted, contracts are downloaded automatically (unless --enable-relayer).",
 )
 @click.option(
     "--remote-node",
@@ -243,7 +252,7 @@ def run(
     no_docker,
     binary_path,
     e2e_mode,
-    near_devnet,
+    enable_relayer,
     contracts_dir,
     remote_node,
     remote_auth,
@@ -303,7 +312,7 @@ def run(
         no_docker=no_docker,
         binary_path=binary_path,
         e2e_mode=e2e_mode,
-        near_devnet=near_devnet,
+        enable_relayer=enable_relayer,
         contracts_dir=contracts_dir,
         cli_remote_nodes=cli_remote_nodes,
         auth_mode=auth_mode,

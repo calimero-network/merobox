@@ -29,7 +29,7 @@ DEFAULT_CONNECTION_TIMEOUT = 10.0  # seconds
 DEFAULT_READ_TIMEOUT = 30.0  # seconds
 
 # Docker configuration
-DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:edge"
+DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:prerelease"
 DEFAULT_NODE_PREFIX = "calimero-node"
 DEFAULT_DATA_DIR_PREFIX = "data"
 

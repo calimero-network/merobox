@@ -4,7 +4,6 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 
 import asyncio
 import os
-import sys
 import time
 import uuid
 from typing import Any, Optional
@@ -46,6 +45,11 @@ from merobox.commands.bootstrap.steps.proposals import (
 )
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 from merobox.commands.manager import DockerManager
+from merobox.commands.near.contracts import (
+    CONFIG_WASM,
+    PROXY_WASM,
+    ensure_calimero_near_contracts,
+)
 from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import console, get_node_rpc_url
@@ -67,7 +71,7 @@ class WorkflowExecutor:
         rust_backtrace: str = "0",
         e2e_mode: bool = False,
         workflow_dir: str = None,
-        near_devnet: bool = False,
+        near_devnet: Optional[bool] = None,
         contracts_dir: str = None,
         auth_mode: Optional[str] = None,
         auth_username: Optional[str] = None,
@@ -121,7 +125,15 @@ class WorkflowExecutor:
         # Generate unique workflow ID for test isolation (like e2e tests)
         self.workflow_id = str(uuid.uuid4())[:8]
 
-        self.near_devnet = near_devnet or config.get("near_devnet", False)
+        # CLI explicit value takes precedence; None means defer to config (default True).
+        self.near_devnet = (
+            config.get("near_devnet", True) if near_devnet is None else near_devnet
+        )
+        if near_devnet is None and self.log_level == "debug":
+            mode = "local sandbox" if self.near_devnet else "relayer/testnet"
+            console.print(
+                f"[dim]Using near_devnet={self.near_devnet} from config ({mode}); use --enable-relayer for testnet or --no-enable-relayer to force sandbox.[/dim]"
+            )
         self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 
         # Auth mode for binary mode (can be set by CLI or workflow config, CLI takes precedence)
@@ -133,12 +145,6 @@ class WorkflowExecutor:
         # Initialize node resolver with current manager
         # Will be set up properly after manager is confirmed
         self.resolver: Optional[NodeResolver] = None
-
-        if self.near_devnet and not self.contracts_dir:
-            console.print(
-                "[red] Config Error: near_devnet requires contracts_dir to be specified[/red]"
-            )
-            sys.exit(1)
 
         try:
             console.print(
@@ -233,11 +239,8 @@ class WorkflowExecutor:
                 try:
                     self.sandbox.start()
 
-                    ctx_path = os.path.join(
-                        self.contracts_dir, "calimero_context_config_near.wasm"
-                    )
-                    proxy_path = os.path.join(
-                        self.contracts_dir, "calimero_context_proxy_near.wasm"
+                    self.contracts_dir, ctx_path, proxy_path = (
+                        self._resolve_contracts_dir()
                     )
 
                     console.print(
@@ -246,11 +249,6 @@ class WorkflowExecutor:
                     console.print(
                         f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
                     )
-
-                    if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
-                        raise Exception(
-                            f"Contract files missing in {self.contracts_dir}. Expected calimero_context_config_near.wasm and calimero_context_proxy_near.wasm"
-                        )
 
                     contract_id = await self.sandbox.setup_calimero(
                         ctx_path, proxy_path
@@ -418,6 +416,29 @@ class WorkflowExecutor:
             console.print("[red]Failed to stop all nodes[/red]")
         else:
             console.print("[green]✓ All nodes stopped[/green]")
+
+    def _resolve_contracts_dir(self):
+        """
+        Resolve the contracts directory and WASM paths for NEAR sandbox.
+        Uses self.contracts_dir if set and valid; otherwise auto-downloads via ensure_calimero_near_contracts().
+        Updates self.contracts_dir when resolving via download. Returns (contracts_dir, ctx_path, proxy_path).
+        """
+        if self.contracts_dir:
+            ctx_path = os.path.join(self.contracts_dir, CONFIG_WASM)
+            proxy_path = os.path.join(self.contracts_dir, PROXY_WASM)
+            if os.path.exists(ctx_path) and os.path.exists(proxy_path):
+                return self.contracts_dir, ctx_path, proxy_path
+            raise RuntimeError(
+                f"Contracts directory {self.contracts_dir!r} does not contain "
+                f"{CONFIG_WASM} and {PROXY_WASM}. Fix the path or omit --contracts-dir to auto-download."
+            )
+        contracts_dir = ensure_calimero_near_contracts()
+        self.contracts_dir = contracts_dir
+        ctx_path = os.path.join(contracts_dir, CONFIG_WASM)
+        proxy_path = os.path.join(contracts_dir, PROXY_WASM)
+        if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
+            raise RuntimeError(f"Contracts not found at {ctx_path!r} or {proxy_path!r}")
+        return contracts_dir, ctx_path, proxy_path
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """

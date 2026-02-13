@@ -173,7 +173,7 @@ class DockerManager:
         """Run a Calimero node container."""
         try:
             # Determine the image to use
-            image_to_use = image or "ghcr.io/calimero-network/merod:edge"
+            image_to_use = image or "ghcr.io/calimero-network/merod:prerelease"
 
             # Ensure the image is available
             if not self._ensure_image_pulled(image_to_use):

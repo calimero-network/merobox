@@ -7,13 +7,10 @@ nuke_on_start: true
 # Clean all data after completion (no leftovers)
 nuke_on_end: true
 
-near_devnet: true
-contracts_dir: contracts/near
-
 nodes:
   chain_id: testnet-1
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
 
 steps:
