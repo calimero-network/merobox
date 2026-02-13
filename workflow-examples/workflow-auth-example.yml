@@ -11,7 +11,7 @@ nodes:
   base_rpc_port: 2528
   chain_id: "testnet-1"
   prefix: "calimero-node"
-  image: "ghcr.io/calimero-network/merod:edge"
+  image: "ghcr.io/calimero-network/merod:prerelease"
 
 # Workflow steps
 steps:

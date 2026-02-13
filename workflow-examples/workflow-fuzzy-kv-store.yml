@@ -8,7 +8,7 @@ name: Fuzzy KV Store Load Test
 nodes:
   chain_id: testnet-1
   count: 3
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
 
 steps:
@@ -253,8 +253,6 @@ steps:
               value: "burst_value_c_{{uuid}}"
 
 # Workflow configuration
-near_devnet: true
-contracts_dir: contracts/near
 stop_all_nodes: false # Keep nodes running for inspection
 restart: false
 wait_timeout: 120

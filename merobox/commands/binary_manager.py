@@ -34,9 +34,17 @@ class BinaryManager:
             binary_path: Path to the merod binary. If None, searches PATH.
             require_binary: If True, exit if binary not found. If False, set to None gracefully.
         """
-        if binary_path:
+        if (
+            binary_path
+            and os.path.isfile(binary_path)
+            and os.access(binary_path, os.X_OK)
+        ):
             self.binary_path = binary_path
         else:
+            if binary_path:
+                console.print(
+                    f"[yellow]Warning: merod binary not found at {binary_path!r}, searching PATH[/yellow]"
+                )
             self.binary_path = self._find_binary(require=require_binary)
 
         self.processes = {}  # node_name -> subprocess.Popen
@@ -136,7 +144,6 @@ class BinaryManager:
         log_level: str = "debug",
         rust_backtrace: str = "0",
         foreground: bool = False,
-        mock_relayer: bool = False,  # Ignored in binary mode
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         config_path: Optional[str] = None,  # custom config.toml path
@@ -162,10 +169,6 @@ class BinaryManager:
             True if successful, False otherwise
         """
         try:
-            if mock_relayer:
-                console.print(
-                    "[yellow]⚠ Mock relayer is not supported in binary mode (--no-docker); flag will be ignored[/yellow]"
-                )
             # Default ports if None provided
             if port is None:
                 port = 2428
@@ -735,7 +738,6 @@ class BinaryManager:
         webui_use_cached: bool = False,  # Ignored
         log_level: str = "debug",
         rust_backtrace: str = "0",
-        mock_relayer: bool = False,  # Ignored
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         near_devnet_config: dict = None,  # Enable NEAR Devnet
@@ -815,7 +817,6 @@ class BinaryManager:
                 chain_id=chain_id,
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
-                mock_relayer=mock_relayer,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
                 near_devnet_config=node_specific_near_config,
@@ -933,13 +934,6 @@ class BinaryManager:
                 "sync.interval_ms": 500,
                 # 1s periodic checks (ensures rapid sync in tests)
                 "sync.frequency_ms": 1000,
-                # Ethereum local devnet configuration (same as e2e tests)
-                "context.config.ethereum.network": "sepolia",
-                "context.config.ethereum.contract_id": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-                "context.config.ethereum.signer": "self",
-                "context.config.signer.self.ethereum.sepolia.rpc_url": "http://127.0.0.1:8545",
-                "context.config.signer.self.ethereum.sepolia.account_id": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-                "context.config.signer.self.ethereum.sepolia.secret_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
             }
 
             # Apply each configuration
