@@ -75,6 +75,7 @@ from merobox.commands.auth import (  # noqa: E402
     SessionManager,
     close_shared_session,
     get_shared_session,
+    run_with_shared_session_cleanup,
 )
 
 
@@ -411,3 +412,33 @@ class TestModuleFunctions:
 
         instance.close.assert_awaited_once()
         assert SessionManager._instance is None
+
+    @pytest.mark.asyncio
+    async def test_run_with_shared_session_cleanup_closes_on_success(self):
+        """Test run_with_shared_session_cleanup closes shared session on success."""
+        with patch(
+            "merobox.commands.auth.close_shared_session", new_callable=AsyncMock
+        ) as mock_close:
+
+            async def sample_coro():
+                return "ok"
+
+            result = await run_with_shared_session_cleanup(sample_coro())
+
+            assert result == "ok"
+            mock_close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_with_shared_session_cleanup_closes_on_error(self):
+        """Test run_with_shared_session_cleanup closes shared session on error."""
+        with patch(
+            "merobox.commands.auth.close_shared_session", new_callable=AsyncMock
+        ) as mock_close:
+
+            async def failing_coro():
+                raise RuntimeError("boom")
+
+            with pytest.raises(RuntimeError, match="boom"):
+                await run_with_shared_session_cleanup(failing_coro())
+
+            mock_close.assert_awaited_once()

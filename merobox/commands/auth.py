@@ -35,7 +35,7 @@ import time
 import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Awaitable, Optional, TypeVar
 
 import aiohttp
 from calimero_client_py import get_token_cache_dir, get_token_cache_path
@@ -47,6 +47,7 @@ from merobox.commands.constants import (
 )
 
 console = Console()
+T = TypeVar("T")
 
 # Connection pooling configuration
 DEFAULT_POOL_CONNECTIONS = 100  # Maximum number of connections in the pool
@@ -301,6 +302,19 @@ async def close_shared_session() -> None:
     release all HTTP connections.
     """
     await SessionManager.close_shared_instance()
+
+
+async def run_with_shared_session_cleanup(coro: Awaitable[T]) -> T:
+    """Run a coroutine and ensure shared auth session cleanup.
+
+    This is intended for CLI-style async wrappers that execute work on a
+    temporary event loop. Cleanup runs in the same loop to avoid leaving
+    unclosed aiohttp sessions/connectors behind.
+    """
+    try:
+        return await coro
+    finally:
+        await close_shared_session()
 
 
 async def _get_session(
