@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build kv_store.wasm and blobs.wasm from calimero-network/core and copy to workflow-examples/res/.
+# Build kv_store.wasm, blobs.wasm, and blockchain.wasm from calimero-network/core and copy to workflow-examples/res/.
 # Requires: git, rustup, cargo (Rust toolchain). Optional: wasm-opt for smaller binaries.
 #
 # Usage:
@@ -37,8 +37,13 @@ rustup target add wasm32-unknown-unknown 2>/dev/null || true
 (cd "$CORE_DIR/apps/kv-store" && ./build.sh)
 # Build blobs (output: apps/blobs/res/blobs.wasm)
 (cd "$CORE_DIR/apps/blobs" && ./build.sh)
+# Build blockchain app (output: target/wasm32-unknown-unknown/app-release/blockchain.wasm)
+(cd "$CORE_DIR" && cargo build -p blockchain --target wasm32-unknown-unknown --profile app-release)
+mkdir -p "$CORE_DIR/apps/demo-blockchain-integrations/res"
+cp "$CORE_DIR/target/wasm32-unknown-unknown/app-release/blockchain.wasm" "$CORE_DIR/apps/demo-blockchain-integrations/res/"
 
 mkdir -p "$RES_DIR"
 cp "$CORE_DIR/apps/kv-store/res/kv_store.wasm" "$RES_DIR/"
 cp "$CORE_DIR/apps/blobs/res/blobs.wasm" "$RES_DIR/"
-echo "Done. Copied kv_store.wasm and blobs.wasm to $RES_DIR"
+cp "$CORE_DIR/apps/demo-blockchain-integrations/res/blockchain.wasm" "$RES_DIR/"
+echo "Done. Copied kv_store.wasm, blobs.wasm, and blockchain.wasm to $RES_DIR"
