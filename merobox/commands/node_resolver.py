@@ -631,6 +631,7 @@ class NodeResolver:
         Returns:
             ResolvedNode.
         """
+
         async def _resolve_with_cleanup() -> ResolvedNode:
             return await run_with_shared_session_cleanup(
                 self.resolve(
