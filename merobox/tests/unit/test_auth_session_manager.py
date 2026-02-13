@@ -13,13 +13,33 @@ _original_modules = {}
 def _mock_modules():
     """Mock modules that are problematic to import in test environment."""
     modules_to_mock = [
+        # External/runtime dependencies
         "calimero_client_py",
         "ed25519",
         "base58",
         "py_near",
+        # near package modules
         "merobox.commands.near",
         "merobox.commands.near.client",
         "merobox.commands.near.sandbox",
+        # Avoid importing full command tree from merobox.commands.__init__
+        "merobox.commands.application",
+        "merobox.commands.blob",
+        "merobox.commands.bootstrap",
+        "merobox.commands.call",
+        "merobox.commands.context",
+        "merobox.commands.health",
+        "merobox.commands.identity",
+        "merobox.commands.install",
+        "merobox.commands.join",
+        "merobox.commands.list",
+        "merobox.commands.logs",
+        "merobox.commands.manager",
+        "merobox.commands.nuke",
+        "merobox.commands.proposals",
+        "merobox.commands.remote",
+        "merobox.commands.run",
+        "merobox.commands.stop",
     ]
 
     for mod_name in modules_to_mock:
@@ -48,6 +68,23 @@ def _restore_modules():
         "merobox.commands.near",
         "merobox.commands.near.client",
         "merobox.commands.near.sandbox",
+        "merobox.commands.application",
+        "merobox.commands.blob",
+        "merobox.commands.bootstrap",
+        "merobox.commands.call",
+        "merobox.commands.context",
+        "merobox.commands.health",
+        "merobox.commands.identity",
+        "merobox.commands.install",
+        "merobox.commands.join",
+        "merobox.commands.list",
+        "merobox.commands.logs",
+        "merobox.commands.manager",
+        "merobox.commands.nuke",
+        "merobox.commands.proposals",
+        "merobox.commands.remote",
+        "merobox.commands.run",
+        "merobox.commands.stop",
         "merobox.commands.constants",
     ]
 
