@@ -13,6 +13,7 @@ set -e
 CORE_REPO_URL="${CORE_REPO_URL:-https://github.com/calimero-network/core.git}"
 CORE_BRANCH="${CORE_BRANCH:-master}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p "$SCRIPT_DIR/../res" "$SCRIPT_DIR/../.core-repo"
 RES_DIR="$(cd "$SCRIPT_DIR/../res" && pwd)"
 CORE_REPO_DIR_DEFAULT="$(cd "$SCRIPT_DIR/../.core-repo" && pwd)"
 
