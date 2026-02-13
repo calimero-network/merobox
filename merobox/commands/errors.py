@@ -231,9 +231,7 @@ class ValidationError(MeroboxError):
             details["field"] = field
         if value is not None:
             details["value"] = value
-        super().__init__(
-            message, code=code or "VALIDATION_FAILED", details=details
-        )
+        super().__init__(message, code=code or "VALIDATION_FAILED", details=details)
 
 
 class ClientError(MeroboxError):
@@ -303,9 +301,7 @@ class ConfigurationError(MeroboxError):
         details = details or {}
         if config_file:
             details["config_file"] = config_file
-        super().__init__(
-            message, code=code or "CONFIGURATION_ERROR", details=details
-        )
+        super().__init__(message, code=code or "CONFIGURATION_ERROR", details=details)
 
 
 # Export all error classes for convenient importing

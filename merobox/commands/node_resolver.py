@@ -31,12 +31,12 @@ from merobox.commands.auth import (
     AuthManager,
     AuthToken,
 )
-from merobox.commands.errors import AuthenticationError, NodeResolutionError
 from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_READ_TIMEOUT,
     DEFAULT_RPC_PORT,
 )
+from merobox.commands.errors import AuthenticationError, NodeResolutionError
 from merobox.commands.remote_nodes import RemoteNodeManager
 
 console = Console()

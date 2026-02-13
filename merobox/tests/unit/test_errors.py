@@ -2,8 +2,6 @@
 Unit tests for the merobox typed error classes.
 """
 
-import pytest
-
 from merobox.commands.errors import (
     AuthenticationError,
     AuthError,
@@ -40,34 +38,26 @@ class TestMeroboxError:
     def test_error_with_details(self):
         """Test error with details."""
         error = MeroboxError(
-            "Something went wrong",
-            details={"context": "test", "value": 42}
+            "Something went wrong", details={"context": "test", "value": 42}
         )
         assert error.details == {"context": "test", "value": 42}
 
     def test_to_dict(self):
         """Test error serialization to dictionary."""
-        error = MeroboxError(
-            "Test error",
-            code="TEST_CODE",
-            details={"key": "value"}
-        )
+        error = MeroboxError("Test error", code="TEST_CODE", details={"key": "value"})
         result = error.to_dict()
         assert result == {
             "type": "MeroboxError",
             "message": "Test error",
             "code": "TEST_CODE",
-            "details": {"key": "value"}
+            "details": {"key": "value"},
         }
 
     def test_to_dict_minimal(self):
         """Test minimal error serialization."""
         error = MeroboxError("Test error")
         result = error.to_dict()
-        assert result == {
-            "type": "MeroboxError",
-            "message": "Test error"
-        }
+        assert result == {"type": "MeroboxError", "message": "Test error"}
 
 
 class TestNodeError:
@@ -112,10 +102,7 @@ class TestAuthError:
 
     def test_auth_error_with_url(self):
         """Test AuthError with node URL."""
-        error = AuthError(
-            "Authentication failed",
-            node_url="http://localhost:2428"
-        )
+        error = AuthError("Authentication failed", node_url="http://localhost:2428")
         assert error.node_url == "http://localhost:2428"
         assert error.details["node_url"] == "http://localhost:2428"
 
@@ -128,10 +115,7 @@ class TestAuthError:
 
     def test_auth_error_to_dict(self):
         """Test AuthError serialization."""
-        error = AuthenticationError(
-            "Token expired",
-            node_url="http://node:2428"
-        )
+        error = AuthenticationError("Token expired", node_url="http://node:2428")
         result = error.to_dict()
         assert result["type"] == "AuthenticationError"
         assert result["code"] == "AUTHENTICATION_FAILED"
@@ -151,9 +135,7 @@ class TestWorkflowError:
     def test_workflow_error_with_step_info(self):
         """Test WorkflowError with step information."""
         error = WorkflowError(
-            "Execution failed",
-            step_name="create_context",
-            step_type="context"
+            "Execution failed", step_name="create_context", step_type="context"
         )
         assert error.step_name == "create_context"
         assert error.step_type == "context"
@@ -166,7 +148,7 @@ class TestWorkflowError:
             "Invalid field",
             step_name="test_step",
             step_type="execute",
-            field="context_id"
+            field="context_id",
         )
         assert isinstance(error, WorkflowError)
         assert error.code == "STEP_VALIDATION_FAILED"
@@ -176,9 +158,7 @@ class TestWorkflowError:
     def test_step_execution_error(self):
         """Test StepExecutionError."""
         error = StepExecutionError(
-            "Failed to execute",
-            step_name="call_function",
-            step_type="execute"
+            "Failed to execute", step_name="call_function", step_type="execute"
         )
         assert isinstance(error, WorkflowError)
         assert error.code == "STEP_EXECUTION_FAILED"
@@ -196,9 +176,7 @@ class TestValidationError:
     def test_validation_error_with_field(self):
         """Test ValidationError with field information."""
         error = ValidationError(
-            "Port must be between 1 and 65535",
-            field="port",
-            value=70000
+            "Port must be between 1 and 65535", field="port", value=70000
         )
         assert error.field == "port"
         assert error.value == 70000
@@ -217,9 +195,7 @@ class TestClientError:
     def test_client_error_with_status(self):
         """Test ClientError with status code."""
         error = ClientError(
-            "Server error",
-            url="http://api.example.com/endpoint",
-            status_code=500
+            "Server error", url="http://api.example.com/endpoint", status_code=500
         )
         assert error.url == "http://api.example.com/endpoint"
         assert error.status_code == 500
@@ -229,9 +205,7 @@ class TestClientError:
     def test_timeout_error(self):
         """Test TimeoutError."""
         error = TimeoutError(
-            "Request timed out",
-            url="http://slow-server.com",
-            timeout_seconds=30.0
+            "Request timed out", url="http://slow-server.com", timeout_seconds=30.0
         )
         assert isinstance(error, ClientError)
         assert error.code == "TIMEOUT"
@@ -251,8 +225,7 @@ class TestConfigurationError:
     def test_configuration_error_with_file(self):
         """Test ConfigurationError with config file."""
         error = ConfigurationError(
-            "Missing required field",
-            config_file="/path/to/config.yml"
+            "Missing required field", config_file="/path/to/config.yml"
         )
         assert error.config_file == "/path/to/config.yml"
         assert error.details["config_file"] == "/path/to/config.yml"
