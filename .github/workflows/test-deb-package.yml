@@ -59,12 +59,16 @@ jobs:
         run: |
           echo "Downloading merod binary from latest prerelease..."
           VERSION=$(curl -sL https://api.github.com/repos/calimero-network/core/releases | jq -r '[.[] | select(.prerelease == true)][0].tag_name')
+          if [[ "$VERSION" == "null" || -z "$VERSION" ]]; then
+            echo "Could not resolve latest prerelease (no prereleases or API error). VERSION=$VERSION"
+            exit 1
+          fi
           echo "Using merod version: $VERSION"
           ARCH="x86_64"
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
           DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
-          curl -L -o "${TARBALL}" "${DOWNLOAD_URL}"
+          curl -fSL -o "${TARBALL}" "${DOWNLOAD_URL}"
           tar -xzf "${TARBALL}"
           chmod +x merod
           sudo mv merod /usr/local/bin/
