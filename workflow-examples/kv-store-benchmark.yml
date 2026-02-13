@@ -2,13 +2,11 @@ name: KV Store Benchmark - Throughput Testing
 description: Throughput testing for KV Store operations using timing metrics
 
 force_pull_image: true
-near_devnet: true
-contracts_dir: contracts/near
 
 nodes:
   chain_id: testnet-1
   count: 1
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: benchmark-node
 
 steps:

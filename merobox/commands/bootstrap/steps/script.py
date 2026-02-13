@@ -321,7 +321,7 @@ class ScriptStep(BaseStep):
 
             # Get the base image from the workflow context
             # We'll use a default image since we don't have direct access to the config here
-            image = "ghcr.io/calimero-network/merod:edge"
+            image = "ghcr.io/calimero-network/merod:prerelease"
 
             console.print(f"[cyan]Using Docker image: {image}[/cyan]")
 

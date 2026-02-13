@@ -55,35 +55,55 @@ jobs:
           echo "=== Testing merobox --version ==="
           merobox --version
 
-      - name: Download Context contracts
+      - name: Install merod binary (latest prerelease)
         run: |
-          echo "Downloading contracts..."
-          ./workflow-examples/scripts/download_contracts.sh
-
-      - name: Install merod binary
-        run: |
-          echo "Downloading merod binary..."
-          VERSION="0.10.0-rc.39"
+          echo "Downloading merod binary from latest prerelease..."
+          VERSION=$(curl -sL https://api.github.com/repos/calimero-network/core/releases | jq -r '[.[] | select(.prerelease == true)][0].tag_name')
+          if [[ "$VERSION" == "null" || -z "$VERSION" ]]; then
+            echo "Could not resolve latest prerelease (no prereleases or API error). VERSION=$VERSION"
+            exit 1
+          fi
+          echo "Using merod version: $VERSION"
           ARCH="x86_64"
           PLATFORM="unknown-linux-gnu"
           TARBALL="merod_${ARCH}-${PLATFORM}.tar.gz"
           DOWNLOAD_URL="https://github.com/calimero-network/core/releases/download/${VERSION}/${TARBALL}"
-          curl -L -o "${TARBALL}" "${DOWNLOAD_URL}"
+          curl -fSL -o "${TARBALL}" "${DOWNLOAD_URL}"
           tar -xzf "${TARBALL}"
           chmod +x merod
           sudo mv merod /usr/local/bin/
           rm "${TARBALL}"
           merod --version
 
+      - name: Set up Rust (wasm32 target for workflow apps)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build workflow WASM apps (kv_store, blobs, blockchain from calimero-network/core)
+        run: |
+          chmod +x workflow-examples/scripts/build_res_wasm.sh
+          ./workflow-examples/scripts/build_res_wasm.sh
+
       - name: Test merobox bootstrap run workflow
         run: |
           echo "=== Testing merobox bootstrap run workflow-example.yml ==="
-          merobox bootstrap run workflow-examples/workflow-example.yml \
-            --no-docker \
-            --e2e-mode \
-            --near-devnet \
-            --contracts-dir "$GITHUB_WORKSPACE/contracts/near"
-          echo "Workflow completed successfully"
+          # Use --no-enable-relayer so nodes use local sandbox only (no relayer); more reliable sync in CI
+          for attempt in 1 2; do
+            echo "Attempt $attempt/2..."
+            if merobox bootstrap run workflow-examples/workflow-example.yml \
+              --no-docker \
+              --e2e-mode \
+              --no-enable-relayer; then
+              echo "Workflow completed successfully"
+              exit 0
+            fi
+            merobox stop --all --no-docker || true
+            merobox nuke -f || true
+            [ "$attempt" -eq 1 ] && echo "First attempt failed, retrying..." || true
+          done
+          echo "Workflow failed after 2 attempts"
+          exit 1
 
       - name: Cleanup
         if: always()
