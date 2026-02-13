@@ -4,7 +4,7 @@ description: "Simple test of script step functionality"
 nodes:
   count: 2
   prefix: "calimero-node"
-  image: "ghcr.io/calimero-network/merod:edge"
+  image: "ghcr.io/calimero-network/merod:prerelease"
 
 steps:
   - name: "Pre-Node Setup Script"

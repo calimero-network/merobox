@@ -4,7 +4,7 @@ name: Restart Flag Example Workflow
 nodes:
   chain_id: testnet-1
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
 
 steps:

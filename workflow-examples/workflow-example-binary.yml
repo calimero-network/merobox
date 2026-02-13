@@ -28,7 +28,7 @@ nodes:
   chain_id: testnet-1
   count: 3
   # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
   # Optional: reserve base ports for native nodes (BinaryManager will auto-allocate if omitted)
   # base_port: 2428

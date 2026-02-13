@@ -4,7 +4,7 @@ name: Deep Nesting Test
 nodes:
   chain_id: testnet-1
   count: 1
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: test-node
 
 steps:

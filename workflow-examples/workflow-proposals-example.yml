@@ -7,7 +7,7 @@ force_pull_image: true
 nodes:
   chain_id: calimero-testnet
   count: 3
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: prop-test
 
 steps:

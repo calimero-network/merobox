@@ -7,7 +7,7 @@ auth_image: "ghcr.io/calimero-network/mero-auth:edge"
 auth_use_cached: true  # Use cached auth frontend instead of fresh fetch
 
 # Node configuration (fresh WebUI is default)
-image: "ghcr.io/calimero-network/merod:edge"
+image: "ghcr.io/calimero-network/merod:prerelease"
 webui_use_cached: true  # Use cached WebUI frontend instead of fresh fetch
 
 nodes:

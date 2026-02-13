@@ -5,7 +5,7 @@ name: Assert and JSON Assert Example
 nodes:
   chain_id: testnet-1
   count: 1
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
   base_port: 9002
   base_rpc_port: 9102
