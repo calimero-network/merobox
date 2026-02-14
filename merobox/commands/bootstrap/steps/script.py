@@ -32,6 +32,70 @@ class ScriptStep(BaseStep):
         # Optional script arguments (list of strings)
         self.script_args = config.get("args", [])
 
+    def _validate_script_path(self, script_path: str) -> tuple[bool, str]:
+        """
+        Validate the script path against path traversal attacks.
+
+        Ensures the script path:
+        1. Does not contain '..' path components
+        2. Resolves to a path within the current working directory
+
+        Args:
+            script_path: The script path to validate
+
+        Returns:
+            Tuple of (is_valid, error_message). If is_valid is True,
+            error_message will be empty.
+        """
+        if not script_path:
+            return False, "Script path is empty"
+
+        # Check for explicit path traversal components
+        # Normalize separators for cross-platform check
+        normalized_path = script_path.replace("\\", "/")
+        path_parts = normalized_path.split("/")
+        if ".." in path_parts:
+            return (
+                False,
+                f"Path traversal detected: script path contains '..': {script_path}",
+            )
+
+        # Get the current working directory as the allowed base directory
+        cwd = os.getcwd()
+
+        # Resolve the script path to its canonical absolute form
+        # os.path.realpath resolves symlinks and normalizes the path
+        try:
+            absolute_script_path = os.path.realpath(
+                os.path.join(cwd, script_path)
+                if not os.path.isabs(script_path)
+                else script_path
+            )
+        except (OSError, ValueError) as e:
+            return False, f"Failed to resolve script path: {e}"
+
+        # Ensure the resolved path is within the allowed directory
+        # Use os.path.commonpath to check if the script is under cwd
+        try:
+            # Normalize both paths for comparison
+            cwd_normalized = os.path.normcase(os.path.realpath(cwd))
+            script_normalized = os.path.normcase(absolute_script_path)
+
+            # Check if script path starts with cwd (is under cwd)
+            if (
+                not script_normalized.startswith(cwd_normalized + os.sep)
+                and script_normalized != cwd_normalized
+            ):
+                return False, (
+                    f"Path traversal detected: script path '{script_path}' "
+                    f"resolves to '{absolute_script_path}' which is outside "
+                    f"the allowed directory '{cwd}'"
+                )
+        except ValueError as e:
+            return False, f"Path validation failed: {e}"
+
+        return True, ""
+
     def _resolve_script_args(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> list[str]:
@@ -129,6 +193,12 @@ class ScriptStep(BaseStep):
         """Execute the script step."""
         if not self.script_path:
             console.print("[red]❌ Script path not specified[/red]")
+            return False
+
+        # Validate script path against path traversal attacks
+        is_valid, error_message = self._validate_script_path(self.script_path)
+        if not is_valid:
+            console.print(f"[red]❌ {error_message}[/red]")
             return False
 
         if not os.path.exists(self.script_path):
