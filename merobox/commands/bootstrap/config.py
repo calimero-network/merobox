@@ -7,37 +7,39 @@ import re
 from typing import Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from merobox.commands.utils import console
 
 # Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
-# Valid step types for workflow validation
-VALID_STEP_TYPES = [
-    "install_application",
-    "create_context",
-    "create_identity",
-    "invite_identity",
-    "join_context",
-    "invite_open",
-    "join_open",
-    "call",
-    "wait",
-    "wait_for_sync",
-    "repeat",
-    "parallel",
-    "script",
-    "assert",
-    "json_assert",
-    "get_proposal",
-    "list_proposals",
-    "get_proposal_approvers",
-    "upload_blob",
-    "create_mesh",
-    "fuzzy_test",
-]
+# Valid step types for workflow validation (using frozenset for O(1) lookups)
+VALID_STEP_TYPES = frozenset(
+    {
+        "install_application",
+        "create_context",
+        "create_identity",
+        "invite_identity",
+        "join_context",
+        "invite_open",
+        "join_open",
+        "call",
+        "wait",
+        "wait_for_sync",
+        "repeat",
+        "parallel",
+        "script",
+        "assert",
+        "json_assert",
+        "get_proposal",
+        "list_proposals",
+        "get_proposal_approvers",
+        "upload_blob",
+        "create_mesh",
+        "fuzzy_test",
+    }
+)
 
 
 # =============================================================================
@@ -51,9 +53,7 @@ class NodesConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     count: Optional[int] = Field(None, ge=1, description="Number of nodes to create")
-    prefix: Optional[str] = Field(
-        "calimero-node", description="Prefix for node names"
-    )
+    prefix: Optional[str] = Field("calimero-node", description="Prefix for node names")
     chain_id: Optional[str] = Field(None, description="Chain ID for nodes")
     image: Optional[str] = Field(None, description="Docker image for nodes")
     base_port: Optional[int] = Field(
@@ -75,7 +75,7 @@ class RemoteNodeAuth(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    method: Optional[str] = Field(
+    method: Optional[Literal["none", "api_key", "password"]] = Field(
         "none", description="Authentication method (none, api_key, password)"
     )
     username: Optional[str] = Field(None, description="Username for authentication")
@@ -94,12 +94,6 @@ class RemoteNodeConfig(BaseModel):
         None, description="Authentication configuration"
     )
     description: Optional[str] = Field(None, description="Description of the node")
-
-
-class StepOutputs(BaseModel):
-    """Output variable mappings for workflow steps."""
-
-    model_config = ConfigDict(extra="allow")
 
 
 class BaseStepConfig(BaseModel):
@@ -216,8 +210,12 @@ class WaitForSyncStep(BaseStepConfig):
     context_id: str = Field(..., description="Context ID to sync")
     nodes: list[str] = Field(..., description="Nodes to wait for sync")
     timeout: Optional[int] = Field(60, ge=1, description="Timeout in seconds")
-    check_interval: Optional[int] = Field(2, ge=1, description="Check interval in seconds")
-    trigger_sync: Optional[bool] = Field(False, description="Trigger sync before waiting")
+    check_interval: Optional[int] = Field(
+        2, ge=1, description="Check interval in seconds"
+    )
+    trigger_sync: Optional[bool] = Field(
+        False, description="Trigger sync before waiting"
+    )
 
 
 class RepeatStep(BaseStepConfig):
@@ -251,9 +249,7 @@ class ScriptStep(BaseStepConfig):
 
     type: Literal["script"] = "script"
     script: str = Field(..., description="Path to the script")
-    target: Optional[str] = Field(
-        "nodes", description="Target: 'image' or 'nodes'"
-    )
+    target: Optional[str] = Field("nodes", description="Target: 'image' or 'nodes'")
     description: Optional[str] = Field(None, description="Description of the script")
 
 
@@ -307,9 +303,7 @@ class UploadBlobStep(BaseStepConfig):
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID")
     path: str = Field(..., description="Path to the blob file")
-    content_type: Optional[str] = Field(
-        None, description="Content type of the blob"
-    )
+    content_type: Optional[str] = Field(None, description="Content type of the blob")
 
 
 class CreateMeshStep(BaseStepConfig):
@@ -332,31 +326,31 @@ class FuzzyTestStep(BaseStepConfig):
     args: Optional[dict[str, Any]] = Field(None, description="Base arguments")
 
 
-# Union type for all step types
-StepConfig = Union[
-    InstallApplicationStep,
-    CreateContextStep,
-    CreateIdentityStep,
-    InviteIdentityStep,
-    JoinContextStep,
-    InviteOpenStep,
-    JoinOpenStep,
-    CallStep,
-    WaitStep,
-    WaitForSyncStep,
-    RepeatStep,
-    ParallelStep,
-    ScriptStep,
-    AssertStep,
-    JsonAssertStep,
-    GetProposalStep,
-    ListProposalsStep,
-    GetProposalApproversStep,
-    UploadBlobStep,
-    CreateMeshStep,
-    FuzzyTestStep,
-    BaseStepConfig,  # Fallback for any step type
-]
+# Module-level mapping of step types to their Pydantic models
+# This avoids recreating the dict on every validation call
+STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
+    "install_application": InstallApplicationStep,
+    "create_context": CreateContextStep,
+    "create_identity": CreateIdentityStep,
+    "invite_identity": InviteIdentityStep,
+    "join_context": JoinContextStep,
+    "invite_open": InviteOpenStep,
+    "join_open": JoinOpenStep,
+    "call": CallStep,
+    "wait": WaitStep,
+    "wait_for_sync": WaitForSyncStep,
+    "repeat": RepeatStep,
+    "parallel": ParallelStep,
+    "script": ScriptStep,
+    "assert": AssertStep,
+    "json_assert": JsonAssertStep,
+    "get_proposal": GetProposalStep,
+    "list_proposals": ListProposalsStep,
+    "get_proposal_approvers": GetProposalApproversStep,
+    "upload_blob": UploadBlobStep,
+    "create_mesh": CreateMeshStep,
+    "fuzzy_test": FuzzyTestStep,
+}
 
 
 class WorkflowConfig(BaseModel):
@@ -390,9 +384,7 @@ class WorkflowConfig(BaseModel):
     stop_all_nodes: Optional[bool] = Field(
         False, description="Stop all nodes at the end"
     )
-    restart: Optional[bool] = Field(
-        False, description="Restart nodes at the beginning"
-    )
+    restart: Optional[bool] = Field(False, description="Restart nodes at the beginning")
 
     # Timing options
     wait_timeout: Optional[int] = Field(
@@ -411,39 +403,36 @@ class WorkflowConfig(BaseModel):
     auth_image: Optional[str] = Field(
         None, description="Custom Docker image for auth service"
     )
-    auth_use_cached: Optional[bool] = Field(
-        False, description="Use cached auth tokens"
-    )
-    webui_use_cached: Optional[bool] = Field(
-        False, description="Use cached WebUI"
-    )
-    auth_mode: Optional[str] = Field(
-        None, description="Auth mode (e.g., embedded)"
-    )
+    auth_use_cached: Optional[bool] = Field(False, description="Use cached auth tokens")
+    webui_use_cached: Optional[bool] = Field(False, description="Use cached WebUI")
+    auth_mode: Optional[str] = Field(None, description="Auth mode (e.g., embedded)")
 
     # Logging options
-    log_level: Optional[str] = Field(
-        "debug", description="Log level for nodes"
-    )
-    rust_backtrace: Optional[str] = Field(
-        "0", description="RUST_BACKTRACE setting"
-    )
+    log_level: Optional[str] = Field("debug", description="Log level for nodes")
+    rust_backtrace: Optional[str] = Field("0", description="RUST_BACKTRACE setting")
 
     # E2E and testing options
-    e2e_mode: Optional[bool] = Field(
-        False, description="Enable E2E testing mode"
-    )
+    e2e_mode: Optional[bool] = Field(False, description="Enable E2E testing mode")
     bootstrap_nodes: Optional[list[str]] = Field(
         None, description="Bootstrap nodes to connect to"
     )
 
     # NEAR options
-    near_devnet: Optional[bool] = Field(
-        None, description="Enable NEAR devnet"
-    )
+    near_devnet: Optional[bool] = Field(None, description="Enable NEAR devnet")
     contracts_dir: Optional[str] = Field(
         None, description="Directory containing NEAR contracts"
     )
+
+
+def _format_pydantic_error(error: dict[str, Any]) -> str:
+    """Format a single Pydantic validation error into a readable message."""
+    loc = ".".join(str(x) for x in error.get("loc", []))
+    msg = error.get("msg", "Unknown error")
+    error_type = error.get("type", "")
+
+    if loc:
+        return f"{loc}: {msg}"
+    return msg
 
 
 def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
@@ -462,67 +451,36 @@ def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
     step_type = step.get("type")
 
     if not step_type:
-        errors.append(f"Step '{step_name}' (index {step_index}): Missing required field 'type'")
+        errors.append(
+            f"Step '{step_name}' (index {step_index}): Missing required field 'type'"
+        )
         return errors
 
     if step_type not in VALID_STEP_TYPES:
         errors.append(
             f"Step '{step_name}' (index {step_index}): Invalid step type '{step_type}'. "
-            f"Valid types are: {', '.join(VALID_STEP_TYPES)}"
+            f"Valid types are: {', '.join(sorted(VALID_STEP_TYPES))}"
         )
         return errors
 
-    # Type-specific validation
-    step_type_models = {
-        "install_application": InstallApplicationStep,
-        "create_context": CreateContextStep,
-        "create_identity": CreateIdentityStep,
-        "invite_identity": InviteIdentityStep,
-        "join_context": JoinContextStep,
-        "invite_open": InviteOpenStep,
-        "join_open": JoinOpenStep,
-        "call": CallStep,
-        "wait": WaitStep,
-        "wait_for_sync": WaitForSyncStep,
-        "repeat": RepeatStep,
-        "parallel": ParallelStep,
-        "script": ScriptStep,
-        "assert": AssertStep,
-        "json_assert": JsonAssertStep,
-        "get_proposal": GetProposalStep,
-        "list_proposals": ListProposalsStep,
-        "get_proposal_approvers": GetProposalApproversStep,
-        "upload_blob": UploadBlobStep,
-        "create_mesh": CreateMeshStep,
-        "fuzzy_test": FuzzyTestStep,
-    }
-
-    model_class = step_type_models.get(step_type)
+    # Type-specific validation using module-level mapping
+    model_class = STEP_TYPE_MODELS.get(step_type)
     if model_class:
         try:
             model_class.model_validate(step)
+        except ValidationError as e:
+            # Use structured error access for reliable parsing
+            for err in e.errors():
+                formatted = _format_pydantic_error(err)
+                errors.append(f"Step '{step_name}' (index {step_index}): {formatted}")
         except Exception as e:
-            error_msg = str(e)
-            # Extract the most relevant part of the Pydantic error
-            if "validation error" in error_msg.lower():
-                # Parse Pydantic validation errors for cleaner output
-                lines = error_msg.split("\n")
-                for line in lines[1:]:  # Skip the first line which is generic
-                    line = line.strip()
-                    if line and not line.startswith("For further"):
-                        errors.append(
-                            f"Step '{step_name}' (index {step_index}): {line}"
-                        )
-            else:
-                errors.append(f"Step '{step_name}' (index {step_index}): {error_msg}")
+            errors.append(f"Step '{step_name}' (index {step_index}): {str(e)}")
 
     # Recursively validate nested steps (for repeat and parallel)
     if step_type == "repeat":
         nested_steps = step.get("steps", [])
         for i, nested_step in enumerate(nested_steps):
-            nested_errors = validate_workflow_step(
-                nested_step, i
-            )
+            nested_errors = validate_workflow_step(nested_step, i)
             for err in nested_errors:
                 errors.append(f"Step '{step_name}' (index {step_index}) -> {err}")
 
@@ -561,16 +519,13 @@ def validate_workflow_config(config: dict[str, Any]) -> list[str]:
     # Validate top-level structure
     try:
         WorkflowConfig.model_validate(config)
+    except ValidationError as e:
+        # Use structured error access for reliable parsing
+        for err in e.errors():
+            formatted = _format_pydantic_error(err)
+            errors.append(f"Workflow config: {formatted}")
     except Exception as e:
-        error_msg = str(e)
-        if "validation error" in error_msg.lower():
-            lines = error_msg.split("\n")
-            for line in lines[1:]:
-                line = line.strip()
-                if line and not line.startswith("For further"):
-                    errors.append(f"Workflow config: {line}")
-        else:
-            errors.append(f"Workflow config: {error_msg}")
+        errors.append(f"Workflow config: {str(e)}")
 
     # Check for required nodes configuration
     if not config.get("nodes") and not config.get("remote_nodes"):

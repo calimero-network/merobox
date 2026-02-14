@@ -12,7 +12,6 @@ from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 
 
 @pytest.fixture(scope="module")
@@ -390,9 +389,7 @@ steps:
     type: wait
     seconds: 5
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             f.write(config_content)
             f.flush()
             try:
@@ -413,9 +410,7 @@ steps:
   - name: Invalid Step
     type: nonexistent_type
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             f.write(config_content)
             f.flush()
             try:
@@ -435,9 +430,7 @@ steps:
   - name: Invalid Step
     type: nonexistent_type
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             f.write(config_content)
             f.flush()
             try:
@@ -461,9 +454,7 @@ name: Test
 nodes: [
   invalid yaml here
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             f.write(config_content)
             f.flush()
             try:
