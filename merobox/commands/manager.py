@@ -2,8 +2,10 @@
 Calimero Manager - Core functionality for managing Calimero nodes in Docker containers.
 """
 
+import atexit
 import os
 import shutil
+import signal
 import sys
 import time
 import uuid
@@ -23,7 +25,15 @@ console = Console()
 class DockerManager:
     """Manages Calimero nodes in Docker containers."""
 
-    def __init__(self):
+    def __init__(self, enable_signal_handlers: bool = True):
+        """
+        Initialize the DockerManager.
+
+        Args:
+            enable_signal_handlers: If True, register signal handlers for graceful
+                shutdown on SIGINT/SIGTERM. Set to False in tests or when managing
+                signals externally.
+        """
         try:
             self.client = docker.from_env()
         except Exception as e:
@@ -34,6 +44,74 @@ class DockerManager:
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
+        self._shutting_down = False
+        self._original_sigint_handler = None
+        self._original_sigterm_handler = None
+
+        if enable_signal_handlers:
+            self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Register signal handlers for graceful shutdown."""
+        # Store original handlers so we can restore them if needed
+        self._original_sigint_handler = signal.signal(
+            signal.SIGINT, self._signal_handler
+        )
+        self._original_sigterm_handler = signal.signal(
+            signal.SIGTERM, self._signal_handler
+        )
+        # Also register atexit handler for cleanup on normal exit
+        atexit.register(self._cleanup_on_exit)
+
+    def _signal_handler(self, signum, frame):
+        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
+        if self._shutting_down:
+            # Already shutting down, force exit on second signal
+            console.print("\n[red]Forced exit requested, terminating...[/red]")
+            sys.exit(1)
+
+        self._shutting_down = True
+        sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+        console.print(
+            f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
+        )
+
+        self._cleanup_resources()
+
+        # Exit cleanly
+        sys.exit(0)
+
+    def _cleanup_on_exit(self):
+        """Cleanup handler for atexit - only runs if not already cleaned up."""
+        if not self._shutting_down:
+            self._cleanup_resources()
+
+    def _cleanup_resources(self):
+        """Stop all managed resources (containers)."""
+        if self.nodes:
+            console.print("[cyan]Stopping managed containers...[/cyan]")
+            # Stop all tracked nodes
+            for node_name in list(self.nodes.keys()):
+                try:
+                    container = self.nodes[node_name]
+                    container.stop(timeout=10)
+                    container.remove()
+                    console.print(f"[green]✓ Stopped container {node_name}[/green]")
+                except Exception as e:
+                    console.print(
+                        f"[yellow]⚠️  Could not stop container {node_name}: {e}[/yellow]"
+                    )
+            self.nodes.clear()
+            self.node_rpc_ports.clear()
+
+    def remove_signal_handlers(self):
+        """Remove signal handlers and restore original handlers."""
+        if self._original_sigint_handler is not None:
+            signal.signal(signal.SIGINT, self._original_sigint_handler)
+            self._original_sigint_handler = None
+        if self._original_sigterm_handler is not None:
+            signal.signal(signal.SIGTERM, self._original_sigterm_handler)
+            self._original_sigterm_handler = None
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""

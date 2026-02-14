@@ -1,3 +1,4 @@
+import signal
 from unittest.mock import MagicMock, patch
 
 from merobox.commands.manager import DockerManager
@@ -64,7 +65,7 @@ def test_docker_run_node_calls_shared_config(mock_docker, mock_apply_config):
     # Setup
     client = MagicMock()
     mock_docker.return_value = client
-    manager = DockerManager()
+    manager = DockerManager(enable_signal_handlers=False)
 
     near_config = {
         "rpc_url": "http://127.0.0.1:3030",
@@ -87,3 +88,87 @@ def test_docker_run_node_calls_shared_config(mock_docker, mock_apply_config):
     # Check args
     assert str(args[0]).endswith("config.toml")
     assert args[1] == "node1"
+
+
+@patch("docker.from_env")
+def test_docker_manager_signal_handlers_registered(mock_docker):
+    """Test that signal handlers are registered when enabled."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    # Create manager with signal handlers enabled
+    manager = DockerManager(enable_signal_handlers=True)
+
+    # Verify handlers were stored
+    assert manager._original_sigint_handler is not None
+    assert manager._original_sigterm_handler is not None
+
+    # Cleanup - restore original handlers
+    manager.remove_signal_handlers()
+
+
+@patch("docker.from_env")
+def test_docker_manager_signal_handlers_disabled(mock_docker):
+    """Test that signal handlers are not registered when disabled."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    # Create manager with signal handlers disabled
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Verify handlers were not stored (None indicates not set up)
+    assert manager._original_sigint_handler is None
+    assert manager._original_sigterm_handler is None
+
+
+@patch("docker.from_env")
+def test_docker_manager_cleanup_resources(mock_docker):
+    """Test that _cleanup_resources stops all managed containers."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Add mock containers to track
+    mock_container1 = MagicMock()
+    mock_container2 = MagicMock()
+    manager.nodes = {"node1": mock_container1, "node2": mock_container2}
+    manager.node_rpc_ports = {"node1": 2528, "node2": 2529}
+
+    # Call cleanup
+    manager._cleanup_resources()
+
+    # Verify containers were stopped and removed
+    mock_container1.stop.assert_called_once_with(timeout=10)
+    mock_container1.remove.assert_called_once()
+    mock_container2.stop.assert_called_once_with(timeout=10)
+    mock_container2.remove.assert_called_once()
+
+    # Verify tracking dicts were cleared
+    assert len(manager.nodes) == 0
+    assert len(manager.node_rpc_ports) == 0
+
+
+@patch("docker.from_env")
+def test_docker_manager_remove_signal_handlers(mock_docker):
+    """Test that signal handlers can be removed and restored."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    # Store original handlers before test
+    original_sigint = signal.getsignal(signal.SIGINT)
+    original_sigterm = signal.getsignal(signal.SIGTERM)
+
+    # Create manager with signal handlers enabled
+    manager = DockerManager(enable_signal_handlers=True)
+
+    # Handlers should be different now
+    current_sigint = signal.getsignal(signal.SIGINT)
+    assert current_sigint == manager._signal_handler
+
+    # Remove handlers
+    manager.remove_signal_handlers()
+
+    # Verify handlers were restored
+    assert signal.getsignal(signal.SIGINT) == original_sigint
+    assert signal.getsignal(signal.SIGTERM) == original_sigterm

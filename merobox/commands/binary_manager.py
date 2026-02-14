@@ -2,6 +2,7 @@
 Binary Manager - Manages Calimero nodes as native processes (no Docker).
 """
 
+import atexit
 import os
 import re
 import shutil
@@ -26,13 +27,21 @@ console = Console()
 class BinaryManager:
     """Manages Calimero nodes as native binary processes."""
 
-    def __init__(self, binary_path: Optional[str] = None, require_binary: bool = True):
+    def __init__(
+        self,
+        binary_path: Optional[str] = None,
+        require_binary: bool = True,
+        enable_signal_handlers: bool = True,
+    ):
         """
         Initialize the BinaryManager.
 
         Args:
             binary_path: Path to the merod binary. If None, searches PATH.
             require_binary: If True, exit if binary not found. If False, set to None gracefully.
+            enable_signal_handlers: If True, register signal handlers for graceful
+                shutdown on SIGINT/SIGTERM. Set to False in tests or when managing
+                signals externally.
         """
         if (
             binary_path
@@ -51,6 +60,78 @@ class BinaryManager:
         self.node_rpc_ports: dict[str, int] = {}
         self.pid_file_dir = Path("./data/.pids")
         self.pid_file_dir.mkdir(parents=True, exist_ok=True)
+        self._shutting_down = False
+        self._original_sigint_handler = None
+        self._original_sigterm_handler = None
+
+        if enable_signal_handlers:
+            self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Register signal handlers for graceful shutdown."""
+        # Store original handlers so we can restore them if needed
+        self._original_sigint_handler = signal.signal(
+            signal.SIGINT, self._signal_handler
+        )
+        self._original_sigterm_handler = signal.signal(
+            signal.SIGTERM, self._signal_handler
+        )
+        # Also register atexit handler for cleanup on normal exit
+        atexit.register(self._cleanup_on_exit)
+
+    def _signal_handler(self, signum, frame):
+        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
+        if self._shutting_down:
+            # Already shutting down, force exit on second signal
+            console.print("\n[red]Forced exit requested, terminating...[/red]")
+            sys.exit(1)
+
+        self._shutting_down = True
+        sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+        console.print(
+            f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
+        )
+
+        self._cleanup_resources()
+
+        # Exit cleanly
+        sys.exit(0)
+
+    def _cleanup_on_exit(self):
+        """Cleanup handler for atexit - only runs if not already cleaned up."""
+        if not self._shutting_down:
+            self._cleanup_resources()
+
+    def _cleanup_resources(self):
+        """Stop all managed processes."""
+        if self.processes:
+            console.print("[cyan]Stopping managed processes...[/cyan]")
+            for node_name in list(self.processes.keys()):
+                try:
+                    process = self.processes[node_name]
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    console.print(f"[green]✓ Stopped process {node_name}[/green]")
+                    self._remove_pid_file(node_name)
+                except Exception as e:
+                    console.print(
+                        f"[yellow]⚠️  Could not stop process {node_name}: {e}[/yellow]"
+                    )
+            self.processes.clear()
+            self.node_rpc_ports.clear()
+
+    def remove_signal_handlers(self):
+        """Remove signal handlers and restore original handlers."""
+        if self._original_sigint_handler is not None:
+            signal.signal(signal.SIGINT, self._original_sigint_handler)
+            self._original_sigint_handler = None
+        if self._original_sigterm_handler is not None:
+            signal.signal(signal.SIGTERM, self._original_sigterm_handler)
+            self._original_sigterm_handler = None
 
     def _find_binary(self, require: bool = True) -> Optional[str]:
         """Find the merod binary in PATH or common locations.
