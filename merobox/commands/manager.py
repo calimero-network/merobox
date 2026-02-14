@@ -2,8 +2,10 @@
 Calimero Manager - Core functionality for managing Calimero nodes in Docker containers.
 """
 
+import atexit
 import os
 import shutil
+import signal
 import sys
 import time
 import uuid
@@ -11,11 +13,14 @@ from pathlib import Path
 from typing import Optional
 
 import docker
-import toml
 from rich.console import Console
 from rich.table import Table
 
-from merobox.commands.config_utils import apply_near_devnet_config_to_file
+from merobox.commands.config_utils import (
+    apply_bootstrap_nodes,
+    apply_e2e_defaults,
+    apply_near_devnet_config_to_file,
+)
 
 console = Console()
 
@@ -23,7 +28,15 @@ console = Console()
 class DockerManager:
     """Manages Calimero nodes in Docker containers."""
 
-    def __init__(self):
+    def __init__(self, enable_signal_handlers: bool = True):
+        """
+        Initialize the DockerManager.
+
+        Args:
+            enable_signal_handlers: If True, register signal handlers for graceful
+                shutdown on SIGINT/SIGTERM. Set to False in tests or when managing
+                signals externally.
+        """
         try:
             self.client = docker.from_env()
         except Exception as e:
@@ -34,6 +47,74 @@ class DockerManager:
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
+        self._shutting_down = False
+        self._original_sigint_handler = None
+        self._original_sigterm_handler = None
+
+        if enable_signal_handlers:
+            self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Register signal handlers for graceful shutdown."""
+        # Store original handlers so we can restore them if needed
+        self._original_sigint_handler = signal.signal(
+            signal.SIGINT, self._signal_handler
+        )
+        self._original_sigterm_handler = signal.signal(
+            signal.SIGTERM, self._signal_handler
+        )
+        # Also register atexit handler for cleanup on normal exit
+        atexit.register(self._cleanup_on_exit)
+
+    def _signal_handler(self, signum, frame):
+        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
+        if self._shutting_down:
+            # Already shutting down, force exit on second signal
+            console.print("\n[red]Forced exit requested, terminating...[/red]")
+            sys.exit(1)
+
+        self._shutting_down = True
+        sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+        console.print(
+            f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
+        )
+
+        self._cleanup_resources()
+
+        # Exit cleanly
+        sys.exit(0)
+
+    def _cleanup_on_exit(self):
+        """Cleanup handler for atexit - only runs if not already cleaned up."""
+        if not self._shutting_down:
+            self._cleanup_resources()
+
+    def _cleanup_resources(self):
+        """Stop all managed resources (containers)."""
+        if self.nodes:
+            console.print("[cyan]Stopping managed containers...[/cyan]")
+            # Stop all tracked nodes
+            for node_name in list(self.nodes.keys()):
+                try:
+                    container = self.nodes[node_name]
+                    container.stop(timeout=10)
+                    container.remove()
+                    console.print(f"[green]✓ Stopped container {node_name}[/green]")
+                except Exception as e:
+                    console.print(
+                        f"[yellow]⚠️  Could not stop container {node_name}: {e}[/yellow]"
+                    )
+            self.nodes.clear()
+            self.node_rpc_ports.clear()
+
+    def remove_signal_handlers(self):
+        """Remove signal handlers and restore original handlers."""
+        if self._original_sigint_handler is not None:
+            signal.signal(signal.SIGINT, self._original_sigint_handler)
+            self._original_sigint_handler = None
+        if self._original_sigterm_handler is not None:
+            signal.signal(signal.SIGTERM, self._original_sigterm_handler)
+            self._original_sigterm_handler = None
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""
@@ -320,7 +401,9 @@ class DockerManager:
                 "image": image_to_use,
                 "detach": True,
                 "user": "root",  # Override the default user in the image
-                "privileged": True,  # Run in privileged mode to avoid permission issues
+                # Use specific capabilities instead of privileged mode for security
+                # These capabilities are needed for file permission handling with volumes
+                "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
                 "environment": node_env,
                 "ports": {
                     # Map external P2P port to internal P2P port (0.0.0.0:2428)
@@ -511,18 +594,18 @@ class DockerManager:
                     # Only fix permissions if not already fixed (when near_devnet_config is provided)
                     if not near_devnet_config:
                         self._fix_permissions(node_data_dir)
-                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(config_file, node_name, workflow_id)
 
                 # Apply bootstrap nodes configuration (works regardless of e2e_mode)
                 if bootstrap_nodes:
-                    self._apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
+                    apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
 
             except Exception:
                 if e2e_mode:
                     console.print(
                         f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
                     )
-                    self._apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(config_file, node_name, workflow_id)
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
@@ -1340,114 +1423,6 @@ class DockerManager:
                 f"[red]Failed to verify admin binding for {node_name}: {str(e)}[/red]"
             )
             return False
-
-    def _apply_bootstrap_nodes(
-        self,
-        config_file: str,
-        node_name: str,
-        bootstrap_nodes: list[str],
-    ):
-        """Apply bootstrap nodes configuration."""
-        try:
-            from pathlib import Path
-
-            import toml
-
-            config_path = Path(config_file)
-            if not config_path.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            with open(config_path) as f:
-                config = toml.load(f)
-
-            self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
-
-            with open(config_path, "w") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
-            )
-
-    def _apply_e2e_defaults(
-        self,
-        config_file: str,
-        node_name: str,
-        workflow_id: str,
-    ):
-        """Apply e2e-style defaults for reliable testing."""
-        try:
-            # Generate unique workflow ID if not provided
-            if not workflow_id:
-                workflow_id = str(uuid.uuid4())[:8]
-
-            config_path = Path(config_file)
-            if not config_path.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            # Load existing config
-            with open(config_path) as f:
-                config = toml.load(f)
-
-            # Apply e2e-style defaults for reliable testing
-            e2e_config = {
-                # Disable bootstrap nodes for test isolation
-                "bootstrap.nodes": [],
-                # Use unique rendezvous namespace per workflow (like e2e tests)
-                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-                # Keep mDNS as backup (like e2e tests)
-                "discovery.mdns": True,
-                # Aggressive sync settings from e2e tests for reliable testing
-                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-                # 500ms between syncs (very aggressive for tests)
-                "sync.interval_ms": 500,
-                # 1s periodic checks (ensures rapid sync in tests)
-                "sync.frequency_ms": 1000,
-            }
-
-            # Apply each configuration
-            for key, value in e2e_config.items():
-                self._set_nested_config(config, key, value)
-
-            # Write back to file
-            with open(config_path, "w") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
-            )
-
-    def _set_nested_config(self, config: dict, key: str, value):
-        """Set nested configuration value using dot notation."""
-        keys = key.split(".")
-        current = config
-        for k in keys[:-1]:
-            if k not in current:
-                current[k] = {}
-            current = current[k]
-
-        current[keys[-1]] = value
-        console.print(f"[cyan]  {key} = {value}[/cyan]")
 
     def _apply_near_devnet_config(
         self,

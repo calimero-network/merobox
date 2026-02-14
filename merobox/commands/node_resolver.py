@@ -28,7 +28,6 @@ from merobox.commands.auth import (
     AUTH_METHOD_API_KEY,
     AUTH_METHOD_NONE,
     AUTH_METHOD_USER_PASSWORD,
-    AuthenticationError,
     AuthManager,
     AuthToken,
 )
@@ -37,6 +36,7 @@ from merobox.commands.constants import (
     DEFAULT_READ_TIMEOUT,
     DEFAULT_RPC_PORT,
 )
+from merobox.commands.errors import AuthenticationError, NodeResolutionError
 from merobox.commands.remote_nodes import RemoteNodeManager
 
 console = Console()
@@ -682,9 +682,71 @@ class NodeResolver:
         resolved = self.resolve_sync(node_ref, skip_auth=True)
         return resolved.url
 
+    def is_registered_remote(self, node_ref: str) -> bool:
+        """Check if a node reference is registered in the remote node registry.
 
-class NodeResolutionError(Exception):
-    """Raised when a node cannot be resolved."""
+        Args:
+            node_ref: Node reference (name or URL).
+
+        Returns:
+            True if the node is registered, False otherwise.
+        """
+        # Check by name
+        if self.remote_manager.get(node_ref) is not None:
+            return True
+        # Check by URL
+        if self.remote_manager.is_url(node_ref):
+            return self.remote_manager.get_by_url(node_ref) is not None
+        return False
+
+    def is_url(self, node_ref: str) -> bool:
+        """Check if a node reference is a URL.
+
+        Args:
+            node_ref: Node reference.
+
+        Returns:
+            True if the reference is a URL (starts with http:// or https://).
+        """
+        return self.remote_manager.is_url(node_ref)
+
+    def register_remote(
+        self,
+        name: str,
+        url: str,
+        auth_method: str = AUTH_METHOD_NONE,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        api_key: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> bool:
+        """Register a remote node in the registry.
+
+        Args:
+            name: Friendly name for the node.
+            url: Node URL.
+            auth_method: Authentication method (user_password, api_key, none).
+            username: Default username for user_password auth.
+            password: Password for user_password auth.
+            api_key: API key for api_key auth.
+            description: Human-readable description.
+
+        Returns:
+            True if registered successfully.
+        """
+        return self.remote_manager.register(
+            name=name,
+            url=url,
+            auth_method=auth_method,
+            username=username,
+            password=password,
+            api_key=api_key,
+            description=description,
+        )
+
+
+# NodeResolutionError is now imported from merobox.commands.errors
+# Keeping this comment for backward compatibility reference
 
 
 def get_resolver(

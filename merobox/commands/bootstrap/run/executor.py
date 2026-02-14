@@ -1046,8 +1046,8 @@ class WorkflowExecutor:
                 api_key = auth_config.get("api_key") or auth_config.get("key")
                 password = auth_config.get("password")
 
-                # Register the remote node
-                self.resolver.remote_manager.register(
+                # Register the remote node via resolver's public API
+                self.resolver.register_remote(
                     name=node_name,
                     url=url,
                     auth_method=auth_method,

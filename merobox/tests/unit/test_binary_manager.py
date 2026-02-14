@@ -1,4 +1,6 @@
 import os
+import signal
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -10,7 +12,9 @@ from merobox.commands.binary_manager import BinaryManager
 @patch("subprocess.run")
 def test_run_node_calls_shared_config_utils(mock_run, mock_popen, mock_apply_config):
     # Setup
-    manager = BinaryManager(binary_path="/bin/merod", require_binary=False)
+    manager = BinaryManager(
+        binary_path="/bin/merod", require_binary=False, enable_signal_handlers=False
+    )
 
     near_config = {
         "rpc_url": "http://127.0.0.1:3030",
@@ -50,7 +54,9 @@ def test_run_node_calls_shared_config_utils(mock_run, mock_popen, mock_apply_con
 
 def test_binary_manager_path_fix():
     """Ensure BinaryManager uses the correct nested path for config.toml."""
-    bm = BinaryManager(binary_path="merod", require_binary=False)
+    bm = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
 
     with patch(
         "merobox.commands.binary_manager.apply_near_devnet_config_to_file"
@@ -83,3 +89,102 @@ def test_binary_manager_path_fix():
     # Expect: .../data/node1/node1/config.toml
     expected_suffix = os.path.join("node1", "node1", "node1", "config.toml")
     assert config_path.endswith(expected_suffix)
+
+
+def test_binary_manager_signal_handlers_registered():
+    """Test that signal handlers are registered when enabled."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=True
+    )
+
+    # Verify handlers were stored
+    assert manager._original_sigint_handler is not None
+    assert manager._original_sigterm_handler is not None
+
+    # Cleanup - restore original handlers
+    manager.remove_signal_handlers()
+
+
+def test_binary_manager_signal_handlers_disabled():
+    """Test that signal handlers are not registered when disabled."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    # Verify handlers were not stored (None indicates not set up)
+    assert manager._original_sigint_handler is None
+    assert manager._original_sigterm_handler is None
+
+
+def test_binary_manager_cleanup_resources():
+    """Test that _cleanup_resources stops all managed processes."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    # Add mock processes to track
+    mock_process1 = MagicMock()
+    mock_process2 = MagicMock()
+    manager.processes = {"node1": mock_process1, "node2": mock_process2}
+    manager.node_rpc_ports = {"node1": 2528, "node2": 2529}
+
+    # Mock _remove_pid_file to avoid file system operations
+    manager._remove_pid_file = MagicMock()
+
+    # Call cleanup
+    manager._cleanup_resources()
+
+    # Verify processes were terminated
+    mock_process1.terminate.assert_called_once()
+    mock_process1.wait.assert_called_once_with(timeout=5)
+    mock_process2.terminate.assert_called_once()
+    mock_process2.wait.assert_called_once_with(timeout=5)
+
+    # Verify tracking dicts were cleared
+    assert len(manager.processes) == 0
+    assert len(manager.node_rpc_ports) == 0
+
+
+def test_binary_manager_cleanup_resources_timeout():
+    """Test that _cleanup_resources kills processes that don't terminate gracefully."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    # Add mock process that times out on terminate
+    mock_process = MagicMock()
+    mock_process.wait.side_effect = [subprocess.TimeoutExpired(cmd="merod", timeout=5)]
+    manager.processes = {"node1": mock_process}
+
+    # Mock _remove_pid_file to avoid file system operations
+    manager._remove_pid_file = MagicMock()
+
+    # Call cleanup
+    manager._cleanup_resources()
+
+    # Verify process was terminated and then killed
+    mock_process.terminate.assert_called_once()
+    mock_process.kill.assert_called_once()
+
+
+def test_binary_manager_remove_signal_handlers():
+    """Test that signal handlers can be removed and restored."""
+    # Store original handlers before test
+    original_sigint = signal.getsignal(signal.SIGINT)
+    original_sigterm = signal.getsignal(signal.SIGTERM)
+
+    # Create manager with signal handlers enabled
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=True
+    )
+
+    # Handlers should be different now
+    current_sigint = signal.getsignal(signal.SIGINT)
+    assert current_sigint == manager._signal_handler
+
+    # Remove handlers
+    manager.remove_signal_handlers()
+
+    # Verify handlers were restored
+    assert signal.getsignal(signal.SIGINT) == original_sigint
+    assert signal.getsignal(signal.SIGTERM) == original_sigterm
