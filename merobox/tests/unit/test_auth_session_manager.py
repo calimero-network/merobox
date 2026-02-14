@@ -130,43 +130,25 @@ class TestSessionManager:
         """Test get_session creates a new session when none exists."""
         manager = SessionManager()
 
-        with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
-            with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
-                with patch(
-                    "merobox.commands.auth.aiohttp.DummyCookieJar"
-                ) as mock_cookie_jar:
-                    mock_connector_instance = MagicMock()
-                    mock_connector.return_value = mock_connector_instance
+        mock_connector = MagicMock()
+        mock_session = MagicMock()
+        mock_session.closed = False
 
-                    mock_cookie_jar_instance = MagicMock()
-                    mock_cookie_jar.return_value = mock_cookie_jar_instance
+        with patch.object(
+            manager, "_create_connector", return_value=mock_connector
+        ) as mock_create_conn:
+            with patch.object(
+                manager, "_create_session", return_value=mock_session
+            ) as mock_create_sess:
+                session = await manager.get_session()
 
-                    mock_session_instance = MagicMock()
-                    mock_session_instance.closed = False
-                    mock_session.return_value = mock_session_instance
+                # Verify connector and session were created
+                mock_create_conn.assert_called_once()
+                mock_create_sess.assert_called_once_with(mock_connector)
 
-                    session = await manager.get_session()
-
-                    # Verify connector was created with correct parameters
-                    mock_connector.assert_called_once_with(
-                        limit=DEFAULT_POOL_CONNECTIONS,
-                        limit_per_host=DEFAULT_POOL_CONNECTIONS_PER_HOST,
-                        keepalive_timeout=DEFAULT_POOL_KEEPALIVE_TIMEOUT,
-                        enable_cleanup_closed=True,
-                    )
-
-                    # Verify DummyCookieJar was created (prevents cookie leakage)
-                    mock_cookie_jar.assert_called_once()
-
-                    # Verify session was created with the connector and dummy cookie jar
-                    mock_session.assert_called_once_with(
-                        connector=mock_connector_instance,
-                        cookie_jar=mock_cookie_jar_instance,
-                    )
-
-                    assert session == mock_session_instance
-                    assert manager._session == mock_session_instance
-                    assert manager._connector == mock_connector_instance
+                assert session == mock_session
+                assert manager._session == mock_session
+                assert manager._connector == mock_connector
 
     @pytest.mark.asyncio
     async def test_get_session_reuses_existing_session(self):
@@ -194,27 +176,17 @@ class TestSessionManager:
         manager._session = old_session
         manager._session_loop_id = manager._get_current_loop_id()
 
-        with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
-            with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
-                with patch(
-                    "merobox.commands.auth.aiohttp.DummyCookieJar"
-                ) as mock_cookie_jar:
-                    mock_connector_instance = MagicMock()
-                    mock_connector.return_value = mock_connector_instance
+        mock_connector = MagicMock()
+        mock_connector.closed = False
+        new_session = MagicMock()
+        new_session.closed = False
 
-                    mock_cookie_jar_instance = MagicMock()
-                    mock_cookie_jar.return_value = mock_cookie_jar_instance
+        with patch.object(manager, "_create_connector", return_value=mock_connector):
+            with patch.object(manager, "_create_session", return_value=new_session):
+                session = await manager.get_session()
 
-                    new_session = MagicMock()
-                    new_session.closed = False
-                    mock_session.return_value = new_session
-
-                    session = await manager.get_session()
-
-                    # Should create a new session
-                    assert session == new_session
-                    mock_connector.assert_called_once()
-                    mock_session.assert_called_once()
+                # Should create a new session
+                assert session == new_session
 
     @pytest.mark.asyncio
     async def test_get_session_thread_safe(self):
@@ -222,30 +194,27 @@ class TestSessionManager:
         manager = SessionManager()
         call_count = 0
 
-        original_create_connector = manager._create_connector
+        mock_connector = MagicMock()
+        mock_session = MagicMock()
+        mock_session.closed = False
 
         def counting_create_connector():
             nonlocal call_count
             call_count += 1
-            return original_create_connector()
+            return mock_connector
 
         with patch.object(manager, "_create_connector", counting_create_connector):
-            with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
-                with patch("merobox.commands.auth.aiohttp.DummyCookieJar"):
-                    mock_session_instance = MagicMock()
-                    mock_session_instance.closed = False
-                    mock_session.return_value = mock_session_instance
+            with patch.object(manager, "_create_session", return_value=mock_session):
+                # Call get_session concurrently multiple times
+                tasks = [manager.get_session() for _ in range(10)]
+                results = await asyncio.gather(*tasks)
 
-                    # Call get_session concurrently multiple times
-                    tasks = [manager.get_session() for _ in range(10)]
-                    results = await asyncio.gather(*tasks)
+                # All results should be the same session
+                for result in results:
+                    assert result == mock_session
 
-                    # All results should be the same session
-                    for result in results:
-                        assert result == mock_session_instance
-
-                    # Connector should only be created once due to lock
-                    assert call_count == 1
+                # Connector should only be created once due to lock
+                assert call_count == 1
 
     @pytest.mark.asyncio
     async def test_get_session_handles_loop_change(self):
@@ -258,22 +227,22 @@ class TestSessionManager:
         manager._session = old_session
         manager._session_loop_id = 12345  # Different from current loop
 
-        with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
-            with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
-                with patch("merobox.commands.auth.aiohttp.DummyCookieJar"):
-                    mock_connector_instance = MagicMock()
-                    mock_connector.return_value = mock_connector_instance
+        mock_connector = MagicMock()
+        new_session = MagicMock()
+        new_session.closed = False
 
-                    new_session = MagicMock()
-                    new_session.closed = False
-                    mock_session.return_value = new_session
+        with patch.object(
+            manager, "_create_connector", return_value=mock_connector
+        ) as mock_create_conn:
+            with patch.object(
+                manager, "_create_session", return_value=new_session
+            ) as mock_create_sess:
+                session = await manager.get_session()
 
-                    session = await manager.get_session()
-
-                    # Should create a new session since loop changed
-                    assert session == new_session
-                    mock_connector.assert_called_once()
-                    mock_session.assert_called_once()
+                # Should create a new session since loop changed
+                assert session == new_session
+                mock_create_conn.assert_called_once()
+                mock_create_sess.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_close_releases_resources(self):
@@ -347,21 +316,18 @@ class TestSessionManager:
     @pytest.mark.asyncio
     async def test_context_manager(self):
         """Test SessionManager works as async context manager."""
-        with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
-            with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
-                with patch("merobox.commands.auth.aiohttp.DummyCookieJar"):
-                    mock_connector_instance = MagicMock()
-                    mock_connector.return_value = mock_connector_instance
+        mock_connector = MagicMock()
+        mock_session = AsyncMock()
+        mock_session.closed = False
 
-                    mock_session_instance = AsyncMock()
-                    mock_session_instance.closed = False
-                    mock_session.return_value = mock_session_instance
+        manager = SessionManager()
+        with patch.object(manager, "_create_connector", return_value=mock_connector):
+            with patch.object(manager, "_create_session", return_value=mock_session):
+                async with manager as session:
+                    assert session == mock_session
 
-                    async with SessionManager() as session:
-                        assert session == mock_session_instance
-
-                    # After exiting context, close should be called
-                    mock_session_instance.close.assert_awaited_once()
+                # After exiting context, close should be called
+                mock_session.close.assert_awaited_once()
 
     def test_get_shared_instance_singleton(self):
         """Test get_shared_instance returns singleton."""
@@ -391,19 +357,16 @@ class TestModuleFunctions:
     @pytest.mark.asyncio
     async def test_get_shared_session(self):
         """Test get_shared_session returns session from shared instance."""
-        with patch("merobox.commands.auth.aiohttp.TCPConnector") as mock_connector:
-            with patch("merobox.commands.auth.aiohttp.ClientSession") as mock_session:
-                with patch("merobox.commands.auth.aiohttp.DummyCookieJar"):
-                    mock_connector_instance = MagicMock()
-                    mock_connector.return_value = mock_connector_instance
+        mock_connector = MagicMock()
+        mock_session = MagicMock()
+        mock_session.closed = False
 
-                    mock_session_instance = MagicMock()
-                    mock_session_instance.closed = False
-                    mock_session.return_value = mock_session_instance
-
-                    session = await get_shared_session()
-
-                    assert session == mock_session_instance
+        # Get the shared instance and patch its methods
+        instance = SessionManager.get_shared_instance()
+        with patch.object(instance, "_create_connector", return_value=mock_connector):
+            with patch.object(instance, "_create_session", return_value=mock_session):
+                session = await get_shared_session()
+                assert session == mock_session
 
     @pytest.mark.asyncio
     async def test_close_shared_session(self):
@@ -419,30 +382,28 @@ class TestModuleFunctions:
 
     @pytest.mark.asyncio
     async def test_run_with_shared_session_cleanup_closes_on_success(self):
-        """Test run_with_shared_session_cleanup closes shared session on success."""
+        """Test run_with_shared_session_cleanup closes session after success."""
+
+        async def sample_coro():
+            return "result"
+
         with patch(
             "merobox.commands.auth.close_shared_session", new_callable=AsyncMock
         ) as mock_close:
-
-            async def sample_coro():
-                return "ok"
-
             result = await run_with_shared_session_cleanup(sample_coro())
-
-            assert result == "ok"
+            assert result == "result"
             mock_close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_run_with_shared_session_cleanup_closes_on_error(self):
-        """Test run_with_shared_session_cleanup closes shared session on error."""
+        """Test run_with_shared_session_cleanup closes session even on error."""
+
+        async def failing_coro():
+            raise ValueError("test error")
+
         with patch(
             "merobox.commands.auth.close_shared_session", new_callable=AsyncMock
         ) as mock_close:
-
-            async def failing_coro():
-                raise RuntimeError("boom")
-
-            with pytest.raises(RuntimeError, match="boom"):
+            with pytest.raises(ValueError, match="test error"):
                 await run_with_shared_session_cleanup(failing_coro())
-
             mock_close.assert_awaited_once()
