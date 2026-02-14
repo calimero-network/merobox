@@ -1,0 +1,476 @@
+{
+  "bounties": [
+    {
+      "title": "Fix path traversal vulnerability in ScriptStep - absolute paths bypass validation",
+      "description": "In `merobox/commands/bootstrap/steps/script.py`, the `_validate_script_path` method validates relative paths against CWD but accepts absolute paths that could reference any file on the system. An attacker could craft a workflow with `script: /etc/passwd` to read sensitive files. Add validation to ensure absolute paths are also within the allowed directory.",
+      "pathHint": "merobox/commands/bootstrap/steps/script.py",
+      "estimatedMinutes": 45,
+      "category": "security",
+      "severity": "critical"
+    },
+    {
+      "title": "Remove wildcard CORS configuration allowing any origin",
+      "description": "In `merobox/commands/manager.py`, the auth service Traefik labels configure `accesscontrolalloworiginlist: *` which allows any origin to make authenticated requests. This could enable CSRF attacks. Implement configurable CORS with sensible defaults (localhost only) and explicit origin allowlisting.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 60,
+      "category": "security",
+      "severity": "high"
+    },
+    {
+      "title": "Encrypt sensitive credentials at rest - NEAR keys stored in plaintext",
+      "description": "In `merobox/commands/config_utils.py`, NEAR private keys are written to config.toml in plaintext. The token cache in `auth.py` also stores JWT tokens with only file permissions. Add optional encryption for credentials at rest using a master key derived from user password or system keyring.",
+      "pathHint": "merobox/commands/config_utils.py",
+      "estimatedMinutes": 90,
+      "category": "security",
+      "severity": "high"
+    },
+    {
+      "title": "Add rate limiting for authentication attempts",
+      "description": "In `merobox/commands/auth.py`, the `authenticate` method has no rate limiting, allowing brute force attacks. Implement exponential backoff and lockout after repeated failures. Consider adding account lockout state in the token cache.",
+      "pathHint": "merobox/commands/auth.py",
+      "estimatedMinutes": 60,
+      "category": "security",
+      "severity": "high"
+    },
+    {
+      "title": "Redact sensitive data from error messages and logs",
+      "description": "Multiple locations print full error messages that may contain secrets. In `auth.py`, the response_text could contain tokens. In `near/client.py`, errors may expose private keys. Audit all console.print calls and implement a sanitization helper to redact sensitive patterns before logging.",
+      "pathHint": "merobox/commands/auth.py",
+      "estimatedMinutes": 75,
+      "category": "security",
+      "severity": "high"
+    },
+    {
+      "title": "Validate tarfile extraction paths to prevent zip-slip vulnerability",
+      "description": "In `merobox/commands/bootstrap/steps/script.py`, `tarfile.extractall` is used without validating member paths in `_execute_on_image`. A malicious tar could contain paths like `../../../etc/passwd`. Add member path validation before extraction.",
+      "pathHint": "merobox/commands/bootstrap/steps/script.py",
+      "estimatedMinutes": 45,
+      "category": "security",
+      "severity": "high"
+    },
+    {
+      "title": "Add JWT signature verification when extracting expiry",
+      "description": "In `merobox/commands/auth.py`, `_extract_jwt_expiry` parses JWT payload without verifying the signature. An attacker could craft a token with fake expiry. Either verify the signature or treat unverified tokens as potentially expired.",
+      "pathHint": "merobox/commands/auth.py",
+      "estimatedMinutes": 45,
+      "category": "security",
+      "severity": "medium"
+    },
+    {
+      "title": "Extract common node manager interface - reduce DockerManager/BinaryManager duplication",
+      "description": "DockerManager (manager.py) and BinaryManager (binary_manager.py) share significant code: signal handling, config application, node lifecycle. Extract a common `NodeManagerBase` abstract class with shared implementations. This reduces bugs from inconsistent behavior and eases maintenance.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 90,
+      "category": "design-flaw",
+      "severity": "high"
+    },
+    {
+      "title": "Implement consistent error type hierarchy across modules",
+      "description": "The codebase mixes exception raising (auth.py) with dict returns (call.py, utils.py). Some functions return `{success: False, error: str}` while others raise `AuthenticationError`. Standardize on typed errors from `errors.py` and update all callers to handle them consistently.",
+      "pathHint": "merobox/commands/errors.py",
+      "estimatedMinutes": 90,
+      "category": "design-flaw",
+      "severity": "high"
+    },
+    {
+      "title": "Fix async/sync boundary misuse - remove run_async creating new event loops",
+      "description": "In `merobox/commands/remote.py` and `utils.py`, `run_async` creates new event loops which breaks if called from existing async context. Use `asyncio.run()` for top-level or detect existing loop. This affects all CLI commands using remote node features.",
+      "pathHint": "merobox/commands/remote.py",
+      "estimatedMinutes": 60,
+      "category": "bug",
+      "severity": "high"
+    },
+    {
+      "title": "Add YAML schema validation for workflow configs",
+      "description": "Workflow YAML files are parsed without schema validation. Invalid configs may cause cryptic errors deep in execution. Add JSON Schema or Pydantic validation for workflow structure with helpful error messages pointing to invalid fields.",
+      "pathHint": "merobox/commands/bootstrap/config.py",
+      "estimatedMinutes": 75,
+      "category": "design-flaw",
+      "severity": "high"
+    },
+    {
+      "title": "Fix race condition in signal handler calling sys.exit during async execution",
+      "description": "In `manager.py` and `binary_manager.py`, signal handlers call `sys.exit()` which can corrupt state if async tasks are running. The `_cleanup_resources` method is also registered with atexit, creating potential double-cleanup races. Use asyncio-safe shutdown pattern.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 60,
+      "category": "concurrency",
+      "severity": "high"
+    },
+    {
+      "title": "Fix token cache file race condition between readers and writers",
+      "description": "In `auth.py`, `save_token` uses atomic rename but `get_cached_token` may read partial data if rename happens mid-read. Use file locking or read-through-temp pattern to ensure consistency.",
+      "pathHint": "merobox/commands/auth.py",
+      "estimatedMinutes": 45,
+      "category": "concurrency",
+      "severity": "medium"
+    },
+    {
+      "title": "Add connection pooling for aiohttp sessions",
+      "description": "Multiple functions in `auth.py`, `remote.py`, and step executors create new `aiohttp.ClientSession` per request. This wastes connections and slows requests. Implement a session pool or reuse sessions across requests in the same workflow.",
+      "pathHint": "merobox/commands/auth.py",
+      "estimatedMinutes": 60,
+      "category": "performance",
+      "severity": "medium"
+    },
+    {
+      "title": "Cache DockerManager/BinaryManager instances to avoid repeated initialization",
+      "description": "In `client.py` and several step files, `DockerManager()` is instantiated per call, each doing Docker socket check. Cache manager instances per-process or use dependency injection to avoid redundant initialization.",
+      "pathHint": "merobox/commands/client.py",
+      "estimatedMinutes": 45,
+      "category": "performance",
+      "severity": "medium"
+    },
+    {
+      "title": "Replace bare except clauses with specific exception handling",
+      "description": "Multiple files use `except Exception:` or bare `except:` that swallow errors silently. In `manager.py` lines 211-212, `utils.py` line 61, and `near/sandbox.py` line 164. Replace with specific exceptions and add logging for unexpected errors.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 60,
+      "category": "bug",
+      "severity": "medium"
+    },
+    {
+      "title": "Add health check probing before declaring node ready",
+      "description": "In `executor.py` `_wait_for_nodes_ready`, node readiness is checked via container status and admin binding. Add actual health endpoint probing to ensure the node is serving requests, not just listening on the port.",
+      "pathHint": "merobox/commands/bootstrap/run/executor.py",
+      "estimatedMinutes": 45,
+      "category": "bug",
+      "severity": "medium"
+    },
+    {
+      "title": "Fix port detection fallback returning wrong port",
+      "description": "In `utils.py` `get_node_rpc_url`, if port detection fails it falls back to DEFAULT_RPC_PORT (2528). But if nodes are started with different ports, this returns wrong URL. Track actual ports in node registry or fail explicitly.",
+      "pathHint": "merobox/commands/utils.py",
+      "estimatedMinutes": 45,
+      "category": "bug",
+      "severity": "medium"
+    },
+    {
+      "title": "Add size limits for workflow file parsing",
+      "description": "Workflow YAML files can be arbitrarily large, potentially causing OOM. Add configurable size limits for workflow files and individual step arguments to prevent DoS via malformed workflows.",
+      "pathHint": "merobox/commands/bootstrap/config.py",
+      "estimatedMinutes": 45,
+      "category": "security",
+      "severity": "medium"
+    },
+    {
+      "title": "Implement graceful shutdown with connection draining for nodes",
+      "description": "In `manager.py` `stop_node`, containers are stopped with 10s timeout but no connection draining. Running requests may be terminated mid-flight. Implement pre-stop health check disable and connection drain period.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 60,
+      "category": "design-flaw",
+      "severity": "medium"
+    },
+    {
+      "title": "Extract magic numbers into named constants",
+      "description": "Timeouts (10, 30, 60 seconds), ports (2428, 2528, 3030), and retry counts are hardcoded throughout. Extract to `constants.py` with descriptive names. Update manager.py, sandbox.py, executor.py, and all step files.",
+      "pathHint": "merobox/commands/constants.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "medium"
+    },
+    {
+      "title": "Add integration tests for authentication flow",
+      "description": "Unit tests exist but no integration tests for the full auth flow: login, token caching, refresh, and authenticated API calls. Add pytest fixtures that spin up auth service and test end-to-end auth scenarios.",
+      "pathHint": "merobox/tests/unit/test_errors.py",
+      "estimatedMinutes": 90,
+      "category": "tests",
+      "severity": "medium"
+    },
+    {
+      "title": "Add property-based tests for YAML parsing and variable resolution",
+      "description": "The `_resolve_dynamic_value` method in base.py handles complex placeholder patterns but only has implicit testing via workflow runs. Add hypothesis-based property tests for edge cases: nested placeholders, malformed syntax, recursive references.",
+      "pathHint": "merobox/commands/bootstrap/steps/base.py",
+      "estimatedMinutes": 75,
+      "category": "tests",
+      "severity": "medium"
+    },
+    {
+      "title": "Add tests for path traversal validation edge cases",
+      "description": "The `_validate_script_path` in script.py has validation logic but tests only cover happy path. Add tests for: symlink traversal, URL-encoded paths, Unicode normalization attacks, Windows-style paths on Unix.",
+      "pathHint": "merobox/tests/unit/test_script_step.py",
+      "estimatedMinutes": 60,
+      "category": "tests",
+      "severity": "medium"
+    },
+    {
+      "title": "Replace deprecated ed25519 package with modern cryptography library",
+      "description": "In `near/client.py`, the `ed25519` package is used for key generation but is unmaintained. Replace with `cryptography` or `nacl` library which are actively maintained and have better security practices.",
+      "pathHint": "merobox/commands/near/client.py",
+      "estimatedMinutes": 60,
+      "category": "security",
+      "severity": "medium"
+    },
+    {
+      "title": "Add structured logging with request context IDs",
+      "description": "Current logging uses rich.console.print without structure. Add a logging module with JSON output option, request/workflow IDs for correlation, and log levels that can be configured at runtime.",
+      "pathHint": "merobox/commands/utils.py",
+      "estimatedMinutes": 75,
+      "category": "improvement",
+      "severity": "medium"
+    },
+    {
+      "title": "Split long methods in executor.py for maintainability",
+      "description": "The `execute_workflow` method in executor.py is 200+ lines. The `_start_nodes` method is similarly long. Split into smaller focused methods: `_setup_sandbox`, `_start_local_nodes`, `_wait_and_authenticate`, etc.",
+      "pathHint": "merobox/commands/bootstrap/run/executor.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "medium"
+    },
+    {
+      "title": "Add timeout configuration for sandbox startup",
+      "description": "In `near/sandbox.py`, `_wait_for_rpc` has hardcoded 10s timeout. This may be insufficient on slow systems. Add configurable timeout with sensible default and early failure on sandbox process exit.",
+      "pathHint": "merobox/commands/near/sandbox.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "medium"
+    },
+    {
+      "title": "Add .cursorrules file with project conventions",
+      "description": "No .cursorrules or .cursor/rules file exists. Create one documenting: Python 3.9-3.11, async patterns, error handling conventions, testing approach, how to run workflows, key entry points (cli.py, executor.py).",
+      "pathHint": ".cursorrules",
+      "estimatedMinutes": 45,
+      "category": "docs",
+      "severity": "medium"
+    },
+    {
+      "title": "Add architecture overview documentation for AI navigation",
+      "description": "README.md is comprehensive for users but lacks developer architecture overview. Add a ARCHITECTURE.md or section explaining: module dependencies, data flow (CLI -> executor -> steps -> client), key abstractions (NodeResolver, managers).",
+      "pathHint": "docs/ARCHITECTURE.md",
+      "estimatedMinutes": 60,
+      "category": "docs",
+      "severity": "medium"
+    },
+    {
+      "title": "Fix sandbox cleanup potentially leaving orphan processes",
+      "description": "In `near/sandbox.py`, `_cleanup_stale_sandbox` uses pkill which may kill unrelated processes. Also, if `stop()` fails, the sandbox process leaks. Add PID file tracking and explicit process cleanup by PID.",
+      "pathHint": "merobox/commands/near/sandbox.py",
+      "estimatedMinutes": 60,
+      "category": "bug",
+      "severity": "medium"
+    },
+    {
+      "title": "Add retry logic for transient Docker API errors",
+      "description": "Docker API calls in manager.py can fail transiently (socket busy, daemon restart). Add retry decorator with exponential backoff for container operations. Currently failures cause immediate workflow abort.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "medium"
+    },
+    {
+      "title": "Validate environment variable expansion for injection risks",
+      "description": "In workflow configs, `${ENV_VAR}` expansion happens without validation. Malicious env vars could inject unexpected values. Add allowlist for expandable vars or escape special characters in expanded values.",
+      "pathHint": "merobox/commands/bootstrap/config.py",
+      "estimatedMinutes": 60,
+      "category": "security",
+      "severity": "medium"
+    },
+    {
+      "title": "Add workflow step timeout configuration",
+      "description": "Individual workflow steps can hang indefinitely. Add optional `timeout` field to step configs with default timeout. Implement async timeout wrapper in base step executor with proper cleanup on timeout.",
+      "pathHint": "merobox/commands/bootstrap/steps/base.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "medium"
+    },
+    {
+      "title": "Implement idempotent node startup",
+      "description": "In manager.py, `run_node` tries to clean up existing containers but may fail leaving inconsistent state. Implement proper idempotency: check if node running with correct config, reuse if so, otherwise full cleanup and restart.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 60,
+      "category": "design-flaw",
+      "severity": "medium"
+    },
+    {
+      "title": "Add workflow dry-run mode",
+      "description": "No way to validate a workflow without executing it. Add `--dry-run` flag to `bootstrap run` that validates config, resolves variables, checks node availability, but doesn't execute steps. Useful for CI/CD validation.",
+      "pathHint": "merobox/commands/bootstrap/bootstrap.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add metrics collection for workflow execution",
+      "description": "No observability for workflow execution beyond logs. Add optional metrics: step duration, success rate, resource usage. Support output to file or Prometheus format for production monitoring.",
+      "pathHint": "merobox/commands/bootstrap/run/executor.py",
+      "estimatedMinutes": 75,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Consolidate duplicate JSON parsing logic in base step",
+      "description": "In `base.py`, `_try_parse_json` and `_extract_path` have overlapping JSON parsing logic. The method is 50+ lines with multiple fallback strategies. Consolidate into a single robust parser with clear precedence.",
+      "pathHint": "merobox/commands/bootstrap/steps/base.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add workflow output export to file",
+      "description": "Workflow results are only printed to console. Add `--output-file` option to export final dynamic_values and results to JSON file for programmatic consumption by CI/CD pipelines.",
+      "pathHint": "merobox/commands/bootstrap/run/executor.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Document and validate protocol field - NEAR-only check",
+      "description": "In `validation_utils.py`, `validate_near_only_protocol` validates protocol is 'near' only. This constraint should be documented in README and workflow examples. Add better error message suggesting available protocols.",
+      "pathHint": "merobox/commands/validation_utils.py",
+      "estimatedMinutes": 30,
+      "category": "docs",
+      "severity": "low"
+    },
+    {
+      "title": "Add container resource limits configuration",
+      "description": "Docker containers started without resource limits may consume all host resources. Add optional `memory_limit` and `cpu_limit` configuration to node specs for production-like testing environments.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Improve error messages for missing required fields in steps",
+      "description": "In `base.py` `_validate_required_fields`, error messages list missing fields but don't show example valid configuration. Add examples or links to documentation in validation error messages.",
+      "pathHint": "merobox/commands/bootstrap/steps/base.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add version compatibility check for workflow files",
+      "description": "Workflow YAML files don't declare required merobox version. Add optional `merobox_version` field with semver constraint checking. Warn on version mismatch to prevent confusing errors from feature changes.",
+      "pathHint": "merobox/commands/bootstrap/config.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add cleanup for stale data directories",
+      "description": "The `nuke` command removes containers and data but orphan data directories may remain from crashed runs. Add option to scan for and clean orphan directories not matching any known node.",
+      "pathHint": "merobox/commands/nuke.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Document async session close pattern in NearDevnetClient",
+      "description": "In `near/client.py`, the `close()` method accesses internal `_provider._client` which is fragile. Document this as a workaround or implement proper cleanup using public API if available.",
+      "pathHint": "merobox/commands/near/client.py",
+      "estimatedMinutes": 30,
+      "category": "docs",
+      "severity": "low"
+    },
+    {
+      "title": "Add pre-commit hook configuration in repository",
+      "description": "A `.pre-commit-config.yaml` exists but isn't documented in CONTRIBUTING. Add setup instructions and ensure hooks run: black formatting, ruff linting. Add type checking with mypy.",
+      "pathHint": ".pre-commit-config.yaml",
+      "estimatedMinutes": 45,
+      "category": "config",
+      "severity": "low"
+    },
+    {
+      "title": "Add type hints to remaining untyped functions",
+      "description": "Many functions lack complete type hints, especially in `manager.py`, `executor.py`. Add type hints and enable strict mypy checking. This aids IDE completion and catches type errors early.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 90,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add workflow step dependency graph visualization",
+      "description": "Complex workflows have implicit dependencies via variable references. Add `--visualize` option to generate DOT graph showing step dependencies, variable flow, and node assignments.",
+      "pathHint": "merobox/commands/bootstrap/bootstrap.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Handle keyboard interrupt gracefully during workflow execution",
+      "description": "Ctrl+C during workflow triggers signal handler but async tasks may be in unknown state. Add proper cancellation of running async tasks and cleanup of partial state before exit.",
+      "pathHint": "merobox/commands/bootstrap/run/executor.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add parallel step execution with configurable concurrency",
+      "description": "The `parallel` step exists but doesn't expose concurrency limits. Add `max_concurrent` field to limit parallel execution for resource-constrained environments.",
+      "pathHint": "merobox/commands/bootstrap/steps/parallel.py",
+      "estimatedMinutes": 45,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Implement step retry with backoff for transient failures",
+      "description": "Some step failures are transient (network timeout, node not yet ready). Add optional `retry` configuration to step base with configurable attempts and backoff. Currently only execute step has internal retry.",
+      "pathHint": "merobox/commands/bootstrap/steps/base.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add workflow checkpointing for long-running workflows",
+      "description": "Long workflows (like fuzzy tests) have no recovery if interrupted. Add checkpointing of workflow state to resume from last successful step after crash or restart.",
+      "pathHint": "merobox/commands/bootstrap/run/executor.py",
+      "estimatedMinutes": 90,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Document container capability requirements",
+      "description": "In manager.py, containers get capabilities: CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID. Document why these are needed and security implications. Consider if any can be removed.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 30,
+      "category": "docs",
+      "severity": "low"
+    },
+    {
+      "title": "Add network isolation option for workflow execution",
+      "description": "Docker containers share the host network by default. Add option for isolated network mode where nodes can only communicate with each other, useful for testing network partitions.",
+      "pathHint": "merobox/commands/manager.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Consolidate remote node credential resolution logic",
+      "description": "Credential resolution happens in `remote.py`, `node_resolver.py`, and `executor.py` with subtle differences. Consolidate into single `CredentialResolver` class with consistent behavior across all use cases.",
+      "pathHint": "merobox/commands/node_resolver.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Add workflow template support with parameter substitution",
+      "description": "Workflows are static YAML with only env var expansion. Add template support with parameters: define params at workflow level, substitute in steps, enable workflow reuse with different configs.",
+      "pathHint": "merobox/commands/bootstrap/config.py",
+      "estimatedMinutes": 75,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Improve test coverage for error edge cases",
+      "description": "Test files show ~70% coverage. Add tests for: network timeouts in auth, Docker daemon unavailable, malformed YAML, invalid step configurations, concurrent workflow execution.",
+      "pathHint": "merobox/tests/unit/",
+      "estimatedMinutes": 90,
+      "category": "tests",
+      "severity": "low"
+    },
+    {
+      "title": "Add workflow execution history and logs persistence",
+      "description": "Workflow execution logs are only printed to console. Add option to persist execution logs and results to a history directory for post-mortem debugging and audit purposes.",
+      "pathHint": "merobox/commands/bootstrap/run/executor.py",
+      "estimatedMinutes": 60,
+      "category": "improvement",
+      "severity": "low"
+    },
+    {
+      "title": "Implement step condition evaluation for conditional execution",
+      "description": "Steps execute unconditionally. Add `when` field to steps with expression evaluation (e.g., `when: '{{node_count}} > 1'`) for conditional step execution based on workflow state.",
+      "pathHint": "merobox/commands/bootstrap/steps/base.py",
+      "estimatedMinutes": 75,
+      "category": "improvement",
+      "severity": "low"
+    }
+  ]
+}
