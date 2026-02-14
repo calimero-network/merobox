@@ -22,6 +22,32 @@ console = Console()
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
+async def _call_function_with_retry(
+    rpc_url: str,
+    context_id: str,
+    function_name: str,
+    args: Optional[dict[str, Any]] = None,
+    executor_public_key: Optional[str] = None,
+    node_name: Optional[str] = None,
+) -> dict:
+    """Internal function that performs the actual API call with retry support.
+
+    This function may raise exceptions to trigger the retry decorator.
+    Use call_function() for the public API that always returns result objects.
+    """
+    connection = create_connection(rpc_url, node_name=node_name)
+    client = create_client(connection)
+
+    encoded_args = ensure_json_string(args or {})
+    result = client.execute_function(
+        context_id=context_id,
+        method=function_name,
+        args=encoded_args,
+        executor_public_key=executor_public_key or "",
+    )
+    return ok(result)
+
+
 async def call_function(
     rpc_url: str,
     context_id: str,
@@ -32,6 +58,13 @@ async def call_function(
 ) -> dict:
     """Execute a function call using the admin API.
 
+    This function provides consistent error handling by always returning a result
+    dict with a 'success' key. It never raises exceptions - all errors (including
+    network failures after retry exhaustion) are converted to fail() results.
+
+    Callers should check result['success'] to determine if the call succeeded,
+    not wrap calls in try-except blocks.
+
     Args:
         rpc_url: The admin API URL of the Calimero node.
         context_id: The ID of the context to execute in.
@@ -41,20 +74,18 @@ async def call_function(
         node_name: Optional node name for token caching (required for authenticated nodes).
 
     Returns:
-        The execution result.
+        dict: A result dict with 'success': True and 'data' on success,
+              or 'success': False and 'error'/'exception' on failure.
     """
     try:
-        connection = create_connection(rpc_url, node_name=node_name)
-        client = create_client(connection)
-
-        encoded_args = ensure_json_string(args or {})
-        result = client.execute_function(
-            context_id=context_id,
-            method=function_name,
-            args=encoded_args,
-            executor_public_key=executor_public_key or "",
+        return await _call_function_with_retry(
+            rpc_url,
+            context_id,
+            function_name,
+            args,
+            executor_public_key,
+            node_name,
         )
-        return ok(result)
     except Exception as e:
         return fail("execute_function failed", error=e)
 
