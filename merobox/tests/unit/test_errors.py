@@ -8,6 +8,7 @@ from merobox.commands.errors import (
     ClientError,
     ConfigurationError,
     MeroboxError,
+    MeroboxTimeoutError,
     NodeError,
     NodeResolutionError,
     StepExecutionError,
@@ -59,14 +60,24 @@ class TestMeroboxError:
         result = error.to_dict()
         assert result == {"type": "MeroboxError", "message": "Test error"}
 
+    def test_repr(self):
+        """Test error repr for debugging."""
+        error = MeroboxError("Test error", code="TEST_CODE")
+        assert repr(error) == "MeroboxError('Test error', code='TEST_CODE')"
+
+    def test_repr_no_code(self):
+        """Test error repr without code."""
+        error = MeroboxError("Test error")
+        assert repr(error) == "MeroboxError('Test error', code=None)"
+
 
 class TestNodeError:
     """Tests for NodeError and NodeResolutionError."""
 
     def test_node_error_basic(self):
-        """Test basic NodeError."""
+        """Test basic NodeError (alias for NodeResolutionError)."""
         error = NodeError("Node not found")
-        assert str(error) == "Node not found"
+        assert str(error) == "[NODE_RESOLUTION_FAILED] Node not found"
         assert error.node_ref is None
 
     def test_node_error_with_ref(self):
@@ -76,28 +87,31 @@ class TestNodeError:
         assert error.details["node_ref"] == "my-node"
 
     def test_node_resolution_error(self):
-        """Test NodeResolutionError inherits from NodeError."""
+        """Test NodeResolutionError."""
         error = NodeResolutionError("Cannot resolve node", node_ref="test-node")
-        assert isinstance(error, NodeError)
         assert isinstance(error, MeroboxError)
         assert error.code == "NODE_RESOLUTION_FAILED"
         assert error.node_ref == "test-node"
+
+    def test_node_error_is_alias(self):
+        """Test that NodeError is an alias for NodeResolutionError."""
+        assert NodeError is NodeResolutionError
 
     def test_node_error_inheritance(self):
         """Test that NodeError can be caught as MeroboxError."""
         try:
             raise NodeError("Test")
         except MeroboxError as e:
-            assert str(e) == "Test"
+            assert "[NODE_RESOLUTION_FAILED]" in str(e)
 
 
 class TestAuthError:
     """Tests for AuthError and AuthenticationError."""
 
     def test_auth_error_basic(self):
-        """Test basic AuthError."""
+        """Test basic AuthError (alias for AuthenticationError)."""
         error = AuthError("Invalid credentials")
-        assert str(error) == "Invalid credentials"
+        assert str(error) == "[AUTHENTICATION_FAILED] Invalid credentials"
         assert error.node_url is None
 
     def test_auth_error_with_url(self):
@@ -107,11 +121,14 @@ class TestAuthError:
         assert error.details["node_url"] == "http://localhost:2428"
 
     def test_authentication_error(self):
-        """Test AuthenticationError inherits from AuthError."""
+        """Test AuthenticationError."""
         error = AuthenticationError("Login failed")
-        assert isinstance(error, AuthError)
         assert isinstance(error, MeroboxError)
         assert error.code == "AUTHENTICATION_FAILED"
+
+    def test_auth_error_is_alias(self):
+        """Test that AuthError is an alias for AuthenticationError."""
+        assert AuthError is AuthenticationError
 
     def test_auth_error_to_dict(self):
         """Test AuthError serialization."""
@@ -185,7 +202,7 @@ class TestValidationError:
 
 
 class TestClientError:
-    """Tests for ClientError and TimeoutError."""
+    """Tests for ClientError and MeroboxTimeoutError."""
 
     def test_client_error_basic(self):
         """Test basic ClientError."""
@@ -202,15 +219,27 @@ class TestClientError:
         assert error.details["url"] == "http://api.example.com/endpoint"
         assert error.details["status_code"] == 500
 
-    def test_timeout_error(self):
-        """Test TimeoutError."""
-        error = TimeoutError(
+    def test_merobox_timeout_error(self):
+        """Test MeroboxTimeoutError."""
+        error = MeroboxTimeoutError(
             "Request timed out", url="http://slow-server.com", timeout_seconds=30.0
         )
         assert isinstance(error, ClientError)
         assert error.code == "TIMEOUT"
         assert error.timeout_seconds == 30.0
         assert error.details["timeout_seconds"] == 30.0
+
+    def test_timeout_error_alias(self):
+        """Test TimeoutError is an alias for MeroboxTimeoutError."""
+        assert TimeoutError is MeroboxTimeoutError
+
+    def test_timeout_error_via_alias(self):
+        """Test using TimeoutError alias."""
+        error = TimeoutError(
+            "Request timed out", url="http://slow-server.com", timeout_seconds=30.0
+        )
+        assert isinstance(error, ClientError)
+        assert error.code == "TIMEOUT"
 
 
 class TestConfigurationError:
@@ -246,6 +275,7 @@ class TestErrorHierarchy:
             StepExecutionError("test"),
             ValidationError("test"),
             ClientError("test"),
+            MeroboxTimeoutError("test"),
             TimeoutError("test"),
             ConfigurationError("test"),
         ]
@@ -255,16 +285,16 @@ class TestErrorHierarchy:
 
     def test_error_catching_hierarchy(self):
         """Test that errors can be caught at different levels."""
-        # Test catching NodeResolutionError as NodeError
+        # Test catching NodeResolutionError as MeroboxError
         try:
             raise NodeResolutionError("test")
-        except NodeError:
+        except MeroboxError:
             pass  # Should be caught
 
-        # Test catching AuthenticationError as AuthError
+        # Test catching AuthenticationError as MeroboxError
         try:
             raise AuthenticationError("test")
-        except AuthError:
+        except MeroboxError:
             pass  # Should be caught
 
         # Test catching StepValidationError as WorkflowError
@@ -273,9 +303,9 @@ class TestErrorHierarchy:
         except WorkflowError:
             pass  # Should be caught
 
-        # Test catching TimeoutError as ClientError
+        # Test catching MeroboxTimeoutError as ClientError
         try:
-            raise TimeoutError("test")
+            raise MeroboxTimeoutError("test")
         except ClientError:
             pass  # Should be caught
 
@@ -284,3 +314,17 @@ class TestErrorHierarchy:
         error = MeroboxError("test")
         assert isinstance(error, Exception)
         assert isinstance(error, BaseException)
+
+    def test_aliases_work_correctly(self):
+        """Test that backward compatibility aliases work correctly."""
+        # NodeError is NodeResolutionError
+        node_err = NodeError("test")
+        assert type(node_err).__name__ == "NodeResolutionError"
+
+        # AuthError is AuthenticationError
+        auth_err = AuthError("test")
+        assert type(auth_err).__name__ == "AuthenticationError"
+
+        # TimeoutError is MeroboxTimeoutError
+        timeout_err = TimeoutError("test")
+        assert type(timeout_err).__name__ == "MeroboxTimeoutError"

@@ -14,6 +14,7 @@ from merobox.commands.errors import (
     ClientError,
     ConfigurationError,
     MeroboxError,
+    MeroboxTimeoutError,
     NodeError,
     NodeResolutionError,
     StepExecutionError,
@@ -66,6 +67,7 @@ __all__ = [
     "StepExecutionError",
     "ValidationError",
     "ClientError",
-    "TimeoutError",
+    "MeroboxTimeoutError",
+    "TimeoutError",  # Backward compatibility alias for MeroboxTimeoutError
     "ConfigurationError",
 ]

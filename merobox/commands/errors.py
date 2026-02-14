@@ -3,11 +3,14 @@ Typed error classes for merobox.
 
 This module provides a proper error hierarchy for better error handling and debugging:
 - MeroboxError: Base exception for all merobox errors
-- NodeError: Errors related to node resolution and connectivity
-- AuthError: Authentication and authorization errors
+- NodeResolutionError: Errors related to node resolution and connectivity
+- AuthenticationError: Authentication and authorization errors
 - WorkflowError: Workflow execution errors
 - ValidationError: Input validation errors
 - ClientError: Client/API communication errors
+
+Note: Error details should never contain sensitive information such as passwords,
+API keys, or tokens. These may be logged or included in API responses.
 """
 
 from typing import Any, Optional
@@ -19,7 +22,9 @@ class MeroboxError(Exception):
     Attributes:
         message: Human-readable error message
         code: Optional error code for programmatic handling
-        details: Optional dictionary with additional error context
+        details: Optional dictionary with additional error context.
+                 Note: Do not include sensitive data (passwords, tokens, etc.)
+                 as details may be logged or serialized.
     """
 
     def __init__(
@@ -50,8 +55,11 @@ class MeroboxError(Exception):
             return f"[{self.code}] {self.message}"
         return self.message
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.message!r}, code={self.code!r})"
 
-class NodeError(MeroboxError):
+
+class NodeResolutionError(MeroboxError):
     """Errors related to node resolution and connectivity.
 
     Raised when:
@@ -71,27 +79,16 @@ class NodeError(MeroboxError):
         details = details or {}
         if node_ref:
             details["node_ref"] = node_ref
-        super().__init__(message, code=code, details=details)
-
-
-class NodeResolutionError(NodeError):
-    """Raised when a node cannot be resolved.
-
-    This is a specific type of NodeError for backward compatibility.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        node_ref: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-    ):
         super().__init__(
-            message, node_ref=node_ref, code="NODE_RESOLUTION_FAILED", details=details
+            message, code=code or "NODE_RESOLUTION_FAILED", details=details
         )
 
 
-class AuthError(MeroboxError):
+# Backward compatibility alias
+NodeError = NodeResolutionError
+
+
+class AuthenticationError(MeroboxError):
     """Authentication and authorization errors.
 
     Raised when:
@@ -111,24 +108,11 @@ class AuthError(MeroboxError):
         details = details or {}
         if node_url:
             details["node_url"] = node_url
-        super().__init__(message, code=code, details=details)
+        super().__init__(message, code=code or "AUTHENTICATION_FAILED", details=details)
 
 
-class AuthenticationError(AuthError):
-    """Raised when authentication fails.
-
-    This is a specific type of AuthError for backward compatibility.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        node_url: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-    ):
-        super().__init__(
-            message, node_url=node_url, code="AUTHENTICATION_FAILED", details=details
-        )
+# Backward compatibility alias
+AuthError = AuthenticationError
 
 
 class WorkflowError(MeroboxError):
@@ -214,6 +198,9 @@ class ValidationError(MeroboxError):
     - Function arguments are invalid
     - Configuration values are out of range
     - Required fields are missing
+
+    Warning: Do not pass sensitive values (passwords, API keys, tokens) to the
+    `value` parameter as they may be logged or included in error responses.
     """
 
     def __init__(
@@ -261,10 +248,11 @@ class ClientError(MeroboxError):
         super().__init__(message, code=code, details=details)
 
 
-class TimeoutError(ClientError):
+class MeroboxTimeoutError(ClientError):
     """Raised when an operation times out.
 
     This is a specific type of ClientError for timeout issues.
+    Named MeroboxTimeoutError to avoid shadowing Python's built-in TimeoutError.
     """
 
     def __init__(
@@ -279,6 +267,10 @@ class TimeoutError(ClientError):
         if timeout_seconds is not None:
             details["timeout_seconds"] = timeout_seconds
         super().__init__(message, url=url, code="TIMEOUT", details=details)
+
+
+# Backward compatibility alias
+TimeoutError = MeroboxTimeoutError
 
 
 class ConfigurationError(MeroboxError):
@@ -316,6 +308,7 @@ __all__ = [
     "StepExecutionError",
     "ValidationError",
     "ClientError",
-    "TimeoutError",
+    "MeroboxTimeoutError",
+    "TimeoutError",  # Backward compatibility alias
     "ConfigurationError",
 ]
