@@ -170,7 +170,10 @@ class InviteOpenStep(BaseStepConfig):
     type: Literal["invite_open"] = "invite_open"
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID")
-    invitee_id: str = Field(..., description="Invitee public key")
+    granter_id: str = Field(..., description="Granter public key")
+    valid_for_blocks: Optional[int] = Field(
+        None, description="Number of blocks the invitation is valid for"
+    )
 
 
 class JoinOpenStep(BaseStepConfig):
@@ -178,8 +181,8 @@ class JoinOpenStep(BaseStepConfig):
 
     type: Literal["join_open"] = "join_open"
     node: str = Field(..., description="Target node")
-    context_id: str = Field(..., description="Context ID")
-    public_key: Optional[str] = Field(None, description="Public key to use")
+    invitee_id: str = Field(..., description="Invitee public key")
+    invitation: str = Field(..., description="Invitation data")
 
 
 class CallStep(BaseStepConfig):
@@ -257,17 +260,21 @@ class AssertStep(BaseStepConfig):
     """Configuration for assert step."""
 
     type: Literal["assert"] = "assert"
-    condition: str = Field(..., description="Condition to assert")
-    message: Optional[str] = Field(None, description="Message on failure")
+    statements: list[Union[str, dict[str, Any]]] = Field(
+        ..., description="List of assertion statements"
+    )
+    non_blocking: Optional[bool] = Field(
+        None, description="If true, continue workflow on failure"
+    )
 
 
 class JsonAssertStep(BaseStepConfig):
     """Configuration for json_assert step."""
 
     type: Literal["json_assert"] = "json_assert"
-    actual: str = Field(..., description="Actual value or variable")
-    expected: Any = Field(..., description="Expected value")
-    message: Optional[str] = Field(None, description="Message on failure")
+    statements: list[Union[str, dict[str, Any]]] = Field(
+        ..., description="List of JSON assertion statements"
+    )
 
 
 class GetProposalStep(BaseStepConfig):
@@ -301,9 +308,8 @@ class UploadBlobStep(BaseStepConfig):
 
     type: Literal["upload_blob"] = "upload_blob"
     node: str = Field(..., description="Target node")
-    context_id: str = Field(..., description="Context ID")
-    path: str = Field(..., description="Path to the blob file")
-    content_type: Optional[str] = Field(None, description="Content type of the blob")
+    file_path: str = Field(..., description="Path to the blob file")
+    context_id: Optional[str] = Field(None, description="Context ID (optional)")
 
 
 class CreateMeshStep(BaseStepConfig):
@@ -447,9 +453,7 @@ def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
     """
     # Guard against non-dict steps (e.g., null or scalar values in YAML)
     if not isinstance(step, dict):
-        return [
-            f"Step {step_index}: Expected a mapping but got {type(step).__name__}"
-        ]
+        return [f"Step {step_index}: Expected a mapping but got {type(step).__name__}"]
 
     errors = []
     step_name = step.get("name", f"Step {step_index + 1}")
