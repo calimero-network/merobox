@@ -51,8 +51,9 @@ console = Console()
 T = TypeVar("T")
 
 # Connection pooling configuration
-DEFAULT_POOL_CONNECTIONS = 100  # Maximum number of connections in the pool
-DEFAULT_POOL_CONNECTIONS_PER_HOST = 10  # Maximum connections per host
+# Note: Pool sizes are modest for CLI usage; increase for high-concurrency servers
+DEFAULT_POOL_CONNECTIONS = 20  # Maximum number of connections in the pool
+DEFAULT_POOL_CONNECTIONS_PER_HOST = 5  # Maximum connections per host
 DEFAULT_POOL_KEEPALIVE_TIMEOUT = 30  # Seconds to keep idle connections alive
 
 
@@ -69,14 +70,21 @@ class SessionManager:
 
     Usage Patterns:
 
-        # Option 1: Context manager (short-lived, auto-cleanup)
-        # Note: This creates AND CLOSES a session when exiting the context.
-        # Use this for one-off requests where you want automatic cleanup.
+        # Option 1: Global shared instance (RECOMMENDED for connection pooling)
+        # Session persists across calls for connection reuse benefits.
+        session = await get_shared_session()
+        async with session.get(url) as response:
+            data = await response.json()
+        # IMPORTANT: Call close_shared_session() during app shutdown!
+
+        # Option 2: Context manager (short-lived, NO pooling benefit)
+        # Creates a NEW session and closes it on exit - use only for
+        # isolated one-off requests where you need automatic cleanup.
         async with SessionManager() as session:
             async with session.get(url) as response:
                 data = await response.json()
 
-        # Option 2: Manual management (long-lived)
+        # Option 3: Manual management
         manager = SessionManager()
         session = await manager.get_session()
         try:
@@ -85,17 +93,15 @@ class SessionManager:
         finally:
             await manager.close()
 
-        # Option 3: Global shared instance (recommended for most use cases)
-        # Session persists across calls for connection reuse benefits.
-        session = await get_shared_session()
-        async with session.get(url) as response:
-            data = await response.json()
-
     Important:
-        - Context manager usage (Option 1) closes the session on exit.
-        - Shared instance usage (Option 3) keeps the session open for reuse.
+        - For connection pooling benefits, use Option 1 (get_shared_session()).
+        - Context manager (Option 2) defeats pooling - use for isolated requests only.
+        - Do NOT use get_shared_instance() as a context manager - it will close
+          the shared session and defeat pooling for other callers.
         - Call close_shared_session() during application shutdown to properly
-          release all HTTP connections when using the shared instance.
+          release all HTTP connections.
+        - Ensure close() is called in the same event loop where the session was
+          created to avoid resource leaks when switching loops.
     """
 
     _instance: Optional["SessionManager"] = None
@@ -203,6 +209,10 @@ class SessionManager:
 
             # Create session if needed
             if self._session is None or self._session.closed:
+                # Close existing connector if session was closed externally
+                # to prevent resource leak
+                if self._connector is not None and not self._connector.closed:
+                    await self._connector.close()
                 self._connector = self._create_connector()
                 self._session = self._create_session(self._connector)
                 self._session_loop_id = current_loop_id
@@ -284,9 +294,15 @@ class SessionManager:
 
 
 def _cleanup_shared_session() -> None:
-    """Atexit handler to warn about unclosed shared session."""
-    if SessionManager._instance is not None:
+    """Atexit handler to warn about unclosed shared session.
+
+    Note: Cannot run async close() from atexit, so we only warn.
+    Callers MUST call close_shared_session() before exit.
+    """
+    # Acquire lock to safely read _instance (prevents race with close_shared_instance)
+    with SessionManager._instance_lock:
         instance = SessionManager._instance
+    if instance is not None:
         if instance._session is not None and not instance._session.closed:
             warnings.warn(
                 "SessionManager: Shared session was not closed before exit. "

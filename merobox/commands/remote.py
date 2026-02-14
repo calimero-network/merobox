@@ -42,8 +42,9 @@ console = Console()
 def run_async(coro):
     """Run an async function and clean up shared auth sessions."""
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
     except RuntimeError:
+        # No running loop - create a new one
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(run_with_shared_session_cleanup(coro))
