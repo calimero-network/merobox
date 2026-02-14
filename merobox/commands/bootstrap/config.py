@@ -113,7 +113,7 @@ class BaseStepConfig(BaseModel):
         if self.type not in VALID_STEP_TYPES:
             raise ValueError(
                 f"Invalid step type '{self.type}'. "
-                f"Valid types are: {', '.join(VALID_STEP_TYPES)}"
+                f"Valid types are: {', '.join(sorted(VALID_STEP_TYPES))}"
             )
         return self
 
@@ -495,17 +495,27 @@ def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
 
     # Recursively validate nested steps (for repeat and parallel)
     if step_type == "repeat":
-        nested_steps = step.get("steps", [])
+        # Use `or []` to handle null values when key exists with no value
+        nested_steps = step.get("steps") or []
         for i, nested_step in enumerate(nested_steps):
             nested_errors = validate_workflow_step(nested_step, i)
             for err in nested_errors:
                 errors.append(f"Step '{step_name}' (index {step_index}) -> {err}")
 
     elif step_type == "parallel":
-        groups = step.get("groups", [])
+        # Use `or []` to handle null values when key exists with no value
+        groups = step.get("groups") or []
         for g_idx, group in enumerate(groups):
+            # Guard against non-dict group elements
+            if not isinstance(group, dict):
+                errors.append(
+                    f"Step '{step_name}' (index {step_index}): "
+                    f"Group {g_idx} must be a mapping but got {type(group).__name__}"
+                )
+                continue
             group_name = group.get("name", f"Group {g_idx + 1}")
-            nested_steps = group.get("steps", [])
+            # Use `or []` for nested steps as well
+            nested_steps = group.get("steps") or []
             for i, nested_step in enumerate(nested_steps):
                 nested_errors = validate_workflow_step(nested_step, i)
                 for err in nested_errors:
