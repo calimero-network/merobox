@@ -234,18 +234,20 @@ class ParallelStep(BaseStep):
         for i, (result, group) in enumerate(zip(group_results, groups)):
             group_name = group.get("name", f"Group {i+1}")
 
+            # Check for CancelledError first (inherits from BaseException, not Exception)
+            if isinstance(result, asyncio.CancelledError):
+                console.print(
+                    f"[yellow]⚠️ Group '{group_name}' was cancelled "
+                    f"(fail-fast triggered by another group)[/yellow]"
+                )
+                failure_count += 1
+                continue
+
             if isinstance(result, Exception):
-                # Check if this is a cancellation (from fail-fast mode)
-                if isinstance(result, asyncio.CancelledError):
-                    console.print(
-                        f"[yellow]⚠️ Group '{group_name}' was cancelled "
-                        f"(fail-fast triggered by another group)[/yellow]"
-                    )
-                else:
-                    console.print(
-                        f"[red]❌ Group '{group_name}' failed with error: "
-                        f"{str(result)}[/red]"
-                    )
+                console.print(
+                    f"[red]❌ Group '{group_name}' failed with error: "
+                    f"{str(result)}[/red]"
+                )
                 failure_count += 1
                 continue
 
@@ -397,66 +399,64 @@ class ParallelStep(BaseStep):
                     pending, return_when=asyncio.FIRST_COMPLETED
                 )
 
+                # First, process ALL completed tasks to avoid race condition
+                # where results are lost when multiple tasks complete simultaneously
+                should_cancel = False
+                cancel_reason = None
+
                 for task in done:
                     idx = task_to_index[task]
                     try:
                         result = task.result()
                         results[idx] = result
 
-                        # Check if this task failed
+                        # Check if this task failed (mark for cancellation but continue processing)
                         if isinstance(result, dict) and not result.get("success", True):
-                            # A group failed - cancel all remaining tasks
-                            group_name = groups[idx].get("name", f"Group {idx+1}")
-                            console.print(
-                                f"[yellow]⚡ fail-fast: Group '{group_name}' failed, "
-                                f"cancelling {len(pending)} remaining group(s)...[/yellow]"
-                            )
-                            for pending_task in pending:
-                                pending_task.cancel()
-                            # Collect cancellation results
-                            if pending:
-                                cancelled_results = await asyncio.gather(
-                                    *pending, return_exceptions=True
+                            if not should_cancel:
+                                should_cancel = True
+                                cancel_reason = groups[idx].get(
+                                    "name", f"Group {idx+1}"
                                 )
-                                for cancelled_task, cancelled_result in zip(
-                                    list(pending), cancelled_results
-                                ):
-                                    cancelled_idx = task_to_index[cancelled_task]
-                                    results[cancelled_idx] = cancelled_result
-                            pending = set()
-                            break
-                    except asyncio.CancelledError:
-                        results[idx] = asyncio.CancelledError()
-                    except Exception as e:
+                    except asyncio.CancelledError as e:
+                        # Preserve the original exception context
                         results[idx] = e
-                        # An exception occurred - cancel all remaining tasks
-                        console.print(
-                            f"[yellow]⚡ fail-fast: Exception in group, "
-                            f"cancelling {len(pending)} remaining group(s)...[/yellow]"
-                        )
-                        for pending_task in pending:
-                            pending_task.cancel()
-                        # Collect cancellation results
-                        if pending:
-                            cancelled_results = await asyncio.gather(
-                                *pending, return_exceptions=True
-                            )
-                            for cancelled_task, cancelled_result in zip(
-                                list(pending), cancelled_results
-                            ):
-                                cancelled_idx = task_to_index[cancelled_task]
-                                results[cancelled_idx] = cancelled_result
-                        pending = set()
-                        break
+                    except Exception as e:
+                        # Preserve the original exception
+                        results[idx] = e
+                        if not should_cancel:
+                            should_cancel = True
+                            cancel_reason = f"exception in group {idx+1}"
+
+                # After processing all done tasks, cancel remaining if needed
+                if should_cancel and pending:
+                    console.print(
+                        f"[yellow]⚡ fail-fast: '{cancel_reason}' triggered failure, "
+                        f"cancelling {len(pending)} remaining group(s)...[/yellow]"
+                    )
+                    # Convert pending to list to ensure consistent ordering
+                    pending_list = list(pending)
+                    for pending_task in pending_list:
+                        pending_task.cancel()
+                    # Collect cancellation results with consistent ordering
+                    cancelled_results = await asyncio.gather(
+                        *pending_list, return_exceptions=True
+                    )
+                    for pending_task, cancelled_result in zip(
+                        pending_list, cancelled_results
+                    ):
+                        cancelled_idx = task_to_index[pending_task]
+                        results[cancelled_idx] = cancelled_result
+                    pending = set()
 
         except Exception as e:
             console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
             # Cancel any remaining tasks
-            for task in pending:
+            pending_list = list(pending)
+            for task in pending_list:
                 task.cancel()
             # Wait for cancellations to complete
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
+            if pending_list:
+                await asyncio.gather(*pending_list, return_exceptions=True)
             raise
 
         return results
@@ -482,55 +482,33 @@ class ParallelStep(BaseStep):
             List of results (dict with success/duration or Exception)
         """
         try:
+            # Print warning for unimplemented modes
             # TODO: Implement different execution modes
             # - "burst" (current): All groups start simultaneously
             # - "sustained": Rate-limited execution with controlled concurrency
             # - "mixed": Combination of burst and sustained
-
-            if mode == "burst":
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                return await asyncio.gather(*tasks, return_exceptions=True)
-            elif mode == "sustained":
+            if mode == "sustained":
                 console.print(
                     "[yellow]⚠️  'sustained' mode not yet implemented, "
                     "falling back to 'burst' mode[/yellow]"
                 )
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                return await asyncio.gather(*tasks, return_exceptions=True)
             elif mode == "mixed":
                 console.print(
                     "[yellow]⚠️  'mixed' mode not yet implemented, "
                     "falling back to 'burst' mode[/yellow]"
                 )
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                return await asyncio.gather(*tasks, return_exceptions=True)
-            else:
+            elif mode != "burst":
                 console.print(
                     f"[yellow]⚠️  Unknown mode '{mode}', "
                     "defaulting to 'burst' mode[/yellow]"
                 )
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                return await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Create and execute tasks (common logic for all modes)
+            tasks = [
+                self._execute_group(i, group, workflow_results, dynamic_values.copy())
+                for i, group in enumerate(groups)
+            ]
+            return await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
             console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
             raise

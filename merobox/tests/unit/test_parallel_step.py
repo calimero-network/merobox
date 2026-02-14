@@ -178,6 +178,7 @@ class TestParallelStepExecution:
     async def test_fail_fast_cancels_remaining_groups(self, mock_console):
         """Test that fail-fast mode cancels remaining groups after failure."""
         started_groups = []
+        completed_groups = []
 
         async def mock_execute_group(
             self, idx, group, workflow_results, dynamic_values
@@ -187,11 +188,17 @@ class TestParallelStepExecution:
 
             if idx == 0:
                 # First group fails immediately
+                completed_groups.append(group_name)
                 return {"success": False, "duration_seconds": 0.001}
             else:
-                # Other groups take longer
-                await asyncio.sleep(1.0)  # Long enough to be cancelled
-                return {"success": True, "duration_seconds": 1.0}
+                # Other groups take longer - should be cancelled
+                try:
+                    await asyncio.sleep(10.0)  # Long enough to be cancelled
+                    completed_groups.append(group_name)
+                    return {"success": True, "duration_seconds": 10.0}
+                except asyncio.CancelledError:
+                    # Re-raise to properly propagate cancellation
+                    raise
 
         config = {
             "name": "Test Parallel",
@@ -199,16 +206,24 @@ class TestParallelStepExecution:
             "failure_mode": "fail-fast",
             "groups": [
                 {"name": "FailingGroup", "steps": [{"type": "wait", "duration": 0.01}]},
-                {"name": "SlowGroup", "steps": [{"type": "wait", "duration": 1}]},
+                {"name": "SlowGroup", "steps": [{"type": "wait", "duration": 10}]},
             ],
         }
 
         step = ParallelStep(config)
+        dynamic_values = {}
         with patch.object(ParallelStep, "_execute_group", mock_execute_group):
-            result = await step.execute({}, {})
+            result = await step.execute({}, dynamic_values)
 
         # Result should be False
         assert result is False
+        # Verify that SlowGroup was cancelled (not in completed_groups)
+        assert "FailingGroup" in completed_groups
+        assert "SlowGroup" not in completed_groups
+        # Verify failure count reflects the cancellation
+        assert (
+            dynamic_values.get("parallel_failure_count") == 2
+        )  # 1 failed + 1 cancelled
 
     @pytest.mark.asyncio
     async def test_continue_on_error_returns_success_with_partial_success(
