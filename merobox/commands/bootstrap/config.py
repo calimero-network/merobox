@@ -445,6 +445,12 @@ def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
     Returns:
         List of validation error messages (empty if valid)
     """
+    # Guard against non-dict steps (e.g., null or scalar values in YAML)
+    if not isinstance(step, dict):
+        return [
+            f"Step {step_index}: Expected a mapping but got {type(step).__name__}"
+        ]
+
     errors = []
     step_name = step.get("name", f"Step {step_index + 1}")
     step_type = step.get("type")
@@ -532,8 +538,8 @@ def validate_workflow_config(config: dict[str, Any]) -> list[str]:
             "Workflow config: At least one of 'nodes' or 'remote_nodes' must be specified"
         )
 
-    # Validate each step
-    steps = config.get("steps", [])
+    # Validate each step (handle None value when key exists but has no value)
+    steps = config.get("steps") or []
     for i, step in enumerate(steps):
         step_errors = validate_workflow_step(step, i)
         errors.extend(step_errors)
@@ -694,8 +700,9 @@ def load_workflow_config(
                     "Missing required field: either 'nodes' or 'remote_nodes' must be specified"
                 )
 
-        # Perform schema validation unless explicitly skipped
-        if not skip_schema_validation:
+        # Perform schema validation unless explicitly skipped or in validate_only mode
+        # (validate_only mode is used by the validate command which has its own validator)
+        if not skip_schema_validation and not validate_only:
             validation_errors = validate_workflow_config(config)
             if validation_errors:
                 error_message = format_validation_errors(validation_errors)
