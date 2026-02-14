@@ -2,16 +2,13 @@ description: Example workflow demonstrating wait_for_sync step for root hash ver
 name: Wait for Sync Example
 force_pull_image: true
 
-near_devnet: true
-contracts_dir: contracts/near
-
 # This workflow demonstrates the new wait_for_sync step that actively verifies
 # node synchronization by comparing root hashes instead of using fixed wait times.
 
 nodes:
   chain_id: testnet-1
   count: 3
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: sync-node
 
 steps:
