@@ -239,9 +239,11 @@ class DockerManager:
             node_data_dir = os.path.join(data_dir, node_name)
             os.makedirs(node_data_dir, exist_ok=True)
 
-            # Set permissions to be world-writable since container runs as root
-            os.chmod(data_dir, 0o777)
-            os.chmod(node_data_dir, 0o777)
+            # Set restrictive permissions (owner only) for sensitive node data
+            # Root in the container has full access regardless, and _fix_permissions
+            # handles ownership when the host user needs to access files created by Docker
+            os.chmod(data_dir, 0o700)
+            os.chmod(node_data_dir, 0o700)
 
             # Handle custom config if provided
             skip_init = False
