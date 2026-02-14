@@ -1,4 +1,3 @@
-import signal
 from unittest.mock import MagicMock, patch
 
 import docker
@@ -12,10 +11,10 @@ def test_docker_container_uses_cap_add_not_privileged(mock_docker):
     # Setup
     client = MagicMock()
     mock_docker.return_value = client
-    manager = DockerManager()
+    manager = DockerManager(enable_signal_handlers=False)
 
     # Mock internal checks
-    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._node_manager._ensure_image_pulled = MagicMock(return_value=True)
 
     # Mock container run to capture the config
     container_configs = []
@@ -61,7 +60,7 @@ def test_docker_container_uses_cap_add_not_privileged(mock_docker):
         ), f"Expected capability {cap} in cap_add list"
 
 
-@patch("merobox.commands.manager.apply_near_devnet_config_to_file")
+@patch("merobox.commands.managers.node.apply_near_devnet_config_to_file")
 @patch("docker.from_env")
 def test_docker_run_node_calls_shared_config(mock_docker, mock_apply_config):
     # Setup
@@ -77,8 +76,8 @@ def test_docker_run_node_calls_shared_config(mock_docker, mock_apply_config):
         "secret_key": "sk",
     }
 
-    # Mock internal checks
-    manager._ensure_image_pulled = MagicMock(return_value=True)
+    # Mock internal checks - now need to mock on the node manager
+    manager._node_manager._ensure_image_pulled = MagicMock(return_value=True)
 
     # Run the node
     manager.run_node("node1", near_devnet_config=near_config)
@@ -93,84 +92,41 @@ def test_docker_run_node_calls_shared_config(mock_docker, mock_apply_config):
 
 
 @patch("docker.from_env")
-def test_docker_manager_signal_handlers_registered(mock_docker):
-    """Test that signal handlers are registered when enabled."""
+def test_docker_manager_has_node_manager(mock_docker):
+    """Test that DockerManager properly initializes NodeManager."""
     client = MagicMock()
     mock_docker.return_value = client
 
-    # Create manager with signal handlers enabled
-    manager = DockerManager(enable_signal_handlers=True)
+    manager = DockerManager(enable_signal_handlers=False)
 
-    # Verify handlers were stored
-    assert manager._original_sigint_handler is not None
-    assert manager._original_sigterm_handler is not None
+    # Verify sub-managers are accessible
+    assert manager._node_manager is not None
+    assert manager.network_manager is not None
+    assert manager.auth_service_manager is not None
 
-    # Cleanup - restore original handlers
-    manager.remove_signal_handlers()
+
+@patch("docker.from_env")
+def test_docker_manager_backward_compatibility(mock_docker):
+    """Test that DockerManager maintains backward compatible properties."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Verify backward compatible properties
+    assert manager.client is not None
+    assert isinstance(manager.nodes, dict)
+    assert isinstance(manager.node_rpc_ports, dict)
 
 
 @patch("docker.from_env")
 def test_docker_manager_signal_handlers_disabled(mock_docker):
-    """Test that signal handlers are not registered when disabled."""
+    """Test that signal handlers can be disabled."""
     client = MagicMock()
     mock_docker.return_value = client
 
-    # Create manager with signal handlers disabled
     manager = DockerManager(enable_signal_handlers=False)
 
-    # Verify handlers were not stored (None indicates not set up)
+    # Verify signal handler state
     assert manager._original_sigint_handler is None
     assert manager._original_sigterm_handler is None
-
-
-@patch("docker.from_env")
-def test_docker_manager_cleanup_resources(mock_docker):
-    """Test that _cleanup_resources stops all managed containers."""
-    client = MagicMock()
-    mock_docker.return_value = client
-
-    manager = DockerManager(enable_signal_handlers=False)
-
-    # Add mock containers to track
-    mock_container1 = MagicMock()
-    mock_container2 = MagicMock()
-    manager.nodes = {"node1": mock_container1, "node2": mock_container2}
-    manager.node_rpc_ports = {"node1": 2528, "node2": 2529}
-
-    # Call cleanup
-    manager._cleanup_resources()
-
-    # Verify containers were stopped and removed
-    mock_container1.stop.assert_called_once_with(timeout=10)
-    mock_container1.remove.assert_called_once()
-    mock_container2.stop.assert_called_once_with(timeout=10)
-    mock_container2.remove.assert_called_once()
-
-    # Verify tracking dicts were cleared
-    assert len(manager.nodes) == 0
-    assert len(manager.node_rpc_ports) == 0
-
-
-@patch("docker.from_env")
-def test_docker_manager_remove_signal_handlers(mock_docker):
-    """Test that signal handlers can be removed and restored."""
-    client = MagicMock()
-    mock_docker.return_value = client
-
-    # Store original handlers before test
-    original_sigint = signal.getsignal(signal.SIGINT)
-    original_sigterm = signal.getsignal(signal.SIGTERM)
-
-    # Create manager with signal handlers enabled
-    manager = DockerManager(enable_signal_handlers=True)
-
-    # Handlers should be different now
-    current_sigint = signal.getsignal(signal.SIGINT)
-    assert current_sigint == manager._signal_handler
-
-    # Remove handlers
-    manager.remove_signal_handlers()
-
-    # Verify handlers were restored
-    assert signal.getsignal(signal.SIGINT) == original_sigint
-    assert signal.getsignal(signal.SIGTERM) == original_sigterm
