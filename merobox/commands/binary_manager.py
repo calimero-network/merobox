@@ -2,12 +2,12 @@
 Binary Manager - Manages Calimero nodes as native processes (no Docker).
 """
 
+import atexit
 import os
 import re
 import shutil
 import signal
 import socket
-import stat
 import subprocess
 import sys
 import time
@@ -15,10 +15,13 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-import toml
 from rich.console import Console
 
-from merobox.commands.config_utils import apply_near_devnet_config_to_file
+from merobox.commands.config_utils import (
+    apply_bootstrap_nodes,
+    apply_e2e_defaults,
+    apply_near_devnet_config_to_file,
+)
 
 console = Console()
 
@@ -26,13 +29,21 @@ console = Console()
 class BinaryManager:
     """Manages Calimero nodes as native binary processes."""
 
-    def __init__(self, binary_path: Optional[str] = None, require_binary: bool = True):
+    def __init__(
+        self,
+        binary_path: Optional[str] = None,
+        require_binary: bool = True,
+        enable_signal_handlers: bool = True,
+    ):
         """
         Initialize the BinaryManager.
 
         Args:
             binary_path: Path to the merod binary. If None, searches PATH.
             require_binary: If True, exit if binary not found. If False, set to None gracefully.
+            enable_signal_handlers: If True, register signal handlers for graceful
+                shutdown on SIGINT/SIGTERM. Set to False in tests or when managing
+                signals externally.
         """
         if (
             binary_path
@@ -51,6 +62,78 @@ class BinaryManager:
         self.node_rpc_ports: dict[str, int] = {}
         self.pid_file_dir = Path("./data/.pids")
         self.pid_file_dir.mkdir(parents=True, exist_ok=True)
+        self._shutting_down = False
+        self._original_sigint_handler = None
+        self._original_sigterm_handler = None
+
+        if enable_signal_handlers:
+            self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Register signal handlers for graceful shutdown."""
+        # Store original handlers so we can restore them if needed
+        self._original_sigint_handler = signal.signal(
+            signal.SIGINT, self._signal_handler
+        )
+        self._original_sigterm_handler = signal.signal(
+            signal.SIGTERM, self._signal_handler
+        )
+        # Also register atexit handler for cleanup on normal exit
+        atexit.register(self._cleanup_on_exit)
+
+    def _signal_handler(self, signum, frame):
+        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
+        if self._shutting_down:
+            # Already shutting down, force exit on second signal
+            console.print("\n[red]Forced exit requested, terminating...[/red]")
+            sys.exit(1)
+
+        self._shutting_down = True
+        sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+        console.print(
+            f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
+        )
+
+        self._cleanup_resources()
+
+        # Exit cleanly
+        sys.exit(0)
+
+    def _cleanup_on_exit(self):
+        """Cleanup handler for atexit - only runs if not already cleaned up."""
+        if not self._shutting_down:
+            self._cleanup_resources()
+
+    def _cleanup_resources(self):
+        """Stop all managed processes."""
+        if self.processes:
+            console.print("[cyan]Stopping managed processes...[/cyan]")
+            for node_name in list(self.processes.keys()):
+                try:
+                    process = self.processes[node_name]
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    console.print(f"[green]✓ Stopped process {node_name}[/green]")
+                    self._remove_pid_file(node_name)
+                except Exception as e:
+                    console.print(
+                        f"[yellow]⚠️  Could not stop process {node_name}: {e}[/yellow]"
+                    )
+            self.processes.clear()
+            self.node_rpc_ports.clear()
+
+    def remove_signal_handlers(self):
+        """Remove signal handlers and restore original handlers."""
+        if self._original_sigint_handler is not None:
+            signal.signal(signal.SIGINT, self._original_sigint_handler)
+            self._original_sigint_handler = None
+        if self._original_sigterm_handler is not None:
+            signal.signal(signal.SIGTERM, self._original_sigterm_handler)
+            self._original_sigterm_handler = None
 
     def _find_binary(self, require: bool = True) -> Optional[str]:
         """Find the merod binary in PATH or common locations.
@@ -297,13 +380,11 @@ class BinaryManager:
 
             # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
             if e2e_mode:
-                self._apply_e2e_defaults(actual_config_file, node_name, workflow_id)
+                apply_e2e_defaults(actual_config_file, node_name, workflow_id)
 
             # Apply bootstrap nodes configuration (works regardless of e2e_mode)
             if bootstrap_nodes:
-                self._apply_bootstrap_nodes(
-                    actual_config_file, node_name, bootstrap_nodes
-                )
+                apply_bootstrap_nodes(actual_config_file, node_name, bootstrap_nodes)
 
             # Apply NEAR Devnet config if provided
             if near_devnet_config:
@@ -859,107 +940,6 @@ class BinaryManager:
         # For binary mode, just check if the process is running
         return self.is_node_running(node_name)
 
-    def _apply_bootstrap_nodes(
-        self,
-        config_file: Path,
-        node_name: str,
-        bootstrap_nodes: list[str],
-    ):
-        """Apply bootstrap nodes configuration."""
-        try:
-            import toml
-
-            if not config_file.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            with open(config_file, encoding="utf-8") as f:
-                config = toml.load(f)
-
-            self._set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
-
-            import stat
-
-            if config_file.exists():
-                config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
-
-            with open(config_file, "w", encoding="utf-8") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied bootstrap nodes to {node_name} ({len(bootstrap_nodes)} nodes)[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply bootstrap nodes to {node_name}: {e}[/red]"
-            )
-
-    def _apply_e2e_defaults(
-        self,
-        config_file: Path,
-        node_name: str,
-        workflow_id: Optional[str],
-    ):
-        """Apply e2e-style defaults for reliable testing."""
-        try:
-            # Generate unique workflow ID if not provided
-            if not workflow_id:
-                workflow_id = str(uuid.uuid4())[:8]
-
-            # Check if config file exists
-            if not config_file.exists():
-                console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
-                return
-
-            # Load existing config
-            with open(config_file, encoding="utf-8") as f:
-                config = toml.load(f)
-
-            # Apply e2e-style defaults for reliable testing
-            e2e_config = {
-                # Disable bootstrap nodes for test isolation
-                "bootstrap.nodes": [],
-                # Use unique rendezvous namespace per workflow (like e2e tests)
-                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-                # Keep mDNS as backup (like e2e tests)
-                "discovery.mdns": True,
-                # Aggressive sync settings from e2e tests for reliable testing
-                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-                # 500ms between syncs (very aggressive for tests)
-                "sync.interval_ms": 500,
-                # 1s periodic checks (ensures rapid sync in tests)
-                "sync.frequency_ms": 1000,
-            }
-
-            # Apply each configuration
-            for key, value in e2e_config.items():
-                self._set_nested_config(config, key, value)
-
-            # Write back to file (ensure it's writable first)
-            if config_file.exists():
-                config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
-
-            with open(config_file, "w", encoding="utf-8") as f:
-                toml.dump(config, f)
-
-            console.print(
-                f"[green]✓ Applied e2e-style defaults to {node_name} (workflow: {workflow_id})[/green]"
-            )
-
-        except ImportError:
-            console.print(
-                "[red]✗ toml package not found. Install with: pip install toml[/red]"
-            )
-        except Exception as e:
-            console.print(
-                f"[red]✗ Failed to apply e2e defaults to {node_name}: {e}[/red]"
-            )
-
     def _find_available_ports(self, count: int) -> list[int]:
         """Find available ports for dynamic allocation."""
         ports = []
@@ -984,18 +964,6 @@ class BinaryManager:
             raise RuntimeError(f"Could not find {count} available ports")
 
         return ports
-
-    def _set_nested_config(self, config: dict, key: str, value):
-        """Set nested configuration value using dot notation."""
-        keys = key.split(".")
-        current = config
-        for k in keys[:-1]:
-            if k not in current:
-                current[k] = {}
-            current = current[k]
-
-        current[keys[-1]] = value
-        console.print(f"[cyan]  {key} = {value}[/cyan]")
 
     def _apply_near_devnet_config(
         self,

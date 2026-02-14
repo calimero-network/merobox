@@ -202,20 +202,6 @@ class WorkflowExecutor:
                     console.print("[green]✓ Nuke on start completed[/green]")
                 time.sleep(2)  # Give time for cleanup
 
-            # Check if we should force pull images
-            force_pull_images = self.config.get("force_pull_image", False)
-            if force_pull_images:
-                console.print(
-                    "\n[bold red]💥 Nuking all data before workflow ...[/bold red]"
-                )
-                if not self._nuke_data():
-                    console.print(
-                        "[yellow]⚠️  Warning: Nuke operation encountered issues, continuing anyway...[/yellow]"
-                    )
-                else:
-                    console.print("[green]✓ Nuke on start completed[/green]")
-                time.sleep(2)  # Give time for cleanup
-
             # Check if we should force pull images (only for Docker mode)
             force_pull_images = self.config.get("force_pull_image", False)
             if force_pull_images:
@@ -1060,8 +1046,8 @@ class WorkflowExecutor:
                 api_key = auth_config.get("api_key") or auth_config.get("key")
                 password = auth_config.get("password")
 
-                # Register the remote node
-                self.resolver.remote_manager.register(
+                # Register the remote node via resolver's public API
+                self.resolver.register_remote(
                     name=node_name,
                     url=url,
                     auth_method=auth_method,
