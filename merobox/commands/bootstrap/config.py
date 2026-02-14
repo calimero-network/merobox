@@ -428,7 +428,6 @@ def _format_pydantic_error(error: dict[str, Any]) -> str:
     """Format a single Pydantic validation error into a readable message."""
     loc = ".".join(str(x) for x in error.get("loc", []))
     msg = error.get("msg", "Unknown error")
-    error_type = error.get("type", "")
 
     if loc:
         return f"{loc}: {msg}"
