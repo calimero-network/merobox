@@ -116,7 +116,6 @@ The `failure_mode` configuration option controls how failures are handled:
 ```yaml
 - name: Parallel Operations
   type: parallel
-  mode: burst                    # Execution mode (burst, sustained, mixed)
   failure_mode: fail-fast        # Error handling (fail-fast, fail-slow, continue-on-error)
   groups:
     - name: Group1
