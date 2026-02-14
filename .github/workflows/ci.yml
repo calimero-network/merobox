@@ -142,10 +142,7 @@ jobs:
             for f in "${failed_workflows[@]}"; do
               if ! merobox bootstrap run "$f" \
                 --no-docker \
-                --binary-path "$(command -v merod)" \
-                --e2e-mode \
-                --near-devnet \
-                --contracts-dir "$GITHUB_WORKSPACE/contracts/near"; then
+                --e2e-mode; then
                 still_failed+=("$f")
               fi
               merobox stop --all --no-docker || true

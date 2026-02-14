@@ -226,6 +226,18 @@ class TestBaseStepValidation:
         step = self._create_step({"name": "test", "port": 65535})
         step._validate_port_field("port")
 
+    def test_validate_port_field_whole_number_float_accepted(self):
+        """Test port validation accepts whole-number floats (e.g., 8080.0)."""
+        step = self._create_step({"name": "test", "port": 8080.0})
+        # Should not raise - whole-number floats are accepted for consistency
+        step._validate_port_field("port")
+
+    def test_validate_port_field_decimal_float_rejected(self):
+        """Test port validation rejects decimal floats (e.g., 8080.5)."""
+        step = self._create_step({"name": "test", "port": 8080.5})
+        with pytest.raises(ValueError, match="integer port number"):
+            step._validate_port_field("port")
+
     # =========================================================================
     # Number Field Validation Tests
     # =========================================================================

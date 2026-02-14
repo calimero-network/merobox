@@ -5,7 +5,7 @@ Base step class for all workflow steps.
 import ast
 import json
 import re
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from merobox.commands.utils import console, get_node_rpc_url
 
@@ -265,28 +265,39 @@ class BaseStep:
                 )
             return
 
-        # Ports must be integers (reject floats and bools)
-        if isinstance(value, bool) or not isinstance(value, int):
+        # Type check - reject booleans explicitly (bool is subclass of int)
+        if isinstance(value, bool):
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a valid port number"
+            )
+
+        # Accept whole-number floats (consistent with _validate_integer_field)
+        if isinstance(value, float):
+            if not value.is_integer():
+                raise ValueError(
+                    f"Step '{step_name}': '{field_name}' must be an integer port number (got {value})"
+                )
+            value = int(value)
+        elif not isinstance(value, int):
             raise ValueError(
                 f"Step '{step_name}': '{field_name}' must be an integer port number"
             )
 
-        # Use integer validation for basic checks
+        # Port range validation with specific error messages
         min_port = 1 if allow_privileged else 1024
-        self._validate_integer_field(
-            field_name,
-            required=required,
-            min_value=min_port,
-            max_value=65535,
-        )
 
-        # Additional error message for port context
-        if isinstance(value, int) and (value < min_port or value > 65535):
-            if not allow_privileged and value < 1024:
+        if value < min_port:
+            if not allow_privileged and 1 <= value < 1024:
                 raise ValueError(
                     f"Step '{step_name}': '{field_name}' must be a non-privileged port "
                     f"(1024-65535, got {value})"
                 )
+            raise ValueError(
+                f"Step '{step_name}': '{field_name}' must be a valid port number "
+                f"({min_port}-65535, got {value})"
+            )
+
+        if value > 65535:
             raise ValueError(
                 f"Step '{step_name}': '{field_name}' must be a valid port number "
                 f"({min_port}-65535, got {value})"
@@ -395,7 +406,7 @@ class BaseStep:
         min_length: Optional[int] = None,
         max_length: Optional[int] = None,
         element_type: Optional[type] = None,
-        element_validator: Optional[callable] = None,
+        element_validator: Optional[Callable[[Any, int, str], None]] = None,
         unique_elements: bool = False,
     ) -> None:
         """
