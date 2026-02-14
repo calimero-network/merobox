@@ -316,20 +316,28 @@ class CreateMeshStep(BaseStepConfig):
     """Configuration for create_mesh step."""
 
     type: Literal["create_mesh"] = "create_mesh"
-    nodes: list[str] = Field(..., description="List of nodes to include in mesh")
+    context_node: str = Field(..., description="Node to create context on")
     application_id: str = Field(..., description="Application ID")
+    nodes: list[str] = Field(..., description="List of nodes to include in mesh")
+    capability: Optional[str] = Field(None, description="Capability to grant to nodes")
     protocol: Optional[str] = Field(None, description="Protocol to use")
+    params: Optional[str] = Field(None, description="Initialization params JSON string")
 
 
 class FuzzyTestStep(BaseStepConfig):
     """Configuration for fuzzy_test step."""
 
     type: Literal["fuzzy_test"] = "fuzzy_test"
-    node: str = Field(..., description="Target node")
+    duration_minutes: Union[int, float] = Field(
+        ..., gt=0, description="Duration in minutes for the fuzzy test"
+    )
     context_id: str = Field(..., description="Context ID")
-    iterations: int = Field(..., ge=1, description="Number of fuzzy test iterations")
-    method: str = Field(..., description="Method to fuzz")
-    args: Optional[dict[str, Any]] = Field(None, description="Base arguments")
+    nodes: list[dict[str, Any]] = Field(
+        ..., description="List of nodes with name and executor_key"
+    )
+    operations: list[dict[str, Any]] = Field(
+        ..., description="List of operations to execute"
+    )
 
 
 # Module-level mapping of step types to their Pydantic models
