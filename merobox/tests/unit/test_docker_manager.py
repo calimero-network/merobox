@@ -1,6 +1,8 @@
 import signal
 from unittest.mock import MagicMock, patch
 
+import docker
+
 from merobox.commands.manager import DockerManager
 
 
@@ -30,7 +32,7 @@ def test_docker_container_uses_cap_add_not_privileged(mock_docker):
         return mock_container
 
     client.containers.run.side_effect = capture_run_config
-    client.containers.get.side_effect = Exception("Not found")
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
 
     # Run the node
     manager.run_node("test-node")
