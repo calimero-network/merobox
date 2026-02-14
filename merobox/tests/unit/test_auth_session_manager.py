@@ -387,8 +387,9 @@ class TestModuleFunctions:
         async def sample_coro():
             return "result"
 
-        with patch(
-            "merobox.commands.auth.close_shared_session", new_callable=AsyncMock
+        # Patch at the SessionManager class level to avoid module reload issues
+        with patch.object(
+            SessionManager, "close_shared_instance", new_callable=AsyncMock
         ) as mock_close:
             result = await run_with_shared_session_cleanup(sample_coro())
             assert result == "result"
@@ -401,8 +402,9 @@ class TestModuleFunctions:
         async def failing_coro():
             raise ValueError("test error")
 
-        with patch(
-            "merobox.commands.auth.close_shared_session", new_callable=AsyncMock
+        # Patch at the SessionManager class level to avoid module reload issues
+        with patch.object(
+            SessionManager, "close_shared_instance", new_callable=AsyncMock
         ) as mock_close:
             with pytest.raises(ValueError, match="test error"):
                 await run_with_shared_session_cleanup(failing_coro())
