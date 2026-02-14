@@ -692,33 +692,21 @@ class BaseStep:
         # Try resolver first (handles both remote and local nodes)
         if self.resolver is not None:
             try:
-                # Extract credentials from registered node config if available
-                username = None
-                password = None
-                api_key = None
-
-                entry = self.resolver.remote_manager.get(node_name)
-                if entry and entry.auth:
-                    username = entry.auth.username
-                    password = entry.auth.password
-                    api_key = entry.auth.api_key
-
+                # Let the resolver handle credential resolution internally
+                # via _resolve_credentials() which looks up the registry
                 resolved = self.resolver.resolve_sync(
                     node_name,
-                    username=username,
-                    password=password,
-                    api_key=api_key,
                     prompt_for_credentials=True,
                     skip_auth=False,
                 )
                 return resolved
             except Exception as e:
                 # Check if this is a remote node - if so, don't fallback
-                if self.resolver.remote_manager.get(node_name) is not None:
+                if self.resolver.is_registered_remote(node_name):
                     raise Exception(
                         f"Failed to resolve remote node '{node_name}': {e}"
                     ) from e
-                if self.resolver.remote_manager.is_url(node_name):
+                if self.resolver.is_url(node_name):
                     raise Exception(f"Failed to resolve URL '{node_name}': {e}") from e
                 # Log the resolver error but try fallback for local nodes
                 console.print(
@@ -1267,14 +1255,13 @@ class BaseStep:
 
         # Check if this is a remote node - can't get logs from remote nodes
         if self.resolver is not None:
-            entry = self.resolver.remote_manager.get(node_name)
-            if entry is not None:
+            if self.resolver.is_registered_remote(node_name):
                 console.print(
                     f"[dim]📋 Cannot retrieve logs for remote node '{node_name}'[/dim]"
                 )
                 return
             # Also check if it's a URL
-            if self.resolver.remote_manager.is_url(node_name):
+            if self.resolver.is_url(node_name):
                 console.print(
                     f"[dim]📋 Cannot retrieve logs for URL-based node '{node_name}'[/dim]"
                 )
