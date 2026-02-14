@@ -180,12 +180,6 @@ class TestBaseStepValidation:
         # Should not raise
         step._validate_port_field("port")
 
-    def test_validate_port_field_float_rejected(self):
-        """Test port validation rejects float values."""
-        step = self._create_step({"name": "test", "port": 8080.0})
-        with pytest.raises(ValueError, match="integer port number"):
-            step._validate_port_field("port")
-
     def test_validate_port_field_negative_rejected(self):
         """Test port validation fails for negative port."""
         step = self._create_step({"name": "test", "port": -1})

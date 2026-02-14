@@ -419,8 +419,11 @@ class BaseStep:
             min_length: Minimum list length
             max_length: Maximum list length
             element_type: If provided, all elements must be of this type
-            element_validator: Optional callback to validate each element
-            unique_elements: If True, all elements must be unique
+            element_validator: Optional callback to validate each element.
+                Signature: (element: Any, index: int, field_name: str) -> None.
+                Should raise ValueError if validation fails.
+            unique_elements: If True, all elements must be unique.
+                Note: For unhashable elements, uses O(n²) pairwise comparison.
 
         Raises:
             ValueError: If validation fails
