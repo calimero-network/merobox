@@ -2,6 +2,7 @@
 Unit tests for the merobox typed error classes.
 """
 
+# Import aliases separately to test backward compatibility
 from merobox.commands.errors import (
     AuthenticationError,
     AuthError,

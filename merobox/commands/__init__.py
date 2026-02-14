@@ -10,16 +10,13 @@ from merobox.commands.call import call
 from merobox.commands.context import context
 from merobox.commands.errors import (
     AuthenticationError,
-    AuthError,
     ClientError,
     ConfigurationError,
     MeroboxError,
     MeroboxTimeoutError,
-    NodeError,
     NodeResolutionError,
     StepExecutionError,
     StepValidationError,
-    TimeoutError,
     ValidationError,
     WorkflowError,
 )
@@ -58,9 +55,7 @@ __all__ = [
     "near",
     # Error classes
     "MeroboxError",
-    "NodeError",
     "NodeResolutionError",
-    "AuthError",
     "AuthenticationError",
     "WorkflowError",
     "StepValidationError",
@@ -68,6 +63,5 @@ __all__ = [
     "ValidationError",
     "ClientError",
     "MeroboxTimeoutError",
-    "TimeoutError",  # Backward compatibility alias for MeroboxTimeoutError
     "ConfigurationError",
 ]
