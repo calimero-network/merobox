@@ -12,6 +12,7 @@ from rich.console import Console
 from tqdm import tqdm
 
 from merobox.commands.constants import (
+    CLEANUP_DELAY,
     NEAR_SANDBOX_RPC_PORT,
     PROCESS_WAIT_TIMEOUT,
     RPC_INITIAL_DELAY,
@@ -170,7 +171,7 @@ class SandboxManager:
                 stderr=subprocess.DEVNULL,
             )
             # Wait for OS to release the port
-            time.sleep(0.5)
+            time.sleep(CLEANUP_DELAY)
         except FileNotFoundError:
             # pkill command not found on this system, which is fine
             logger.debug("pkill command not found, skipping sandbox cleanup")
