@@ -173,9 +173,12 @@ class DockerManager:
             sys.exit(0)
 
     def _cleanup_on_exit(self):
-        """Cleanup handler for atexit - only runs if not already cleaned up."""
-        if not self._shutting_down:
-            self._cleanup_resources()
+        """Cleanup handler for atexit.
+
+        Calls _cleanup_resources unconditionally since it's idempotent and
+        will return immediately if cleanup was already done or is in progress.
+        """
+        self._cleanup_resources()
 
     def _cleanup_resources(
         self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT

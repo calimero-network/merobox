@@ -212,6 +212,7 @@ def test_docker_manager_cleanup_concurrent_access(mock_docker):
 
     Spawns multiple threads calling _cleanup_resources simultaneously to verify
     the lock ensures at-most-once execution under concurrent access.
+    Also verifies return value distribution: exactly one True, rest False.
     """
     client = MagicMock()
     mock_docker.return_value = client
@@ -223,6 +224,10 @@ def test_docker_manager_cleanup_concurrent_access(mock_docker):
     manager.nodes = {"node1": mock_container}
     manager.node_rpc_ports = {"node1": 2528}
 
+    # Collect return values from each thread
+    results = []
+    results_lock = threading.Lock()
+
     # Spawn multiple threads calling cleanup concurrently
     threads = []
     num_threads = 10
@@ -230,7 +235,9 @@ def test_docker_manager_cleanup_concurrent_access(mock_docker):
 
     def thread_func():
         barrier.wait()  # Synchronize all threads to start at once
-        manager._cleanup_resources()
+        result = manager._cleanup_resources()
+        with results_lock:
+            results.append(result)
 
     for _ in range(num_threads):
         t = threading.Thread(target=thread_func)
@@ -244,6 +251,14 @@ def test_docker_manager_cleanup_concurrent_access(mock_docker):
     # Verify cleanup was only performed once despite concurrent access
     assert mock_container.stop.call_count == 1
     assert mock_container.remove.call_count == 1
+
+    # Verify return value distribution: exactly one True, rest False
+    true_count = sum(1 for r in results if r is True)
+    false_count = sum(1 for r in results if r is False)
+    assert true_count == 1, f"Expected exactly 1 True, got {true_count}"
+    assert (
+        false_count == num_threads - 1
+    ), f"Expected {num_threads - 1} False, got {false_count}"
 
 
 @patch("docker.from_env")

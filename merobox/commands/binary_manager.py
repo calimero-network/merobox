@@ -10,6 +10,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -69,6 +70,9 @@ class BinaryManager:
         self.pid_file_dir = Path("./data/.pids")
         self.pid_file_dir.mkdir(parents=True, exist_ok=True)
         self._shutting_down = False
+        self._cleanup_lock = threading.RLock()
+        self._cleanup_in_progress = False
+        self._cleanup_done = False
         self._original_sigint_handler = None
         self._original_sigterm_handler = None
 
@@ -88,11 +92,18 @@ class BinaryManager:
         atexit.register(self._cleanup_on_exit)
 
     def _signal_handler(self, signum, frame):
-        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
+        """Handle SIGINT/SIGTERM signals for graceful shutdown.
+
+        Uses sys.exit() to allow proper stack unwinding and finally block
+        execution. If cleanup is already in progress (e.g., via atexit), we
+        return without calling sys.exit() to avoid interrupting the ongoing
+        cleanup with SystemExit.
+        """
         if self._shutting_down:
             # Already shutting down, force exit on second signal
             console.print("\n[red]Forced exit requested, terminating...[/red]")
-            sys.exit(1)
+            sys.stdout.flush()  # Ensure message is printed before os._exit
+            os._exit(1)
 
         self._shutting_down = True
         sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
@@ -100,37 +111,70 @@ class BinaryManager:
             f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
         )
 
-        self._cleanup_resources()
+        cleanup_result = self._cleanup_resources()
 
-        # Exit cleanly
-        sys.exit(0)
+        # Only call sys.exit() if cleanup completed or was already done.
+        # If cleanup was in progress (re-entrant call), return without exit
+        # to avoid interrupting the ongoing cleanup with SystemExit.
+        if cleanup_result is not None:
+            sys.exit(0)
 
     def _cleanup_on_exit(self):
-        """Cleanup handler for atexit - only runs if not already cleaned up."""
-        if not self._shutting_down:
-            self._cleanup_resources()
+        """Cleanup handler for atexit.
+
+        Calls _cleanup_resources unconditionally since it's idempotent and
+        will return immediately if cleanup was already done or is in progress.
+        """
+        self._cleanup_resources()
 
     def _cleanup_resources(self):
-        """Stop all managed processes."""
-        if self.processes:
-            console.print("[cyan]Stopping managed processes...[/cyan]")
-            for node_name in list(self.processes.keys()):
-                try:
-                    process = self.processes[node_name]
-                    process.terminate()
-                    try:
-                        process.wait(timeout=PROCESS_WAIT_TIMEOUT)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
-                    console.print(f"[green]✓ Stopped process {node_name}[/green]")
-                    self._remove_pid_file(node_name)
-                except Exception as e:
-                    console.print(
-                        f"[yellow]⚠️  Could not stop process {node_name}: {e}[/yellow]"
-                    )
-            self.processes.clear()
-            self.node_rpc_ports.clear()
+        """Stop all managed processes.
+
+        Thread-safe guard ensuring at-most-once execution semantics. Uses RLock
+        to allow re-entrant calls from signal handlers in the same thread.
+
+        Returns:
+            True: Cleanup was performed by this call
+            False: Cleanup was already completed previously
+            None: Cleanup is currently in progress (re-entrant call)
+
+        The entire cleanup is performed inside the lock to prevent SystemExit
+        from interrupting partial cleanup if a signal arrives mid-operation.
+        """
+        with self._cleanup_lock:
+            if self._cleanup_done:
+                return False  # Already completed
+            if self._cleanup_in_progress:
+                return None  # In progress (re-entrant call from signal handler)
+            self._cleanup_in_progress = True
+
+            try:
+                if self.processes:
+                    console.print("[cyan]Stopping managed processes...[/cyan]")
+                    for node_name in list(self.processes.keys()):
+                        try:
+                            process = self.processes[node_name]
+                            process.terminate()
+                            try:
+                                process.wait(timeout=PROCESS_WAIT_TIMEOUT)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait()
+                            console.print(
+                                f"[green]✓ Stopped process {node_name}[/green]"
+                            )
+                            self._remove_pid_file(node_name)
+                        except Exception as e:
+                            console.print(
+                                f"[yellow]⚠️  Could not stop process {node_name}: {e}[/yellow]"
+                            )
+                    self.processes.clear()
+                    self.node_rpc_ports.clear()
+            finally:
+                self._cleanup_done = True
+                self._cleanup_in_progress = False
+
+        return True  # Cleanup performed
 
     def remove_signal_handlers(self):
         """Remove signal handlers and restore original handlers."""
