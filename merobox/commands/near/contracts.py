@@ -22,6 +22,8 @@ from merobox.commands.constants import (
     CONTRACT_DOWNLOAD_TIMEOUT,
 )
 
+from .utils import safe_tar_extract
+
 try:
     from filelock import FileLock
 except ImportError:
@@ -123,29 +125,8 @@ def _locate_contracts_after_extract(
                         f.rename(dest)
                 return cache_dir
     raise RuntimeError(
-        f"Extracted {NEAR_ASSET_NAME} does not contain "
-        f"{CONFIG_WASM} and {PROXY_WASM}"
+        f"Extracted {NEAR_ASSET_NAME} does not contain {CONFIG_WASM} and {PROXY_WASM}"
     )
-
-
-def _safe_tar_extract(tar: tarfile.TarFile, extract_base: Path) -> None:
-    """Extract tar members into extract_base, rejecting path traversal and symlinks.
-    Uses per-member validation and extract() for Python <3.12 compatibility."""
-    base_resolved = extract_base.resolve()
-    for member in tar.getmembers():
-        if member.issym() or member.islnk():
-            console.print(
-                f"[yellow]Warning: skipping symlink/hardlink in archive: {member.name!r}[/yellow]"
-            )
-            continue
-        dest = (extract_base / member.name).resolve()
-        try:
-            dest.relative_to(base_resolved)
-        except ValueError:
-            raise RuntimeError(
-                f"Rejected path traversal in archive: member name {member.name!r}"
-            ) from None
-        tar.extract(member, path=extract_base)
 
 
 def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
@@ -295,7 +276,7 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
     try:
         with tarfile.open(tar_path) as tar:
             names = tar.getnames()
-            _safe_tar_extract(tar, temp_dir)
+            safe_tar_extract(tar, temp_dir)
         _safe_unlink(tar_path)
         result = _locate_contracts_after_extract(temp_dir, cache_dir, names)
     except (tarfile.TarError, OSError, RuntimeError) as e:

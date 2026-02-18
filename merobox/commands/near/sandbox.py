@@ -20,8 +20,10 @@ from merobox.commands.constants import (
 )
 
 from .client import NearDevnetClient
+from .utils import safe_tar_extract
 
 console = Console()
+
 
 NEAR_SANDBOX_AWS_BASE_URL = (
     "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore"
@@ -95,7 +97,7 @@ class SandboxManager:
 
             console.print("[yellow]Extracting...[/yellow]")
             with tarfile.open(tar_path) as tar:
-                tar.extractall(path=self.home_dir)
+                safe_tar_extract(tar, self.home_dir)
 
             # Clean up tar and ensure binary is executable
             tar_path.unlink()
