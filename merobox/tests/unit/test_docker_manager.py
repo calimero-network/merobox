@@ -174,3 +174,172 @@ def test_docker_manager_remove_signal_handlers(mock_docker):
     # Verify handlers were restored
     assert signal.getsignal(signal.SIGINT) == original_sigint
     assert signal.getsignal(signal.SIGTERM) == original_sigterm
+
+
+@patch("docker.from_env")
+def test_graceful_stop_container_sends_sigterm(mock_docker):
+    """Test that _graceful_stop_container sends SIGTERM before stopping."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    mock_container = MagicMock()
+    mock_container.name = "test-node"
+
+    # Call graceful stop with minimal drain timeout for faster test
+    result = manager._graceful_stop_container(
+        mock_container, "test-node", drain_timeout=0, stop_timeout=10
+    )
+
+    # Verify SIGTERM was sent
+    mock_container.kill.assert_called_once_with(signal="SIGTERM")
+    # Verify container was stopped and removed
+    mock_container.stop.assert_called_once_with(timeout=10)
+    mock_container.remove.assert_called_once()
+    assert result is True
+
+
+@patch("docker.from_env")
+def test_graceful_stop_container_handles_sigterm_failure(mock_docker):
+    """Test that graceful stop continues even if SIGTERM fails."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    mock_container = MagicMock()
+    mock_container.name = "test-node"
+    # Simulate SIGTERM failure (container already stopped)
+    mock_container.kill.side_effect = docker.errors.APIError("Container not running")
+
+    result = manager._graceful_stop_container(
+        mock_container, "test-node", drain_timeout=0, stop_timeout=10
+    )
+
+    # Should still try to stop and remove
+    mock_container.stop.assert_called_once_with(timeout=10)
+    mock_container.remove.assert_called_once()
+    assert result is True
+
+
+@patch("docker.from_env")
+def test_stop_node_uses_graceful_shutdown(mock_docker):
+    """Test that stop_node uses graceful shutdown with connection draining."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    mock_container = MagicMock()
+    manager.nodes = {"test-node": mock_container}
+    manager.node_rpc_ports = {"test-node": 2528}
+
+    # Call stop_node with minimal drain timeout
+    result = manager.stop_node("test-node", drain_timeout=0, stop_timeout=10)
+
+    # Verify graceful shutdown sequence
+    mock_container.kill.assert_called_once_with(signal="SIGTERM")
+    mock_container.stop.assert_called_once_with(timeout=10)
+    mock_container.remove.assert_called_once()
+
+    # Verify cleanup
+    assert "test-node" not in manager.nodes
+    assert "test-node" not in manager.node_rpc_ports
+    assert result is True
+
+
+@patch("docker.from_env")
+def test_stop_all_nodes_uses_batch_graceful_shutdown(mock_docker):
+    """Test that stop_all_nodes uses batch graceful shutdown (O(timeout) not O(n*timeout))."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    mock_container1 = MagicMock()
+    mock_container1.name = "node1"
+    mock_container2 = MagicMock()
+    mock_container2.name = "node2"
+
+    client.containers.list.return_value = [mock_container1, mock_container2]
+    manager.nodes = {"node1": mock_container1, "node2": mock_container2}
+    manager.node_rpc_ports = {"node1": 2528, "node2": 2529}
+
+    # Call stop_all_nodes with minimal drain timeout
+    result = manager.stop_all_nodes(drain_timeout=0, stop_timeout=10)
+
+    # Verify both containers received SIGTERM (batch signal phase)
+    mock_container1.kill.assert_called_once_with(signal="SIGTERM")
+    mock_container2.kill.assert_called_once_with(signal="SIGTERM")
+
+    # Verify containers were stopped and removed
+    mock_container1.stop.assert_called_once_with(timeout=10)
+    mock_container1.remove.assert_called_once()
+    mock_container2.stop.assert_called_once_with(timeout=10)
+    mock_container2.remove.assert_called_once()
+
+    assert result is True
+
+
+@patch("docker.from_env")
+def test_cleanup_resources_uses_batch_graceful_shutdown(mock_docker):
+    """Test that _cleanup_resources uses batch graceful shutdown."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    mock_container1 = MagicMock()
+    mock_container2 = MagicMock()
+    manager.nodes = {"node1": mock_container1, "node2": mock_container2}
+    manager.node_rpc_ports = {"node1": 2528, "node2": 2529}
+
+    # Call cleanup with minimal drain timeout
+    manager._cleanup_resources(drain_timeout=0, stop_timeout=10)
+
+    # Verify SIGTERM was sent to both containers (batch signal phase)
+    mock_container1.kill.assert_called_once_with(signal="SIGTERM")
+    mock_container2.kill.assert_called_once_with(signal="SIGTERM")
+
+    # Verify containers were stopped and removed
+    mock_container1.stop.assert_called_once_with(timeout=10)
+    mock_container1.remove.assert_called_once()
+    mock_container2.stop.assert_called_once_with(timeout=10)
+    mock_container2.remove.assert_called_once()
+
+    # Verify tracking dicts were cleared
+    assert len(manager.nodes) == 0
+    assert len(manager.node_rpc_ports) == 0
+
+
+@patch("docker.from_env")
+def test_graceful_stop_containers_batch_sends_sigterm_to_all_first(mock_docker):
+    """Test that batch shutdown sends SIGTERM to all containers before sleeping."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    mock_container1 = MagicMock()
+    mock_container2 = MagicMock()
+
+    containers = [("node1", mock_container1), ("node2", mock_container2)]
+
+    # Call batch graceful stop with minimal drain timeout
+    success_count, failed = manager._graceful_stop_containers_batch(
+        containers, drain_timeout=0, stop_timeout=10
+    )
+
+    # Verify SIGTERM was sent to both containers
+    mock_container1.kill.assert_called_once_with(signal="SIGTERM")
+    mock_container2.kill.assert_called_once_with(signal="SIGTERM")
+
+    # Verify containers were stopped and removed
+    mock_container1.stop.assert_called_once_with(timeout=10)
+    mock_container1.remove.assert_called_once()
+    mock_container2.stop.assert_called_once_with(timeout=10)
+    mock_container2.remove.assert_called_once()
+
+    assert success_count == 2
+    assert failed == []
