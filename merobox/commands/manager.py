@@ -26,6 +26,8 @@ from merobox.commands.constants import (
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
     NODE_STARTUP_WAIT,
+    P2P_PORT_BINDING,
+    RPC_PORT_BINDING,
 )
 
 console = Console()
@@ -227,7 +229,7 @@ class DockerManager:
         try:
             container = self.client.containers.get(node_name)
             container.reload()
-            host_port = self._extract_host_port(container, f"{DEFAULT_RPC_PORT}/tcp")
+            host_port = self._extract_host_port(container, RPC_PORT_BINDING)
             if host_port is not None:
                 self.node_rpc_ports[node_name] = host_port
             return host_port
@@ -413,9 +415,9 @@ class DockerManager:
                 "environment": node_env,
                 "ports": {
                     # Map external P2P port to internal P2P port
-                    f"{DEFAULT_P2P_PORT}/tcp": port,
+                    P2P_PORT_BINDING: port,
                     # Map external RPC port to internal admin server port
-                    f"{DEFAULT_RPC_PORT}/tcp": rpc_port,
+                    RPC_PORT_BINDING: rpc_port,
                 },
                 "volumes": {
                     os.path.abspath(data_dir): {"bind": "/app/data", "mode": "rw"}

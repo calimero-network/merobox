@@ -47,7 +47,7 @@ from merobox.commands.constants import (
     ASYNC_POLL_INTERVAL,
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
-    DEFAULT_WAIT_TIMEOUT,
+    NODE_READY_TIMEOUT,
     RESERVED_NODE_CONFIG_KEYS,
 )
 from merobox.commands.manager import DockerManager
@@ -842,7 +842,7 @@ class WorkflowExecutor:
         Note: This only waits for local (docker/binary) nodes. Remote nodes
         are assumed to be already running and accessible.
         """
-        wait_timeout = self.config.get("wait_timeout", DEFAULT_WAIT_TIMEOUT)
+        wait_timeout = self.config.get("wait_timeout", NODE_READY_TIMEOUT)
 
         # Use only local node names (remote nodes don't need local readiness check)
         node_names = list(self._get_local_node_names())

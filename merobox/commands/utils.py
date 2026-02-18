@@ -11,7 +11,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from merobox.commands.constants import DEFAULT_RPC_PORT
+from merobox.commands.constants import DEFAULT_RPC_PORT, RPC_PORT_BINDING
 from merobox.commands.manager import DockerManager
 
 console = Console()
@@ -43,7 +43,7 @@ def get_node_rpc_url(node_name: str, manager: Any) -> str:
             port_mappings = (
                 container.attrs.get("NetworkSettings", {}).get("Ports") or {}
             )
-            host_bindings = port_mappings.get(f"{DEFAULT_RPC_PORT}/tcp") or []
+            host_bindings = port_mappings.get(RPC_PORT_BINDING) or []
             for binding in host_bindings:
                 host_port = _normalize_port(binding.get("HostPort"))
                 if host_port is not None:
@@ -53,7 +53,7 @@ def get_node_rpc_url(node_name: str, manager: Any) -> str:
                 port_bindings = (
                     container.attrs.get("HostConfig", {}).get("PortBindings") or {}
                 )
-                host_bindings = port_bindings.get(f"{DEFAULT_RPC_PORT}/tcp") or []
+                host_bindings = port_bindings.get(RPC_PORT_BINDING) or []
                 for binding in host_bindings:
                     host_port = _normalize_port(binding.get("HostPort"))
                     if host_port is not None:

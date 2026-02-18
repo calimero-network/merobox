@@ -18,11 +18,15 @@ DEFAULT_RPC_PORT = 2528
 DEFAULT_P2P_PORT = 2428
 NEAR_SANDBOX_RPC_PORT = 3030
 
+# Docker port binding strings (used in container port mappings)
+RPC_PORT_BINDING = f"{DEFAULT_RPC_PORT}/tcp"
+P2P_PORT_BINDING = f"{DEFAULT_P2P_PORT}/tcp"
+
 # Default values
 DEFAULT_CHAIN_ID = "testnet-1"
 DEFAULT_PROTOCOL = "near"
 DEFAULT_TIMEOUT = 30
-DEFAULT_WAIT_TIMEOUT = 60
+NODE_READY_TIMEOUT = 60  # seconds to wait for nodes to be ready and accessible
 
 # Retry and timeout configuration
 DEFAULT_RETRY_ATTEMPTS = 3
