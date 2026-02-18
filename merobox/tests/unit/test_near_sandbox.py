@@ -11,7 +11,8 @@ import pytest
 # This ensures that 'merobox.commands.near' and its submodules are loaded
 # before @patch tries to resolve these paths.
 from merobox.commands.near.client import NearDevnetClient
-from merobox.commands.near.sandbox import SandboxManager, _safe_tar_extract
+from merobox.commands.near.contracts import _safe_tar_extract
+from merobox.commands.near.sandbox import SandboxManager
 
 # We need ed25519.create_keypair() to return objects that have .to_bytes()
 mock_sk = MagicMock()
@@ -240,4 +241,70 @@ class TestSafeTarExtract:
                 _safe_tar_extract(tar, extract_path)
 
             assert not (extract_path / "evil_hardlink").exists()
+            assert (extract_path / "safe_file.txt").exists()
+
+    def test_skips_block_device(self):
+        """Block device files in the archive should be skipped."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                tarinfo = tarfile.TarInfo(name="evil_block_device")
+                tarinfo.type = tarfile.BLKTYPE
+                tar.addfile(tarinfo)
+
+                content = b"safe content"
+                safe_info = tarfile.TarInfo(name="safe_file.txt")
+                safe_info.size = len(content)
+                tar.addfile(safe_info, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                _safe_tar_extract(tar, extract_path)
+
+            assert not (extract_path / "evil_block_device").exists()
+            assert (extract_path / "safe_file.txt").exists()
+
+    def test_skips_char_device(self):
+        """Character device files in the archive should be skipped."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                tarinfo = tarfile.TarInfo(name="evil_char_device")
+                tarinfo.type = tarfile.CHRTYPE
+                tar.addfile(tarinfo)
+
+                content = b"safe content"
+                safe_info = tarfile.TarInfo(name="safe_file.txt")
+                safe_info.size = len(content)
+                tar.addfile(safe_info, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                _safe_tar_extract(tar, extract_path)
+
+            assert not (extract_path / "evil_char_device").exists()
+            assert (extract_path / "safe_file.txt").exists()
+
+    def test_skips_fifo(self):
+        """FIFO files in the archive should be skipped."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                tarinfo = tarfile.TarInfo(name="evil_fifo")
+                tarinfo.type = tarfile.FIFOTYPE
+                tar.addfile(tarinfo)
+
+                content = b"safe content"
+                safe_info = tarfile.TarInfo(name="safe_file.txt")
+                safe_info.size = len(content)
+                tar.addfile(safe_info, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                _safe_tar_extract(tar, extract_path)
+
+            assert not (extract_path / "evil_fifo").exists()
             assert (extract_path / "safe_file.txt").exists()
