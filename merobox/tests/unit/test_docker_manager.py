@@ -2,8 +2,15 @@ import signal
 from unittest.mock import MagicMock, patch
 
 import docker
+import pytest
 
-from merobox.commands.manager import DockerManager
+from merobox.commands.manager import (
+    CORS_ALLOWED_HEADERS,
+    DEFAULT_CORS_ORIGINS,
+    DockerManager,
+    _get_node_hostname,
+    _validate_cors_origins,
+)
 
 
 @patch("docker.from_env")
@@ -343,3 +350,258 @@ def test_graceful_stop_containers_batch_sends_sigterm_to_all_first(mock_docker):
 
     assert success_count == 2
     assert failed == []
+
+
+@patch("docker.from_env")
+def test_cors_uses_explicit_origins_not_wildcard(mock_docker):
+    """Test that CORS configuration uses explicit origins instead of wildcard."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Run the node with auth_service enabled
+    manager.run_node("test-node", auth_service=True)
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+
+    # Verify labels exist and CORS origins are not wildcard
+    assert "labels" in main_config
+    labels = main_config["labels"]
+
+    # Check the per-node CORS middleware does NOT use wildcard
+    cors_origin_key = (
+        "traefik.http.middlewares.cors-test-node.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    assert labels[cors_origin_key] != "*", "CORS should not allow wildcard origin"
+
+    # Verify default localhost origins are included
+    cors_origins = labels[cors_origin_key]
+    assert "http://localhost" in cors_origins
+    assert "http://127.0.0.1" in cors_origins
+
+
+@patch("docker.from_env")
+def test_cors_custom_origins_are_used(mock_docker):
+    """Test that custom CORS origins can be specified."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Custom CORS origins
+    custom_origins = ["https://example.com", "https://myapp.example.com"]
+
+    # Run the node with auth_service enabled and custom origins
+    manager.run_node(
+        "test-node", auth_service=True, cors_allowed_origins=custom_origins
+    )
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+
+    # Verify custom origins are used (per-node middleware name)
+    labels = main_config["labels"]
+    cors_origin_key = (
+        "traefik.http.middlewares.cors-test-node.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    cors_origins = labels[cors_origin_key]
+
+    # Custom origins should be present
+    assert "https://example.com" in cors_origins
+    assert "https://myapp.example.com" in cors_origins
+
+    # Default localhost origins should NOT be present when custom ones are specified
+    assert "http://localhost:3000" not in cors_origins
+
+
+@patch("docker.from_env")
+def test_cors_uses_explicit_headers_not_wildcard(mock_docker):
+    """Test that CORS uses explicit headers instead of wildcard for credentials."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Run the node with auth_service enabled
+    manager.run_node("test-node", auth_service=True)
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+    labels = main_config["labels"]
+
+    # Check the per-node CORS middleware uses explicit headers
+    cors_headers_key = (
+        "traefik.http.middlewares.cors-test-node.headers.accesscontrolallowheaders"
+    )
+    assert cors_headers_key in labels
+    assert labels[cors_headers_key] != "*", "CORS headers should not be wildcard"
+    assert labels[cors_headers_key] == CORS_ALLOWED_HEADERS
+
+
+@patch("docker.from_env")
+def test_cors_origins_propagated_to_auth_service(mock_docker):
+    """Test that CORS origins are correctly propagated to auth service stack."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Don't mock _start_auth_service_stack - let it run to verify propagation
+    # But mock the container operations it uses
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+    client.volumes.get.side_effect = docker.errors.NotFound("Not found")
+    client.volumes.create.return_value = MagicMock()
+
+    # Custom CORS origins
+    custom_origins = ["https://example.com", "https://myapp.example.com"]
+
+    # Run the node with auth_service enabled and custom origins
+    manager.run_node(
+        "test-node", auth_service=True, cors_allowed_origins=custom_origins
+    )
+
+    # Find the auth container config (name="auth")
+    auth_configs = [c for c in container_configs if c.get("name") == "auth"]
+    assert len(auth_configs) >= 1, "Expected auth container config"
+
+    auth_config = auth_configs[0]
+    labels = auth_config["labels"]
+
+    # Verify auth container uses custom origins
+    cors_origin_key = (
+        "traefik.http.middlewares.cors-auth.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    cors_origins = labels[cors_origin_key]
+    assert "https://example.com" in cors_origins
+    assert "https://myapp.example.com" in cors_origins
+
+
+def test_validate_cors_origins_rejects_wildcard():
+    """Test that _validate_cors_origins rejects wildcard origin."""
+    with pytest.raises(ValueError, match="Wildcard"):
+        _validate_cors_origins(["http://localhost", "*"])
+
+
+def test_validate_cors_origins_rejects_comma():
+    """Test that _validate_cors_origins rejects origins with commas."""
+    with pytest.raises(ValueError, match="comma"):
+        _validate_cors_origins(["http://localhost,http://evil.com"])
+
+
+def test_validate_cors_origins_valid():
+    """Test that _validate_cors_origins accepts valid origins."""
+    origins = ["http://localhost", "https://example.com"]
+    result = _validate_cors_origins(origins)
+    assert result == origins
+
+
+def test_get_node_hostname():
+    """Test hostname transformation from node name."""
+    assert _get_node_hostname("calimero-node-1") == "node1"
+    assert _get_node_hostname("calimero-foo-bar") == "foobar"
+    assert _get_node_hostname("test-node") == "testnode"
+
+
+def test_default_cors_origins_constant():
+    """Test that DEFAULT_CORS_ORIGINS has expected values."""
+    assert "http://localhost" in DEFAULT_CORS_ORIGINS
+    assert "http://127.0.0.1" in DEFAULT_CORS_ORIGINS
+    assert "http://localhost:3000" in DEFAULT_CORS_ORIGINS
