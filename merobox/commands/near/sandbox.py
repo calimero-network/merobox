@@ -12,7 +12,6 @@ from rich.console import Console
 from tqdm import tqdm
 
 from merobox.commands.constants import (
-    CLEANUP_DELAY,
     NEAR_SANDBOX_RPC_PORT,
     PROCESS_WAIT_TIMEOUT,
     RPC_INITIAL_DELAY,
