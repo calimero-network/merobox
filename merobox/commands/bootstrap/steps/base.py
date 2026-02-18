@@ -760,10 +760,35 @@ class BaseStep:
 
         return rpc_url, client_node_name
 
-    def _try_parse_json(self, value: Any) -> Any:
-        """Parse JSON string to Python object with fallback strategies.
+    def _parse_json(self, value: Any) -> Any:
+        """Parse JSON string to Python object using a robust multi-strategy parser.
 
-        Returns parsed object or original value if parsing fails.
+        This is the single source of truth for JSON parsing in the base step.
+        It implements the following strategies in order of precedence:
+
+        1. STANDARD JSON: Direct json.loads() parsing
+        2. PYTHON LITERALS: Uses ast.literal_eval() for Python-style dicts/lists
+           (e.g., "{'key': 'value'}" with single quotes)
+        3. TRAILING COMMAS: Cleans trailing commas before JSON parsing
+           (e.g., '{"key": "value",}')
+        4. SUBSTRING EXTRACTION: Extracts first valid JSON object/array from
+           text containing other content (e.g., "prefix {\"key\": 1} suffix")
+
+        Args:
+            value: The value to parse. Non-strings are returned unchanged.
+
+        Returns:
+            Parsed Python object (dict, list, str, int, float, bool, None)
+            or the original value if all parsing strategies fail.
+
+        Warning:
+            Strategy 4 (substring extraction) is permissive and may extract
+            unintended JSON from mixed content. When processing untrusted input,
+            validate the extracted data matches expected schema before use.
+
+        Note:
+            For value extraction with path traversal, use _get_value() which
+            calls this method internally at each path segment.
         """
         if not isinstance(value, str):
             return value
@@ -772,30 +797,13 @@ class BaseStep:
         if not s:
             return value
 
-        # Attempt standard JSON parsing
+        # Strategy 1: Standard JSON parsing
         try:
             return json.loads(s)
         except Exception:
             pass
 
-        # Handle double-encoded JSON
-        if (s.startswith('"') and s.endswith('"')) or (
-            s.startswith("'") and s.endswith("'")
-        ):
-            try:
-                inner = json.loads(s)
-                if isinstance(inner, str):
-                    try:
-                        return json.loads(inner)
-                    except Exception:
-                        try:
-                            return ast.literal_eval(inner)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-
-        # Handle Python-style literals
+        # Strategy 2: Python-style literals (single quotes, etc.)
         try:
             parsed = ast.literal_eval(s)
             if isinstance(parsed, (dict, list, str, int, float, bool, type(None))):
@@ -803,7 +811,7 @@ class BaseStep:
         except Exception:
             pass
 
-        # Clean trailing commas
+        # Strategy 3: JSON with trailing commas
         if "{" in s or "[" in s:
             try:
                 cleaned = re.sub(r",(\s*[}\]])", r"\1", s)
@@ -811,7 +819,7 @@ class BaseStep:
             except Exception:
                 pass
 
-        # Extract JSON substring from noisy input
+        # Strategy 4: Extract JSON substring from noisy input
         if "{" in s or "[" in s:
             try:
                 candidate = self._find_json_substring(s)
@@ -823,7 +831,17 @@ class BaseStep:
         return value
 
     def _find_json_substring(self, text: str) -> Optional[str]:
-        """Extract first complete JSON object or array from text."""
+        """Extract first complete JSON object or array from text.
+
+        Used by _parse_json() as Strategy 5 for extracting JSON from noisy input.
+        Finds balanced braces/brackets to identify complete JSON structures.
+
+        Args:
+            text: Input text potentially containing JSON embedded in other content.
+
+        Returns:
+            The first complete JSON object or array string found, or None.
+        """
         for match in re.finditer(r"[\{\[]", text):
             pos = match.start()
             opening = match.group()
@@ -839,27 +857,34 @@ class BaseStep:
                         return text[pos : i + 1]
         return None
 
-    def _extract_path(self, obj: Any, path: str) -> Any:
-        """Extract dotted path from object with JSON parsing and array index support.
+    def _get_value(self, obj: Any, path: str) -> Any:
+        """Unified value extraction with automatic JSON parsing.
 
-        This method traverses a dotted path through nested objects, parsing
-        JSON strings encountered along the way. It supports:
-        - Nested dict access: "result.data.value"
-        - Array indexing: "items.0.id"
-        - Deep nesting: "result.nested.deeply.nested.field"
+        This is the primary method for extracting values from nested structures.
+        It consolidates JSON parsing (via _parse_json) with path traversal,
+        eliminating the need for separate JSON parsing calls.
 
-        Examples:
-            "field.nested" -> obj["field"]["nested"]
-            "items.0.id" -> obj["items"][0]["id"]
-            "result.data" where result="{\"data\":\"value\"}" -> "value"
-            "result.user.name.first" -> obj["result"]["user"]["name"]["first"]
+        Works for both simple keys and nested paths:
+        - Simple key: "field" -> obj["field"]
+        - Nested path: "result.data.value" -> obj["result"]["data"]["value"]
+        - Array index: "items.0.id" -> obj["items"][0]["id"]
+        - Mixed: "result.items.0.name" -> obj["result"]["items"][0]["name"]
+
+        JSON strings are automatically parsed at each path segment, so:
+        - obj = {"result": '{"data": "value"}'}
+        - _get_value(obj, "result.data") returns "value"
 
         Args:
             obj: The object to extract from (dict, list, or JSON string)
-            path: Dot-separated path to the desired field
+            path: Key or dot-separated path to the desired field
 
         Returns:
-            The value at the specified path, or None if not found
+            The value at the specified path (with JSON parsing applied),
+            or None if the path cannot be resolved.
+
+        Note:
+            Use this method instead of dict.get() + _parse_json() for
+            consistent JSON-aware value extraction.
         """
         if not isinstance(path, str) or not path:
             return None
@@ -868,7 +893,7 @@ class BaseStep:
         segments = path.split(".")
 
         for segment in segments:
-            current = self._try_parse_json(current)
+            current = self._parse_json(current)
 
             # Handle array index
             if isinstance(current, list) and segment.isdigit():
@@ -885,7 +910,7 @@ class BaseStep:
 
             return None
 
-        return self._try_parse_json(current) if isinstance(current, str) else current
+        return self._parse_json(current) if isinstance(current, str) else current
 
     def _export_variable(
         self,
@@ -1012,28 +1037,16 @@ class BaseStep:
 
         for exported_variable, assigned_var in outputs_config.items():
             if isinstance(assigned_var, str):
-                value = (
-                    self._extract_path(actual_data, assigned_var)
-                    if "." in assigned_var
-                    else (
-                        actual_data.get(assigned_var)
-                        if isinstance(actual_data, dict)
-                        else None
-                    )
-                )
+                # Use unified _get_value for both simple keys and dotted paths
+                # This handles JSON parsing automatically at each path segment
+                value = self._get_value(actual_data, assigned_var)
 
-                if (
-                    value is not None
-                    and isinstance(value, str)
-                    and "." not in assigned_var
-                ):
-                    value = self._try_parse_json(value)
-
+                # Check if field is missing (for error reporting)
                 field_missing = False
                 if value is None and isinstance(actual_data, dict):
-                    if "." in assigned_var:
-                        field_missing = False
-                    else:
+                    # For dotted paths, we can't easily check if root exists
+                    # For simple keys, check if it exists in actual_data
+                    if "." not in assigned_var:
                         field_missing = assigned_var not in actual_data
 
                 if field_missing:
@@ -1065,20 +1078,18 @@ class BaseStep:
                 # Complex assignment with node name replacement
                 if "field" in assigned_var:
                     field_name = assigned_var["field"]
-                    # Base value by field name (top-level)
+                    # Literal key lookup (not path traversal) for backward compatibility
                     base_value = (
                         actual_data.get(field_name)
                         if isinstance(actual_data, dict)
                         else None
                     )
-                    # Optional parse JSON: json: true
+                    # Optional JSON parse - only when explicitly requested
                     if assigned_var.get("json"):
-                        base_value = self._try_parse_json(base_value)
-                    # Optional nested path within the base value: path: a.b.c
+                        base_value = self._parse_json(base_value)
+                    # Optional nested path within the base value
                     if isinstance(assigned_var.get("path"), str):
-                        base_value = self._extract_path(
-                            base_value, assigned_var["path"]
-                        )
+                        base_value = self._get_value(base_value, assigned_var["path"])
 
                     field_missing = False
                     if base_value is None and isinstance(actual_data, dict):

@@ -478,3 +478,205 @@ class TestBaseStepValidationIntegration:
             step._validate_list_field(
                 "nodes", element_type=str, element_validator=validate_non_empty_string
             )
+
+
+class TestBaseStepJsonParsing:
+    """Tests for consolidated JSON parsing methods (_parse_json and _get_value)."""
+
+    def _create_step(self, config: dict = None) -> BaseStep:
+        """Create a BaseStep instance with the given config."""
+        return BaseStep(config or {"name": "test"})
+
+    # =========================================================================
+    # _parse_json Tests - Strategy 1: Standard JSON
+    # =========================================================================
+
+    def test_parse_json_standard_object(self):
+        """Test _parse_json with standard JSON object."""
+        step = self._create_step()
+        result = step._parse_json('{"key": "value", "num": 42}')
+        assert result == {"key": "value", "num": 42}
+
+    def test_parse_json_standard_array(self):
+        """Test _parse_json with standard JSON array."""
+        step = self._create_step()
+        result = step._parse_json('[1, 2, "three"]')
+        assert result == [1, 2, "three"]
+
+    def test_parse_json_non_string_passthrough(self):
+        """Test _parse_json returns non-strings unchanged."""
+        step = self._create_step()
+        assert step._parse_json(42) == 42
+        assert step._parse_json({"already": "dict"}) == {"already": "dict"}
+        assert step._parse_json([1, 2, 3]) == [1, 2, 3]
+        assert step._parse_json(None) is None
+
+    def test_parse_json_empty_string(self):
+        """Test _parse_json with empty string."""
+        step = self._create_step()
+        assert step._parse_json("") == ""
+        assert step._parse_json("   ") == "   "
+
+    # =========================================================================
+    # _parse_json Tests - Strategy 1: JSON string values
+    # =========================================================================
+
+    def test_parse_json_json_string_returns_string(self):
+        """Test _parse_json with JSON-encoded string returns the decoded string.
+
+        When input is valid JSON encoding a string (e.g., a JSON string value),
+        Strategy 1 parses it and returns the string content.
+        """
+        step = self._create_step()
+        # JSON string containing an escaped JSON object - valid JSON
+        json_string = '"{\\"key\\": \\"value\\"}"'
+        result = step._parse_json(json_string)
+        # Strategy 1 successfully decodes this as a JSON string
+        assert result == '{"key": "value"}'
+
+    # =========================================================================
+    # _parse_json Tests - Strategy 2: Python literals
+    # =========================================================================
+
+    def test_parse_json_python_dict_single_quotes(self):
+        """Test _parse_json with Python-style dict using single quotes."""
+        step = self._create_step()
+        result = step._parse_json("{'key': 'value'}")
+        assert result == {"key": "value"}
+
+    def test_parse_json_python_bool(self):
+        """Test _parse_json with Python-style booleans."""
+        step = self._create_step()
+        result = step._parse_json("{'enabled': True, 'disabled': False}")
+        assert result == {"enabled": True, "disabled": False}
+
+    def test_parse_json_python_none(self):
+        """Test _parse_json with Python None."""
+        step = self._create_step()
+        result = step._parse_json("{'value': None}")
+        assert result == {"value": None}
+
+    # =========================================================================
+    # _parse_json Tests - Strategy 3: Trailing commas
+    # =========================================================================
+
+    def test_parse_json_trailing_comma_object(self):
+        """Test _parse_json with trailing comma in object."""
+        step = self._create_step()
+        result = step._parse_json('{"key": "value",}')
+        assert result == {"key": "value"}
+
+    def test_parse_json_trailing_comma_array(self):
+        """Test _parse_json with trailing comma in array."""
+        step = self._create_step()
+        result = step._parse_json("[1, 2, 3,]")
+        assert result == [1, 2, 3]
+
+    # =========================================================================
+    # _parse_json Tests - Strategy 4: Substring extraction
+    # =========================================================================
+
+    def test_parse_json_extract_from_noisy_input(self):
+        """Test _parse_json extracts JSON from text with surrounding content."""
+        step = self._create_step()
+        result = step._parse_json('Some prefix text {"key": "value"} and suffix')
+        assert result == {"key": "value"}
+
+    def test_parse_json_extract_array_from_noisy_input(self):
+        """Test _parse_json extracts array from text with surrounding content."""
+        step = self._create_step()
+        result = step._parse_json("prefix [1, 2, 3] suffix")
+        assert result == [1, 2, 3]
+
+    # =========================================================================
+    # _parse_json Tests - Fallback behavior
+    # =========================================================================
+
+    def test_parse_json_unparseable_returns_original(self):
+        """Test _parse_json returns original string when parsing fails."""
+        step = self._create_step()
+        result = step._parse_json("not json at all")
+        assert result == "not json at all"
+
+    # =========================================================================
+    # _get_value Tests - Simple key access
+    # =========================================================================
+
+    def test_get_value_simple_key(self):
+        """Test _get_value with simple key access."""
+        step = self._create_step()
+        obj = {"name": "test", "count": 42}
+        assert step._get_value(obj, "name") == "test"
+        assert step._get_value(obj, "count") == 42
+
+    def test_get_value_missing_key(self):
+        """Test _get_value returns None for missing key."""
+        step = self._create_step()
+        obj = {"name": "test"}
+        assert step._get_value(obj, "missing") is None
+
+    def test_get_value_simple_key_with_json_parsing(self):
+        """Test _get_value parses JSON string values."""
+        step = self._create_step()
+        obj = {"data": '{"nested": "value"}'}
+        result = step._get_value(obj, "data")
+        assert result == {"nested": "value"}
+
+    # =========================================================================
+    # _get_value Tests - Dotted path access
+    # =========================================================================
+
+    def test_get_value_nested_path(self):
+        """Test _get_value with nested path."""
+        step = self._create_step()
+        obj = {"result": {"data": {"value": 42}}}
+        assert step._get_value(obj, "result.data.value") == 42
+
+    def test_get_value_path_with_json_string(self):
+        """Test _get_value parses JSON strings in path traversal."""
+        step = self._create_step()
+        obj = {"result": '{"data": {"value": 42}}'}
+        assert step._get_value(obj, "result.data.value") == 42
+
+    def test_get_value_array_index(self):
+        """Test _get_value with array index."""
+        step = self._create_step()
+        obj = {"items": [{"id": 1}, {"id": 2}, {"id": 3}]}
+        assert step._get_value(obj, "items.0.id") == 1
+        assert step._get_value(obj, "items.2.id") == 3
+
+    def test_get_value_array_index_out_of_bounds(self):
+        """Test _get_value returns None for out of bounds array index."""
+        step = self._create_step()
+        obj = {"items": [1, 2]}
+        assert step._get_value(obj, "items.5") is None
+
+    def test_get_value_mixed_path(self):
+        """Test _get_value with mixed dict keys and array indices."""
+        step = self._create_step()
+        obj = {"result": {"items": [{"name": "first"}, {"name": "second"}]}}
+        assert step._get_value(obj, "result.items.1.name") == "second"
+
+    # =========================================================================
+    # _get_value Tests - Edge cases
+    # =========================================================================
+
+    def test_get_value_empty_path(self):
+        """Test _get_value returns None for empty path."""
+        step = self._create_step()
+        obj = {"key": "value"}
+        assert step._get_value(obj, "") is None
+        assert step._get_value(obj, None) is None
+
+    def test_get_value_non_dict_object(self):
+        """Test _get_value handles non-dict starting object."""
+        step = self._create_step()
+        # JSON string as starting object
+        json_str = '{"key": "value"}'
+        assert step._get_value(json_str, "key") == "value"
+
+    def test_get_value_broken_path(self):
+        """Test _get_value returns None when path segment doesn't exist."""
+        step = self._create_step()
+        obj = {"a": {"b": 1}}
+        assert step._get_value(obj, "a.c.d") is None

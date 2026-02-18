@@ -22,6 +22,12 @@ from merobox.commands.config_utils import (
     apply_e2e_defaults,
     apply_near_devnet_config_to_file,
 )
+from merobox.commands.constants import (
+    DEFAULT_P2P_PORT,
+    DEFAULT_RPC_PORT,
+    PROCESS_WAIT_TIMEOUT,
+    SOCKET_CONNECTION_TIMEOUT,
+)
 
 console = Console()
 
@@ -113,7 +119,7 @@ class BinaryManager:
                     process = self.processes[node_name]
                     process.terminate()
                     try:
-                        process.wait(timeout=5)
+                        process.wait(timeout=PROCESS_WAIT_TIMEOUT)
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait()
@@ -215,8 +221,8 @@ class BinaryManager:
     def run_node(
         self,
         node_name: str,
-        port: int = 2428,
-        rpc_port: int = 2528,
+        port: int = DEFAULT_P2P_PORT,
+        rpc_port: int = DEFAULT_RPC_PORT,
         chain_id: str = "testnet-1",
         data_dir: Optional[str] = None,
         image: Optional[str] = None,  # Ignored in binary mode
@@ -254,9 +260,9 @@ class BinaryManager:
         try:
             # Default ports if None provided
             if port is None:
-                port = 2428
+                port = DEFAULT_P2P_PORT
             if rpc_port is None:
-                rpc_port = 2528
+                rpc_port = DEFAULT_RPC_PORT
 
             # Check if node is already running
             existing_pid = self._load_pid(node_name)
@@ -493,7 +499,7 @@ class BinaryManager:
                 # Quick bind check for admin port
                 try:
                     with socket.create_connection(
-                        ("127.0.0.1", int(rpc_port)), timeout=1.5
+                        ("127.0.0.1", int(rpc_port)), timeout=SOCKET_CONNECTION_TIMEOUT
                     ):
                         console.print(
                             f"[green]✓ Admin server reachable at http://localhost:{rpc_port}/admin-dashboard[/green]"
@@ -517,7 +523,7 @@ class BinaryManager:
                 process = self.processes[node_name]
                 try:
                     process.terminate()
-                    process.wait(timeout=5)
+                    process.wait(timeout=PROCESS_WAIT_TIMEOUT)
                     console.print(f"[green]✓ Stopped node {node_name}[/green]")
                 except subprocess.TimeoutExpired:
                     console.print(f"[yellow]Force killing node {node_name}...[/yellow]")
@@ -594,7 +600,7 @@ class BinaryManager:
                     process = self.processes[node_name]
                     try:
                         process.terminate()
-                        process.wait(timeout=5)
+                        process.wait(timeout=PROCESS_WAIT_TIMEOUT)
                         console.print(f"[green]✓ Stopped node {node_name}[/green]")
                     except subprocess.TimeoutExpired:
                         console.print(
@@ -808,8 +814,8 @@ class BinaryManager:
     def run_multiple_nodes(
         self,
         count: int,
-        base_port: int = 2428,
-        base_rpc_port: int = 2528,
+        base_port: int = DEFAULT_P2P_PORT,
+        base_rpc_port: int = DEFAULT_RPC_PORT,
         chain_id: str = "testnet-1",
         prefix: str = "calimero-node",
         image: Optional[str] = None,  # Ignored in binary mode
@@ -869,9 +875,9 @@ class BinaryManager:
         else:
             # Default base ports if None provided (legacy behavior)
             if base_port is None:
-                base_port = 2428
+                base_port = DEFAULT_P2P_PORT
             if base_rpc_port is None:
-                base_rpc_port = 2528
+                base_rpc_port = DEFAULT_RPC_PORT
             allocated_ports = []
 
         for i in range(count):

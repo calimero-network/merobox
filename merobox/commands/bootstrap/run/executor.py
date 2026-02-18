@@ -44,7 +44,14 @@ from merobox.commands.bootstrap.steps.proposals import (
     GetProposalStep,
     ListProposalsStep,
 )
-from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
+from merobox.commands.constants import (
+    ASYNC_POLL_INTERVAL,
+    DEFAULT_P2P_PORT,
+    DEFAULT_RPC_PORT,
+    NODE_READY_TIMEOUT,
+    RESERVED_NODE_CONFIG_KEYS,
+)
+from merobox.commands.health import check_node_health
 from merobox.commands.manager import DockerManager
 from merobox.commands.near.contracts import (
     CONFIG_WASM,
@@ -816,8 +823,8 @@ class WorkflowExecutor:
             console.print("[red]No nodes configuration found[/red]")
             return False
 
-        base_port = nodes_config.get("base_port", 2428)
-        base_rpc_port = nodes_config.get("base_rpc_port", 2528)
+        base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
+        base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
 
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
@@ -1098,8 +1105,13 @@ class WorkflowExecutor:
 
         Note: This only waits for local (docker/binary) nodes. Remote nodes
         are assumed to be already running and accessible.
+
+        Readiness is determined by:
+        1. Container/process is running
+        2. Admin port is bound and accepting connections
+        3. Health endpoint responds successfully (node is serving requests)
         """
-        wait_timeout = self.config.get("wait_timeout", 60)  # Default 60 seconds
+        wait_timeout = self.config.get("wait_timeout", NODE_READY_TIMEOUT)
 
         # Use only local node names (remote nodes don't need local readiness check)
         node_names = list(self._get_local_node_names())
@@ -1109,7 +1121,13 @@ class WorkflowExecutor:
         )
 
         start_time = time.time()
-        ready_nodes = set()
+        ready_nodes: set[str] = set()
+        # Track nodes that have passed admin binding to avoid repeated expensive checks
+        admin_binding_passed: set[str] = set()
+        # Cache RPC URLs per node to avoid recalculating on each iteration
+        node_rpc_urls: dict[str, str] = {}
+        # Track nodes that have already logged the health check warning to avoid console spam
+        health_check_warned: set[str] = set()
 
         with Progress(
             SpinnerColumn(),
@@ -1131,17 +1149,38 @@ class WorkflowExecutor:
                             is_running = self._is_node_running(node_name)
 
                             if is_running:
-                                if self.manager.verify_admin_binding(node_name):
+                                # Check admin binding only if not already passed
+                                if node_name not in admin_binding_passed:
+                                    if not self.manager.verify_admin_binding(node_name):
+                                        continue
+                                    admin_binding_passed.add(node_name)
+
+                                # Get cached RPC URL or compute and cache it
+                                if node_name not in node_rpc_urls:
+                                    node_rpc_urls[node_name] = get_node_rpc_url(
+                                        node_name, self.manager
+                                    )
+                                rpc_url = node_rpc_urls[node_name]
+
+                                # Probe health endpoint to ensure node is serving requests
+                                health_result = await check_node_health(rpc_url)
+                                if health_result.get("success"):
                                     ready_nodes.add(node_name)
                                     progress.update(task, completed=len(ready_nodes))
                                     console.print(
-                                        f"[green]✓ Node {node_name} is ready[/green]"
+                                        f"[green]✓ Node {node_name} is ready (health check passed)[/green]"
                                     )
+                                elif node_name not in health_check_warned:
+                                    # Only log the warning once per node
+                                    console.print(
+                                        f"[yellow]Node {node_name} admin binding OK, waiting for health check...[/yellow]"
+                                    )
+                                    health_check_warned.add(node_name)
                         except Exception:
                             pass
 
                 if len(ready_nodes) < len(node_names):
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(ASYNC_POLL_INTERVAL)
 
         if len(ready_nodes) == len(node_names):
             console.print("[green]✓ All nodes are ready[/green]")

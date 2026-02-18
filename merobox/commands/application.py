@@ -10,7 +10,10 @@ import requests
 from rich import box
 from rich.table import Table
 
-from merobox.commands.constants import ADMIN_API_APPLICATIONS
+from merobox.commands.constants import (
+    ADMIN_API_APPLICATIONS,
+    DEFAULT_CONNECTION_TIMEOUT,
+)
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
@@ -25,7 +28,9 @@ from merobox.commands.utils import (
 async def list_applications_via_admin_api(rpc_url: str) -> dict:
     """List applications using direct HTTP call."""
     try:
-        response = requests.get(f"{rpc_url}{ADMIN_API_APPLICATIONS}", timeout=10)
+        response = requests.get(
+            f"{rpc_url}{ADMIN_API_APPLICATIONS}", timeout=DEFAULT_CONNECTION_TIMEOUT
+        )
         response.raise_for_status()
         return ok(response.json())
     except Exception as e:
