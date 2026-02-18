@@ -146,9 +146,9 @@ class DockerManager:
     def _signal_handler(self, signum, frame):
         """Handle SIGINT/SIGTERM signals for graceful shutdown.
 
-        Uses os._exit() instead of sys.exit() to avoid raising SystemExit
-        which can corrupt state if async tasks are running. This also
-        prevents atexit handlers from being called again after cleanup.
+        Uses sys.exit() to allow proper stack unwinding and finally block
+        execution. The _cleanup_resources lock ensures at-most-once cleanup
+        semantics, preventing double-cleanup even if atexit handlers run.
         """
         if self._shutting_down:
             # Already shutting down, force exit on second signal
@@ -163,9 +163,10 @@ class DockerManager:
 
         self._cleanup_resources()
 
-        # Use os._exit() to avoid triggering atexit handlers (already cleaned up)
-        # and to prevent raising SystemExit which can corrupt async state
-        os._exit(0)
+        # Use sys.exit() to allow proper stack unwinding and finally blocks.
+        # The _cleanup_lock ensures cleanup runs at most once, so atexit
+        # handlers won't cause double-cleanup.
+        sys.exit(0)
 
     def _cleanup_on_exit(self):
         """Cleanup handler for atexit - only runs if not already cleaned up."""
@@ -177,8 +178,9 @@ class DockerManager:
     ):
         """Stop all managed resources (containers) with graceful shutdown.
 
-        Thread-safe cleanup that ensures resources are only cleaned once,
-        preventing double-cleanup races between signal handlers and atexit.
+        Thread-safe guard ensuring at-most-once execution semantics. The lock
+        protects only the check-and-set of _cleanup_done, preventing double-cleanup
+        races between signal handlers and atexit even under concurrent access.
 
         Uses a shorter drain_timeout (3s) than normal operations (5s) because
         cleanup scenarios (SIGTERM handler, atexit) need faster completion to

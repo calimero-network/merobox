@@ -1,4 +1,5 @@
 import signal
+import threading
 from unittest.mock import MagicMock, patch
 
 import docker
@@ -215,3 +216,58 @@ def test_docker_manager_has_cleanup_lock(mock_docker):
     assert hasattr(manager, "_cleanup_lock")
     assert hasattr(manager, "_cleanup_done")
     assert manager._cleanup_done is False
+
+
+@patch("docker.from_env")
+def test_docker_manager_cleanup_concurrent_access(mock_docker):
+    """Test that _cleanup_resources handles concurrent access correctly.
+
+    Spawns multiple threads calling _cleanup_resources simultaneously to verify
+    the lock ensures at-most-once execution under concurrent access.
+    """
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Add a mock container
+    mock_container = MagicMock()
+    manager.nodes = {"node1": mock_container}
+    manager.node_rpc_ports = {"node1": 2528}
+
+    # Track how many threads actually performed cleanup
+    cleanup_count = []
+    cleanup_count_lock = threading.Lock()
+
+    original_cleanup = manager._cleanup_resources
+
+    def tracked_cleanup():
+        # Call original cleanup
+        original_cleanup()
+        # If we got past the guard, record it
+        with cleanup_count_lock:
+            if mock_container.stop.called:
+                cleanup_count.append(1)
+
+    # Spawn multiple threads calling cleanup concurrently
+    threads = []
+    num_threads = 10
+    barrier = threading.Barrier(num_threads)
+
+    def thread_func():
+        barrier.wait()  # Synchronize all threads to start at once
+        tracked_cleanup()
+
+    for _ in range(num_threads):
+        t = threading.Thread(target=thread_func)
+        threads.append(t)
+        t.start()
+
+    # Wait for all threads to complete
+    for t in threads:
+        t.join()
+
+    # Verify cleanup was only performed once despite concurrent access
+    assert mock_container.stop.call_count == 1
+    assert mock_container.remove.call_count == 1
+    assert manager._cleanup_done is True
