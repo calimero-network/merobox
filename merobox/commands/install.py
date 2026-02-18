@@ -15,6 +15,7 @@ from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
     CONTAINER_DATA_DIR_PATTERNS,
     DEFAULT_METADATA,
+    INSTALL_TIMEOUT,
 )
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
@@ -138,7 +139,9 @@ def validate_installation_source(
 )
 @click.option("--metadata", help="Application metadata (optional)")
 @click.option(
-    "--timeout", default=30, help="Timeout in seconds for installation (default: 30)"
+    "--timeout",
+    default=INSTALL_TIMEOUT,
+    help=f"Timeout in seconds for installation (default: {INSTALL_TIMEOUT})",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def install(node, url, path, dev, metadata, timeout, verbose):

@@ -17,7 +17,14 @@ import requests
 from rich.console import Console
 from tqdm import tqdm
 
+<<<<<<< bounty-fix/validate-tarfile-extraction-paths-to-pre-mlrug3j3
 from .utils import safe_tar_extract
+=======
+from merobox.commands.constants import (
+    CONTRACT_DOWNLOAD_LOCK_TIMEOUT,
+    CONTRACT_DOWNLOAD_TIMEOUT,
+)
+>>>>>>> master
 
 try:
     from filelock import FileLock
@@ -148,7 +155,7 @@ def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
         return _download_and_extract_impl(cache_dir, version)
 
     if FileLock is not None:
-        with FileLock(lock_path, timeout=300):
+        with FileLock(lock_path, timeout=CONTRACT_DOWNLOAD_LOCK_TIMEOUT):
             return _download_and_extract()
     _warn_no_filelock()
     return _download_and_extract()
@@ -171,7 +178,7 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
 
     console.print(f"[yellow]Fetching Calimero NEAR contracts {version}...[/yellow]")
     try:
-        r = requests.get(api_url, timeout=30)
+        r = requests.get(api_url, timeout=CONTRACT_DOWNLOAD_TIMEOUT)
         r.raise_for_status()
         data = r.json()
     except Exception as e:
@@ -239,7 +246,9 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         )
     if checksum_url and not skip_checksum:
         try:
-            with requests.get(checksum_url, timeout=30) as cs_resp:
+            with requests.get(
+                checksum_url, timeout=CONTRACT_DOWNLOAD_TIMEOUT
+            ) as cs_resp:
                 cs_resp.raise_for_status()
                 line = (cs_resp.text or "").strip().split()
                 expected_hex = line[0] if line else ""
