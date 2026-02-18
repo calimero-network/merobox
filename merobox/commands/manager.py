@@ -97,21 +97,29 @@ class DockerManager:
         if not self._shutting_down:
             self._cleanup_resources()
 
-    def _cleanup_resources(self):
-        """Stop all managed resources (containers)."""
+    def _cleanup_resources(
+        self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
+    ):
+        """Stop all managed resources (containers) with graceful shutdown.
+
+        Uses a shorter drain_timeout (3s) than normal operations (5s) because
+        cleanup scenarios (SIGTERM handler, atexit) need faster completion to
+        avoid blocking process termination or triggering forced kills.
+
+        Args:
+            drain_timeout: Seconds to wait for connection draining (default 3s).
+            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+        """
         if self.nodes:
-            console.print("[cyan]Stopping managed containers...[/cyan]")
-            # Stop all tracked nodes
-            for node_name in list(self.nodes.keys()):
-                try:
-                    container = self.nodes[node_name]
-                    container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                    container.remove()
-                    console.print(f"[green]✓ Stopped container {node_name}[/green]")
-                except Exception as e:
-                    console.print(
-                        f"[yellow]⚠️  Could not stop container {node_name}: {e}[/yellow]"
-                    )
+            console.print(
+                "[cyan]Stopping managed containers with graceful shutdown...[/cyan]"
+            )
+            containers_to_stop = [
+                (name, container) for name, container in self.nodes.items()
+            ]
+            self._graceful_stop_containers_batch(
+                containers_to_stop, drain_timeout, stop_timeout
+            )
             self.nodes.clear()
             self.node_rpc_ports.clear()
 
@@ -1141,28 +1149,136 @@ class DockerManager:
         )
         return success_count == count
 
-    def stop_node(self, node_name: str) -> bool:
-        """Stop a Calimero node container."""
+    def _graceful_stop_container(
+        self,
+        container,
+        container_name: str,
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> bool:
+        """Gracefully stop a single container with connection draining.
+
+        Delegates to _graceful_stop_containers_batch with a single-element list
+        to avoid duplicating the three-phase shutdown logic.
+
+        Args:
+            container: Docker container object
+            container_name: Name of the container (for logging)
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            True if container was stopped successfully, False otherwise
+        """
+        success_count, failed = self._graceful_stop_containers_batch(
+            [(container_name, container)], drain_timeout, stop_timeout
+        )
+        return success_count == 1 and not failed
+
+    def _graceful_stop_containers_batch(
+        self,
+        containers: list[tuple[str, any]],
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> tuple[int, list[str]]:
+        """Gracefully stop multiple containers with O(timeout) complexity.
+
+        This method implements batch graceful shutdown:
+        1. Send SIGTERM to ALL containers first (parallel signal phase)
+        2. Wait ONCE for drain_timeout (shared drain period)
+        3. Stop and remove all containers
+
+        This is more efficient than sequential graceful stops which would
+        take O(n * drain_timeout) time.
+
+        Args:
+            containers: List of (container_name, container) tuples to stop
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for each container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            Tuple of (success_count, failed_names)
+        """
+        if not containers:
+            return 0, []
+
+        # Phase 1: Send SIGTERM to all containers (parallel signal)
+        console.print(
+            f"[cyan]Initiating graceful shutdown for {len(containers)} containers...[/cyan]"
+        )
+        for _container_name, container in containers:
+            try:
+                container.kill(signal="SIGTERM")
+            except docker.errors.APIError:
+                # Container may have already stopped or doesn't support signals
+                pass
+
+        # Phase 2: Single shared drain period for all containers
+        if drain_timeout > 0:
+            console.print(
+                f"[cyan]Waiting {drain_timeout}s for connection draining...[/cyan]"
+            )
+            time.sleep(drain_timeout)
+
+        # Phase 3: Stop and remove all containers
+        success_count = 0
+        failed_names = []
+
+        for container_name, container in containers:
+            try:
+                container.stop(timeout=stop_timeout)
+                container.remove()
+                console.print(
+                    f"[green]✓ Gracefully stopped and removed {container_name}[/green]"
+                )
+                success_count += 1
+            except Exception as e:
+                console.print(f"[red]✗ Failed to stop {container_name}: {str(e)}[/red]")
+                failed_names.append(container_name)
+
+        return success_count, failed_names
+
+    def stop_node(
+        self,
+        node_name: str,
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> bool:
+        """Stop a Calimero node container with graceful shutdown.
+
+        Implements graceful shutdown with connection draining:
+        1. Sends SIGTERM to disable health checks and stop accepting new connections
+        2. Waits for drain_timeout to allow in-flight requests to complete
+        3. Stops the container with stop_timeout for final cleanup
+
+        Args:
+            node_name: Name of the node to stop
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            True if node was stopped successfully, False otherwise
+        """
         try:
             if node_name in self.nodes:
                 container = self.nodes[node_name]
-                container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                container.remove()
-                del self.nodes[node_name]
-                console.print(f"[green]✓ Stopped and removed node {node_name}[/green]")
-                self.node_rpc_ports.pop(node_name, None)
-                return True
+                success = self._graceful_stop_container(
+                    container, node_name, drain_timeout, stop_timeout
+                )
+                if success:
+                    del self.nodes[node_name]
+                    self.node_rpc_ports.pop(node_name, None)
+                return success
             else:
                 # Try to find container by name
                 try:
                     container = self.client.containers.get(node_name)
-                    container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                    container.remove()
-                    console.print(
-                        f"[green]✓ Stopped and removed node {node_name}[/green]"
+                    success = self._graceful_stop_container(
+                        container, node_name, drain_timeout, stop_timeout
                     )
-                    self.node_rpc_ports.pop(node_name, None)
-                    return True
+                    if success:
+                        self.node_rpc_ports.pop(node_name, None)
+                    return success
                 except docker.errors.NotFound:
                     console.print(f"[yellow]Node {node_name} not found[/yellow]")
                     return False
@@ -1170,57 +1286,61 @@ class DockerManager:
             console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
             return False
 
-    def stop_all_nodes(self) -> bool:
-        """Stop all running Calimero nodes."""
+    def stop_all_nodes(
+        self,
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> bool:
+        """Stop all running Calimero nodes with graceful shutdown.
+
+        Uses batch graceful shutdown for O(timeout) complexity instead of
+        O(n * timeout) that sequential stops would require.
+
+        Args:
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for each container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            True if all nodes were stopped successfully, False otherwise
+        """
         try:
             containers = self.client.containers.list(
                 filters={"label": "calimero.node=true"}
             )
 
-            success = True
-            success_count = 0
-            failed_nodes = []
-
             if not containers:
                 console.print(
                     "[yellow]No Calimero nodes are currently running[/yellow]"
                 )
-            else:
-                console.print(
-                    f"[bold]Stopping {len(containers)} Calimero nodes...[/bold]"
-                )
+                return True
 
-                for container in containers:
-                    try:
-                        container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                        container.remove()
-                        console.print(
-                            f"[green]✓ Stopped and removed {container.name}[/green]"
-                        )
-                        success_count += 1
-                        self.node_rpc_ports.pop(container.name, None)
+            console.print(
+                f"[bold]Stopping {len(containers)} Calimero nodes with graceful shutdown...[/bold]"
+            )
 
-                        # Remove from nodes dict if present
-                        if container.name in self.nodes:
-                            del self.nodes[container.name]
+            # Build list of (name, container) tuples for batch shutdown
+            containers_to_stop = [(c.name, c) for c in containers]
 
-                    except Exception as e:
-                        console.print(
-                            f"[red]✗ Failed to stop {container.name}: {str(e)}[/red]"
-                        )
-                        failed_nodes.append(container.name)
+            success_count, failed_nodes = self._graceful_stop_containers_batch(
+                containers_to_stop, drain_timeout, stop_timeout
+            )
 
-                console.print(
-                    f"\n[bold]Stop Summary: {success_count}/{len(containers)} nodes stopped successfully[/bold]"
-                )
+            # Clean up internal tracking for successfully stopped containers
+            for container_name, _ in containers_to_stop:
+                if container_name not in failed_nodes:
+                    self.node_rpc_ports.pop(container_name, None)
+                    if container_name in self.nodes:
+                        del self.nodes[container_name]
 
-                if failed_nodes:
-                    console.print(
-                        f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]"
-                    )
-                    success = False
+            console.print(
+                f"\n[bold]Stop Summary: {success_count}/{len(containers)} nodes stopped successfully[/bold]"
+            )
 
-            return success
+            if failed_nodes:
+                console.print(f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]")
+                return False
+
+            return True
 
         except Exception as e:
             console.print(f"[red]Failed to stop all nodes: {str(e)}[/red]")
