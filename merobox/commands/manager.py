@@ -123,7 +123,7 @@ class DockerManager:
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
         self._shutting_down = False
-        self._cleanup_lock = threading.Lock()
+        self._cleanup_lock = threading.RLock()
         self._cleanup_done = False
         self._original_sigint_handler = None
         self._original_sigterm_handler = None
@@ -178,9 +178,10 @@ class DockerManager:
     ):
         """Stop all managed resources (containers) with graceful shutdown.
 
-        Thread-safe guard ensuring at-most-once execution semantics. The lock
-        protects only the check-and-set of _cleanup_done, preventing double-cleanup
-        races between signal handlers and atexit even under concurrent access.
+        Thread-safe guard ensuring at-most-once execution semantics. Uses RLock
+        to prevent deadlock if a signal arrives while atexit holds the lock
+        (signal handlers run in the same thread). The lock protects only the
+        check-and-set of _cleanup_done, preventing double-cleanup races.
 
         Uses a shorter drain_timeout (3s) than normal operations (5s) because
         cleanup scenarios (SIGTERM handler, atexit) need faster completion to
