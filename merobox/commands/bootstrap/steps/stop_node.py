@@ -11,6 +11,30 @@ from merobox.commands.utils import console
 class StopNodeStep(BaseStep):
     """Stop nodes during workflow execution."""
 
+    def _is_node_running(self, node_name: str) -> bool:
+        """
+        Check if a node is running.
+        
+        Works for both binary mode (via is_node_running) and Docker mode
+        (via container status check).
+        """
+        if not self.manager:
+            return False
+        
+        # Binary mode: use is_node_running method
+        if hasattr(self.manager, "is_node_running"):
+            return self.manager.is_node_running(node_name)
+        
+        # Docker mode fallback: check container status
+        if hasattr(self.manager, "client"):
+            try:
+                container = self.manager.client.containers.get(node_name)
+                return container.status == "running"
+            except Exception:
+                return False
+        
+        return False
+
     def _get_required_fields(self) -> list[str]:
         """
         Define which fields are required for this step.
@@ -77,7 +101,16 @@ class StopNodeStep(BaseStep):
 
         for node_name in node_names:
             if hasattr(self.manager, "stop_node"):
-                if self.manager.stop_node(node_name):
+                # Check if node is already stopped (idempotent stop behavior)
+                is_running = self._is_node_running(node_name)
+                
+                if not is_running:
+                    # Node is already stopped, treat as success
+                    console.print(
+                        f"[yellow]⚠ Node {node_name} is not running (already stopped)[/yellow]"
+                    )
+                    stopped_nodes.append(node_name)
+                elif self.manager.stop_node(node_name):
                     stopped_nodes.append(node_name)
                 else:
                     failed_to_stop.append(node_name)
