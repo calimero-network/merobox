@@ -124,6 +124,7 @@ class DockerManager:
         self.node_rpc_ports: dict[str, int] = {}
         self._shutting_down = False
         self._cleanup_lock = threading.RLock()
+        self._cleanup_in_progress = False
         self._cleanup_done = False
         self._original_sigint_handler = None
         self._original_sigterm_handler = None
@@ -147,12 +148,14 @@ class DockerManager:
         """Handle SIGINT/SIGTERM signals for graceful shutdown.
 
         Uses sys.exit() to allow proper stack unwinding and finally block
-        execution. The _cleanup_resources lock ensures at-most-once cleanup
-        semantics, preventing double-cleanup even if atexit handlers run.
+        execution. If cleanup is already in progress (e.g., via atexit), we
+        return without calling sys.exit() to avoid interrupting the ongoing
+        cleanup with SystemExit.
         """
         if self._shutting_down:
             # Already shutting down, force exit on second signal
             console.print("\n[red]Forced exit requested, terminating...[/red]")
+            sys.stdout.flush()  # Ensure message is printed before os._exit
             os._exit(1)
 
         self._shutting_down = True
@@ -161,12 +164,13 @@ class DockerManager:
             f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
         )
 
-        self._cleanup_resources()
+        cleanup_result = self._cleanup_resources()
 
-        # Use sys.exit() to allow proper stack unwinding and finally blocks.
-        # The _cleanup_lock ensures cleanup runs at most once, so atexit
-        # handlers won't cause double-cleanup.
-        sys.exit(0)
+        # Only call sys.exit() if cleanup completed or was already done.
+        # If cleanup was in progress (re-entrant call), return without exit
+        # to avoid interrupting the ongoing cleanup with SystemExit.
+        if cleanup_result is not None:
+            sys.exit(0)
 
     def _cleanup_on_exit(self):
         """Cleanup handler for atexit - only runs if not already cleaned up."""
@@ -179,9 +183,12 @@ class DockerManager:
         """Stop all managed resources (containers) with graceful shutdown.
 
         Thread-safe guard ensuring at-most-once execution semantics. Uses RLock
-        to prevent deadlock if a signal arrives while atexit holds the lock
-        (signal handlers run in the same thread). The lock protects only the
-        check-and-set of _cleanup_done, preventing double-cleanup races.
+        to allow re-entrant calls from signal handlers in the same thread.
+
+        Returns:
+            True: Cleanup was performed by this call
+            False: Cleanup was already completed previously
+            None: Cleanup is currently in progress (re-entrant call)
 
         Uses a shorter drain_timeout (3s) than normal operations (5s) because
         cleanup scenarios (SIGTERM handler, atexit) need faster completion to
@@ -193,21 +200,29 @@ class DockerManager:
         """
         with self._cleanup_lock:
             if self._cleanup_done:
-                return
-            self._cleanup_done = True
+                return False  # Already completed
+            if self._cleanup_in_progress:
+                return None  # In progress (re-entrant call from signal handler)
+            self._cleanup_in_progress = True
 
-        if self.nodes:
-            console.print(
-                "[cyan]Stopping managed containers with graceful shutdown...[/cyan]"
-            )
-            containers_to_stop = [
-                (name, container) for name, container in self.nodes.items()
-            ]
-            self._graceful_stop_containers_batch(
-                containers_to_stop, drain_timeout, stop_timeout
-            )
-            self.nodes.clear()
-            self.node_rpc_ports.clear()
+            try:
+                if self.nodes:
+                    console.print(
+                        "[cyan]Stopping managed containers with graceful shutdown...[/cyan]"
+                    )
+                    containers_to_stop = [
+                        (name, container) for name, container in self.nodes.items()
+                    ]
+                    self._graceful_stop_containers_batch(
+                        containers_to_stop, drain_timeout, stop_timeout
+                    )
+                    self.nodes.clear()
+                    self.node_rpc_ports.clear()
+            finally:
+                self._cleanup_done = True
+                self._cleanup_in_progress = False
+
+        return True  # Cleanup performed
 
     def remove_signal_handlers(self):
         """Remove signal handlers and restore original handlers."""

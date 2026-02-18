@@ -190,15 +190,17 @@ def test_docker_manager_cleanup_prevents_double_cleanup(mock_docker):
     manager.nodes = {"node1": mock_container1}
     manager.node_rpc_ports = {"node1": 2528}
 
-    # First cleanup should work
-    manager._cleanup_resources()
+    # First cleanup should work and return True
+    result = manager._cleanup_resources()
+    assert result is True
     assert mock_container1.stop.call_count == 1
     assert manager._cleanup_done is True
 
-    # Second cleanup should be skipped (double-cleanup prevention)
+    # Second cleanup should be skipped and return False
     mock_container2 = MagicMock()
     manager.nodes = {"node2": mock_container2}
-    manager._cleanup_resources()
+    result = manager._cleanup_resources()
+    assert result is False
 
     # Container2 should not have been stopped
     assert mock_container2.stop.call_count == 0
@@ -242,3 +244,33 @@ def test_docker_manager_cleanup_concurrent_access(mock_docker):
     # Verify cleanup was only performed once despite concurrent access
     assert mock_container.stop.call_count == 1
     assert mock_container.remove.call_count == 1
+
+
+@patch("docker.from_env")
+def test_docker_manager_cleanup_in_progress_returns_none(mock_docker):
+    """Test that re-entrant cleanup call returns None when cleanup is in progress.
+
+    This simulates a signal handler calling cleanup while atexit cleanup is running.
+    With RLock, the same thread can re-enter, and should get None indicating
+    cleanup is already in progress.
+    """
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Manually set cleanup in progress to simulate mid-cleanup state
+    manager._cleanup_in_progress = True
+
+    # Calling cleanup while in progress should return None
+    result = manager._cleanup_resources()
+    assert result is None
+
+    # Reset and verify normal cleanup works
+    manager._cleanup_in_progress = False
+    mock_container = MagicMock()
+    manager.nodes = {"node1": mock_container}
+
+    result = manager._cleanup_resources()
+    assert result is True
+    assert mock_container.stop.call_count == 1
