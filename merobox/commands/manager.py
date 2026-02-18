@@ -8,6 +8,7 @@ import os
 import shutil
 import signal
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -122,6 +123,8 @@ class DockerManager:
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
         self._shutting_down = False
+        self._cleanup_lock = threading.Lock()
+        self._cleanup_done = False
         self._original_sigint_handler = None
         self._original_sigterm_handler = None
 
@@ -141,11 +144,16 @@ class DockerManager:
         atexit.register(self._cleanup_on_exit)
 
     def _signal_handler(self, signum, frame):
-        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
+        """Handle SIGINT/SIGTERM signals for graceful shutdown.
+
+        Uses os._exit() instead of sys.exit() to avoid raising SystemExit
+        which can corrupt state if async tasks are running. This also
+        prevents atexit handlers from being called again after cleanup.
+        """
         if self._shutting_down:
             # Already shutting down, force exit on second signal
             console.print("\n[red]Forced exit requested, terminating...[/red]")
-            sys.exit(1)
+            os._exit(1)
 
         self._shutting_down = True
         sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
@@ -155,8 +163,9 @@ class DockerManager:
 
         self._cleanup_resources()
 
-        # Exit cleanly
-        sys.exit(0)
+        # Use os._exit() to avoid triggering atexit handlers (already cleaned up)
+        # and to prevent raising SystemExit which can corrupt async state
+        os._exit(0)
 
     def _cleanup_on_exit(self):
         """Cleanup handler for atexit - only runs if not already cleaned up."""
@@ -168,6 +177,9 @@ class DockerManager:
     ):
         """Stop all managed resources (containers) with graceful shutdown.
 
+        Thread-safe cleanup that ensures resources are only cleaned once,
+        preventing double-cleanup races between signal handlers and atexit.
+
         Uses a shorter drain_timeout (3s) than normal operations (5s) because
         cleanup scenarios (SIGTERM handler, atexit) need faster completion to
         avoid blocking process termination or triggering forced kills.
@@ -176,6 +188,11 @@ class DockerManager:
             drain_timeout: Seconds to wait for connection draining (default 3s).
             stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
         """
+        with self._cleanup_lock:
+            if self._cleanup_done:
+                return
+            self._cleanup_done = True
+
         if self.nodes:
             console.print(
                 "[cyan]Stopping managed containers with graceful shutdown...[/cyan]"
