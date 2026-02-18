@@ -767,13 +767,11 @@ class BaseStep:
         It implements the following strategies in order of precedence:
 
         1. STANDARD JSON: Direct json.loads() parsing
-        2. DOUBLE-ENCODED: Handles strings like '"{\\"key\\":\\"value\\"}"'
-           where the JSON is wrapped in extra quotes
-        3. PYTHON LITERALS: Uses ast.literal_eval() for Python-style dicts/lists
+        2. PYTHON LITERALS: Uses ast.literal_eval() for Python-style dicts/lists
            (e.g., "{'key': 'value'}" with single quotes)
-        4. TRAILING COMMAS: Cleans trailing commas before JSON parsing
+        3. TRAILING COMMAS: Cleans trailing commas before JSON parsing
            (e.g., '{"key": "value",}')
-        5. SUBSTRING EXTRACTION: Extracts first valid JSON object/array from
+        4. SUBSTRING EXTRACTION: Extracts first valid JSON object/array from
            text containing other content (e.g., "prefix {\"key\": 1} suffix")
 
         Args:
@@ -784,7 +782,7 @@ class BaseStep:
             or the original value if all parsing strategies fail.
 
         Warning:
-            Strategy 5 (substring extraction) is permissive and may extract
+            Strategy 4 (substring extraction) is permissive and may extract
             unintended JSON from mixed content. When processing untrusted input,
             validate the extracted data matches expected schema before use.
 
@@ -805,24 +803,7 @@ class BaseStep:
         except Exception:
             pass
 
-        # Strategy 2: Double-encoded JSON (string within string)
-        if (s.startswith('"') and s.endswith('"')) or (
-            s.startswith("'") and s.endswith("'")
-        ):
-            try:
-                inner = json.loads(s)
-                if isinstance(inner, str):
-                    try:
-                        return json.loads(inner)
-                    except Exception:
-                        try:
-                            return ast.literal_eval(inner)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-
-        # Strategy 3: Python-style literals (single quotes, etc.)
+        # Strategy 2: Python-style literals (single quotes, etc.)
         try:
             parsed = ast.literal_eval(s)
             if isinstance(parsed, (dict, list, str, int, float, bool, type(None))):
@@ -830,7 +811,7 @@ class BaseStep:
         except Exception:
             pass
 
-        # Strategy 4: JSON with trailing commas
+        # Strategy 3: JSON with trailing commas
         if "{" in s or "[" in s:
             try:
                 cleaned = re.sub(r",(\s*[}\]])", r"\1", s)
@@ -838,7 +819,7 @@ class BaseStep:
             except Exception:
                 pass
 
-        # Strategy 5: Extract JSON substring from noisy input
+        # Strategy 4: Extract JSON substring from noisy input
         if "{" in s or "[" in s:
             try:
                 candidate = self._find_json_substring(s)

@@ -518,17 +518,14 @@ class TestBaseStepJsonParsing:
         assert step._parse_json("   ") == "   "
 
     # =========================================================================
-    # _parse_json Tests - Strategy 2: Double-encoded JSON
-    # Strategy 2 handles cases where Strategy 1 fails but the string looks
-    # like a quoted value. For valid JSON strings, Strategy 1 succeeds first.
+    # _parse_json Tests - Strategy 1: JSON string values
     # =========================================================================
 
     def test_parse_json_json_string_returns_string(self):
         """Test _parse_json with JSON-encoded string returns the decoded string.
 
         When input is valid JSON encoding a string (e.g., a JSON string value),
-        Strategy 1 parses it and returns the string content. Double-decoding
-        only occurs when Strategy 1 fails.
+        Strategy 1 parses it and returns the string content.
         """
         step = self._create_step()
         # JSON string containing an escaped JSON object - valid JSON
@@ -538,7 +535,7 @@ class TestBaseStepJsonParsing:
         assert result == '{"key": "value"}'
 
     # =========================================================================
-    # _parse_json Tests - Strategy 3: Python literals
+    # _parse_json Tests - Strategy 2: Python literals
     # =========================================================================
 
     def test_parse_json_python_dict_single_quotes(self):
@@ -560,7 +557,7 @@ class TestBaseStepJsonParsing:
         assert result == {"value": None}
 
     # =========================================================================
-    # _parse_json Tests - Strategy 4: Trailing commas
+    # _parse_json Tests - Strategy 3: Trailing commas
     # =========================================================================
 
     def test_parse_json_trailing_comma_object(self):
@@ -576,7 +573,7 @@ class TestBaseStepJsonParsing:
         assert result == [1, 2, 3]
 
     # =========================================================================
-    # _parse_json Tests - Strategy 5: Substring extraction
+    # _parse_json Tests - Strategy 4: Substring extraction
     # =========================================================================
 
     def test_parse_json_extract_from_noisy_input(self):
