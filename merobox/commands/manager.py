@@ -2,11 +2,9 @@
 Calimero Manager - Core functionality for managing Calimero nodes in Docker containers.
 """
 
-import atexit
 import logging
 import os
 import shutil
-import signal
 import sys
 import time
 import uuid
@@ -17,6 +15,7 @@ import docker
 from rich.console import Console
 from rich.table import Table
 
+from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
@@ -29,6 +28,7 @@ from merobox.commands.constants import (
     NODE_STARTUP_DELAY,
     P2P_PORT_BINDING,
     RPC_PORT_BINDING,
+    CleanupResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ def _get_node_hostname(node_name: str) -> str:
     return node_name.replace("calimero-", "").replace("-", "")
 
 
-class DockerManager:
+class DockerManager(CleanupMixin):
     """Manages Calimero nodes in Docker containers."""
 
     def __init__(self, enable_signal_handlers: bool = True):
@@ -111,6 +111,8 @@ class DockerManager:
                 shutdown on SIGINT/SIGTERM. Set to False in tests or when managing
                 signals externally.
         """
+        self._init_cleanup_state()
+
         try:
             self.client = docker.from_env()
         except Exception as e:
@@ -121,52 +123,22 @@ class DockerManager:
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
-        self._shutting_down = False
-        self._original_sigint_handler = None
-        self._original_sigterm_handler = None
 
         if enable_signal_handlers:
             self._setup_signal_handlers()
 
-    def _setup_signal_handlers(self):
-        """Register signal handlers for graceful shutdown."""
-        # Store original handlers so we can restore them if needed
-        self._original_sigint_handler = signal.signal(
-            signal.SIGINT, self._signal_handler
-        )
-        self._original_sigterm_handler = signal.signal(
-            signal.SIGTERM, self._signal_handler
-        )
-        # Also register atexit handler for cleanup on normal exit
-        atexit.register(self._cleanup_on_exit)
-
-    def _signal_handler(self, signum, frame):
-        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
-        if self._shutting_down:
-            # Already shutting down, force exit on second signal
-            console.print("\n[red]Forced exit requested, terminating...[/red]")
-            sys.exit(1)
-
-        self._shutting_down = True
-        sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
-        console.print(
-            f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
-        )
-
-        self._cleanup_resources()
-
-        # Exit cleanly
-        sys.exit(0)
-
-    def _cleanup_on_exit(self):
-        """Cleanup handler for atexit - only runs if not already cleaned up."""
-        if not self._shutting_down:
-            self._cleanup_resources()
-
     def _cleanup_resources(
         self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
-    ):
+    ) -> CleanupResult:
         """Stop all managed resources (containers) with graceful shutdown.
+
+        Overrides CleanupMixin._cleanup_resources to add drain_timeout and stop_timeout
+        parameters for graceful container shutdown.
+
+        Returns:
+            CleanupResult.PERFORMED: Cleanup was executed by this call
+            CleanupResult.ALREADY_DONE: Cleanup was already completed previously
+            CleanupResult.IN_PROGRESS: Cleanup is currently in progress (re-entrant call)
 
         Uses a shorter drain_timeout (3s) than normal operations (5s) because
         cleanup scenarios (SIGTERM handler, atexit) need faster completion to
@@ -175,6 +147,19 @@ class DockerManager:
         Args:
             drain_timeout: Seconds to wait for connection draining (default 3s).
             stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+        """
+        return self._cleanup_resources_guarded(
+            self._do_cleanup, drain_timeout, stop_timeout
+        )
+
+    def _do_cleanup(
+        self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
+    ):
+        """Perform the actual container cleanup.
+
+        Args:
+            drain_timeout: Seconds to wait for connection draining.
+            stop_timeout: Seconds to wait for container stop.
         """
         if self.nodes:
             console.print(
@@ -188,15 +173,6 @@ class DockerManager:
             )
             self.nodes.clear()
             self.node_rpc_ports.clear()
-
-    def remove_signal_handlers(self):
-        """Remove signal handlers and restore original handlers."""
-        if self._original_sigint_handler is not None:
-            signal.signal(signal.SIGINT, self._original_sigint_handler)
-            self._original_sigint_handler = None
-        if self._original_sigterm_handler is not None:
-            signal.signal(signal.SIGTERM, self._original_sigterm_handler)
-            self._original_sigterm_handler = None
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""
