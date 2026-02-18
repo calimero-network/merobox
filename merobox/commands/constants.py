@@ -27,6 +27,7 @@ DEFAULT_CHAIN_ID = "testnet-1"
 DEFAULT_PROTOCOL = "near"
 DEFAULT_TIMEOUT = 30
 NODE_READY_TIMEOUT = 60  # seconds to wait for nodes to be ready and accessible
+DEFAULT_WAIT_TIMEOUT = NODE_READY_TIMEOUT  # deprecated alias for backward compatibility
 
 # Retry and timeout configuration
 DEFAULT_RETRY_ATTEMPTS = 3
