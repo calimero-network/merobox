@@ -272,6 +272,7 @@ class DockerManager:
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
+        cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -456,8 +457,24 @@ class DockerManager:
                     f"[cyan]Configuring {node_name} for auth service integration...[/cyan]"
                 )
 
+                # Configure CORS allowed origins with sensible localhost defaults
+                hostname = node_name.replace("calimero-", "").replace("-", "")
+                nip_io_origin = f"http://{hostname}.127.0.0.1.nip.io"
+                if cors_allowed_origins is None:
+                    cors_allowed_origins = [
+                        "http://localhost",
+                        "http://127.0.0.1",
+                        "http://localhost:3000",
+                        "http://localhost:5173",
+                        "http://localhost:8080",
+                        nip_io_origin,
+                    ]
+                cors_origins_str = ",".join(cors_allowed_origins)
+
                 # Ensure auth service stack is running
-                if not self._start_auth_service_stack(auth_image, auth_use_cached):
+                if not self._start_auth_service_stack(
+                    auth_image, auth_use_cached, cors_allowed_origins
+                ):
                     console.print(
                         "[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
                     )
@@ -502,17 +519,19 @@ class DockerManager:
                     # Shared middlewares (from docker-compose)
                     "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
                     "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": "*",
+                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": cors_origins_str,
                     "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
                     "traefik.http.middlewares.cors.headers.addvaryheader": "true",
                     "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    "traefik.http.middlewares.cors.headers.accesscontrolallowcredentials": "true",
                     # SSE-specific CORS middleware
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowmethods": "GET,OPTIONS",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowheaders": "Cache-Control,Last-Event-ID,Accept,Accept-Language,Content-Language,Content-Type,Authorization",
-                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolalloworiginlist": "*",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolalloworiginlist": cors_origins_str,
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolmaxage": "86400",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.addvaryheader": "true",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowcredentials": "true",
                 }
 
                 # Add auth labels to container config
@@ -803,7 +822,10 @@ class DockerManager:
             )
 
     def _start_auth_service_stack(
-        self, auth_image: str = None, auth_use_cached: bool = False
+        self,
+        auth_image: str = None,
+        auth_use_cached: bool = False,
+        cors_allowed_origins: list[str] = None,
     ):
         """Start the Traefik proxy and auth service containers."""
         try:
@@ -829,7 +851,9 @@ class DockerManager:
 
             # Start Auth service
             if not auth_running:
-                if not self._start_auth_container(auth_image, auth_use_cached):
+                if not self._start_auth_container(
+                    auth_image, auth_use_cached, cors_allowed_origins
+                ):
                     return False
 
             # Wait a bit for services to be ready
@@ -911,7 +935,10 @@ class DockerManager:
             return False
 
     def _start_auth_container(
-        self, auth_image: str = None, auth_use_cached: bool = False
+        self,
+        auth_image: str = None,
+        auth_use_cached: bool = False,
+        cors_allowed_origins: list[str] = None,
     ):
         """Start the Auth service container."""
         try:
@@ -967,6 +994,17 @@ class DockerManager:
                         "[cyan]Environment variable CALIMERO_AUTH_FRONTEND_FETCH=0 detected, using cached auth frontend[/cyan]"
                     )
 
+            # Configure CORS allowed origins with sensible localhost defaults
+            if cors_allowed_origins is None:
+                cors_allowed_origins = [
+                    "http://localhost",
+                    "http://127.0.0.1",
+                    "http://localhost:3000",
+                    "http://localhost:5173",
+                    "http://localhost:8080",
+                ]
+            cors_origins_str = ",".join(cors_allowed_origins)
+
             auth_config = {
                 "name": "auth",
                 "image": auth_image_to_use,
@@ -988,13 +1026,14 @@ class DockerManager:
                     "traefik.http.middlewares.auth-headers.headers.customrequestheaders.X-Node-ID": "auth",
                     # Define the service
                     "traefik.http.services.auth-service.loadbalancer.server.port": "3001",
-                    # CORS middleware
+                    # CORS middleware with explicit origin allowlist (no wildcard)
                     "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
                     "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": "*",
+                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": cors_origins_str,
                     "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
                     "traefik.http.middlewares.cors.headers.addvaryheader": "true",
                     "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    "traefik.http.middlewares.cors.headers.accesscontrolallowcredentials": "true",
                 },
             }
 
@@ -1092,6 +1131,7 @@ class DockerManager:
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
+        cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1142,6 +1182,7 @@ class DockerManager:
                 near_devnet_config=node_specific_near_config,
                 bootstrap_nodes=bootstrap_nodes,
                 use_image_entrypoint=use_image_entrypoint,
+                cors_allowed_origins=cors_allowed_origins,
             ):
                 success_count += 1
             else:

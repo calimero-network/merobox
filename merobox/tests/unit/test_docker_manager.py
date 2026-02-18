@@ -343,3 +343,119 @@ def test_graceful_stop_containers_batch_sends_sigterm_to_all_first(mock_docker):
 
     assert success_count == 2
     assert failed == []
+
+
+@patch("docker.from_env")
+def test_cors_uses_explicit_origins_not_wildcard(mock_docker):
+    """Test that CORS configuration uses explicit origins instead of wildcard."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Run the node with auth_service enabled
+    manager.run_node("test-node", auth_service=True)
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+
+    # Verify labels exist and CORS origins are not wildcard
+    assert "labels" in main_config
+    labels = main_config["labels"]
+
+    # Check the main CORS middleware does NOT use wildcard
+    cors_origin_key = (
+        "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    assert labels[cors_origin_key] != "*", "CORS should not allow wildcard origin"
+
+    # Verify default localhost origins are included
+    cors_origins = labels[cors_origin_key]
+    assert "http://localhost" in cors_origins
+    assert "http://127.0.0.1" in cors_origins
+
+
+@patch("docker.from_env")
+def test_cors_custom_origins_are_used(mock_docker):
+    """Test that custom CORS origins can be specified."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Custom CORS origins
+    custom_origins = ["https://example.com", "https://myapp.example.com"]
+
+    # Run the node with auth_service enabled and custom origins
+    manager.run_node(
+        "test-node", auth_service=True, cors_allowed_origins=custom_origins
+    )
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+
+    # Verify custom origins are used
+    labels = main_config["labels"]
+    cors_origin_key = (
+        "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    cors_origins = labels[cors_origin_key]
+
+    # Custom origins should be present
+    assert "https://example.com" in cors_origins
+    assert "https://myapp.example.com" in cors_origins
+
+    # Default localhost origins should NOT be present when custom ones are specified
+    assert "http://localhost:3000" not in cors_origins
