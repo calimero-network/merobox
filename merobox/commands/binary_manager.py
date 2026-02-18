@@ -28,6 +28,7 @@ from merobox.commands.constants import (
     DEFAULT_RPC_PORT,
     PROCESS_WAIT_TIMEOUT,
     SOCKET_CONNECTION_TIMEOUT,
+    CleanupResult,
 )
 
 console = Console()
@@ -116,7 +117,7 @@ class BinaryManager:
         # Only call sys.exit() if cleanup completed or was already done.
         # If cleanup was in progress (re-entrant call), return without exit
         # to avoid interrupting the ongoing cleanup with SystemExit.
-        if cleanup_result is not None:
+        if cleanup_result != CleanupResult.IN_PROGRESS:
             sys.exit(0)
 
     def _cleanup_on_exit(self):
@@ -127,25 +128,25 @@ class BinaryManager:
         """
         self._cleanup_resources()
 
-    def _cleanup_resources(self):
+    def _cleanup_resources(self) -> CleanupResult:
         """Stop all managed processes.
 
         Thread-safe guard ensuring at-most-once execution semantics. Uses RLock
         to allow re-entrant calls from signal handlers in the same thread.
 
         Returns:
-            True: Cleanup was performed by this call
-            False: Cleanup was already completed previously
-            None: Cleanup is currently in progress (re-entrant call)
+            CleanupResult.PERFORMED: Cleanup was executed by this call
+            CleanupResult.ALREADY_DONE: Cleanup was already completed previously
+            CleanupResult.IN_PROGRESS: Cleanup is currently in progress (re-entrant call)
 
         The entire cleanup is performed inside the lock to prevent SystemExit
         from interrupting partial cleanup if a signal arrives mid-operation.
         """
         with self._cleanup_lock:
             if self._cleanup_done:
-                return False  # Already completed
+                return CleanupResult.ALREADY_DONE
             if self._cleanup_in_progress:
-                return None  # In progress (re-entrant call from signal handler)
+                return CleanupResult.IN_PROGRESS
             self._cleanup_in_progress = True
 
             try:
@@ -174,7 +175,7 @@ class BinaryManager:
                 self._cleanup_done = True
                 self._cleanup_in_progress = False
 
-        return True  # Cleanup performed
+        return CleanupResult.PERFORMED
 
     def remove_signal_handlers(self):
         """Remove signal handlers and restore original handlers."""

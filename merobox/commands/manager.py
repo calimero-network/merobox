@@ -30,6 +30,7 @@ from merobox.commands.constants import (
     NODE_STARTUP_DELAY,
     P2P_PORT_BINDING,
     RPC_PORT_BINDING,
+    CleanupResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,7 @@ class DockerManager:
         # Only call sys.exit() if cleanup completed or was already done.
         # If cleanup was in progress (re-entrant call), return without exit
         # to avoid interrupting the ongoing cleanup with SystemExit.
-        if cleanup_result is not None:
+        if cleanup_result != CleanupResult.IN_PROGRESS:
             sys.exit(0)
 
     def _cleanup_on_exit(self):
@@ -182,16 +183,16 @@ class DockerManager:
 
     def _cleanup_resources(
         self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
-    ):
+    ) -> CleanupResult:
         """Stop all managed resources (containers) with graceful shutdown.
 
         Thread-safe guard ensuring at-most-once execution semantics. Uses RLock
         to allow re-entrant calls from signal handlers in the same thread.
 
         Returns:
-            True: Cleanup was performed by this call
-            False: Cleanup was already completed previously
-            None: Cleanup is currently in progress (re-entrant call)
+            CleanupResult.PERFORMED: Cleanup was executed by this call
+            CleanupResult.ALREADY_DONE: Cleanup was already completed previously
+            CleanupResult.IN_PROGRESS: Cleanup is currently in progress (re-entrant call)
 
         Uses a shorter drain_timeout (3s) than normal operations (5s) because
         cleanup scenarios (SIGTERM handler, atexit) need faster completion to
@@ -203,9 +204,9 @@ class DockerManager:
         """
         with self._cleanup_lock:
             if self._cleanup_done:
-                return False  # Already completed
+                return CleanupResult.ALREADY_DONE
             if self._cleanup_in_progress:
-                return None  # In progress (re-entrant call from signal handler)
+                return CleanupResult.IN_PROGRESS
             self._cleanup_in_progress = True
 
             try:
@@ -225,7 +226,7 @@ class DockerManager:
                 self._cleanup_done = True
                 self._cleanup_in_progress = False
 
-        return True  # Cleanup performed
+        return CleanupResult.PERFORMED
 
     def remove_signal_handlers(self):
         """Remove signal handlers and restore original handlers."""

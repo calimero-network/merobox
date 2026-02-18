@@ -1,10 +1,12 @@
 import os
 import signal
 import subprocess
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 from merobox.commands.binary_manager import BinaryManager
+from merobox.commands.constants import CleanupResult
 
 
 @patch("merobox.commands.binary_manager.apply_near_devnet_config_to_file")
@@ -188,3 +190,113 @@ def test_binary_manager_remove_signal_handlers():
     # Verify handlers were restored
     assert signal.getsignal(signal.SIGINT) == original_sigint
     assert signal.getsignal(signal.SIGTERM) == original_sigterm
+
+
+def test_binary_manager_cleanup_prevents_double_cleanup():
+    """Test that _cleanup_resources prevents double cleanup races."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    # Add mock processes to track
+    mock_process1 = MagicMock()
+    manager.processes = {"node1": mock_process1}
+    manager.node_rpc_ports = {"node1": 2528}
+    manager._remove_pid_file = MagicMock()
+
+    # First cleanup should work and return PERFORMED
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.PERFORMED
+    assert mock_process1.terminate.call_count == 1
+    assert manager._cleanup_done is True
+
+    # Second cleanup should be skipped and return ALREADY_DONE
+    mock_process2 = MagicMock()
+    manager.processes = {"node2": mock_process2}
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.ALREADY_DONE
+
+    # Process2 should not have been terminated
+    assert mock_process2.terminate.call_count == 0
+
+
+def test_binary_manager_cleanup_concurrent_access():
+    """Test that _cleanup_resources handles concurrent access correctly.
+
+    Spawns multiple threads calling _cleanup_resources simultaneously to verify
+    the lock ensures at-most-once execution under concurrent access.
+    Also verifies return value distribution: exactly one PERFORMED, rest ALREADY_DONE.
+    """
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    # Add a mock process
+    mock_process = MagicMock()
+    manager.processes = {"node1": mock_process}
+    manager.node_rpc_ports = {"node1": 2528}
+    manager._remove_pid_file = MagicMock()
+
+    # Collect return values from each thread
+    results = []
+    results_lock = threading.Lock()
+
+    # Spawn multiple threads calling cleanup concurrently
+    threads = []
+    num_threads = 10
+    barrier = threading.Barrier(num_threads)
+
+    def thread_func():
+        barrier.wait()  # Synchronize all threads to start at once
+        result = manager._cleanup_resources()
+        with results_lock:
+            results.append(result)
+
+    for _ in range(num_threads):
+        t = threading.Thread(target=thread_func)
+        threads.append(t)
+        t.start()
+
+    # Wait for all threads to complete
+    for t in threads:
+        t.join()
+
+    # Verify cleanup was only performed once despite concurrent access
+    assert mock_process.terminate.call_count == 1
+
+    # Verify return value distribution: exactly one PERFORMED, rest ALREADY_DONE
+    performed_count = sum(1 for r in results if r == CleanupResult.PERFORMED)
+    done_count = sum(1 for r in results if r == CleanupResult.ALREADY_DONE)
+    assert performed_count == 1, f"Expected exactly 1 PERFORMED, got {performed_count}"
+    assert (
+        done_count == num_threads - 1
+    ), f"Expected {num_threads - 1} ALREADY_DONE, got {done_count}"
+
+
+def test_binary_manager_cleanup_in_progress_returns_in_progress():
+    """Test that re-entrant cleanup call returns IN_PROGRESS when cleanup is running.
+
+    This simulates a signal handler calling cleanup while atexit cleanup is running.
+    With RLock, the same thread can re-enter, and should get IN_PROGRESS indicating
+    cleanup is already in progress.
+    """
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    # Manually set cleanup in progress to simulate mid-cleanup state
+    manager._cleanup_in_progress = True
+
+    # Calling cleanup while in progress should return IN_PROGRESS
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.IN_PROGRESS
+
+    # Reset and verify normal cleanup works
+    manager._cleanup_in_progress = False
+    mock_process = MagicMock()
+    manager.processes = {"node1": mock_process}
+    manager._remove_pid_file = MagicMock()
+
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.PERFORMED
+    assert mock_process.terminate.call_count == 1

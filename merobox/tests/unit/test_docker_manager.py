@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import docker
 
+from merobox.commands.constants import CleanupResult
 from merobox.commands.manager import DockerManager
 
 
@@ -190,17 +191,17 @@ def test_docker_manager_cleanup_prevents_double_cleanup(mock_docker):
     manager.nodes = {"node1": mock_container1}
     manager.node_rpc_ports = {"node1": 2528}
 
-    # First cleanup should work and return True
+    # First cleanup should work and return PERFORMED
     result = manager._cleanup_resources()
-    assert result is True
+    assert result == CleanupResult.PERFORMED
     assert mock_container1.stop.call_count == 1
     assert manager._cleanup_done is True
 
-    # Second cleanup should be skipped and return False
+    # Second cleanup should be skipped and return ALREADY_DONE
     mock_container2 = MagicMock()
     manager.nodes = {"node2": mock_container2}
     result = manager._cleanup_resources()
-    assert result is False
+    assert result == CleanupResult.ALREADY_DONE
 
     # Container2 should not have been stopped
     assert mock_container2.stop.call_count == 0
@@ -252,21 +253,21 @@ def test_docker_manager_cleanup_concurrent_access(mock_docker):
     assert mock_container.stop.call_count == 1
     assert mock_container.remove.call_count == 1
 
-    # Verify return value distribution: exactly one True, rest False
-    true_count = sum(1 for r in results if r is True)
-    false_count = sum(1 for r in results if r is False)
-    assert true_count == 1, f"Expected exactly 1 True, got {true_count}"
+    # Verify return value distribution: exactly one PERFORMED, rest ALREADY_DONE
+    performed_count = sum(1 for r in results if r == CleanupResult.PERFORMED)
+    done_count = sum(1 for r in results if r == CleanupResult.ALREADY_DONE)
+    assert performed_count == 1, f"Expected exactly 1 PERFORMED, got {performed_count}"
     assert (
-        false_count == num_threads - 1
-    ), f"Expected {num_threads - 1} False, got {false_count}"
+        done_count == num_threads - 1
+    ), f"Expected {num_threads - 1} ALREADY_DONE, got {done_count}"
 
 
 @patch("docker.from_env")
-def test_docker_manager_cleanup_in_progress_returns_none(mock_docker):
-    """Test that re-entrant cleanup call returns None when cleanup is in progress.
+def test_docker_manager_cleanup_in_progress_returns_in_progress(mock_docker):
+    """Test that re-entrant cleanup call returns IN_PROGRESS when cleanup is running.
 
     This simulates a signal handler calling cleanup while atexit cleanup is running.
-    With RLock, the same thread can re-enter, and should get None indicating
+    With RLock, the same thread can re-enter, and should get IN_PROGRESS indicating
     cleanup is already in progress.
     """
     client = MagicMock()
@@ -277,9 +278,9 @@ def test_docker_manager_cleanup_in_progress_returns_none(mock_docker):
     # Manually set cleanup in progress to simulate mid-cleanup state
     manager._cleanup_in_progress = True
 
-    # Calling cleanup while in progress should return None
+    # Calling cleanup while in progress should return IN_PROGRESS
     result = manager._cleanup_resources()
-    assert result is None
+    assert result == CleanupResult.IN_PROGRESS
 
     # Reset and verify normal cleanup works
     manager._cleanup_in_progress = False
@@ -287,5 +288,5 @@ def test_docker_manager_cleanup_in_progress_returns_none(mock_docker):
     manager.nodes = {"node1": mock_container}
 
     result = manager._cleanup_resources()
-    assert result is True
+    assert result == CleanupResult.PERFORMED
     assert mock_container.stop.call_count == 1
