@@ -675,23 +675,3 @@ class TestBaseStepJsonParsing:
         step = self._create_step()
         obj = {"a": {"b": 1}}
         assert step._get_value(obj, "a.c.d") is None
-
-    # =========================================================================
-    # Backward compatibility alias tests
-    # =========================================================================
-
-    def test_try_parse_json_alias(self):
-        """Test _try_parse_json is an alias for _parse_json."""
-        step = self._create_step()
-        json_str = '{"key": "value"}'
-        assert step._try_parse_json(json_str) == step._parse_json(json_str)
-        assert step._try_parse_json(json_str) == {"key": "value"}
-
-    def test_extract_path_alias(self):
-        """Test _extract_path is an alias for _get_value."""
-        step = self._create_step()
-        obj = {"result": {"data": 42}}
-        assert step._extract_path(obj, "result.data") == step._get_value(
-            obj, "result.data"
-        )
-        assert step._extract_path(obj, "result.data") == 42

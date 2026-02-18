@@ -783,6 +783,11 @@ class BaseStep:
             Parsed Python object (dict, list, str, int, float, bool, None)
             or the original value if all parsing strategies fail.
 
+        Warning:
+            Strategy 5 (substring extraction) is permissive and may extract
+            unintended JSON from mixed content. When processing untrusted input,
+            validate the extracted data matches expected schema before use.
+
         Note:
             For value extraction with path traversal, use _get_value() which
             calls this method internally at each path segment.
@@ -925,15 +930,6 @@ class BaseStep:
             return None
 
         return self._parse_json(current) if isinstance(current, str) else current
-
-    # Backward compatibility aliases for the consolidated methods
-    def _try_parse_json(self, value: Any) -> Any:
-        """Alias for _parse_json() - maintained for backward compatibility."""
-        return self._parse_json(value)
-
-    def _extract_path(self, obj: Any, path: str) -> Any:
-        """Alias for _get_value() - maintained for backward compatibility."""
-        return self._get_value(obj, path)
 
     def _export_variable(
         self,
