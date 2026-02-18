@@ -8,6 +8,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import SYNC_RETRY_ATTEMPTS, SYNC_RETRY_DELAY
 from merobox.commands.utils import console
 
 
@@ -111,8 +112,8 @@ class WaitForSyncStep(BaseStep):
         Returns:
             Tuple of (node_name, root_hash) or (node_name, None) if error
         """
-        max_retries = 3
-        retry_delay = 0.5  # 500ms between retries
+        max_retries = SYNC_RETRY_ATTEMPTS
+        retry_delay = SYNC_RETRY_DELAY
 
         # Resolve node to get stable name for token caching
         try:

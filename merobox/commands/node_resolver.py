@@ -270,7 +270,9 @@ class NodeResolver:
                             container.attrs.get("NetworkSettings", {}).get("Ports")
                             or {}
                         )
-                        host_bindings = port_mappings.get("2528/tcp") or []
+                        host_bindings = (
+                            port_mappings.get(f"{DEFAULT_RPC_PORT}/tcp") or []
+                        )
                         for binding in host_bindings:
                             host_port = binding.get("HostPort")
                             if host_port and host_port.isdigit():

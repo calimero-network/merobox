@@ -43,7 +43,7 @@ def get_node_rpc_url(node_name: str, manager: Any) -> str:
             port_mappings = (
                 container.attrs.get("NetworkSettings", {}).get("Ports") or {}
             )
-            host_bindings = port_mappings.get("2528/tcp") or []
+            host_bindings = port_mappings.get(f"{DEFAULT_RPC_PORT}/tcp") or []
             for binding in host_bindings:
                 host_port = _normalize_port(binding.get("HostPort"))
                 if host_port is not None:
@@ -53,7 +53,7 @@ def get_node_rpc_url(node_name: str, manager: Any) -> str:
                 port_bindings = (
                     container.attrs.get("HostConfig", {}).get("PortBindings") or {}
                 )
-                host_bindings = port_bindings.get("2528/tcp") or []
+                host_bindings = port_bindings.get(f"{DEFAULT_RPC_PORT}/tcp") or []
                 for binding in host_bindings:
                     host_port = _normalize_port(binding.get("HostPort"))
                     if host_port is not None:

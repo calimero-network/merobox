@@ -13,9 +13,12 @@ ADMIN_API_IDENTITY_CONTEXT = f"{ADMIN_API_BASE}/identity/context"
 ADMIN_API_HEALTH = f"{ADMIN_API_BASE}/health"
 ADMIN_API_NODE_INFO = f"{ADMIN_API_BASE}/node-info"
 
-# Default values
+# Network ports
 DEFAULT_RPC_PORT = 2528
 DEFAULT_P2P_PORT = 2428
+NEAR_SANDBOX_RPC_PORT = 3030
+
+# Default values
 DEFAULT_CHAIN_ID = "testnet-1"
 DEFAULT_PROTOCOL = "near"
 DEFAULT_TIMEOUT = 30
@@ -27,6 +30,50 @@ DEFAULT_RETRY_DELAY = 1.0  # seconds
 DEFAULT_RETRY_BACKOFF = 2.0  # exponential backoff multiplier
 DEFAULT_CONNECTION_TIMEOUT = 10.0  # seconds
 DEFAULT_READ_TIMEOUT = 30.0  # seconds
+
+# Quick retry configuration
+QUICK_RETRY_ATTEMPTS = 2
+QUICK_RETRY_DELAY = 0.5  # seconds
+QUICK_RETRY_BACKOFF = 1.5
+QUICK_CONNECTION_TIMEOUT = 5.0  # seconds
+QUICK_READ_TIMEOUT = 15.0  # seconds
+
+# Persistent retry configuration
+PERSISTENT_RETRY_ATTEMPTS = 5
+PERSISTENT_RETRY_DELAY = 2.0  # seconds
+PERSISTENT_RETRY_BACKOFF = 1.5
+PERSISTENT_CONNECTION_TIMEOUT = 15.0  # seconds
+PERSISTENT_READ_TIMEOUT = 60.0  # seconds
+
+# Process and container management timeouts
+CONTAINER_STOP_TIMEOUT = 10  # seconds
+PROCESS_WAIT_TIMEOUT = 5  # seconds
+NODE_STARTUP_WAIT = 3  # seconds for node to stabilize after start
+SOCKET_CONNECTION_TIMEOUT = 1.5  # seconds for quick connection check
+NUKE_STOP_TIMEOUT = 30  # seconds for nuke operations
+
+# Polling and wait intervals
+RPC_WAIT_TIMEOUT = 10  # seconds to wait for RPC to be ready
+RPC_POLL_INTERVAL = 0.1  # seconds between RPC readiness checks
+RPC_INITIAL_WAIT = 1.0  # seconds initial wait before polling
+CLEANUP_WAIT = 0.5  # seconds after process cleanup
+ASYNC_POLL_INTERVAL = 2  # seconds between async checks
+
+# State sync retry configuration
+STATE_RETRY_ATTEMPTS = 5
+STATE_RETRY_DELAY = 3.0  # seconds
+SYNC_RETRY_ATTEMPTS = 3
+SYNC_RETRY_DELAY = 0.5  # seconds
+
+# Health check timeout
+HEALTH_CHECK_TIMEOUT = 10  # seconds
+
+# Application installation timeout
+INSTALL_TIMEOUT = 30  # seconds
+
+# File lock timeout for contract downloads
+CONTRACT_DOWNLOAD_LOCK_TIMEOUT = 300  # seconds
+CONTRACT_DOWNLOAD_TIMEOUT = 30  # seconds
 
 # Docker configuration
 DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:prerelease"

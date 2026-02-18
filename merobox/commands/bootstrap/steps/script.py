@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.constants import PROCESS_WAIT_TIMEOUT
 from merobox.commands.utils import console
 
 
@@ -501,7 +502,7 @@ class ScriptStep(BaseStep):
 
             finally:
                 try:
-                    container.stop(timeout=5)
+                    container.stop(timeout=PROCESS_WAIT_TIMEOUT)
                     container.remove()
                 except Exception as e:
                     console.print(

@@ -12,6 +12,16 @@ from merobox.commands.constants import (
     DEFAULT_RETRY_ATTEMPTS,
     DEFAULT_RETRY_BACKOFF,
     DEFAULT_RETRY_DELAY,
+    PERSISTENT_CONNECTION_TIMEOUT,
+    PERSISTENT_READ_TIMEOUT,
+    PERSISTENT_RETRY_ATTEMPTS,
+    PERSISTENT_RETRY_BACKOFF,
+    PERSISTENT_RETRY_DELAY,
+    QUICK_CONNECTION_TIMEOUT,
+    QUICK_READ_TIMEOUT,
+    QUICK_RETRY_ATTEMPTS,
+    QUICK_RETRY_BACKOFF,
+    QUICK_RETRY_DELAY,
 )
 
 
@@ -150,28 +160,28 @@ def create_retry_config(
 
 # Common retry configurations
 NETWORK_RETRY_CONFIG = RetryConfig(
-    max_attempts=3,
-    delay=1.0,
-    backoff=2.0,
-    connection_timeout=10.0,
-    read_timeout=30.0,
+    max_attempts=DEFAULT_RETRY_ATTEMPTS,
+    delay=DEFAULT_RETRY_DELAY,
+    backoff=DEFAULT_RETRY_BACKOFF,
+    connection_timeout=DEFAULT_CONNECTION_TIMEOUT,
+    read_timeout=DEFAULT_READ_TIMEOUT,
     exceptions=(ConnectionError, TimeoutError, asyncio.TimeoutError),
 )
 
 QUICK_RETRY_CONFIG = RetryConfig(
-    max_attempts=2,
-    delay=0.5,
-    backoff=1.5,
-    connection_timeout=5.0,
-    read_timeout=15.0,
+    max_attempts=QUICK_RETRY_ATTEMPTS,
+    delay=QUICK_RETRY_DELAY,
+    backoff=QUICK_RETRY_BACKOFF,
+    connection_timeout=QUICK_CONNECTION_TIMEOUT,
+    read_timeout=QUICK_READ_TIMEOUT,
     exceptions=(ConnectionError, TimeoutError, asyncio.TimeoutError),
 )
 
 PERSISTENT_RETRY_CONFIG = RetryConfig(
-    max_attempts=5,
-    delay=2.0,
-    backoff=1.5,
-    connection_timeout=15.0,
-    read_timeout=60.0,
+    max_attempts=PERSISTENT_RETRY_ATTEMPTS,
+    delay=PERSISTENT_RETRY_DELAY,
+    backoff=PERSISTENT_RETRY_BACKOFF,
+    connection_timeout=PERSISTENT_CONNECTION_TIMEOUT,
+    read_timeout=PERSISTENT_READ_TIMEOUT,
     exceptions=(ConnectionError, TimeoutError, asyncio.TimeoutError),
 )

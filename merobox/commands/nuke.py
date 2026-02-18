@@ -34,6 +34,7 @@ import docker
 from rich import box
 from rich.table import Table
 
+from merobox.commands.constants import NUKE_STOP_TIMEOUT
 from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console, format_file_size
 
@@ -182,7 +183,7 @@ def execute_nuke(
                             console.print(
                                 f"[yellow]Stopping Docker container {node_name}...[/yellow]"
                             )
-                        container.stop(timeout=30)
+                        container.stop(timeout=NUKE_STOP_TIMEOUT)
                         docker_nodes_stopped += 1
                 except Exception:
                     pass
@@ -198,7 +199,7 @@ def execute_nuke(
                 auth_container = manager.client.containers.get("auth")
                 if not silent:
                     console.print("[yellow]Stopping auth service...[/yellow]")
-                auth_container.stop(timeout=30)
+                auth_container.stop(timeout=NUKE_STOP_TIMEOUT)
                 auth_container.remove()
                 if not silent:
                     console.print("[green]✓ Auth service stopped and removed[/green]")
@@ -209,7 +210,7 @@ def execute_nuke(
                 proxy_container = manager.client.containers.get("proxy")
                 if not silent:
                     console.print("[yellow]Stopping Traefik proxy...[/yellow]")
-                proxy_container.stop(timeout=30)
+                proxy_container.stop(timeout=NUKE_STOP_TIMEOUT)
                 proxy_container.remove()
                 if not silent:
                     console.print("[green]✓ Traefik proxy stopped and removed[/green]")

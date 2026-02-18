@@ -43,7 +43,13 @@ from merobox.commands.bootstrap.steps.proposals import (
     GetProposalStep,
     ListProposalsStep,
 )
-from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
+from merobox.commands.constants import (
+    ASYNC_POLL_INTERVAL,
+    DEFAULT_P2P_PORT,
+    DEFAULT_RPC_PORT,
+    DEFAULT_WAIT_TIMEOUT,
+    RESERVED_NODE_CONFIG_KEYS,
+)
 from merobox.commands.manager import DockerManager
 from merobox.commands.near.contracts import (
     CONFIG_WASM,
@@ -553,8 +559,8 @@ class WorkflowExecutor:
             console.print("[red]No nodes configuration found[/red]")
             return False
 
-        base_port = nodes_config.get("base_port", 2428)
-        base_rpc_port = nodes_config.get("base_rpc_port", 2528)
+        base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
+        base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
 
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
@@ -836,7 +842,7 @@ class WorkflowExecutor:
         Note: This only waits for local (docker/binary) nodes. Remote nodes
         are assumed to be already running and accessible.
         """
-        wait_timeout = self.config.get("wait_timeout", 60)  # Default 60 seconds
+        wait_timeout = self.config.get("wait_timeout", DEFAULT_WAIT_TIMEOUT)
 
         # Use only local node names (remote nodes don't need local readiness check)
         node_names = list(self._get_local_node_names())
@@ -878,7 +884,7 @@ class WorkflowExecutor:
                             pass
 
                 if len(ready_nodes) < len(node_names):
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(ASYNC_POLL_INTERVAL)
 
         if len(ready_nodes) == len(node_names):
             console.print("[green]✓ All nodes are ready[/green]")
