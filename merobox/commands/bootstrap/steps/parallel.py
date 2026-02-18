@@ -1,5 +1,10 @@
 """
 Parallel step executor for executing multiple step groups concurrently.
+
+Supports configurable failure modes for error handling:
+- fail-fast: If one parallel branch fails, immediately cancel all others
+- fail-slow: Wait for all branches to complete, then report failures (default)
+- continue-on-error: Continue executing all branches, return success if at least one succeeded
 """
 
 import asyncio
@@ -24,9 +29,23 @@ from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.utils import console
 
+# Valid failure modes for parallel execution
+VALID_FAILURE_MODES = ("fail-fast", "fail-slow", "continue-on-error")
+
 
 class ParallelStep(BaseStep):
-    """Execute multiple step groups concurrently."""
+    """Execute multiple step groups concurrently.
+
+    Failure Modes:
+    - fail-fast: When a group fails, cancel all other running groups immediately
+                 and return failure. Use when early termination is desired.
+    - fail-slow: Wait for all groups to complete, then return failure if any
+                 group failed. Use when you want all groups to attempt execution.
+                 This is the default for backward compatibility.
+    - continue-on-error: Wait for all groups, return success if at least one
+                         succeeded. Use for resilient workflows where partial
+                         success is acceptable.
+    """
 
     def _get_required_fields(self) -> list[str]:
         """
@@ -52,6 +71,17 @@ class ParallelStep(BaseStep):
         # Validate groups list is not empty
         if not self.config.get("groups"):
             raise ValueError(f"Step '{step_name}': 'groups' list cannot be empty")
+
+        # Validate failure_mode if provided (optional, defaults to "fail-slow")
+        failure_mode = self.config.get("failure_mode")
+        if failure_mode is not None:
+            if not isinstance(failure_mode, str):
+                raise ValueError(f"Step '{step_name}': 'failure_mode' must be a string")
+            if failure_mode not in VALID_FAILURE_MODES:
+                raise ValueError(
+                    f"Step '{step_name}': 'failure_mode' must be one of "
+                    f"{VALID_FAILURE_MODES}, got '{failure_mode}'"
+                )
 
         # Validate each group has required fields
         for i, group in enumerate(self.config.get("groups", [])):
@@ -90,6 +120,8 @@ class ParallelStep(BaseStep):
 
         Available variables from parallel execution:
         - group_count: Total number of groups executed
+        - parallel_success_count: Number of groups that succeeded
+        - parallel_failure_count: Number of groups that failed
         - overall_duration_seconds: Total execution time for all groups (float)
         - overall_duration_ms: Total execution time in milliseconds (float)
         - overall_duration_ns: Total execution time in nanoseconds (int)
@@ -100,6 +132,16 @@ class ParallelStep(BaseStep):
         groups = self.config.get("groups", [])
         variables = [
             ("group_count", "group_count", "Total number of groups executed"),
+            (
+                "parallel_success_count",
+                "parallel_success_count",
+                "Number of groups that succeeded",
+            ),
+            (
+                "parallel_failure_count",
+                "parallel_failure_count",
+                "Number of groups that failed",
+            ),
             (
                 "overall_duration_seconds",
                 "overall_duration_seconds",
@@ -147,6 +189,7 @@ class ParallelStep(BaseStep):
     ) -> bool:
         groups = self.config.get("groups", [])
         mode = self.config.get("mode", "burst")  # burst, sustained, mixed
+        failure_mode = self.config.get("failure_mode", "fail-slow")
 
         # Validate export configuration
         if not self._validate_export_config():
@@ -159,7 +202,8 @@ class ParallelStep(BaseStep):
             return True
 
         console.print(
-            f"[cyan]⚡ Executing {len(groups)} groups in parallel (mode: {mode})...[/cyan]"
+            f"[cyan]⚡ Executing {len(groups)} groups in parallel "
+            f"(mode: {mode}, failure_mode: {failure_mode})...[/cyan]"
         )
 
         # Export group count
@@ -168,84 +212,10 @@ class ParallelStep(BaseStep):
         # Track overall timing
         overall_start_time = time.perf_counter()
 
-        # Execute all groups concurrently
-        group_results = []
-        try:
-            # TODO: Implement different execution modes
-            # - "burst" (current): All groups start simultaneously - use asyncio.gather() directly
-            # - "sustained": Rate-limited execution with controlled concurrency
-            #   - Should support config: sustained_rate (groups per second) or max_concurrent
-            #   - Use asyncio.Semaphore to limit concurrent groups
-            #   - Stagger group starts with delays: await asyncio.sleep(1.0 / rate)
-            #   - Example: max_concurrent=3 means only 3 groups run at once, others wait
-            # - "mixed": Combination of burst and sustained
-            #   - Should support config: initial_burst_count, sustained_rate
-            #   - Start with burst_count groups immediately (burst phase)
-            #   - Then execute remaining groups at sustained_rate (rate-limited phase)
-
-            if mode == "burst":
-                # Current implementation: all groups start simultaneously
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                group_results = await asyncio.gather(*tasks, return_exceptions=True)
-            elif mode == "sustained":
-                # TODO: Implement sustained mode
-                # - Get config: max_concurrent = self.config.get("max_concurrent", len(groups))
-                # - Or: rate = self.config.get("rate", 1.0)  # groups per second
-                # - Use asyncio.Semaphore(max_concurrent) to limit concurrency
-                # - Stagger starts: for i, group in enumerate(groups): await asyncio.sleep(i * (1.0 / rate))
-                # - Then gather with limited concurrency
-                console.print(
-                    "[yellow]⚠️  'sustained' mode not yet implemented, falling back to 'burst' mode[/yellow]"
-                )
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                group_results = await asyncio.gather(*tasks, return_exceptions=True)
-            elif mode == "mixed":
-                # TODO: Implement mixed mode
-                # - Get config: initial_burst = self.config.get("initial_burst", len(groups))
-                # - Get config: sustained_rate = self.config.get("sustained_rate", 1.0)
-                # - Phase 1 (burst): Start first N groups immediately
-                #   burst_tasks = [self._execute_group(...) for i, group in enumerate(groups[:initial_burst])]
-                #   burst_results = await asyncio.gather(*burst_tasks, return_exceptions=True)
-                # - Phase 2 (sustained): Execute remaining groups at controlled rate
-                #   for i, group in enumerate(groups[initial_burst:], start=initial_burst):
-                #       await asyncio.sleep(1.0 / sustained_rate)
-                #       result = await self._execute_group(...)
-                #       sustained_results.append(result)
-                # - Combine results: group_results = burst_results + sustained_results
-                console.print(
-                    "[yellow]⚠️  'mixed' mode not yet implemented, falling back to 'burst' mode[/yellow]"
-                )
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                group_results = await asyncio.gather(*tasks, return_exceptions=True)
-            else:
-                console.print(
-                    f"[yellow]⚠️  Unknown mode '{mode}', defaulting to 'burst' mode[/yellow]"
-                )
-                tasks = [
-                    self._execute_group(
-                        i, group, workflow_results, dynamic_values.copy()
-                    )
-                    for i, group in enumerate(groups)
-                ]
-                group_results = await asyncio.gather(*tasks, return_exceptions=True)
-        except Exception as e:
-            console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
-            return False
+        # Execute all groups concurrently based on failure mode
+        group_results = await self._execute_groups_with_failure_mode(
+            groups, workflow_results, dynamic_values, mode, failure_mode
+        )
 
         # Calculate overall duration
         overall_end_time = time.perf_counter()
@@ -259,15 +229,26 @@ class ParallelStep(BaseStep):
         dynamic_values["overall_duration_ns"] = overall_duration_ns
 
         # Process group results and export per-group metrics
-        all_success = True
+        success_count = 0
+        failure_count = 0
         for i, (result, group) in enumerate(zip(group_results, groups)):
             group_name = group.get("name", f"Group {i+1}")
 
+            # Check for CancelledError first (inherits from BaseException, not Exception)
+            if isinstance(result, asyncio.CancelledError):
+                console.print(
+                    f"[yellow]⚠️ Group '{group_name}' was cancelled "
+                    f"(fail-fast triggered by another group)[/yellow]"
+                )
+                failure_count += 1
+                continue
+
             if isinstance(result, Exception):
                 console.print(
-                    f"[red]❌ Group '{group_name}' failed with error: {str(result)}[/red]"
+                    f"[red]❌ Group '{group_name}' failed with error: "
+                    f"{str(result)}[/red]"
                 )
-                all_success = False
+                failure_count += 1
                 continue
 
             if isinstance(result, dict):
@@ -295,30 +276,242 @@ class ParallelStep(BaseStep):
 
                 if not success:
                     console.print(f"[red]❌ Group '{group_name}' failed[/red]")
-                    all_success = False
+                    failure_count += 1
                 else:
                     console.print(
                         f"[green]✓ Group '{group_name}' completed successfully[/green]"
                     )
                     console.print(
-                        f"  [cyan]Duration:[/cyan] {duration_seconds:.3f} seconds ({duration_ms:.2f} ms)"
+                        f"  [cyan]Duration:[/cyan] {duration_seconds:.3f} seconds "
+                        f"({duration_ms:.2f} ms)"
                     )
+                    success_count += 1
 
         # Export timing variables based on custom outputs configuration
         self._export_timing_variables(dynamic_values)
+
+        # Export failure mode statistics
+        dynamic_values["parallel_success_count"] = success_count
+        dynamic_values["parallel_failure_count"] = failure_count
+
+        # Determine final result based on failure mode
+        all_success = failure_count == 0
 
         if all_success:
             console.print(
                 f"[green]✓ All {len(groups)} groups completed successfully[/green]"
             )
-            console.print("[blue] Overall Timing Metrics:[/blue]")
+        else:
             console.print(
-                f"  [cyan]Total Duration:[/cyan] {overall_duration_seconds:.3f} seconds ({overall_duration_ms:.2f} ms, {overall_duration_ns:,} ns)"
+                f"[red]❌ {failure_count} of {len(groups)} groups failed during "
+                f"parallel execution[/red]"
+            )
+
+        console.print("[blue] Overall Timing Metrics:[/blue]")
+        console.print(
+            f"  [cyan]Total Duration:[/cyan] {overall_duration_seconds:.3f} seconds "
+            f"({overall_duration_ms:.2f} ms, {overall_duration_ns:,} ns)"
+        )
+
+        # Apply failure mode logic to determine return value
+        if failure_mode == "continue-on-error":
+            # Return success if at least one group succeeded
+            if success_count > 0:
+                console.print(
+                    f"[cyan]ℹ️  continue-on-error mode: Returning success "
+                    f"({success_count} groups succeeded)[/cyan]"
+                )
+                return True
+            else:
+                console.print("[red]❌ continue-on-error mode: All groups failed[/red]")
+                return False
+        else:
+            # fail-fast and fail-slow: return True only if all succeeded
+            return all_success
+
+    async def _execute_groups_with_failure_mode(
+        self,
+        groups: list[dict[str, Any]],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        mode: str,
+        failure_mode: str,
+    ) -> list[Any]:
+        """Execute groups based on the configured failure mode.
+
+        Args:
+            groups: List of group configurations
+            workflow_results: Workflow results dictionary
+            dynamic_values: Dynamic values dictionary
+            mode: Execution mode (burst, sustained, mixed)
+            failure_mode: How to handle failures (fail-fast, fail-slow, continue-on-error)
+
+        Returns:
+            List of results (dict with success/duration or Exception)
+        """
+        if failure_mode == "fail-fast":
+            return await self._execute_groups_fail_fast(
+                groups, workflow_results, dynamic_values, mode
             )
         else:
-            console.print("[red]❌ Some groups failed during parallel execution[/red]")
+            # fail-slow and continue-on-error both run all tasks to completion
+            return await self._execute_groups_fail_slow(
+                groups, workflow_results, dynamic_values, mode
+            )
 
-        return all_success
+    async def _execute_groups_fail_fast(
+        self,
+        groups: list[dict[str, Any]],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        mode: str,
+    ) -> list[Any]:
+        """Execute groups with fail-fast behavior.
+
+        When any group fails, immediately cancel all other running groups.
+
+        Args:
+            groups: List of group configurations
+            workflow_results: Workflow results dictionary
+            dynamic_values: Dynamic values dictionary
+            mode: Execution mode (burst, sustained, mixed)
+
+        Returns:
+            List of results (dict with success/duration, Exception, or CancelledError)
+        """
+        # Create tasks for all groups
+        tasks = [
+            asyncio.create_task(
+                self._execute_group(i, group, workflow_results, dynamic_values.copy()),
+                name=f"group_{i}_{group.get('name', f'Group {i+1}')}",
+            )
+            for i, group in enumerate(groups)
+        ]
+
+        results: list[Any] = [None] * len(groups)
+        pending = set(tasks)
+        task_to_index = {task: i for i, task in enumerate(tasks)}
+
+        try:
+            while pending:
+                # Wait for the first task to complete
+                done, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_COMPLETED
+                )
+
+                # First, process ALL completed tasks to avoid race condition
+                # where results are lost when multiple tasks complete simultaneously
+                should_cancel = False
+                cancel_reason = None
+
+                for task in done:
+                    idx = task_to_index[task]
+                    try:
+                        result = task.result()
+                        results[idx] = result
+
+                        # Check if this task failed (mark for cancellation but continue processing)
+                        if isinstance(result, dict) and not result.get("success", True):
+                            if not should_cancel:
+                                should_cancel = True
+                                cancel_reason = groups[idx].get(
+                                    "name", f"Group {idx+1}"
+                                )
+                    except asyncio.CancelledError as e:
+                        # Preserve the original exception context
+                        results[idx] = e
+                    except Exception as e:
+                        # Preserve the original exception
+                        results[idx] = e
+                        if not should_cancel:
+                            should_cancel = True
+                            cancel_reason = f"exception in group {idx+1}"
+
+                # After processing all done tasks, cancel remaining if needed
+                if should_cancel and pending:
+                    console.print(
+                        f"[yellow]⚡ fail-fast: '{cancel_reason}' triggered failure, "
+                        f"cancelling {len(pending)} remaining group(s)...[/yellow]"
+                    )
+                    # Convert pending to list to ensure consistent ordering
+                    pending_list = list(pending)
+                    for pending_task in pending_list:
+                        pending_task.cancel()
+                    # Collect cancellation results with consistent ordering
+                    cancelled_results = await asyncio.gather(
+                        *pending_list, return_exceptions=True
+                    )
+                    for pending_task, cancelled_result in zip(
+                        pending_list, cancelled_results
+                    ):
+                        cancelled_idx = task_to_index[pending_task]
+                        results[cancelled_idx] = cancelled_result
+                    pending = set()
+
+        except Exception as e:
+            console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
+            # Cancel any remaining tasks
+            pending_list = list(pending)
+            for task in pending_list:
+                task.cancel()
+            # Wait for cancellations to complete
+            if pending_list:
+                await asyncio.gather(*pending_list, return_exceptions=True)
+            raise
+
+        return results
+
+    async def _execute_groups_fail_slow(
+        self,
+        groups: list[dict[str, Any]],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        mode: str,
+    ) -> list[Any]:
+        """Execute groups with fail-slow behavior.
+
+        Wait for all groups to complete regardless of failures.
+
+        Args:
+            groups: List of group configurations
+            workflow_results: Workflow results dictionary
+            dynamic_values: Dynamic values dictionary
+            mode: Execution mode (burst, sustained, mixed)
+
+        Returns:
+            List of results (dict with success/duration or Exception)
+        """
+        try:
+            # Print warning for unimplemented modes
+            # TODO: Implement different execution modes
+            # - "burst" (current): All groups start simultaneously
+            # - "sustained": Rate-limited execution with controlled concurrency
+            # - "mixed": Combination of burst and sustained
+            if mode == "sustained":
+                console.print(
+                    "[yellow]⚠️  'sustained' mode not yet implemented, "
+                    "falling back to 'burst' mode[/yellow]"
+                )
+            elif mode == "mixed":
+                console.print(
+                    "[yellow]⚠️  'mixed' mode not yet implemented, "
+                    "falling back to 'burst' mode[/yellow]"
+                )
+            elif mode != "burst":
+                console.print(
+                    f"[yellow]⚠️  Unknown mode '{mode}', "
+                    "defaulting to 'burst' mode[/yellow]"
+                )
+
+            # Create and execute tasks (common logic for all modes)
+            tasks = [
+                self._execute_group(i, group, workflow_results, dynamic_values.copy())
+                for i, group in enumerate(groups)
+            ]
+            return await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            console.print(f"[red]❌ Parallel execution failed: {str(e)}[/red]")
+            raise
 
     async def _execute_group(
         self,
