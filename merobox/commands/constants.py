@@ -50,18 +50,18 @@ PERSISTENT_CONNECTION_TIMEOUT = 15.0  # seconds
 PERSISTENT_READ_TIMEOUT = 60.0  # seconds
 
 # Process and container management timeouts
-# CONTAINER_STOP_TIMEOUT: Standard timeout for stopping containers during normal operations
+# CONTAINER_STOP_TIMEOUT: Standard timeout for stopping Docker containers
 # SCRIPT_CONTAINER_STOP_TIMEOUT: Shorter timeout for temporary script execution containers
-# NUKE_STOP_TIMEOUT: Longer timeout used during nuke/cleanup operations to allow more
-#   graceful shutdown when forcefully removing all containers and data
+# PROCESS_WAIT_TIMEOUT: Timeout for subprocess.wait() calls on native processes
+# NODE_STARTUP_WAIT: Brief pause after starting a node to let it stabilize
+# SOCKET_CONNECTION_TIMEOUT: Quick timeout for socket connection checks
+# NUKE_STOP_TIMEOUT: Longer timeout for graceful cleanup during forced shutdown scenarios
 CONTAINER_STOP_TIMEOUT = 10  # seconds
-SCRIPT_CONTAINER_STOP_TIMEOUT = 5  # seconds - for temporary script execution containers
+SCRIPT_CONTAINER_STOP_TIMEOUT = 5  # seconds
 PROCESS_WAIT_TIMEOUT = 5  # seconds
-NODE_STARTUP_WAIT = 3  # seconds for node to stabilize after start
-SOCKET_CONNECTION_TIMEOUT = 1.5  # seconds for quick connection check
-NUKE_STOP_TIMEOUT = (
-    30  # seconds - longer timeout for graceful cleanup during forced shutdown
-)
+NODE_STARTUP_WAIT = 3  # seconds
+SOCKET_CONNECTION_TIMEOUT = 1.5  # seconds
+NUKE_STOP_TIMEOUT = 30  # seconds
 
 # Polling and wait intervals
 RPC_WAIT_TIMEOUT = 10  # seconds to wait for RPC to be ready
