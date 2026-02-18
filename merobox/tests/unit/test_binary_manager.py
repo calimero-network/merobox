@@ -267,18 +267,20 @@ def test_binary_manager_cleanup_concurrent_access():
     # Verify return value distribution: exactly one PERFORMED, rest ALREADY_DONE
     performed_count = sum(1 for r in results if r == CleanupResult.PERFORMED)
     done_count = sum(1 for r in results if r == CleanupResult.ALREADY_DONE)
+    in_progress_count = sum(1 for r in results if r == CleanupResult.IN_PROGRESS)
     assert performed_count == 1, f"Expected exactly 1 PERFORMED, got {performed_count}"
     assert (
         done_count == num_threads - 1
     ), f"Expected {num_threads - 1} ALREADY_DONE, got {done_count}"
+    assert in_progress_count == 0, f"Expected 0 IN_PROGRESS, got {in_progress_count}"
 
 
-def test_binary_manager_cleanup_in_progress_returns_in_progress():
-    """Test that re-entrant cleanup call returns IN_PROGRESS when cleanup is running.
+def test_binary_manager_cleanup_returns_in_progress_when_flag_set():
+    """Test that cleanup returns IN_PROGRESS when _cleanup_in_progress flag is set.
 
-    This simulates a signal handler calling cleanup while atexit cleanup is running.
-    With RLock, the same thread can re-enter, and should get IN_PROGRESS indicating
-    cleanup is already in progress.
+    This tests the flag check logic specifically by manually setting the flag.
+    In production, this would occur when a signal handler calls cleanup while
+    atexit cleanup is already running in the same thread (RLock allows re-entry).
     """
     manager = BinaryManager(
         binary_path="merod", require_binary=False, enable_signal_handlers=False
