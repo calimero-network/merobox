@@ -4,6 +4,7 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 
 import asyncio
 import os
+import re
 import time
 import uuid
 from typing import Any, Optional
@@ -53,6 +54,9 @@ from merobox.commands.near.contracts import (
 from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import console, get_node_rpc_url
+
+# Compiled regex pattern for extracting {{variable}} references
+_VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
 
 class WorkflowExecutor:
@@ -418,10 +422,21 @@ class WorkflowExecutor:
         )
         console.print("[cyan]Validating workflow without executing steps...[/cyan]\n")
 
-        validation_errors = []
-        warnings = []
+        validation_errors: list[str] = []
+        warnings: list[str] = []
 
-        # Step 1: Validate configuration structure
+        # Run validation phases
+        self._dry_run_validate_config(validation_errors)
+        self._dry_run_validate_nodes(validation_errors)
+        self._dry_run_validate_node_refs(validation_errors)
+        self._dry_run_check_remote_nodes()
+        self._dry_run_analyze_steps(warnings)
+
+        # Print summary and return result
+        return self._dry_run_print_summary(workflow_name, validation_errors, warnings)
+
+    def _dry_run_validate_config(self, errors: list[str]) -> None:
+        """Validate configuration structure in dry-run mode."""
         console.print("[bold]Step 1: Validating configuration structure...[/bold]")
         try:
             from merobox.commands.bootstrap.config import validate_workflow_config
@@ -429,15 +444,16 @@ class WorkflowExecutor:
             config_errors = validate_workflow_config(self.config)
             if config_errors:
                 for error in config_errors:
-                    validation_errors.append(f"Config: {error}")
+                    errors.append(f"Config: {error}")
                     console.print(f"  [red]✗ {error}[/red]")
             else:
                 console.print("  [green]✓ Configuration structure is valid[/green]")
         except Exception as e:
-            validation_errors.append(f"Config validation error: {str(e)}")
+            errors.append(f"Config validation error: {str(e)}")
             console.print(f"  [red]✗ Config validation error: {str(e)}[/red]")
 
-        # Step 2: Set up resolver and check node configuration
+    def _dry_run_validate_nodes(self, errors: list[str]) -> None:
+        """Validate node configuration in dry-run mode."""
         console.print("\n[bold]Step 2: Checking node configuration...[/bold]")
         try:
             self._setup_resolver()
@@ -455,22 +471,24 @@ class WorkflowExecutor:
                 )
 
             if not local_nodes and not remote_nodes:
-                validation_errors.append("No nodes configured (local or remote)")
+                errors.append("No nodes configured (local or remote)")
                 console.print("  [red]✗ No nodes configured[/red]")
             else:
                 console.print("  [green]✓ Node configuration is valid[/green]")
         except Exception as e:
-            validation_errors.append(f"Node configuration error: {str(e)}")
+            errors.append(f"Node configuration error: {str(e)}")
             console.print(f"  [red]✗ Node configuration error: {str(e)}[/red]")
 
-        # Step 3: Validate node references in steps
+    def _dry_run_validate_node_refs(self, errors: list[str]) -> None:
+        """Validate node references in steps during dry-run."""
         console.print("\n[bold]Step 3: Validating node references in steps...[/bold]")
         if not self._validate_node_references():
-            validation_errors.append("Invalid node references in workflow steps")
+            errors.append("Invalid node references in workflow steps")
         else:
             console.print("  [green]✓ All node references are valid[/green]")
 
-        # Step 4: Check remote node availability
+    def _dry_run_check_remote_nodes(self) -> None:
+        """Check remote node availability in dry-run mode."""
         console.print("\n[bold]Step 4: Checking remote node availability...[/bold]")
         remote_nodes_config = self.config.get("remote_nodes", {})
         if remote_nodes_config:
@@ -487,70 +505,72 @@ class WorkflowExecutor:
         else:
             console.print("  [dim]No remote nodes configured[/dim]")
 
-        # Step 5: Analyze workflow steps and variable resolution
+    def _dry_run_analyze_steps(self, warnings: list[str]) -> None:
+        """Analyze workflow steps and variable resolution in dry-run mode."""
         console.print("\n[bold]Step 5: Analyzing workflow steps...[/bold]")
         steps = self.config.get("steps", [])
-        if steps:
-            console.print(f"  [cyan]Total steps: {len(steps)}[/cyan]")
-
-            # Track variables that would be produced and consumed
-            produced_vars = set()
-            consumed_vars = set()
-
-            for i, step in enumerate(steps, 1):
-                step_type = step.get("type", "unknown")
-                step_name = step.get("name", f"Step {i}")
-
-                # Check for output variable definitions
-                outputs = step.get("outputs", {})
-                if outputs:
-                    for var_name in outputs.keys():
-                        produced_vars.add(var_name)
-
-                # Check for variable references in step config
-                step_vars = self._extract_variable_references(step)
-                consumed_vars.update(step_vars)
-
-                # Display step info
-                node = step.get("node", "N/A")
-                console.print(f"  [{i}] {step_name} ({step_type}) → node: {node}")
-
-                if outputs:
-                    console.print(
-                        f"      [dim]outputs: {', '.join(outputs.keys())}[/dim]"
-                    )
-                if step_vars:
-                    console.print(
-                        f"      [dim]uses variables: {', '.join(step_vars)}[/dim]"
-                    )
-
-            # Check for undefined variable references
-            undefined_vars = consumed_vars - produced_vars
-            # Filter out variables that might be resolved dynamically
-            undefined_vars = {v for v in undefined_vars if not v.startswith("env.")}
-
-            if undefined_vars:
-                warnings.append(
-                    f"Variables referenced but not produced by prior steps: {', '.join(sorted(undefined_vars))}"
-                )
-                console.print(
-                    f"\n  [yellow]⚠ Variables that may need to be defined: {', '.join(sorted(undefined_vars))}[/yellow]"
-                )
-
-            console.print("\n  [green]✓ Step analysis complete[/green]")
-        else:
+        if not steps:
             warnings.append("No workflow steps defined")
             console.print("  [yellow]⚠ No workflow steps defined[/yellow]")
+            return
 
-        # Summary
+        console.print(f"  [cyan]Total steps: {len(steps)}[/cyan]")
+
+        # Track variables incrementally - check each step against prior steps
+        available_vars: set[str] = set()
+        forward_ref_warnings: list[str] = []
+
+        for i, step in enumerate(steps, 1):
+            step_type = step.get("type", "unknown")
+            step_name = step.get("name", f"Step {i}")
+
+            # Get variables consumed by this step
+            step_vars = self._extract_variable_references(step)
+
+            # Check for variables used before they're defined
+            undefined_in_step = step_vars - available_vars
+            if undefined_in_step:
+                forward_ref_warnings.append(
+                    f"Step {i} '{step_name}': uses undefined variables: "
+                    f"{', '.join(sorted(undefined_in_step))}"
+                )
+
+            # Add output variables to available set for subsequent steps
+            outputs = step.get("outputs", {})
+            if outputs:
+                available_vars.update(outputs.keys())
+
+            # Display step info
+            node = step.get("node", "N/A")
+            console.print(f"  [{i}] {step_name} ({step_type}) → node: {node}")
+
+            if outputs:
+                console.print(f"      [dim]outputs: {', '.join(outputs.keys())}[/dim]")
+            if step_vars:
+                console.print(
+                    f"      [dim]uses variables: {', '.join(sorted(step_vars))}[/dim]"
+                )
+
+        # Report forward reference warnings
+        if forward_ref_warnings:
+            for warning in forward_ref_warnings:
+                warnings.append(warning)
+                console.print(f"\n  [yellow]⚠ {warning}[/yellow]")
+
+        console.print("\n  [green]✓ Step analysis complete[/green]")
+
+    def _dry_run_print_summary(
+        self, workflow_name: str, errors: list[str], warnings: list[str]
+    ) -> bool:
+        """Print dry-run summary and return validation result."""
         console.print("\n" + "=" * 60)
         console.print("[bold]Dry-run Summary:[/bold]")
 
-        if validation_errors:
+        if errors:
             console.print(
-                f"\n[red]❌ Validation failed with {len(validation_errors)} error(s):[/red]"
+                f"\n[red]❌ Validation failed with {len(errors)} error(s):[/red]"
             )
-            for error in validation_errors:
+            for error in errors:
                 console.print(f"  [red]• {error}[/red]")
         else:
             console.print("\n[green]✓ Configuration validation passed[/green]")
@@ -560,7 +580,7 @@ class WorkflowExecutor:
             for warning in warnings:
                 console.print(f"  [yellow]• {warning}[/yellow]")
 
-        if not validation_errors:
+        if not errors:
             console.print(
                 f"\n[bold green]✅ Workflow '{workflow_name}' is ready for execution[/bold green]"
             )
@@ -581,13 +601,10 @@ class WorkflowExecutor:
         Returns:
             Set of variable names referenced
         """
-        import re
-
-        variables = set()
-        pattern = re.compile(r"\{\{(\w+)\}\}")
+        variables: set[str] = set()
 
         if isinstance(obj, str):
-            matches = pattern.findall(obj)
+            matches = _VAR_PATTERN.findall(obj)
             variables.update(matches)
         elif isinstance(obj, dict):
             for value in obj.values():

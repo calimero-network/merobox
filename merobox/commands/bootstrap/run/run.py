@@ -210,16 +210,18 @@ async def run_workflow(
         # Execute workflow
         success = await executor.execute_workflow()
 
-        if success:
-            console.print(
-                "\n[bold green]🎉 Workflow completed successfully![/bold green]"
-            )
-            if verbose and executor.workflow_results:
-                console.print("\n[bold]Workflow Results:[/bold]")
-                for key, value in executor.workflow_results.items():
-                    console.print(f"  {key}: {value}")
-        else:
-            console.print("\n[bold red]❌ Workflow failed![/bold red]")
+        # Skip duplicate messages for dry-run (executor prints its own summary)
+        if not dry_run:
+            if success:
+                console.print(
+                    "\n[bold green]🎉 Workflow completed successfully![/bold green]"
+                )
+                if verbose and executor.workflow_results:
+                    console.print("\n[bold]Workflow Results:[/bold]")
+                    for key, value in executor.workflow_results.items():
+                        console.print(f"  {key}: {value}")
+            else:
+                console.print("\n[bold red]❌ Workflow failed![/bold red]")
 
         return success
 
