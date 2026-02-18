@@ -3,11 +3,9 @@
 This test module verifies the dry-run validation mode for workflow execution.
 """
 
-import importlib.util
-import os
 import sys
 from types import ModuleType
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -310,7 +308,7 @@ class TestDryRunOutput:
             outputs = step.get("outputs", {})
             for var_name in outputs.keys():
                 produced.add(var_name)
-            for key, value in step.items():
+            for _key, value in step.items():
                 if isinstance(value, str):
                     matches = pattern.findall(value)
                     consumed.update(matches)
