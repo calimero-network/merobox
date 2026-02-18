@@ -3,6 +3,7 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 """
 
 import atexit
+import logging
 import os
 import shutil
 import signal
@@ -30,6 +31,7 @@ from merobox.commands.constants import (
     RPC_PORT_BINDING,
 )
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 
@@ -216,7 +218,11 @@ class DockerManager:
                     value = env_entry.split("=", 1)[1]
                     if value.isdigit():
                         return int(value)
-        except Exception:
+        except (KeyError, TypeError, AttributeError) as e:
+            logger.debug("Failed to extract host port: %s", e)
+            return None
+        except docker.errors.DockerException as e:
+            logger.debug("Docker error while extracting host port: %s", e)
             return None
 
         return None
@@ -1101,7 +1107,7 @@ class DockerManager:
 
         success_count = 0
         for i in range(count):
-            node_name = f"{prefix}-{i+1}"
+            node_name = f"{prefix}-{i + 1}"
             port = p2p_ports[i]
             rpc_port = rpc_ports[i]
 
