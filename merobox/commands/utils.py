@@ -4,9 +4,11 @@ Shared utilities for Calimero CLI commands.
 
 import asyncio
 import json
+import logging
 import sys
 from typing import Any, Optional
 
+import docker
 from rich import box
 from rich.console import Console
 from rich.table import Table
@@ -14,6 +16,7 @@ from rich.table import Table
 from merobox.commands.constants import DEFAULT_RPC_PORT
 from merobox.commands.manager import DockerManager
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 
@@ -58,7 +61,14 @@ def get_node_rpc_url(node_name: str, manager: Any) -> str:
                     host_port = _normalize_port(binding.get("HostPort"))
                     if host_port is not None:
                         break
-        except Exception:
+        except docker.errors.NotFound:
+            logger.debug("Container %s not found when getting RPC URL", node_name)
+            host_port = None
+        except docker.errors.DockerException as e:
+            logger.debug("Docker error getting RPC port for %s: %s", node_name, e)
+            host_port = None
+        except (KeyError, TypeError, AttributeError) as e:
+            logger.debug("Error accessing container data for %s: %s", node_name, e)
             host_port = None
 
     if host_port is None:

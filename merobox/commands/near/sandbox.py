@@ -1,4 +1,5 @@
 import json
+import logging
 import platform
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ from tqdm import tqdm
 
 from .client import NearDevnetClient
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 NEAR_SANDBOX_AWS_BASE_URL = (
@@ -161,9 +163,15 @@ class SandboxManager:
             )
             # Wait for OS to release the port
             time.sleep(0.5)
-        except Exception:
-            # pkill might fail or not be present, which is fine if no process exists
-            pass
+        except FileNotFoundError:
+            # pkill command not found on this system, which is fine
+            logger.debug("pkill command not found, skipping sandbox cleanup")
+        except OSError as e:
+            # OS-level errors (permissions, etc.)
+            logger.debug("OS error during sandbox cleanup: %s", e)
+        except subprocess.SubprocessError as e:
+            # Subprocess execution errors
+            logger.debug("Subprocess error during sandbox cleanup: %s", e)
 
     async def stop(self):
         """Async stop that closes clients and process."""
