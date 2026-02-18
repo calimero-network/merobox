@@ -4,15 +4,16 @@ This test module verifies the dry-run validation mode for workflow execution,
 testing the actual module-level pattern and extraction logic.
 
 Note: Due to import chain complexity (executor.py imports many dependencies),
-tests recreate the regex pattern here. The pattern MUST match the one defined
-in merobox/commands/bootstrap/run/executor.py (_VAR_PATTERN).
+tests recreate the regex pattern here. A dedicated test verifies the pattern
+matches the one defined in merobox/commands/bootstrap/run/executor.py.
 """
 
 import re
 
 # This pattern MUST match _VAR_PATTERN in executor.py
-# Pattern: r"\{\{(\w+)\}\}"
-VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
+# The test_pattern_matches_executor_pattern test verifies this stays in sync
+VAR_PATTERN_STRING = r"\{\{(\w+)\}\}"
+VAR_PATTERN = re.compile(VAR_PATTERN_STRING)
 
 
 def extract_vars(obj: object, pattern: re.Pattern = VAR_PATTERN) -> set[str]:
@@ -60,12 +61,59 @@ def validate_variable_ordering(
                 f"{', '.join(sorted(undefined))}"
             )
 
-        # Add outputs to available vars for next steps
+        # Add outputs to available vars for next steps (mirrors executor logic)
         outputs = step.get("outputs")
-        if outputs and isinstance(outputs, dict):
-            available_vars.update(outputs.keys())
+        if outputs:
+            if isinstance(outputs, dict):
+                available_vars.update(outputs.keys())
+            else:
+                warnings.append(
+                    f"Step {i} '{step_name}': 'outputs' should be a dict, "
+                    f"got {type(outputs).__name__}"
+                )
 
     return warnings
+
+
+class TestPatternSync:
+    """Tests to ensure test patterns stay in sync with executor patterns."""
+
+    def test_pattern_matches_executor_pattern(self):
+        """Verify test VAR_PATTERN matches executor's _VAR_PATTERN.
+
+        This test reads the executor source file and extracts the pattern
+        string to ensure it matches the pattern used in these tests.
+        """
+        import os
+
+        # Read the executor source file
+        executor_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "commands",
+            "bootstrap",
+            "run",
+            "executor.py",
+        )
+        with open(executor_path) as f:
+            content = f.read()
+
+        # Find the _VAR_PATTERN definition
+        # Looking for: _VAR_PATTERN = re.compile(r"...")
+        import re as re_module
+
+        pattern_match = re_module.search(
+            r'_VAR_PATTERN\s*=\s*re\.compile\(r(["\'])(.+?)\1\)', content
+        )
+        assert pattern_match is not None, "_VAR_PATTERN not found in executor.py"
+
+        executor_pattern = pattern_match.group(2)
+        assert executor_pattern == VAR_PATTERN_STRING, (
+            f"Pattern mismatch! "
+            f"Test pattern: {VAR_PATTERN_STRING!r}, "
+            f"Executor pattern: {executor_pattern!r}"
+        )
 
 
 class TestVarPatternModule:
@@ -264,6 +312,20 @@ class TestVariableOrderingValidation:
         # Should NOT warn about {{some_template}} since it's in outputs
         warnings = validate_variable_ordering(steps)
         assert len(warnings) == 0
+
+    def test_non_dict_outputs_produces_warning(self):
+        """Test that non-dict outputs value produces a warning."""
+        steps = [
+            {
+                "name": "Step with bad outputs",
+                "type": "call",
+                "outputs": ["not", "a", "dict"],
+            },
+        ]
+        warnings = validate_variable_ordering(steps)
+        assert len(warnings) == 1
+        assert "should be a dict" in warnings[0]
+        assert "list" in warnings[0]
 
 
 class TestDryRunConfigValidation:

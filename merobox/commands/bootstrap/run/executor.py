@@ -485,10 +485,39 @@ class WorkflowExecutor:
     def _dry_run_validate_node_refs(self, errors: list[str]) -> None:
         """Validate node references in steps during dry-run."""
         console.print("\n[bold]Step 3: Validating node references in steps...[/bold]")
-        if not self._validate_node_references():
-            errors.append("Invalid node references in workflow steps")
+        invalid_refs = self._get_invalid_node_references()
+        if invalid_refs:
+            for ref_error in invalid_refs:
+                errors.append(ref_error)
+                console.print(f"  [red]✗ {ref_error}[/red]")
         else:
             console.print("  [green]✓ All node references are valid[/green]")
+
+    def _get_invalid_node_references(self) -> list[str]:
+        """Get list of invalid node reference errors for dry-run reporting."""
+        steps = self.config.get("steps", [])
+        if not steps:
+            return []
+
+        valid_nodes = self._get_valid_node_names()
+        referenced_nodes: set[str] = set()
+        for step in steps:
+            referenced_nodes.update(self._extract_node_references_from_step(step))
+
+        errors: list[str] = []
+        if not valid_nodes:
+            if referenced_nodes:
+                errors.append(
+                    f"Workflow references nodes but none configured: "
+                    f"{', '.join(sorted(referenced_nodes))}"
+                )
+        else:
+            invalid_nodes = referenced_nodes - valid_nodes
+            if invalid_nodes:
+                errors.append(
+                    f"References non-existent nodes: {', '.join(sorted(invalid_nodes))}"
+                )
+        return errors
 
     def _dry_run_check_remote_nodes(self) -> None:
         """Check remote node availability in dry-run mode."""
@@ -541,8 +570,13 @@ class WorkflowExecutor:
 
             # Add output variables to available set for subsequent steps
             outputs = step.get("outputs")
-            if outputs and isinstance(outputs, dict):
-                available_vars.update(outputs.keys())
+            if outputs:
+                if isinstance(outputs, dict):
+                    available_vars.update(outputs.keys())
+                else:
+                    forward_ref_warnings.append(
+                        f"Step {i} '{step_name}': 'outputs' should be a dict, got {type(outputs).__name__}"
+                    )
 
             # Display step info
             node = step.get("node", "N/A")
