@@ -44,6 +44,7 @@ from merobox.commands.bootstrap.steps.proposals import (
     ListProposalsStep,
 )
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
+from merobox.commands.health import check_node_health
 from merobox.commands.manager import DockerManager
 from merobox.commands.near.contracts import (
     CONFIG_WASM,
@@ -835,6 +836,11 @@ class WorkflowExecutor:
 
         Note: This only waits for local (docker/binary) nodes. Remote nodes
         are assumed to be already running and accessible.
+
+        Readiness is determined by:
+        1. Container/process is running
+        2. Admin port is bound and accepting connections
+        3. Health endpoint responds successfully (node is serving requests)
         """
         wait_timeout = self.config.get("wait_timeout", 60)  # Default 60 seconds
 
@@ -869,11 +875,21 @@ class WorkflowExecutor:
 
                             if is_running:
                                 if self.manager.verify_admin_binding(node_name):
-                                    ready_nodes.add(node_name)
-                                    progress.update(task, completed=len(ready_nodes))
-                                    console.print(
-                                        f"[green]✓ Node {node_name} is ready[/green]"
-                                    )
+                                    # Probe health endpoint to ensure node is serving requests
+                                    rpc_url = get_node_rpc_url(node_name, self.manager)
+                                    health_result = await check_node_health(rpc_url)
+                                    if health_result.get("success"):
+                                        ready_nodes.add(node_name)
+                                        progress.update(
+                                            task, completed=len(ready_nodes)
+                                        )
+                                        console.print(
+                                            f"[green]✓ Node {node_name} is ready (health check passed)[/green]"
+                                        )
+                                    else:
+                                        console.print(
+                                            f"[yellow]Node {node_name} admin binding OK but health check not ready yet[/yellow]"
+                                        )
                         except Exception:
                             pass
 
