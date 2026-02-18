@@ -564,7 +564,7 @@ class TestBaseStepJsonParsing:
     def test_parse_json_trailing_comma_array(self):
         """Test _parse_json with trailing comma in array."""
         step = self._create_step()
-        result = step._parse_json('[1, 2, 3,]')
+        result = step._parse_json("[1, 2, 3,]")
         assert result == [1, 2, 3]
 
     # =========================================================================
@@ -580,7 +580,7 @@ class TestBaseStepJsonParsing:
     def test_parse_json_extract_array_from_noisy_input(self):
         """Test _parse_json extracts array from text with surrounding content."""
         step = self._create_step()
-        result = step._parse_json('prefix [1, 2, 3] suffix')
+        result = step._parse_json("prefix [1, 2, 3] suffix")
         assert result == [1, 2, 3]
 
     # =========================================================================
@@ -691,5 +691,7 @@ class TestBaseStepJsonParsing:
         """Test _extract_path is an alias for _get_value."""
         step = self._create_step()
         obj = {"result": {"data": 42}}
-        assert step._extract_path(obj, "result.data") == step._get_value(obj, "result.data")
+        assert step._extract_path(obj, "result.data") == step._get_value(
+            obj, "result.data"
+        )
         assert step._extract_path(obj, "result.data") == 42

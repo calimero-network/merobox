@@ -1108,9 +1108,7 @@ class BaseStep:
                         base_value = self._parse_json(base_value)
                     # Optional nested path within the base value
                     if isinstance(assigned_var.get("path"), str):
-                        base_value = self._get_value(
-                            base_value, assigned_var["path"]
-                        )
+                        base_value = self._get_value(base_value, assigned_var["path"])
 
                     field_missing = False
                     if base_value is None and isinstance(actual_data, dict):
