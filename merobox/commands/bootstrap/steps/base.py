@@ -1097,9 +1097,13 @@ class BaseStep:
                 # Complex assignment with node name replacement
                 if "field" in assigned_var:
                     field_name = assigned_var["field"]
-                    # Use _get_value for field extraction (handles JSON automatically)
-                    base_value = self._get_value(actual_data, field_name)
-                    # Optional explicit JSON parse (second pass for triple-encoded cases)
+                    # Literal key lookup (not path traversal) for backward compatibility
+                    base_value = (
+                        actual_data.get(field_name)
+                        if isinstance(actual_data, dict)
+                        else None
+                    )
+                    # Optional JSON parse - only when explicitly requested
                     if assigned_var.get("json"):
                         base_value = self._parse_json(base_value)
                     # Optional nested path within the base value
