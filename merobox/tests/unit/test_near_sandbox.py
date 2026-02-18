@@ -11,8 +11,8 @@ import pytest
 # This ensures that 'merobox.commands.near' and its submodules are loaded
 # before @patch tries to resolve these paths.
 from merobox.commands.near.client import NearDevnetClient
-from merobox.commands.near.contracts import _safe_tar_extract
 from merobox.commands.near.sandbox import SandboxManager
+from merobox.commands.near.utils import safe_tar_extract
 
 # We need ed25519.create_keypair() to return objects that have .to_bytes()
 mock_sk = MagicMock()
@@ -120,7 +120,7 @@ def test_sandbox_download_logic(mock_tar, mock_get):
 
 
 class TestSafeTarExtract:
-    """Tests for _safe_tar_extract to prevent zip-slip vulnerabilities."""
+    """Tests for safe_tar_extract to prevent zip-slip vulnerabilities."""
 
     def test_extracts_normal_file(self):
         """Normal files should be extracted correctly."""
@@ -135,7 +135,7 @@ class TestSafeTarExtract:
 
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                _safe_tar_extract(tar, extract_path)
+                safe_tar_extract(tar, extract_path)
 
             assert (extract_path / "testfile.txt").exists()
             assert (extract_path / "testfile.txt").read_bytes() == b"test content"
@@ -158,7 +158,7 @@ class TestSafeTarExtract:
 
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                _safe_tar_extract(tar, extract_path)
+                safe_tar_extract(tar, extract_path)
 
             assert (extract_path / "subdir" / "nested.txt").exists()
             assert (
@@ -179,7 +179,7 @@ class TestSafeTarExtract:
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
                 with pytest.raises(RuntimeError, match="Rejected path traversal"):
-                    _safe_tar_extract(tar, extract_path)
+                    safe_tar_extract(tar, extract_path)
 
     def test_rejects_absolute_path(self):
         """Archives with absolute paths should raise RuntimeError."""
@@ -195,7 +195,7 @@ class TestSafeTarExtract:
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
                 with pytest.raises(RuntimeError, match="Rejected path traversal"):
-                    _safe_tar_extract(tar, extract_path)
+                    safe_tar_extract(tar, extract_path)
 
     def test_skips_symlinks(self):
         """Symlinks in the archive should be skipped, not extracted."""
@@ -215,7 +215,7 @@ class TestSafeTarExtract:
 
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                _safe_tar_extract(tar, extract_path)
+                safe_tar_extract(tar, extract_path)
 
             assert not (extract_path / "evil_link").exists()
             assert (extract_path / "safe_file.txt").exists()
@@ -238,7 +238,7 @@ class TestSafeTarExtract:
 
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                _safe_tar_extract(tar, extract_path)
+                safe_tar_extract(tar, extract_path)
 
             assert not (extract_path / "evil_hardlink").exists()
             assert (extract_path / "safe_file.txt").exists()
@@ -260,7 +260,7 @@ class TestSafeTarExtract:
 
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                _safe_tar_extract(tar, extract_path)
+                safe_tar_extract(tar, extract_path)
 
             assert not (extract_path / "evil_block_device").exists()
             assert (extract_path / "safe_file.txt").exists()
@@ -282,7 +282,7 @@ class TestSafeTarExtract:
 
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                _safe_tar_extract(tar, extract_path)
+                safe_tar_extract(tar, extract_path)
 
             assert not (extract_path / "evil_char_device").exists()
             assert (extract_path / "safe_file.txt").exists()
@@ -304,7 +304,7 @@ class TestSafeTarExtract:
 
             tar_buffer.seek(0)
             with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                _safe_tar_extract(tar, extract_path)
+                safe_tar_extract(tar, extract_path)
 
             assert not (extract_path / "evil_fifo").exists()
             assert (extract_path / "safe_file.txt").exists()

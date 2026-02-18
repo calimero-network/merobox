@@ -11,7 +11,7 @@ from rich.console import Console
 from tqdm import tqdm
 
 from .client import NearDevnetClient
-from .contracts import _safe_tar_extract
+from .utils import safe_tar_extract
 
 console = Console()
 
@@ -88,7 +88,7 @@ class SandboxManager:
 
             console.print("[yellow]Extracting...[/yellow]")
             with tarfile.open(tar_path) as tar:
-                _safe_tar_extract(tar, self.home_dir)
+                safe_tar_extract(tar, self.home_dir)
 
             # Clean up tar and ensure binary is executable
             tar_path.unlink()
