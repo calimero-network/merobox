@@ -34,6 +34,70 @@ from merobox.commands.constants import (
 logger = logging.getLogger(__name__)
 console = Console()
 
+# Default CORS origins for localhost development
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8080",
+]
+
+# Explicit headers allowed in CORS requests (required when credentials are enabled)
+# Note: wildcard '*' doesn't work with credentials, so we list headers explicitly
+CORS_ALLOWED_HEADERS = (
+    "Accept,Accept-Language,Content-Language,Content-Type,"
+    "Authorization,X-Requested-With,X-Auth-Token,Cache-Control"
+)
+
+
+def _validate_cors_origins(origins: list[str]) -> list[str]:
+    """
+    Validate and sanitize CORS origins list.
+
+    Rejects wildcard '*' and origins containing commas to prevent CORS injection.
+
+    Args:
+        origins: List of origin URLs to validate
+
+    Returns:
+        The validated origins list
+
+    Raises:
+        ValueError: If an origin is invalid (wildcard or contains comma)
+    """
+    validated = []
+    for origin in origins:
+        if origin == "*":
+            raise ValueError(
+                "Wildcard '*' is not allowed in cors_allowed_origins. "
+                "Please specify explicit origins."
+            )
+        if "," in origin:
+            raise ValueError(
+                f"Origin '{origin}' contains a comma which is not allowed. "
+                "Please specify origins as separate list items."
+            )
+        validated.append(origin.strip())
+    return validated
+
+
+def _get_node_hostname(node_name: str) -> str:
+    """
+    Transform node name into a hostname for nip.io.
+
+    Transforms 'calimero-foo-bar' into 'foobar' for use in nip.io domains.
+    The 'calimero-' prefix is removed and hyphens are stripped to create
+    a simple hostname suitable for subdomain use.
+
+    Args:
+        node_name: The node name (e.g., 'calimero-node-1')
+
+    Returns:
+        The transformed hostname (e.g., 'node1')
+    """
+    return node_name.replace("calimero-", "").replace("-", "")
+
 
 class DockerManager:
     """Manages Calimero nodes in Docker containers."""
@@ -458,17 +522,14 @@ class DockerManager:
                 )
 
                 # Configure CORS allowed origins with sensible localhost defaults
-                hostname = node_name.replace("calimero-", "").replace("-", "")
+                hostname = _get_node_hostname(node_name)
                 nip_io_origin = f"http://{hostname}.127.0.0.1.nip.io"
                 if cors_allowed_origins is None:
-                    cors_allowed_origins = [
-                        "http://localhost",
-                        "http://127.0.0.1",
-                        "http://localhost:3000",
-                        "http://localhost:5173",
-                        "http://localhost:8080",
-                        nip_io_origin,
-                    ]
+                    cors_allowed_origins = DEFAULT_CORS_ORIGINS.copy()
+                    cors_allowed_origins.append(nip_io_origin)
+
+                # Validate origins to prevent CORS injection attacks
+                cors_allowed_origins = _validate_cors_origins(cors_allowed_origins)
                 cors_origins_str = ",".join(cors_allowed_origins)
 
                 # Ensure auth service stack is running
@@ -479,34 +540,37 @@ class DockerManager:
                         "[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
                     )
 
+                # Use per-node CORS middleware to avoid conflicts when multiple nodes run
+                cors_middleware_name = f"cors-{node_name}"
+
                 # Add Traefik labels for auth service integration
                 auth_labels = {
                     "traefik.enable": "true",
                     # API routes (protected when auth is available)
-                    f"traefik.http.routers.{node_name}-api.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && (PathPrefix(`/jsonrpc`) || PathPrefix(`/admin-api/`))",
+                    f"traefik.http.routers.{node_name}-api.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && (PathPrefix(`/jsonrpc`) || PathPrefix(`/admin-api/`))",
                     f"traefik.http.routers.{node_name}-api.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-api.service": f"{node_name}-core",
-                    f"traefik.http.routers.{node_name}-api.middlewares": f"cors,auth-{node_name}",
+                    f"traefik.http.routers.{node_name}-api.middlewares": f"{cors_middleware_name},auth-{node_name}",
                     # WebSocket (protected when auth is available)
-                    f"traefik.http.routers.{node_name}-ws.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/ws`)",
+                    f"traefik.http.routers.{node_name}-ws.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && PathPrefix(`/ws`)",
                     f"traefik.http.routers.{node_name}-ws.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-ws.service": f"{node_name}-core",
-                    f"traefik.http.routers.{node_name}-ws.middlewares": f"cors,auth-{node_name}",
+                    f"traefik.http.routers.{node_name}-ws.middlewares": f"{cors_middleware_name},auth-{node_name}",
                     # SSE (Server-Sent Events) routes (protected when auth is available)
-                    f"traefik.http.routers.{node_name}-sse.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/sse`)",
+                    f"traefik.http.routers.{node_name}-sse.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && PathPrefix(`/sse`)",
                     f"traefik.http.routers.{node_name}-sse.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-sse.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-sse.middlewares": f"cors-sse-{node_name},auth-{node_name}",
                     # Admin dashboard (publicly accessible)
-                    f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
+                    f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
                     f"traefik.http.routers.{node_name}-dashboard.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-dashboard.service": f"{node_name}-core",
-                    f"traefik.http.routers.{node_name}-dashboard.middlewares": "cors",
+                    f"traefik.http.routers.{node_name}-dashboard.middlewares": cors_middleware_name,
                     # Auth service route for this node's subdomain (both /auth/ and /admin/)
-                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && (PathPrefix(`/auth/`) || PathPrefix(`/admin/`))",
+                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && (PathPrefix(`/auth/`) || PathPrefix(`/admin/`))",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.entrypoints": "web",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.service": "auth-service",
-                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.middlewares": "cors,auth-headers",
+                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.middlewares": f"{cors_middleware_name},auth-headers",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.priority": "200",
                     # Forward Auth middleware
                     f"traefik.http.middlewares.auth-{node_name}.forwardauth.address": "http://auth:3001/auth/validate",
@@ -516,15 +580,15 @@ class DockerManager:
                     f"traefik.http.services.{node_name}-core.loadbalancer.server.port": str(
                         DEFAULT_RPC_PORT
                     ),
-                    # Shared middlewares (from docker-compose)
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": cors_origins_str,
-                    "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
-                    "traefik.http.middlewares.cors.headers.addvaryheader": "true",
-                    "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowcredentials": "true",
-                    # SSE-specific CORS middleware
+                    # Per-node CORS middleware (explicit headers required for credentials)
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolallowheaders": CORS_ALLOWED_HEADERS,
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolalloworiginlist": cors_origins_str,
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolmaxage": "100",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.addvaryheader": "true",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolallowcredentials": "true",
+                    # SSE-specific CORS middleware (per-node)
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowmethods": "GET,OPTIONS",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowheaders": "Cache-Control,Last-Event-ID,Accept,Accept-Language,Content-Language,Content-Type,Authorization",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolalloworiginlist": cors_origins_str,
@@ -996,13 +1060,10 @@ class DockerManager:
 
             # Configure CORS allowed origins with sensible localhost defaults
             if cors_allowed_origins is None:
-                cors_allowed_origins = [
-                    "http://localhost",
-                    "http://127.0.0.1",
-                    "http://localhost:3000",
-                    "http://localhost:5173",
-                    "http://localhost:8080",
-                ]
+                cors_allowed_origins = DEFAULT_CORS_ORIGINS.copy()
+
+            # Validate origins to prevent CORS injection attacks
+            cors_allowed_origins = _validate_cors_origins(cors_allowed_origins)
             cors_origins_str = ",".join(cors_allowed_origins)
 
             auth_config = {
@@ -1020,20 +1081,20 @@ class DockerManager:
                     "traefik.http.routers.auth-public.rule": "Host(`localhost`) && (PathPrefix(`/auth/`) || PathPrefix(`/admin/`))",
                     "traefik.http.routers.auth-public.entrypoints": "web",
                     "traefik.http.routers.auth-public.service": "auth-service",
-                    "traefik.http.routers.auth-public.middlewares": "cors,auth-headers",
+                    "traefik.http.routers.auth-public.middlewares": "cors-auth,auth-headers",
                     "traefik.http.routers.auth-public.priority": "100",
                     # Add Node ID header for auth service
                     "traefik.http.middlewares.auth-headers.headers.customrequestheaders.X-Node-ID": "auth",
                     # Define the service
                     "traefik.http.services.auth-service.loadbalancer.server.port": "3001",
-                    # CORS middleware with explicit origin allowlist (no wildcard)
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": cors_origins_str,
-                    "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
-                    "traefik.http.middlewares.cors.headers.addvaryheader": "true",
-                    "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowcredentials": "true",
+                    # CORS middleware for auth service (explicit headers required for credentials)
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolallowheaders": CORS_ALLOWED_HEADERS,
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolalloworiginlist": cors_origins_str,
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolmaxage": "100",
+                    "traefik.http.middlewares.cors-auth.headers.addvaryheader": "true",
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolallowcredentials": "true",
                 },
             }
 
