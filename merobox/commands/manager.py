@@ -700,9 +700,7 @@ class DockerManager:
             console.print(f"  - RPC/Admin Port: {rpc_port}")
             console.print(f"  - Chain ID: {chain_id}")
             console.print(f"  - Data Directory: {data_dir}")
-            host_rpc_port = self._extract_host_port(
-                container, f"{DEFAULT_RPC_PORT}/tcp"
-            )
+            host_rpc_port = self._extract_host_port(container, RPC_PORT_BINDING)
             if host_rpc_port is None and rpc_port is not None:
                 try:
                     host_rpc_port = int(rpc_port)
