@@ -50,11 +50,14 @@ PERSISTENT_CONNECTION_TIMEOUT = 15.0  # seconds
 PERSISTENT_READ_TIMEOUT = 60.0  # seconds
 
 # Process and container management timeouts
+# CONTAINER_STOP_TIMEOUT: Standard timeout for stopping containers during normal operations
+# NUKE_STOP_TIMEOUT: Longer timeout used during nuke/cleanup operations to allow more
+#   graceful shutdown when forcefully removing all containers and data
 CONTAINER_STOP_TIMEOUT = 10  # seconds
 PROCESS_WAIT_TIMEOUT = 5  # seconds
 NODE_STARTUP_WAIT = 3  # seconds for node to stabilize after start
 SOCKET_CONNECTION_TIMEOUT = 1.5  # seconds for quick connection check
-NUKE_STOP_TIMEOUT = 30  # seconds for nuke operations
+NUKE_STOP_TIMEOUT = 30  # seconds - longer timeout for graceful cleanup during forced shutdown
 
 # Polling and wait intervals
 RPC_WAIT_TIMEOUT = 10  # seconds to wait for RPC to be ready
