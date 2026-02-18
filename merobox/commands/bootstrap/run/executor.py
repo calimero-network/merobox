@@ -411,6 +411,9 @@ class WorkflowExecutor:
         - Checks node availability (local and remote)
         - Reports what steps would be executed
 
+        Note: This method is async to maintain interface compatibility with
+        execute_workflow() and to support future remote node connectivity checks.
+
         Args:
             workflow_name: Name of the workflow for display
 
@@ -524,8 +527,9 @@ class WorkflowExecutor:
             step_type = step.get("type", "unknown")
             step_name = step.get("name", f"Step {i}")
 
-            # Get variables consumed by this step
-            step_vars = self._extract_variable_references(step)
+            # Get variables consumed by this step (exclude 'outputs' to avoid false positives)
+            step_for_vars = {k: v for k, v in step.items() if k != "outputs"}
+            step_vars = self._extract_variable_references(step_for_vars)
 
             # Check for variables used before they're defined
             undefined_in_step = step_vars - available_vars
@@ -536,15 +540,15 @@ class WorkflowExecutor:
                 )
 
             # Add output variables to available set for subsequent steps
-            outputs = step.get("outputs", {})
-            if outputs:
+            outputs = step.get("outputs")
+            if outputs and isinstance(outputs, dict):
                 available_vars.update(outputs.keys())
 
             # Display step info
             node = step.get("node", "N/A")
             console.print(f"  [{i}] {step_name} ({step_type}) → node: {node}")
 
-            if outputs:
+            if outputs and isinstance(outputs, dict):
                 console.print(f"      [dim]outputs: {', '.join(outputs.keys())}[/dim]")
             if step_vars:
                 console.print(
