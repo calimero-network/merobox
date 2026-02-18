@@ -852,7 +852,13 @@ class WorkflowExecutor:
         )
 
         start_time = time.time()
-        ready_nodes = set()
+        ready_nodes: set[str] = set()
+        # Track nodes that have passed admin binding to avoid repeated expensive checks
+        admin_binding_passed: set[str] = set()
+        # Cache RPC URLs per node to avoid recalculating on each iteration
+        node_rpc_urls: dict[str, str] = {}
+        # Track nodes that have already logged the health check warning to avoid console spam
+        health_check_warned: set[str] = set()
 
         with Progress(
             SpinnerColumn(),
@@ -874,22 +880,33 @@ class WorkflowExecutor:
                             is_running = self._is_node_running(node_name)
 
                             if is_running:
-                                if self.manager.verify_admin_binding(node_name):
-                                    # Probe health endpoint to ensure node is serving requests
-                                    rpc_url = get_node_rpc_url(node_name, self.manager)
-                                    health_result = await check_node_health(rpc_url)
-                                    if health_result.get("success"):
-                                        ready_nodes.add(node_name)
-                                        progress.update(
-                                            task, completed=len(ready_nodes)
-                                        )
-                                        console.print(
-                                            f"[green]✓ Node {node_name} is ready (health check passed)[/green]"
-                                        )
-                                    else:
-                                        console.print(
-                                            f"[yellow]Node {node_name} admin binding OK but health check not ready yet[/yellow]"
-                                        )
+                                # Check admin binding only if not already passed
+                                if node_name not in admin_binding_passed:
+                                    if not self.manager.verify_admin_binding(node_name):
+                                        continue
+                                    admin_binding_passed.add(node_name)
+
+                                # Get cached RPC URL or compute and cache it
+                                if node_name not in node_rpc_urls:
+                                    node_rpc_urls[node_name] = get_node_rpc_url(
+                                        node_name, self.manager
+                                    )
+                                rpc_url = node_rpc_urls[node_name]
+
+                                # Probe health endpoint to ensure node is serving requests
+                                health_result = await check_node_health(rpc_url)
+                                if health_result.get("success"):
+                                    ready_nodes.add(node_name)
+                                    progress.update(task, completed=len(ready_nodes))
+                                    console.print(
+                                        f"[green]✓ Node {node_name} is ready (health check passed)[/green]"
+                                    )
+                                elif node_name not in health_check_warned:
+                                    # Only log the warning once per node
+                                    console.print(
+                                        f"[yellow]Node {node_name} admin binding OK, waiting for health check...[/yellow]"
+                                    )
+                                    health_check_warned.add(node_name)
                         except Exception:
                             pass
 
