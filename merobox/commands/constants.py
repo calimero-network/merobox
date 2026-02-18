@@ -53,21 +53,22 @@ PERSISTENT_READ_TIMEOUT = 60.0  # seconds
 # CONTAINER_STOP_TIMEOUT: Standard timeout for stopping Docker containers
 # SCRIPT_CONTAINER_STOP_TIMEOUT: Shorter timeout for temporary script execution containers
 # PROCESS_WAIT_TIMEOUT: Timeout for subprocess.wait() calls on native processes
-# NODE_STARTUP_WAIT: Brief pause after starting a node to let it stabilize
+# NODE_STARTUP_DELAY: Brief pause after starting a node to let it stabilize
 # SOCKET_CONNECTION_TIMEOUT: Quick timeout for socket connection checks
 # NUKE_STOP_TIMEOUT: Longer timeout for graceful cleanup during forced shutdown scenarios
 CONTAINER_STOP_TIMEOUT = 10  # seconds
 SCRIPT_CONTAINER_STOP_TIMEOUT = 5  # seconds
 PROCESS_WAIT_TIMEOUT = 5  # seconds
-NODE_STARTUP_WAIT = 3  # seconds
+NODE_STARTUP_DELAY = 3  # seconds
 SOCKET_CONNECTION_TIMEOUT = 1.5  # seconds
 NUKE_STOP_TIMEOUT = 30  # seconds
 
-# Polling and wait intervals
+# Polling intervals and delays
+# Naming convention: _TIMEOUT for max-wait limits, _INTERVAL for polling, _DELAY for pauses
 RPC_WAIT_TIMEOUT = 10  # seconds to wait for RPC to be ready
 RPC_POLL_INTERVAL = 0.1  # seconds between RPC readiness checks
-RPC_INITIAL_WAIT = 1.0  # seconds initial wait before polling
-CLEANUP_WAIT = 0.5  # seconds after process cleanup
+RPC_INITIAL_DELAY = 1.0  # seconds initial delay before polling
+CLEANUP_DELAY = 0.5  # seconds after process cleanup
 ASYNC_POLL_INTERVAL = 2  # seconds between async checks
 
 # State sync retry configuration

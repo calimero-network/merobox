@@ -25,7 +25,7 @@ from merobox.commands.constants import (
     CONTAINER_STOP_TIMEOUT,
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
-    NODE_STARTUP_WAIT,
+    NODE_STARTUP_DELAY,
     P2P_PORT_BINDING,
     RPC_PORT_BINDING,
 )
@@ -669,7 +669,7 @@ class DockerManager:
                     )
 
             # Wait a moment and check if container is still running
-            time.sleep(NODE_STARTUP_WAIT)
+            time.sleep(NODE_STARTUP_DELAY)
             container.reload()
 
             if container.status != "running":

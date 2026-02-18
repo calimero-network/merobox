@@ -11,10 +11,10 @@ from rich.console import Console
 from tqdm import tqdm
 
 from merobox.commands.constants import (
-    CLEANUP_WAIT,
+    CLEANUP_DELAY,
     NEAR_SANDBOX_RPC_PORT,
     PROCESS_WAIT_TIMEOUT,
-    RPC_INITIAL_WAIT,
+    RPC_INITIAL_DELAY,
     RPC_POLL_INTERVAL,
     RPC_WAIT_TIMEOUT,
 )
@@ -169,7 +169,7 @@ class SandboxManager:
                 stderr=subprocess.DEVNULL,
             )
             # Wait for OS to release the port
-            time.sleep(CLEANUP_WAIT)
+            time.sleep(CLEANUP_DELAY)
         except Exception:
             # pkill might fail or not be present, which is fine if no process exists
             pass
@@ -196,7 +196,7 @@ class SandboxManager:
 
     def _wait_for_rpc(self, timeout=RPC_WAIT_TIMEOUT):
         # Sleep a little bit to wait for a RPC spin up.
-        time.sleep(RPC_INITIAL_WAIT)
+        time.sleep(RPC_INITIAL_DELAY)
         start = time.time()
 
         while time.time() - start < timeout:
