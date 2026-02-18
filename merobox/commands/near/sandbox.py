@@ -14,6 +14,32 @@ from .client import NearDevnetClient
 
 console = Console()
 
+
+def _safe_tar_extract(tar: tarfile.TarFile, extract_path: Path) -> None:
+    """Extract tar members safely, rejecting path traversal and symlinks.
+
+    Validates each member before extraction to prevent zip-slip vulnerabilities
+    where malicious archives contain paths like '../../../etc/passwd'.
+    """
+    extract_base = extract_path.resolve()
+    for member in tar.getmembers():
+        # Skip symlinks and hardlinks which could point outside the extraction dir
+        if member.issym() or member.islnk():
+            console.print(
+                f"[yellow]Warning: skipping symlink/hardlink in archive: {member.name!r}[/yellow]"
+            )
+            continue
+        # Resolve the destination path and verify it's within the extraction base
+        dest = (extract_path / member.name).resolve()
+        try:
+            dest.relative_to(extract_base)
+        except ValueError:
+            raise RuntimeError(
+                f"Rejected path traversal in archive: member name {member.name!r}"
+            ) from None
+        tar.extract(member, path=extract_path)
+
+
 NEAR_SANDBOX_AWS_BASE_URL = (
     "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore"
 )
@@ -86,7 +112,7 @@ class SandboxManager:
 
             console.print("[yellow]Extracting...[/yellow]")
             with tarfile.open(tar_path) as tar:
-                tar.extractall(path=self.home_dir)
+                _safe_tar_extract(tar, self.home_dir)
 
             # Clean up tar and ensure binary is executable
             tar_path.unlink()

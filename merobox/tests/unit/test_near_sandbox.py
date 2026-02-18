@@ -1,11 +1,17 @@
 import asyncio
+import io
+import tarfile
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+
+import pytest
 
 # Import the modules under test explicitly.
 # This ensures that 'merobox.commands.near' and its submodules are loaded
 # before @patch tries to resolve these paths.
 from merobox.commands.near.client import NearDevnetClient
-from merobox.commands.near.sandbox import SandboxManager
+from merobox.commands.near.sandbox import SandboxManager, _safe_tar_extract
 
 # We need ed25519.create_keypair() to return objects that have .to_bytes()
 mock_sk = MagicMock()
@@ -110,3 +116,128 @@ def test_sandbox_download_logic(mock_tar, mock_get):
     mock_file.write.assert_called()
     # Ensure unlink was called (cleanup)
     mock_unlink.assert_called()
+
+
+class TestSafeTarExtract:
+    """Tests for _safe_tar_extract to prevent zip-slip vulnerabilities."""
+
+    def test_extracts_normal_file(self):
+        """Normal files should be extracted correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                content = b"test content"
+                tarinfo = tarfile.TarInfo(name="testfile.txt")
+                tarinfo.size = len(content)
+                tar.addfile(tarinfo, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                _safe_tar_extract(tar, extract_path)
+
+            assert (extract_path / "testfile.txt").exists()
+            assert (extract_path / "testfile.txt").read_bytes() == b"test content"
+
+    def test_extracts_nested_directory(self):
+        """Nested directories within the archive should be extracted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                dirinfo = tarfile.TarInfo(name="subdir")
+                dirinfo.type = tarfile.DIRTYPE
+                dirinfo.mode = 0o755
+                tar.addfile(dirinfo)
+
+                content = b"nested content"
+                tarinfo = tarfile.TarInfo(name="subdir/nested.txt")
+                tarinfo.size = len(content)
+                tar.addfile(tarinfo, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                _safe_tar_extract(tar, extract_path)
+
+            assert (extract_path / "subdir" / "nested.txt").exists()
+            assert (
+                extract_path / "subdir" / "nested.txt"
+            ).read_bytes() == b"nested content"
+
+    def test_rejects_path_traversal_with_dotdot(self):
+        """Archives with '../' path traversal should raise RuntimeError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                content = b"malicious"
+                tarinfo = tarfile.TarInfo(name="../../../etc/passwd")
+                tarinfo.size = len(content)
+                tar.addfile(tarinfo, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                with pytest.raises(RuntimeError, match="Rejected path traversal"):
+                    _safe_tar_extract(tar, extract_path)
+
+    def test_rejects_absolute_path(self):
+        """Archives with absolute paths should raise RuntimeError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                content = b"malicious"
+                tarinfo = tarfile.TarInfo(name="/etc/passwd")
+                tarinfo.size = len(content)
+                tar.addfile(tarinfo, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                with pytest.raises(RuntimeError, match="Rejected path traversal"):
+                    _safe_tar_extract(tar, extract_path)
+
+    def test_skips_symlinks(self):
+        """Symlinks in the archive should be skipped, not extracted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                tarinfo = tarfile.TarInfo(name="evil_link")
+                tarinfo.type = tarfile.SYMTYPE
+                tarinfo.linkname = "/etc/passwd"
+                tar.addfile(tarinfo)
+
+                content = b"safe content"
+                safe_info = tarfile.TarInfo(name="safe_file.txt")
+                safe_info.size = len(content)
+                tar.addfile(safe_info, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                _safe_tar_extract(tar, extract_path)
+
+            assert not (extract_path / "evil_link").exists()
+            assert (extract_path / "safe_file.txt").exists()
+
+    def test_skips_hardlinks(self):
+        """Hardlinks in the archive should be skipped, not extracted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extract_path = Path(tmpdir)
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                tarinfo = tarfile.TarInfo(name="evil_hardlink")
+                tarinfo.type = tarfile.LNKTYPE
+                tarinfo.linkname = "/etc/passwd"
+                tar.addfile(tarinfo)
+
+                content = b"safe content"
+                safe_info = tarfile.TarInfo(name="safe_file.txt")
+                safe_info.size = len(content)
+                tar.addfile(safe_info, io.BytesIO(content))
+
+            tar_buffer.seek(0)
+            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+                _safe_tar_extract(tar, extract_path)
+
+            assert not (extract_path / "evil_hardlink").exists()
+            assert (extract_path / "safe_file.txt").exists()
