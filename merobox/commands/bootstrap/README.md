@@ -26,6 +26,7 @@ bootstrap/
 │   ├── invite_open.py   # Open invitation creation step
 │   ├── join_open.py     # Join via open invitation step
 │   ├── execute.py       # Contract execution step
+│   ├── parallel.py      # Parallel execution step with failure modes
 │   ├── repeat.py        # Loop/repeat step
 │   ├── wait.py          # Wait/delay step
 │   ├── wait_for_sync.py # Wait for node sync verification step
@@ -87,9 +88,68 @@ Generate a sample workflow configuration file.
 ### Execution Steps
 - **call**: Execute contract functions
 - **repeat**: Loop through step sequences
+- **parallel**: Execute multiple step groups concurrently (see [Parallel Execution](#parallel-execution))
 - **wait**: Add delays between steps
 - **wait_for_sync**: Wait for nodes to reach consensus (root hash verification)
 - **script**: Execute custom scripts
+
+## Parallel Execution
+
+The `parallel` step type allows executing multiple step groups concurrently with configurable error handling.
+
+### Failure Modes
+
+The `failure_mode` configuration option controls how failures are handled:
+
+| Mode | Default | Behavior |
+|------|---------|----------|
+| `fail-slow` | **Yes** | Wait for all groups to complete, then return failure if any group failed |
+| `fail-fast` | No | Immediately cancel all other running groups when one fails |
+| `continue-on-error` | No | Wait for all groups, return success if at least one succeeded |
+
+### Default Behavior
+
+**The default mode is `fail-slow`**, which maintains backward compatibility. If no `failure_mode` is specified, all parallel groups will run to completion before reporting any failures.
+
+### Configuration Example
+
+```yaml
+- name: Parallel Operations
+  type: parallel
+  failure_mode: fail-fast        # Error handling (fail-fast, fail-slow, continue-on-error)
+  groups:
+    - name: Group1
+      count: 10                  # Number of iterations for this group
+      steps:
+        - type: call
+          node: node1
+          method: operation1
+    - name: Group2
+      steps:
+        - type: call
+          node: node2
+          method: operation2
+  outputs:
+    group1_duration: Group1_duration_seconds
+    overall_time: overall_duration_seconds
+```
+
+### Exported Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `group_count` | int | Total number of groups executed |
+| `parallel_success_count` | int | Number of groups that completed successfully |
+| `parallel_failure_count` | int | Number of groups that failed |
+| `overall_duration_seconds` | float | Total execution time for all groups |
+| `overall_duration_ms` | float | Total execution time in milliseconds |
+| `{group_name}_duration_seconds` | float | Duration for each named group |
+
+### Use Cases
+
+- **fail-slow**: Use when you want all operations to attempt execution (e.g., data collection from multiple sources)
+- **fail-fast**: Use when early termination is desired to save resources (e.g., critical operations where any failure is fatal)
+- **continue-on-error**: Use for resilient workflows where partial success is acceptable (e.g., optional operations)
 
 ## Configuration
 
