@@ -17,14 +17,12 @@ import requests
 from rich.console import Console
 from tqdm import tqdm
 
-<<<<<<< bounty-fix/validate-tarfile-extraction-paths-to-pre-mlrug3j3
-from .utils import safe_tar_extract
-=======
 from merobox.commands.constants import (
     CONTRACT_DOWNLOAD_LOCK_TIMEOUT,
     CONTRACT_DOWNLOAD_TIMEOUT,
 )
->>>>>>> master
+
+from .utils import safe_tar_extract
 
 try:
     from filelock import FileLock
