@@ -22,6 +22,14 @@ from merobox.commands.config_utils import (
     apply_e2e_defaults,
     apply_near_devnet_config_to_file,
 )
+from merobox.commands.constants import (
+    CONTAINER_STOP_TIMEOUT,
+    DEFAULT_P2P_PORT,
+    DEFAULT_RPC_PORT,
+    NODE_STARTUP_DELAY,
+    P2P_PORT_BINDING,
+    RPC_PORT_BINDING,
+)
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -99,7 +107,7 @@ class DockerManager:
             for node_name in list(self.nodes.keys()):
                 try:
                     container = self.nodes[node_name]
-                    container.stop(timeout=10)
+                    container.stop(timeout=CONTAINER_STOP_TIMEOUT)
                     container.remove()
                     console.print(f"[green]✓ Stopped container {node_name}[/green]")
                 except Exception as e:
@@ -227,7 +235,7 @@ class DockerManager:
         try:
             container = self.client.containers.get(node_name)
             container.reload()
-            host_port = self._extract_host_port(container, "2528/tcp")
+            host_port = self._extract_host_port(container, RPC_PORT_BINDING)
             if host_port is not None:
                 self.node_rpc_ports[node_name] = host_port
             return host_port
@@ -239,8 +247,8 @@ class DockerManager:
     def run_node(
         self,
         node_name: str,
-        port: int = 2428,
-        rpc_port: int = 2528,
+        port: int = DEFAULT_P2P_PORT,
+        rpc_port: int = DEFAULT_RPC_PORT,
         chain_id: str = "testnet-1",
         data_dir: str = None,
         image: str = None,
@@ -412,10 +420,10 @@ class DockerManager:
                 "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
                 "environment": node_env,
                 "ports": {
-                    # Map external P2P port to internal P2P port (0.0.0.0:2428)
-                    "2428/tcp": port,
-                    # Map external RPC port to internal admin server port (127.0.0.1:2528)
-                    "2528/tcp": rpc_port,
+                    # Map external P2P port to internal P2P port
+                    P2P_PORT_BINDING: port,
+                    # Map external RPC port to internal admin server port
+                    RPC_PORT_BINDING: rpc_port,
                 },
                 "volumes": {
                     os.path.abspath(data_dir): {"bind": "/app/data", "mode": "rw"}
@@ -480,7 +488,9 @@ class DockerManager:
                     f"traefik.http.middlewares.auth-{node_name}.forwardauth.trustForwardHeader": "true",
                     f"traefik.http.middlewares.auth-{node_name}.forwardauth.authResponseHeaders": "X-Auth-User,X-Auth-Permissions",
                     # Define the service
-                    f"traefik.http.services.{node_name}-core.loadbalancer.server.port": "2528",
+                    f"traefik.http.services.{node_name}-core.loadbalancer.server.port": str(
+                        DEFAULT_RPC_PORT
+                    ),
                     # Shared middlewares (from docker-compose)
                     "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
                     "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
@@ -523,9 +533,9 @@ class DockerManager:
                         "--server-host",
                         "0.0.0.0",
                         "--server-port",
-                        str(2528),
+                        str(DEFAULT_RPC_PORT),
                         "--swarm-port",
-                        str(2428),
+                        str(DEFAULT_P2P_PORT),
                     ]
                     # Note: Don't set entrypoint - use image default
                 else:
@@ -541,9 +551,9 @@ class DockerManager:
                         "--server-host",
                         "0.0.0.0",
                         "--server-port",
-                        str(2528),
+                        str(DEFAULT_RPC_PORT),
                         "--swarm-port",
-                        str(2428),
+                        str(DEFAULT_P2P_PORT),
                     ]
                 init_config["detach"] = False
 
@@ -665,7 +675,7 @@ class DockerManager:
                     )
 
             # Wait a moment and check if container is still running
-            time.sleep(3)
+            time.sleep(NODE_STARTUP_DELAY)
             container.reload()
 
             if container.status != "running":
@@ -696,7 +706,7 @@ class DockerManager:
             console.print(f"  - RPC/Admin Port: {rpc_port}")
             console.print(f"  - Chain ID: {chain_id}")
             console.print(f"  - Data Directory: {data_dir}")
-            host_rpc_port = self._extract_host_port(container, "2528/tcp")
+            host_rpc_port = self._extract_host_port(container, RPC_PORT_BINDING)
             if host_rpc_port is None and rpc_port is not None:
                 try:
                     host_rpc_port = int(rpc_port)
@@ -722,7 +732,9 @@ class DockerManager:
             console.print(f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
             return False
 
-    def _find_available_ports(self, count: int, start_port: int = 2428) -> list[int]:
+    def _find_available_ports(
+        self, count: int, start_port: int = DEFAULT_P2P_PORT
+    ) -> list[int]:
         """Find available ports starting from start_port."""
         import socket
 
@@ -1083,13 +1095,13 @@ class DockerManager:
 
         # Find available ports automatically if not specified
         if base_port is None:
-            p2p_ports = self._find_available_ports(count, 2428)
+            p2p_ports = self._find_available_ports(count, DEFAULT_P2P_PORT)
         else:
             p2p_ports = [base_port + i for i in range(count)]
 
         if base_rpc_port is None:
             # Use a different range for RPC ports to avoid conflicts
-            rpc_ports = self._find_available_ports(count, 2528)
+            rpc_ports = self._find_available_ports(count, DEFAULT_RPC_PORT)
         else:
             rpc_ports = [base_rpc_port + i for i in range(count)]
 
@@ -1140,7 +1152,7 @@ class DockerManager:
         try:
             if node_name in self.nodes:
                 container = self.nodes[node_name]
-                container.stop(timeout=10)
+                container.stop(timeout=CONTAINER_STOP_TIMEOUT)
                 container.remove()
                 del self.nodes[node_name]
                 console.print(f"[green]✓ Stopped and removed node {node_name}[/green]")
@@ -1150,7 +1162,7 @@ class DockerManager:
                 # Try to find container by name
                 try:
                     container = self.client.containers.get(node_name)
-                    container.stop(timeout=10)
+                    container.stop(timeout=CONTAINER_STOP_TIMEOUT)
                     container.remove()
                     console.print(
                         f"[green]✓ Stopped and removed node {node_name}[/green]"
@@ -1186,7 +1198,7 @@ class DockerManager:
 
                 for container in containers:
                     try:
-                        container.stop(timeout=10)
+                        container.stop(timeout=CONTAINER_STOP_TIMEOUT)
                         container.remove()
                         console.print(
                             f"[green]✓ Stopped and removed {container.name}[/green]"
@@ -1410,17 +1422,17 @@ class DockerManager:
 
             # Check if admin server is listening on localhost
             result = container.exec_run(
-                "sh -c 'timeout 3 bash -c \"</dev/tcp/127.0.0.1/2528\"' 2>&1 || echo 'Connection failed'"
+                f"sh -c 'timeout 3 bash -c \"</dev/tcp/127.0.0.1/{DEFAULT_RPC_PORT}\"' 2>&1 || echo 'Connection failed'"
             )
 
             if "Connection failed" in result.output.decode():
                 console.print(
-                    f"[red]✗ Admin server not accessible on localhost:2528 for {node_name}[/red]"
+                    f"[red]✗ Admin server not accessible on localhost:{DEFAULT_RPC_PORT} for {node_name}[/red]"
                 )
                 return False
             else:
                 console.print(
-                    f"[green]✓ Admin server accessible on localhost:2528 for {node_name}[/green]"
+                    f"[green]✓ Admin server accessible on localhost:{DEFAULT_RPC_PORT} for {node_name}[/green]"
                 )
                 return True
 
