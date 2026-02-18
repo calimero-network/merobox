@@ -242,7 +242,7 @@ def bootstrap():
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Validate workflow without executing. Checks config, resolves variables, and verifies node availability.",
+    help="Validate workflow without executing. Checks config, resolves variables, and checks node configuration.",
 )
 def run(
     config_file,

@@ -48,10 +48,16 @@ class TestVarPatternModule:
         assert matches == ["my_long_variable_name"]
 
     def test_dotted_names_not_captured(self, var_pattern):
-        """Test that dotted names like {{env.VAR}} are not fully captured."""
+        """Test that dotted names like {{env.VAR}} are not captured at all.
+
+        The regex requires the entire content between {{ and }} to be word
+        characters, so {{env.HOME}} won't match because the dot is not a
+        word character.
+        """
         text = "{{env.HOME}}"
         matches = var_pattern.findall(text)
-        assert matches == ["env"]
+        # The dot breaks the match entirely - no partial capture
+        assert matches == []
 
 
 class TestVariableExtractionLogic:
