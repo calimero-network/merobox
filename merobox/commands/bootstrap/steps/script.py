@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.constants import SCRIPT_CONTAINER_STOP_TIMEOUT
 from merobox.commands.utils import console
 
 # Constants for environment variable sanitization
@@ -652,7 +653,7 @@ class ScriptStep(BaseStep):
 
             finally:
                 try:
-                    container.stop(timeout=5)
+                    container.stop(timeout=SCRIPT_CONTAINER_STOP_TIMEOUT)
                     container.remove()
                 except Exception as e:
                     console.print(
