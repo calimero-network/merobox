@@ -1099,7 +1099,7 @@ class BaseStep:
                     field_name = assigned_var["field"]
                     # Use _get_value for field extraction (handles JSON automatically)
                     base_value = self._get_value(actual_data, field_name)
-                    # Optional explicit JSON parse (for double-encoded scenarios)
+                    # Optional explicit JSON parse (second pass for triple-encoded cases)
                     if assigned_var.get("json"):
                         base_value = self._parse_json(base_value)
                     # Optional nested path within the base value
