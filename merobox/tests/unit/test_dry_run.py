@@ -166,7 +166,10 @@ class TestDryRunConfigValidation:
 
         assert "remote_nodes" in config
         assert "nodes" not in config
-        assert config["remote_nodes"]["prod-node"]["url"] == "https://node.example.com:2428"
+        assert (
+            config["remote_nodes"]["prod-node"]["url"]
+            == "https://node.example.com:2428"
+        )
 
 
 class TestDryRunNodeReferences:
@@ -254,6 +257,7 @@ class TestDryRunOutput:
         consumed = set()
 
         import re
+
         pattern = re.compile(r"\{\{(\w+)\}\}")
 
         def extract_vars(obj):
@@ -299,6 +303,7 @@ class TestDryRunOutput:
         consumed = set()
 
         import re
+
         pattern = re.compile(r"\{\{(\w+)\}\}")
 
         for step in steps:

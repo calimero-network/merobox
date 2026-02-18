@@ -527,9 +527,7 @@ class WorkflowExecutor:
             # Check for undefined variable references
             undefined_vars = consumed_vars - produced_vars
             # Filter out variables that might be resolved dynamically
-            undefined_vars = {
-                v for v in undefined_vars if not v.startswith("env.")
-            }
+            undefined_vars = {v for v in undefined_vars if not v.startswith("env.")}
 
             if undefined_vars:
                 warnings.append(
@@ -549,7 +547,9 @@ class WorkflowExecutor:
         console.print("[bold]Dry-run Summary:[/bold]")
 
         if validation_errors:
-            console.print(f"\n[red]❌ Validation failed with {len(validation_errors)} error(s):[/red]")
+            console.print(
+                f"\n[red]❌ Validation failed with {len(validation_errors)} error(s):[/red]"
+            )
             for error in validation_errors:
                 console.print(f"  [red]• {error}[/red]")
         else:
