@@ -749,6 +749,7 @@ class BinaryManager:
         near_devnet_config: dict = None,  # Enable NEAR Devnet
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
+        merod_args: Optional[str] = None,  # Additional arguments to pass to merod run
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -766,6 +767,7 @@ class BinaryManager:
             log_level: RUST_LOG level
             rust_backtrace: RUST_BACKTRACE level
             auth_mode: Authentication mode ('embedded' or 'proxy')
+            merod_args: Additional arguments to pass to merod run command
 
         Returns:
             True if all nodes started successfully
@@ -829,6 +831,7 @@ class BinaryManager:
                 near_devnet_config=node_specific_near_config,
                 bootstrap_nodes=bootstrap_nodes,
                 auth_mode=auth_mode,
+                merod_args=merod_args,
             ):
                 success_count += 1
             else:

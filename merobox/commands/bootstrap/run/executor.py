@@ -640,6 +640,8 @@ class WorkflowExecutor:
                 if self.is_binary_mode:
                     if self.auth_mode:
                         run_multiple_kwargs["auth_mode"] = self.auth_mode
+                    if self.merod_args:
+                        run_multiple_kwargs["merod_args"] = self.merod_args
                 else:
                     run_multiple_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
@@ -855,45 +857,78 @@ class WorkflowExecutor:
         return True
 
     async def _start_single_node(
-        self, node_name: str, node_config: dict | None = None, nodes_config: dict | None = None
+        self,
+        node_name: str,
+        node_config: dict | None = None,
+        nodes_config: dict | None = None,
     ) -> bool:
         """
         Start a single node with proper configuration.
-        
+
         This is a helper method for start_node step to start individual nodes
         with all the proper configuration from the workflow.
-        
+
         Args:
             node_name: Name of the node to start
             node_config: Optional node-specific config dict
             nodes_config: Optional workflow nodes config dict
-            
+
         Returns:
             True if successful, False otherwise
         """
         if not self.manager:
             return False
-            
+
         # Get base config from workflow
         if nodes_config is None:
             nodes_config = self.config.get("nodes", {})
-            
-        base_port = nodes_config.get("base_port", 2428) if isinstance(nodes_config, dict) else None
-        base_rpc_port = nodes_config.get("base_rpc_port", 2528) if isinstance(nodes_config, dict) else None
-        chain_id = nodes_config.get("chain_id", "testnet-1") if isinstance(nodes_config, dict) else "testnet-1"
-        image = self.image if self.image is not None else (nodes_config.get("image") if isinstance(nodes_config, dict) else None)
-        config_path = self._resolve_config_path(nodes_config.get("config_path") if isinstance(nodes_config, dict) else None)
-        use_image_entrypoint = nodes_config.get("use_image_entrypoint", False) if isinstance(nodes_config, dict) else False
-        
+
+        base_port = (
+            nodes_config.get("base_port", 2428)
+            if isinstance(nodes_config, dict)
+            else None
+        )
+        base_rpc_port = (
+            nodes_config.get("base_rpc_port", 2528)
+            if isinstance(nodes_config, dict)
+            else None
+        )
+        chain_id = (
+            nodes_config.get("chain_id", "testnet-1")
+            if isinstance(nodes_config, dict)
+            else "testnet-1"
+        )
+        image = (
+            self.image
+            if self.image is not None
+            else (nodes_config.get("image") if isinstance(nodes_config, dict) else None)
+        )
+        config_path = self._resolve_config_path(
+            nodes_config.get("config_path") if isinstance(nodes_config, dict) else None
+        )
+        use_image_entrypoint = (
+            nodes_config.get("use_image_entrypoint", False)
+            if isinstance(nodes_config, dict)
+            else False
+        )
+
         # Use node-specific config if provided, otherwise derive from base config
         if node_config:
             port = node_config.get("port", base_port)
             rpc_port = node_config.get("rpc_port", base_rpc_port)
             node_chain_id = node_config.get("chain_id", chain_id)
-            node_image = node_config.get("image", image)
+            node_image = (
+                self.image
+                if self.image is not None
+                else node_config.get("image", image)
+            )
             data_dir = node_config.get("data_dir")
-            node_config_path = self._resolve_config_path(node_config.get("config_path", config_path))
-            node_use_image_entrypoint = node_config.get("use_image_entrypoint", use_image_entrypoint)
+            node_config_path = self._resolve_config_path(
+                node_config.get("config_path", config_path)
+            )
+            node_use_image_entrypoint = node_config.get(
+                "use_image_entrypoint", use_image_entrypoint
+            )
         else:
             # Try to extract from nodes_config if it's a dict with node-specific entries
             if isinstance(nodes_config, dict) and node_name in nodes_config:
@@ -901,10 +936,18 @@ class WorkflowExecutor:
                 port = node_cfg.get("port", base_port)
                 rpc_port = node_cfg.get("rpc_port", base_rpc_port)
                 node_chain_id = node_cfg.get("chain_id", chain_id)
-                node_image = node_cfg.get("image", image) if image else node_cfg.get("image")
+                node_image = (
+                    self.image
+                    if self.image is not None
+                    else node_cfg.get("image", image)
+                )
                 data_dir = node_cfg.get("data_dir")
-                node_config_path = self._resolve_config_path(node_cfg.get("config_path", config_path))
-                node_use_image_entrypoint = node_cfg.get("use_image_entrypoint", use_image_entrypoint)
+                node_config_path = self._resolve_config_path(
+                    node_cfg.get("config_path", config_path)
+                )
+                node_use_image_entrypoint = node_cfg.get(
+                    "use_image_entrypoint", use_image_entrypoint
+                )
             elif isinstance(nodes_config, dict) and "count" in nodes_config:
                 # Extract index from node name (e.g., "calimero-node-1" -> 1)
                 try:
@@ -912,7 +955,9 @@ class WorkflowExecutor:
                     if node_name.startswith(prefix):
                         index = int(node_name.split("-")[-1]) - 1
                         port = base_port + index if base_port is not None else None
-                        rpc_port = base_rpc_port + index if base_rpc_port is not None else None
+                        rpc_port = (
+                            base_rpc_port + index if base_rpc_port is not None else None
+                        )
                     else:
                         port = base_port
                         rpc_port = base_rpc_port
@@ -932,7 +977,7 @@ class WorkflowExecutor:
                 data_dir = None
                 node_config_path = config_path
                 node_use_image_entrypoint = use_image_entrypoint
-        
+
         # Handle NEAR devnet config if enabled
         node_near_config = None
         if self.near_devnet:
@@ -942,7 +987,7 @@ class WorkflowExecutor:
                 "contract_id": self.near_config["contract_id"],
                 **creds,
             }
-        
+
         # Build arguments for run_node
         run_node_kwargs = {
             "node_name": node_name,
@@ -971,7 +1016,7 @@ class WorkflowExecutor:
                 run_node_kwargs["merod_args"] = self.merod_args
         else:
             run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
-        
+
         return self.manager.run_node(**run_node_kwargs)
 
     async def _wait_for_nodes_ready(self) -> bool:
