@@ -252,9 +252,7 @@ class TestFindStaleDataDirs:
         assert "data/calimero-node-2" in result
 
     @patch("merobox.commands.nuke.get_running_node_names")
-    def test_respects_prefix_filter(
-        self, mock_running_nodes, tmp_path, monkeypatch
-    ):
+    def test_respects_prefix_filter(self, mock_running_nodes, tmp_path, monkeypatch):
         """Should respect prefix filter when finding stale directories."""
         monkeypatch.chdir(tmp_path)
         data_dir = tmp_path / "data"

@@ -201,7 +201,11 @@ def _detect_running_nodes(
         warnings.append(f"Docker check failed unexpectedly: {e}")
         docker_check_failed = True
     finally:
-        if created_local_manager and docker_manager and hasattr(docker_manager, "client"):
+        if (
+            created_local_manager
+            and docker_manager
+            and hasattr(docker_manager, "client")
+        ):
             try:
                 docker_manager.client.close()
             except Exception:
