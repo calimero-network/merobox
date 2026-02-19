@@ -1,4 +1,5 @@
 import json
+import logging
 import platform
 import shutil
 import subprocess
@@ -20,8 +21,11 @@ from merobox.commands.constants import (
 )
 
 from .client import NearDevnetClient
+from .utils import safe_tar_extract
 
+logger = logging.getLogger(__name__)
 console = Console()
+
 
 NEAR_SANDBOX_AWS_BASE_URL = (
     "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore"
@@ -95,7 +99,7 @@ class SandboxManager:
 
             console.print("[yellow]Extracting...[/yellow]")
             with tarfile.open(tar_path) as tar:
-                tar.extractall(path=self.home_dir)
+                safe_tar_extract(tar, self.home_dir)
 
             # Clean up tar and ensure binary is executable
             tar_path.unlink()
@@ -170,9 +174,15 @@ class SandboxManager:
             )
             # Wait for OS to release the port
             time.sleep(CLEANUP_DELAY)
-        except Exception:
-            # pkill might fail or not be present, which is fine if no process exists
-            pass
+        except FileNotFoundError:
+            # pkill command not found on this system, which is fine
+            logger.debug("pkill command not found, skipping sandbox cleanup")
+        except OSError as e:
+            # OS-level errors (permissions, etc.)
+            logger.debug("OS error during sandbox cleanup: %s", e)
+        except subprocess.SubprocessError as e:
+            # Subprocess execution errors
+            logger.debug("Subprocess error during sandbox cleanup: %s", e)
 
     async def stop(self):
         """Async stop that closes clients and process."""

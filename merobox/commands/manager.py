@@ -2,10 +2,9 @@
 Calimero Manager - Core functionality for managing Calimero nodes in Docker containers.
 """
 
-import atexit
+import logging
 import os
 import shutil
-import signal
 import sys
 import time
 import uuid
@@ -16,6 +15,7 @@ import docker
 from rich.console import Console
 from rich.table import Table
 
+from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
@@ -28,12 +28,78 @@ from merobox.commands.constants import (
     NODE_STARTUP_DELAY,
     P2P_PORT_BINDING,
     RPC_PORT_BINDING,
+    CleanupResult,
 )
 
+logger = logging.getLogger(__name__)
 console = Console()
 
+# Default CORS origins for localhost development
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8080",
+]
 
-class DockerManager:
+# Explicit headers allowed in CORS requests (required when credentials are enabled)
+# Note: wildcard '*' doesn't work with credentials, so we list headers explicitly
+CORS_ALLOWED_HEADERS = (
+    "Accept,Accept-Language,Content-Language,Content-Type,"
+    "Authorization,X-Requested-With,X-Auth-Token,Cache-Control"
+)
+
+
+def _validate_cors_origins(origins: list[str]) -> list[str]:
+    """
+    Validate and sanitize CORS origins list.
+
+    Rejects wildcard '*' and origins containing commas to prevent CORS injection.
+
+    Args:
+        origins: List of origin URLs to validate
+
+    Returns:
+        The validated origins list
+
+    Raises:
+        ValueError: If an origin is invalid (wildcard or contains comma)
+    """
+    validated = []
+    for origin in origins:
+        if origin == "*":
+            raise ValueError(
+                "Wildcard '*' is not allowed in cors_allowed_origins. "
+                "Please specify explicit origins."
+            )
+        if "," in origin:
+            raise ValueError(
+                f"Origin '{origin}' contains a comma which is not allowed. "
+                "Please specify origins as separate list items."
+            )
+        validated.append(origin.strip())
+    return validated
+
+
+def _get_node_hostname(node_name: str) -> str:
+    """
+    Transform node name into a hostname for nip.io.
+
+    Transforms 'calimero-foo-bar' into 'foobar' for use in nip.io domains.
+    The 'calimero-' prefix is removed and hyphens are stripped to create
+    a simple hostname suitable for subdomain use.
+
+    Args:
+        node_name: The node name (e.g., 'calimero-node-1')
+
+    Returns:
+        The transformed hostname (e.g., 'node1')
+    """
+    return node_name.replace("calimero-", "").replace("-", "")
+
+
+class DockerManager(CleanupMixin):
     """Manages Calimero nodes in Docker containers."""
 
     def __init__(self, enable_signal_handlers: bool = True):
@@ -45,6 +111,8 @@ class DockerManager:
                 shutdown on SIGINT/SIGTERM. Set to False in tests or when managing
                 signals externally.
         """
+        self._init_cleanup_state()
+
         try:
             self.client = docker.from_env()
         except Exception as e:
@@ -55,74 +123,56 @@ class DockerManager:
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
-        self._shutting_down = False
-        self._original_sigint_handler = None
-        self._original_sigterm_handler = None
 
         if enable_signal_handlers:
             self._setup_signal_handlers()
 
-    def _setup_signal_handlers(self):
-        """Register signal handlers for graceful shutdown."""
-        # Store original handlers so we can restore them if needed
-        self._original_sigint_handler = signal.signal(
-            signal.SIGINT, self._signal_handler
+    def _cleanup_resources(
+        self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
+    ) -> CleanupResult:
+        """Stop all managed resources (containers) with graceful shutdown.
+
+        Overrides CleanupMixin._cleanup_resources to add drain_timeout and stop_timeout
+        parameters for graceful container shutdown.
+
+        Returns:
+            CleanupResult.PERFORMED: Cleanup was executed by this call
+            CleanupResult.ALREADY_DONE: Cleanup was already completed previously
+            CleanupResult.IN_PROGRESS: Cleanup is currently in progress (re-entrant call)
+
+        Uses a shorter drain_timeout (3s) than normal operations (5s) because
+        cleanup scenarios (SIGTERM handler, atexit) need faster completion to
+        avoid blocking process termination or triggering forced kills.
+
+        Args:
+            drain_timeout: Seconds to wait for connection draining (default 3s).
+            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+        """
+        return self._cleanup_resources_guarded(
+            self._do_cleanup, drain_timeout, stop_timeout
         )
-        self._original_sigterm_handler = signal.signal(
-            signal.SIGTERM, self._signal_handler
-        )
-        # Also register atexit handler for cleanup on normal exit
-        atexit.register(self._cleanup_on_exit)
 
-    def _signal_handler(self, signum, frame):
-        """Handle SIGINT/SIGTERM signals for graceful shutdown."""
-        if self._shutting_down:
-            # Already shutting down, force exit on second signal
-            console.print("\n[red]Forced exit requested, terminating...[/red]")
-            sys.exit(1)
+    def _do_cleanup(
+        self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
+    ):
+        """Perform the actual container cleanup.
 
-        self._shutting_down = True
-        sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
-        console.print(
-            f"\n[yellow]Received {sig_name}, initiating graceful shutdown...[/yellow]"
-        )
-
-        self._cleanup_resources()
-
-        # Exit cleanly
-        sys.exit(0)
-
-    def _cleanup_on_exit(self):
-        """Cleanup handler for atexit - only runs if not already cleaned up."""
-        if not self._shutting_down:
-            self._cleanup_resources()
-
-    def _cleanup_resources(self):
-        """Stop all managed resources (containers)."""
+        Args:
+            drain_timeout: Seconds to wait for connection draining.
+            stop_timeout: Seconds to wait for container stop.
+        """
         if self.nodes:
-            console.print("[cyan]Stopping managed containers...[/cyan]")
-            # Stop all tracked nodes
-            for node_name in list(self.nodes.keys()):
-                try:
-                    container = self.nodes[node_name]
-                    container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                    container.remove()
-                    console.print(f"[green]✓ Stopped container {node_name}[/green]")
-                except Exception as e:
-                    console.print(
-                        f"[yellow]⚠️  Could not stop container {node_name}: {e}[/yellow]"
-                    )
+            console.print(
+                "[cyan]Stopping managed containers with graceful shutdown...[/cyan]"
+            )
+            containers_to_stop = [
+                (name, container) for name, container in self.nodes.items()
+            ]
+            self._graceful_stop_containers_batch(
+                containers_to_stop, drain_timeout, stop_timeout
+            )
             self.nodes.clear()
             self.node_rpc_ports.clear()
-
-    def remove_signal_handlers(self):
-        """Remove signal handlers and restore original handlers."""
-        if self._original_sigint_handler is not None:
-            signal.signal(signal.SIGINT, self._original_sigint_handler)
-            self._original_sigint_handler = None
-        if self._original_sigterm_handler is not None:
-            signal.signal(signal.SIGTERM, self._original_sigterm_handler)
-            self._original_sigterm_handler = None
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""
@@ -216,7 +266,11 @@ class DockerManager:
                     value = env_entry.split("=", 1)[1]
                     if value.isdigit():
                         return int(value)
-        except Exception:
+        except (KeyError, TypeError, AttributeError) as e:
+            logger.debug("Failed to extract host port: %s", e)
+            return None
+        except docker.errors.DockerException as e:
+            logger.debug("Docker error while extracting host port: %s", e)
             return None
 
         return None
@@ -258,6 +312,7 @@ class DockerManager:
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
+        cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -442,40 +497,56 @@ class DockerManager:
                     f"[cyan]Configuring {node_name} for auth service integration...[/cyan]"
                 )
 
+                # Configure CORS allowed origins with sensible localhost defaults
+                hostname = _get_node_hostname(node_name)
+                nip_io_origin = f"http://{hostname}.127.0.0.1.nip.io"
+                if cors_allowed_origins is None:
+                    cors_allowed_origins = DEFAULT_CORS_ORIGINS.copy()
+                    cors_allowed_origins.append(nip_io_origin)
+
+                # Validate origins to prevent CORS injection attacks
+                cors_allowed_origins = _validate_cors_origins(cors_allowed_origins)
+                cors_origins_str = ",".join(cors_allowed_origins)
+
                 # Ensure auth service stack is running
-                if not self._start_auth_service_stack(auth_image, auth_use_cached):
+                if not self._start_auth_service_stack(
+                    auth_image, auth_use_cached, cors_allowed_origins
+                ):
                     console.print(
                         "[yellow]⚠️  Warning: Auth service stack failed to start, but continuing with node setup[/yellow]"
                     )
+
+                # Use per-node CORS middleware to avoid conflicts when multiple nodes run
+                cors_middleware_name = f"cors-{node_name}"
 
                 # Add Traefik labels for auth service integration
                 auth_labels = {
                     "traefik.enable": "true",
                     # API routes (protected when auth is available)
-                    f"traefik.http.routers.{node_name}-api.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && (PathPrefix(`/jsonrpc`) || PathPrefix(`/admin-api/`))",
+                    f"traefik.http.routers.{node_name}-api.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && (PathPrefix(`/jsonrpc`) || PathPrefix(`/admin-api/`))",
                     f"traefik.http.routers.{node_name}-api.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-api.service": f"{node_name}-core",
-                    f"traefik.http.routers.{node_name}-api.middlewares": f"cors,auth-{node_name}",
+                    f"traefik.http.routers.{node_name}-api.middlewares": f"{cors_middleware_name},auth-{node_name}",
                     # WebSocket (protected when auth is available)
-                    f"traefik.http.routers.{node_name}-ws.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/ws`)",
+                    f"traefik.http.routers.{node_name}-ws.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && PathPrefix(`/ws`)",
                     f"traefik.http.routers.{node_name}-ws.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-ws.service": f"{node_name}-core",
-                    f"traefik.http.routers.{node_name}-ws.middlewares": f"cors,auth-{node_name}",
+                    f"traefik.http.routers.{node_name}-ws.middlewares": f"{cors_middleware_name},auth-{node_name}",
                     # SSE (Server-Sent Events) routes (protected when auth is available)
-                    f"traefik.http.routers.{node_name}-sse.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/sse`)",
+                    f"traefik.http.routers.{node_name}-sse.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && PathPrefix(`/sse`)",
                     f"traefik.http.routers.{node_name}-sse.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-sse.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-sse.middlewares": f"cors-sse-{node_name},auth-{node_name}",
                     # Admin dashboard (publicly accessible)
-                    f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
+                    f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
                     f"traefik.http.routers.{node_name}-dashboard.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-dashboard.service": f"{node_name}-core",
-                    f"traefik.http.routers.{node_name}-dashboard.middlewares": "cors",
+                    f"traefik.http.routers.{node_name}-dashboard.middlewares": cors_middleware_name,
                     # Auth service route for this node's subdomain (both /auth/ and /admin/)
-                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.rule": f"Host(`{node_name.replace('calimero-', '').replace('-', '')}.127.0.0.1.nip.io`) && (PathPrefix(`/auth/`) || PathPrefix(`/admin/`))",
+                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && (PathPrefix(`/auth/`) || PathPrefix(`/admin/`))",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.entrypoints": "web",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.service": "auth-service",
-                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.middlewares": "cors,auth-headers",
+                    f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.middlewares": f"{cors_middleware_name},auth-headers",
                     f"traefik.http.routers.{node_name.replace('calimero-', '')}-auth.priority": "200",
                     # Forward Auth middleware
                     f"traefik.http.middlewares.auth-{node_name}.forwardauth.address": "http://auth:3001/auth/validate",
@@ -485,20 +556,22 @@ class DockerManager:
                     f"traefik.http.services.{node_name}-core.loadbalancer.server.port": str(
                         DEFAULT_RPC_PORT
                     ),
-                    # Shared middlewares (from docker-compose)
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
-                    "traefik.http.middlewares.cors.headers.addvaryheader": "true",
-                    "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
-                    # SSE-specific CORS middleware
+                    # Per-node CORS middleware (explicit headers required for credentials)
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolallowheaders": CORS_ALLOWED_HEADERS,
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolalloworiginlist": cors_origins_str,
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolmaxage": "100",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.addvaryheader": "true",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    f"traefik.http.middlewares.{cors_middleware_name}.headers.accesscontrolallowcredentials": "true",
+                    # SSE-specific CORS middleware (per-node)
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowmethods": "GET,OPTIONS",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowheaders": "Cache-Control,Last-Event-ID,Accept,Accept-Language,Content-Language,Content-Type,Authorization",
-                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolalloworiginlist": "*",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolalloworiginlist": cors_origins_str,
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolmaxage": "86400",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.addvaryheader": "true",
                     f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    f"traefik.http.middlewares.cors-sse-{node_name}.headers.accesscontrolallowcredentials": "true",
                 }
 
                 # Add auth labels to container config
@@ -789,7 +862,10 @@ class DockerManager:
             )
 
     def _start_auth_service_stack(
-        self, auth_image: str = None, auth_use_cached: bool = False
+        self,
+        auth_image: str = None,
+        auth_use_cached: bool = False,
+        cors_allowed_origins: list[str] = None,
     ):
         """Start the Traefik proxy and auth service containers."""
         try:
@@ -815,7 +891,9 @@ class DockerManager:
 
             # Start Auth service
             if not auth_running:
-                if not self._start_auth_container(auth_image, auth_use_cached):
+                if not self._start_auth_container(
+                    auth_image, auth_use_cached, cors_allowed_origins
+                ):
                     return False
 
             # Wait a bit for services to be ready
@@ -897,7 +975,10 @@ class DockerManager:
             return False
 
     def _start_auth_container(
-        self, auth_image: str = None, auth_use_cached: bool = False
+        self,
+        auth_image: str = None,
+        auth_use_cached: bool = False,
+        cors_allowed_origins: list[str] = None,
     ):
         """Start the Auth service container."""
         try:
@@ -953,6 +1034,14 @@ class DockerManager:
                         "[cyan]Environment variable CALIMERO_AUTH_FRONTEND_FETCH=0 detected, using cached auth frontend[/cyan]"
                     )
 
+            # Configure CORS allowed origins with sensible localhost defaults
+            if cors_allowed_origins is None:
+                cors_allowed_origins = DEFAULT_CORS_ORIGINS.copy()
+
+            # Validate origins to prevent CORS injection attacks
+            cors_allowed_origins = _validate_cors_origins(cors_allowed_origins)
+            cors_origins_str = ",".join(cors_allowed_origins)
+
             auth_config = {
                 "name": "auth",
                 "image": auth_image_to_use,
@@ -968,19 +1057,20 @@ class DockerManager:
                     "traefik.http.routers.auth-public.rule": "Host(`localhost`) && (PathPrefix(`/auth/`) || PathPrefix(`/admin/`))",
                     "traefik.http.routers.auth-public.entrypoints": "web",
                     "traefik.http.routers.auth-public.service": "auth-service",
-                    "traefik.http.routers.auth-public.middlewares": "cors,auth-headers",
+                    "traefik.http.routers.auth-public.middlewares": "cors-auth,auth-headers",
                     "traefik.http.routers.auth-public.priority": "100",
                     # Add Node ID header for auth service
                     "traefik.http.middlewares.auth-headers.headers.customrequestheaders.X-Node-ID": "auth",
                     # Define the service
                     "traefik.http.services.auth-service.loadbalancer.server.port": "3001",
-                    # CORS middleware
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
-                    "traefik.http.middlewares.cors.headers.accesscontrolallowheaders": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist": "*",
-                    "traefik.http.middlewares.cors.headers.accesscontrolmaxage": "100",
-                    "traefik.http.middlewares.cors.headers.addvaryheader": "true",
-                    "traefik.http.middlewares.cors.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    # CORS middleware for auth service (explicit headers required for credentials)
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolallowmethods": "GET,OPTIONS,PUT,POST,DELETE",
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolallowheaders": CORS_ALLOWED_HEADERS,
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolalloworiginlist": cors_origins_str,
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolmaxage": "100",
+                    "traefik.http.middlewares.cors-auth.headers.addvaryheader": "true",
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolexposeheaders": "X-Auth-Error",
+                    "traefik.http.middlewares.cors-auth.headers.accesscontrolallowcredentials": "true",
                 },
             }
 
@@ -1078,6 +1168,7 @@ class DockerManager:
         near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
+        cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1101,7 +1192,7 @@ class DockerManager:
 
         success_count = 0
         for i in range(count):
-            node_name = f"{prefix}-{i+1}"
+            node_name = f"{prefix}-{i + 1}"
             port = p2p_ports[i]
             rpc_port = rpc_ports[i]
 
@@ -1128,6 +1219,7 @@ class DockerManager:
                 near_devnet_config=node_specific_near_config,
                 bootstrap_nodes=bootstrap_nodes,
                 use_image_entrypoint=use_image_entrypoint,
+                cors_allowed_origins=cors_allowed_origins,
             ):
                 success_count += 1
             else:
@@ -1141,28 +1233,136 @@ class DockerManager:
         )
         return success_count == count
 
-    def stop_node(self, node_name: str) -> bool:
-        """Stop a Calimero node container."""
+    def _graceful_stop_container(
+        self,
+        container,
+        container_name: str,
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> bool:
+        """Gracefully stop a single container with connection draining.
+
+        Delegates to _graceful_stop_containers_batch with a single-element list
+        to avoid duplicating the three-phase shutdown logic.
+
+        Args:
+            container: Docker container object
+            container_name: Name of the container (for logging)
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            True if container was stopped successfully, False otherwise
+        """
+        success_count, failed = self._graceful_stop_containers_batch(
+            [(container_name, container)], drain_timeout, stop_timeout
+        )
+        return success_count == 1 and not failed
+
+    def _graceful_stop_containers_batch(
+        self,
+        containers: list[tuple[str, any]],
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> tuple[int, list[str]]:
+        """Gracefully stop multiple containers with O(timeout) complexity.
+
+        This method implements batch graceful shutdown:
+        1. Send SIGTERM to ALL containers first (parallel signal phase)
+        2. Wait ONCE for drain_timeout (shared drain period)
+        3. Stop and remove all containers
+
+        This is more efficient than sequential graceful stops which would
+        take O(n * drain_timeout) time.
+
+        Args:
+            containers: List of (container_name, container) tuples to stop
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for each container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            Tuple of (success_count, failed_names)
+        """
+        if not containers:
+            return 0, []
+
+        # Phase 1: Send SIGTERM to all containers (parallel signal)
+        console.print(
+            f"[cyan]Initiating graceful shutdown for {len(containers)} containers...[/cyan]"
+        )
+        for _container_name, container in containers:
+            try:
+                container.kill(signal="SIGTERM")
+            except docker.errors.APIError:
+                # Container may have already stopped or doesn't support signals
+                pass
+
+        # Phase 2: Single shared drain period for all containers
+        if drain_timeout > 0:
+            console.print(
+                f"[cyan]Waiting {drain_timeout}s for connection draining...[/cyan]"
+            )
+            time.sleep(drain_timeout)
+
+        # Phase 3: Stop and remove all containers
+        success_count = 0
+        failed_names = []
+
+        for container_name, container in containers:
+            try:
+                container.stop(timeout=stop_timeout)
+                container.remove()
+                console.print(
+                    f"[green]✓ Gracefully stopped and removed {container_name}[/green]"
+                )
+                success_count += 1
+            except Exception as e:
+                console.print(f"[red]✗ Failed to stop {container_name}: {str(e)}[/red]")
+                failed_names.append(container_name)
+
+        return success_count, failed_names
+
+    def stop_node(
+        self,
+        node_name: str,
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> bool:
+        """Stop a Calimero node container with graceful shutdown.
+
+        Implements graceful shutdown with connection draining:
+        1. Sends SIGTERM to disable health checks and stop accepting new connections
+        2. Waits for drain_timeout to allow in-flight requests to complete
+        3. Stops the container with stop_timeout for final cleanup
+
+        Args:
+            node_name: Name of the node to stop
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            True if node was stopped successfully, False otherwise
+        """
         try:
             if node_name in self.nodes:
                 container = self.nodes[node_name]
-                container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                container.remove()
-                del self.nodes[node_name]
-                console.print(f"[green]✓ Stopped and removed node {node_name}[/green]")
-                self.node_rpc_ports.pop(node_name, None)
-                return True
+                success = self._graceful_stop_container(
+                    container, node_name, drain_timeout, stop_timeout
+                )
+                if success:
+                    del self.nodes[node_name]
+                    self.node_rpc_ports.pop(node_name, None)
+                return success
             else:
                 # Try to find container by name
                 try:
                     container = self.client.containers.get(node_name)
-                    container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                    container.remove()
-                    console.print(
-                        f"[green]✓ Stopped and removed node {node_name}[/green]"
+                    success = self._graceful_stop_container(
+                        container, node_name, drain_timeout, stop_timeout
                     )
-                    self.node_rpc_ports.pop(node_name, None)
-                    return True
+                    if success:
+                        self.node_rpc_ports.pop(node_name, None)
+                    return success
                 except docker.errors.NotFound:
                     console.print(f"[yellow]Node {node_name} not found[/yellow]")
                     return False
@@ -1170,57 +1370,61 @@ class DockerManager:
             console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
             return False
 
-    def stop_all_nodes(self) -> bool:
-        """Stop all running Calimero nodes."""
+    def stop_all_nodes(
+        self,
+        drain_timeout: int = 5,
+        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+    ) -> bool:
+        """Stop all running Calimero nodes with graceful shutdown.
+
+        Uses batch graceful shutdown for O(timeout) complexity instead of
+        O(n * timeout) that sequential stops would require.
+
+        Args:
+            drain_timeout: Seconds to wait for connection draining (default 5s)
+            stop_timeout: Seconds to wait for each container stop (default CONTAINER_STOP_TIMEOUT)
+
+        Returns:
+            True if all nodes were stopped successfully, False otherwise
+        """
         try:
             containers = self.client.containers.list(
                 filters={"label": "calimero.node=true"}
             )
 
-            success = True
-            success_count = 0
-            failed_nodes = []
-
             if not containers:
                 console.print(
                     "[yellow]No Calimero nodes are currently running[/yellow]"
                 )
-            else:
-                console.print(
-                    f"[bold]Stopping {len(containers)} Calimero nodes...[/bold]"
-                )
+                return True
 
-                for container in containers:
-                    try:
-                        container.stop(timeout=CONTAINER_STOP_TIMEOUT)
-                        container.remove()
-                        console.print(
-                            f"[green]✓ Stopped and removed {container.name}[/green]"
-                        )
-                        success_count += 1
-                        self.node_rpc_ports.pop(container.name, None)
+            console.print(
+                f"[bold]Stopping {len(containers)} Calimero nodes with graceful shutdown...[/bold]"
+            )
 
-                        # Remove from nodes dict if present
-                        if container.name in self.nodes:
-                            del self.nodes[container.name]
+            # Build list of (name, container) tuples for batch shutdown
+            containers_to_stop = [(c.name, c) for c in containers]
 
-                    except Exception as e:
-                        console.print(
-                            f"[red]✗ Failed to stop {container.name}: {str(e)}[/red]"
-                        )
-                        failed_nodes.append(container.name)
+            success_count, failed_nodes = self._graceful_stop_containers_batch(
+                containers_to_stop, drain_timeout, stop_timeout
+            )
 
-                console.print(
-                    f"\n[bold]Stop Summary: {success_count}/{len(containers)} nodes stopped successfully[/bold]"
-                )
+            # Clean up internal tracking for successfully stopped containers
+            for container_name, _ in containers_to_stop:
+                if container_name not in failed_nodes:
+                    self.node_rpc_ports.pop(container_name, None)
+                    if container_name in self.nodes:
+                        del self.nodes[container_name]
 
-                if failed_nodes:
-                    console.print(
-                        f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]"
-                    )
-                    success = False
+            console.print(
+                f"\n[bold]Stop Summary: {success_count}/{len(containers)} nodes stopped successfully[/bold]"
+            )
 
-            return success
+            if failed_nodes:
+                console.print(f"[red]Failed to stop: {', '.join(failed_nodes)}[/red]")
+                return False
+
+            return True
 
         except Exception as e:
             console.print(f"[red]Failed to stop all nodes: {str(e)}[/red]")
