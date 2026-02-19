@@ -1,9 +1,18 @@
 import signal
+import threading
 from unittest.mock import MagicMock, patch
 
 import docker
+import pytest
 
-from merobox.commands.manager import DockerManager
+from merobox.commands.constants import CleanupResult
+from merobox.commands.manager import (
+    CORS_ALLOWED_HEADERS,
+    DEFAULT_CORS_ORIGINS,
+    DockerManager,
+    _get_node_hostname,
+    _validate_cors_origins,
+)
 
 
 @patch("docker.from_env")
@@ -177,6 +186,127 @@ def test_docker_manager_remove_signal_handlers(mock_docker):
 
 
 @patch("docker.from_env")
+def test_docker_manager_cleanup_prevents_double_cleanup(mock_docker):
+    """Test that _cleanup_resources prevents double cleanup races."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Add mock containers to track
+    mock_container1 = MagicMock()
+    manager.nodes = {"node1": mock_container1}
+    manager.node_rpc_ports = {"node1": 2528}
+
+    # First cleanup should work and return PERFORMED
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.PERFORMED
+    assert mock_container1.stop.call_count == 1
+    assert manager._cleanup_done is True
+
+    # Second cleanup should be skipped and return ALREADY_DONE
+    mock_container2 = MagicMock()
+    manager.nodes = {"node2": mock_container2}
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.ALREADY_DONE
+
+    # Container2 should not have been stopped
+    assert mock_container2.stop.call_count == 0
+
+
+@patch("docker.from_env")
+def test_docker_manager_cleanup_concurrent_access(mock_docker):
+    """Test that _cleanup_resources handles concurrent access correctly.
+
+    Spawns multiple threads calling _cleanup_resources simultaneously to verify
+    the lock ensures at-most-once execution under concurrent access.
+    Also verifies return value distribution: exactly one True, rest False.
+    """
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Add a mock container
+    mock_container = MagicMock()
+    manager.nodes = {"node1": mock_container}
+    manager.node_rpc_ports = {"node1": 2528}
+
+    # Collect return values from each thread
+    results = []
+    results_lock = threading.Lock()
+
+    # Spawn multiple threads calling cleanup concurrently
+    threads = []
+    num_threads = 10
+    barrier = threading.Barrier(num_threads)
+
+    def thread_func():
+        barrier.wait()  # Synchronize all threads to start at once
+        result = manager._cleanup_resources()
+        with results_lock:
+            results.append(result)
+
+    for _ in range(num_threads):
+        t = threading.Thread(target=thread_func)
+        threads.append(t)
+        t.start()
+
+    # Wait for all threads to complete
+    for t in threads:
+        t.join()
+
+    # Verify cleanup was only performed once despite concurrent access
+    assert mock_container.stop.call_count == 1
+    assert mock_container.remove.call_count == 1
+
+    # Verify return value distribution: exactly one PERFORMED, rest ALREADY_DONE
+    performed_count = sum(1 for r in results if r == CleanupResult.PERFORMED)
+    done_count = sum(1 for r in results if r == CleanupResult.ALREADY_DONE)
+    in_progress_count = sum(1 for r in results if r == CleanupResult.IN_PROGRESS)
+    assert performed_count == 1, f"Expected exactly 1 PERFORMED, got {performed_count}"
+    assert (
+        done_count == num_threads - 1
+    ), f"Expected {num_threads - 1} ALREADY_DONE, got {done_count}"
+    assert in_progress_count == 0, f"Expected 0 IN_PROGRESS, got {in_progress_count}"
+
+
+@patch("docker.from_env")
+def test_docker_manager_cleanup_returns_in_progress_when_flag_set(mock_docker):
+    """Test that cleanup returns IN_PROGRESS when _cleanup_in_progress flag is set.
+
+    This tests the flag check logic specifically by manually setting the flag.
+    In production, this would occur when a signal handler calls cleanup while
+    atexit cleanup is already running in the same thread (RLock allows re-entry).
+    """
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Manually set cleanup in progress to simulate mid-cleanup state
+    manager._cleanup_in_progress = True
+
+    # Calling cleanup while in progress should return IN_PROGRESS
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.IN_PROGRESS
+
+    # Reset and verify normal cleanup works
+    manager._cleanup_in_progress = False
+    mock_container = MagicMock()
+    manager.nodes = {"node1": mock_container}
+
+    result = manager._cleanup_resources()
+    assert result == CleanupResult.PERFORMED
+    assert mock_container.stop.call_count == 1
+
+
+# ============================================================================
+# Graceful shutdown tests
+# ============================================================================
+
+
+@patch("docker.from_env")
 def test_graceful_stop_container_sends_sigterm(mock_docker):
     """Test that _graceful_stop_container sends SIGTERM before stopping."""
     client = MagicMock()
@@ -343,3 +473,263 @@ def test_graceful_stop_containers_batch_sends_sigterm_to_all_first(mock_docker):
 
     assert success_count == 2
     assert failed == []
+
+
+# ============================================================================
+# CORS configuration tests
+# ============================================================================
+
+
+@patch("docker.from_env")
+def test_cors_uses_explicit_origins_not_wildcard(mock_docker):
+    """Test that CORS configuration uses explicit origins instead of wildcard."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Run the node with auth_service enabled
+    manager.run_node("test-node", auth_service=True)
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+
+    # Verify labels exist and CORS origins are not wildcard
+    assert "labels" in main_config
+    labels = main_config["labels"]
+
+    # Check the per-node CORS middleware does NOT use wildcard
+    cors_origin_key = (
+        "traefik.http.middlewares.cors-test-node.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    assert labels[cors_origin_key] != "*", "CORS should not allow wildcard origin"
+
+    # Verify default localhost origins are included
+    cors_origins = labels[cors_origin_key]
+    assert "http://localhost" in cors_origins
+    assert "http://127.0.0.1" in cors_origins
+
+
+@patch("docker.from_env")
+def test_cors_custom_origins_are_used(mock_docker):
+    """Test that custom CORS origins can be specified."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Custom CORS origins
+    custom_origins = ["https://example.com", "https://myapp.example.com"]
+
+    # Run the node with auth_service enabled and custom origins
+    manager.run_node(
+        "test-node", auth_service=True, cors_allowed_origins=custom_origins
+    )
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+
+    # Verify custom origins are used (per-node middleware name)
+    labels = main_config["labels"]
+    cors_origin_key = (
+        "traefik.http.middlewares.cors-test-node.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    cors_origins = labels[cors_origin_key]
+
+    # Custom origins should be present
+    assert "https://example.com" in cors_origins
+    assert "https://myapp.example.com" in cors_origins
+
+    # Default localhost origins should NOT be present when custom ones are specified
+    assert "http://localhost:3000" not in cors_origins
+
+
+@patch("docker.from_env")
+def test_cors_uses_explicit_headers_not_wildcard(mock_docker):
+    """Test that CORS uses explicit headers instead of wildcard for credentials."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Mock container run to capture the config
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    # Run the node with auth_service enabled
+    manager.run_node("test-node", auth_service=True)
+
+    # Find the main container config (has detach=True)
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert len(main_configs) >= 1, "Expected at least one main container config"
+
+    main_config = main_configs[0]
+    labels = main_config["labels"]
+
+    # Check the per-node CORS middleware uses explicit headers
+    cors_headers_key = (
+        "traefik.http.middlewares.cors-test-node.headers.accesscontrolallowheaders"
+    )
+    assert cors_headers_key in labels
+    assert labels[cors_headers_key] != "*", "CORS headers should not be wildcard"
+    assert labels[cors_headers_key] == CORS_ALLOWED_HEADERS
+
+
+@patch("docker.from_env")
+def test_cors_origins_propagated_to_auth_service(mock_docker):
+    """Test that CORS origins are correctly propagated to auth service stack."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    # Mock internal checks
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    # Don't mock _start_auth_service_stack - let it run to verify propagation
+    # But mock the container operations it uses
+    container_configs = []
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    client.containers.run.side_effect = capture_run_config
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+    client.volumes.get.side_effect = docker.errors.NotFound("Not found")
+    client.volumes.create.return_value = MagicMock()
+
+    # Custom CORS origins
+    custom_origins = ["https://example.com", "https://myapp.example.com"]
+
+    # Run the node with auth_service enabled and custom origins
+    manager.run_node(
+        "test-node", auth_service=True, cors_allowed_origins=custom_origins
+    )
+
+    # Find the auth container config (name="auth")
+    auth_configs = [c for c in container_configs if c.get("name") == "auth"]
+    assert len(auth_configs) >= 1, "Expected auth container config"
+
+    auth_config = auth_configs[0]
+    labels = auth_config["labels"]
+
+    # Verify auth container uses custom origins
+    cors_origin_key = (
+        "traefik.http.middlewares.cors-auth.headers.accesscontrolalloworiginlist"
+    )
+    assert cors_origin_key in labels
+    cors_origins = labels[cors_origin_key]
+    assert "https://example.com" in cors_origins
+    assert "https://myapp.example.com" in cors_origins
+
+
+def test_validate_cors_origins_rejects_wildcard():
+    """Test that _validate_cors_origins rejects wildcard origin."""
+    with pytest.raises(ValueError, match="Wildcard"):
+        _validate_cors_origins(["http://localhost", "*"])
+
+
+def test_validate_cors_origins_rejects_comma():
+    """Test that _validate_cors_origins rejects origins with commas."""
+    with pytest.raises(ValueError, match="comma"):
+        _validate_cors_origins(["http://localhost,http://evil.com"])
+
+
+def test_validate_cors_origins_valid():
+    """Test that _validate_cors_origins accepts valid origins."""
+    origins = ["http://localhost", "https://example.com"]
+    result = _validate_cors_origins(origins)
+    assert result == origins
+
+
+def test_get_node_hostname():
+    """Test hostname transformation from node name."""
+    assert _get_node_hostname("calimero-node-1") == "node1"
+    assert _get_node_hostname("calimero-foo-bar") == "foobar"
+    assert _get_node_hostname("test-node") == "testnode"
+
+
+def test_default_cors_origins_constant():
+    """Test that DEFAULT_CORS_ORIGINS has expected values."""
+    assert "http://localhost" in DEFAULT_CORS_ORIGINS
+    assert "http://127.0.0.1" in DEFAULT_CORS_ORIGINS
+    assert "http://localhost:3000" in DEFAULT_CORS_ORIGINS

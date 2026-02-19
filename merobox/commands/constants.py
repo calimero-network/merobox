@@ -2,6 +2,23 @@
 Constants and configuration values used across the merobox codebase.
 """
 
+from enum import Enum, auto
+
+
+class CleanupResult(Enum):
+    """Result of cleanup operation for thread-safe cleanup methods.
+
+    Used by DockerManager and BinaryManager to communicate cleanup status:
+    - PERFORMED: Cleanup was executed by this call
+    - ALREADY_DONE: Cleanup was already completed by a previous call
+    - IN_PROGRESS: Cleanup is currently in progress (re-entrant call)
+    """
+
+    PERFORMED = auto()
+    ALREADY_DONE = auto()
+    IN_PROGRESS = auto()
+
+
 # API Endpoints
 JSONRPC_ENDPOINT = "/jsonrpc"
 ADMIN_API_BASE = "/admin-api"
