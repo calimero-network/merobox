@@ -12,6 +12,7 @@ import asyncio
 import os
 from typing import Any, Optional
 
+from merobox.commands.auth import close_shared_session
 from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.utils import console
@@ -228,6 +229,8 @@ async def run_workflow(
     except Exception as e:
         console.print(f"[red]Failed to execute workflow: {str(e)}[/red]")
         return False
+    finally:
+        await close_shared_session()
 
 
 def run_workflow_sync(

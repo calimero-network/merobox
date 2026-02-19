@@ -30,6 +30,7 @@ from merobox.commands.auth import (
     AUTH_METHOD_USER_PASSWORD,
     AuthManager,
     AuthToken,
+    run_with_shared_session_cleanup,
 )
 from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
@@ -631,21 +632,23 @@ class NodeResolver:
         Returns:
             ResolvedNode.
         """
+        # Create the resolve coroutine wrapped with session cleanup
+        coro = run_with_shared_session_cleanup(
+            self.resolve(
+                node_ref,
+                username=username,
+                password=password,
+                api_key=api_key,
+                prompt_for_credentials=prompt_for_credentials,
+                skip_auth=skip_auth,
+            )
+        )
+
         try:
-            loop = asyncio.get_running_loop()
-            # Already in an async context - use nest_asyncio or run in thread
+            asyncio.get_running_loop()
+            # Already in an async context - run in thread to avoid blocking
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(
-                    asyncio.run,
-                    self.resolve(
-                        node_ref,
-                        username=username,
-                        password=password,
-                        api_key=api_key,
-                        prompt_for_credentials=prompt_for_credentials,
-                        skip_auth=skip_auth,
-                    ),
-                )
+                future = executor.submit(asyncio.run, coro)
                 return future.result()
         except RuntimeError:
             # No running loop - safe to use run_until_complete
@@ -655,16 +658,7 @@ class NodeResolver:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            return loop.run_until_complete(
-                self.resolve(
-                    node_ref,
-                    username=username,
-                    password=password,
-                    api_key=api_key,
-                    prompt_for_credentials=prompt_for_credentials,
-                    skip_auth=skip_auth,
-                )
-            )
+            return loop.run_until_complete(coro)
 
     def get_node_url(self, node_ref: str) -> str:
         """Get the URL for a node reference without authentication.
