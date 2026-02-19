@@ -2,7 +2,9 @@
 Stop node step executor - Stop nodes during workflow execution.
 """
 
-from typing import Any
+from typing import Any, Optional
+
+import docker
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -10,6 +12,35 @@ from merobox.commands.utils import console
 
 class StopNodeStep(BaseStep):
     """Stop nodes during workflow execution."""
+
+    def _is_node_running(self, node_name: str) -> Optional[bool]:
+        """
+        Check if a node is running.
+
+        Returns:
+            True if running, False if confirmed stopped, None if status
+            could not be determined.
+        """
+        if not self.manager:
+            return False
+
+        if hasattr(self.manager, "is_node_running"):
+            try:
+                return self.manager.is_node_running(node_name)
+            except docker.errors.APIError as e:
+                explanation = getattr(e, "explanation", str(e))
+                console.print(
+                    f"[red]❌ Failed to check node status for {node_name}: {explanation}[/red]"
+                )
+                return None
+            except docker.errors.DockerException as e:
+                explanation = getattr(e, "explanation", str(e))
+                console.print(
+                    f"[red]❌ Docker error while checking node status for {node_name}: {explanation}[/red]"
+                )
+                return None
+
+        return None
 
     def _get_required_fields(self) -> list[str]:
         """
@@ -77,9 +108,28 @@ class StopNodeStep(BaseStep):
 
         for node_name in node_names:
             if hasattr(self.manager, "stop_node"):
+                # Stop first to avoid check-then-act races.
                 if self.manager.stop_node(node_name):
                     stopped_nodes.append(node_name)
+                    continue
+
+                # If stop failed, verify status to preserve idempotent behavior.
+                is_running = self._is_node_running(node_name)
+
+                if is_running is False:
+                    console.print(
+                        f"[yellow]⚠ Node {node_name} is not running (already stopped)[/yellow]"
+                    )
+                    stopped_nodes.append(node_name)
+                elif is_running is True:
+                    console.print(
+                        f"[red]❌ Node {node_name} is still running after stop attempt[/red]"
+                    )
+                    failed_to_stop.append(node_name)
                 else:
+                    console.print(
+                        f"[red]❌ Failed to stop {node_name}: unable to verify node status[/red]"
+                    )
                     failed_to_stop.append(node_name)
             else:
                 console.print(

@@ -117,28 +117,13 @@ class StartNodeStep(BaseStep):
         failed_to_start = []
 
         for node_name in node_names:
-            # Try to get node-specific config
+            # Try to get node-specific config (only for individually defined nodes)
             node_config = None
             if isinstance(workflow_nodes_config, dict):
                 # Check if this is a node-specific config entry
                 if node_name in workflow_nodes_config:
                     node_config = workflow_nodes_config[node_name]
-                # Otherwise, use the base config for count-based nodes
-                elif "count" in workflow_nodes_config:
-                    # Extract index from node name (e.g., "calimero-node-1" -> 1)
-                    try:
-                        prefix = workflow_nodes_config.get("prefix", "calimero-node")
-                        if node_name.startswith(prefix):
-                            index = int(node_name.split("-")[-1]) - 1
-                            base_port = workflow_nodes_config.get("base_port", 2428)
-                            base_rpc_port = workflow_nodes_config.get("base_rpc_port", 2528)
-                            node_config = {
-                                "port": base_port + index if base_port else None,
-                                "rpc_port": base_rpc_port + index if base_rpc_port else None,
-                                "chain_id": workflow_nodes_config.get("chain_id", "testnet-1"),
-                            }
-                    except (ValueError, IndexError):
-                        pass
+                # For count-based nodes, pass node_config=None and let _start_single_node handle it
 
             # Use executor's _start_single_node method if available
             if self.executor and hasattr(self.executor, "_start_single_node"):
