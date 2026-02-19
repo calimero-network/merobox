@@ -36,6 +36,7 @@ from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_READ_TIMEOUT,
     DEFAULT_RPC_PORT,
+    RPC_PORT_BINDING,
 )
 from merobox.commands.errors import AuthenticationError, NodeResolutionError
 from merobox.commands.remote_nodes import RemoteNodeManager
@@ -271,7 +272,7 @@ class NodeResolver:
                             container.attrs.get("NetworkSettings", {}).get("Ports")
                             or {}
                         )
-                        host_bindings = port_mappings.get("2528/tcp") or []
+                        host_bindings = port_mappings.get(RPC_PORT_BINDING) or []
                         for binding in host_bindings:
                             host_port = binding.get("HostPort")
                             if host_port and host_port.isdigit():

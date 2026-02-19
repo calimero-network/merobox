@@ -10,6 +10,7 @@ import click
 from rich import box
 from rich.table import Table
 
+from merobox.commands.constants import HEALTH_CHECK_TIMEOUT
 from merobox.commands.manager import DockerManager
 from merobox.commands.utils import (
     check_node_running,
@@ -26,7 +27,7 @@ async def check_node_health(rpc_url: str) -> dict:
         async with aiohttp.ClientSession() as session:
             # Check health endpoint
             async with session.get(
-                f"{rpc_url}/admin-api/health", timeout=10
+                f"{rpc_url}/admin-api/health", timeout=HEALTH_CHECK_TIMEOUT
             ) as response:
                 if response.status == 200:
                     health_data = await response.json()
@@ -35,7 +36,7 @@ async def check_node_health(rpc_url: str) -> dict:
 
             # Check authentication status
             async with session.get(
-                f"{rpc_url}/admin-api/is-authed", timeout=10
+                f"{rpc_url}/admin-api/is-authed", timeout=HEALTH_CHECK_TIMEOUT
             ) as response:
                 if response.status == 200:
                     auth_data = await response.json()
@@ -44,7 +45,7 @@ async def check_node_health(rpc_url: str) -> dict:
 
             # Check peers count
             async with session.get(
-                f"{rpc_url}/admin-api/peers", timeout=10
+                f"{rpc_url}/admin-api/peers", timeout=HEALTH_CHECK_TIMEOUT
             ) as response:
                 if response.status == 200:
                     peers_data = await response.json()
@@ -91,7 +92,9 @@ def extract_peers_count(peers_data):
     help="Specific node name to check (default: check all running nodes)",
 )
 @click.option(
-    "--timeout", default=10, help="Timeout in seconds for health check (default: 10)"
+    "--timeout",
+    default=HEALTH_CHECK_TIMEOUT,
+    help=f"Timeout in seconds for health check (default: {HEALTH_CHECK_TIMEOUT})",
 )
 @click.option(
     "--verbose", "-v", is_flag=True, help="Show verbose output including raw responses"

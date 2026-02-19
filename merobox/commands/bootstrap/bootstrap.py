@@ -239,6 +239,11 @@ def bootstrap():
     "--auth-password",
     help="Password for embedded auth authentication. Required when --auth-mode=embedded for workflow execution.",
 )
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Validate workflow without executing. Checks config, resolves variables, and checks node configuration.",
+)
 def run(
     config_file,
     verbose,
@@ -260,6 +265,7 @@ def run(
     auth_mode,
     auth_username,
     auth_password,
+    dry_run,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -318,6 +324,7 @@ def run(
         auth_mode=auth_mode,
         auth_username=auth_username,
         auth_password=auth_password,
+        dry_run=dry_run,
     )
     if not success:
         sys.exit(1)

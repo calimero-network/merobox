@@ -17,6 +17,13 @@ import requests
 from rich.console import Console
 from tqdm import tqdm
 
+from merobox.commands.constants import (
+    CONTRACT_DOWNLOAD_LOCK_TIMEOUT,
+    CONTRACT_DOWNLOAD_TIMEOUT,
+)
+
+from .utils import safe_tar_extract
+
 try:
     from filelock import FileLock
 except ImportError:
@@ -118,29 +125,8 @@ def _locate_contracts_after_extract(
                         f.rename(dest)
                 return cache_dir
     raise RuntimeError(
-        f"Extracted {NEAR_ASSET_NAME} does not contain "
-        f"{CONFIG_WASM} and {PROXY_WASM}"
+        f"Extracted {NEAR_ASSET_NAME} does not contain {CONFIG_WASM} and {PROXY_WASM}"
     )
-
-
-def _safe_tar_extract(tar: tarfile.TarFile, extract_base: Path) -> None:
-    """Extract tar members into extract_base, rejecting path traversal and symlinks.
-    Uses per-member validation and extract() for Python <3.12 compatibility."""
-    base_resolved = extract_base.resolve()
-    for member in tar.getmembers():
-        if member.issym() or member.islnk():
-            console.print(
-                f"[yellow]Warning: skipping symlink/hardlink in archive: {member.name!r}[/yellow]"
-            )
-            continue
-        dest = (extract_base / member.name).resolve()
-        try:
-            dest.relative_to(base_resolved)
-        except ValueError:
-            raise RuntimeError(
-                f"Rejected path traversal in archive: member name {member.name!r}"
-            ) from None
-        tar.extract(member, path=extract_base)
 
 
 def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
@@ -167,7 +153,7 @@ def ensure_calimero_near_contracts(version: str = "0.6.0") -> str:
         return _download_and_extract_impl(cache_dir, version)
 
     if FileLock is not None:
-        with FileLock(lock_path, timeout=300):
+        with FileLock(lock_path, timeout=CONTRACT_DOWNLOAD_LOCK_TIMEOUT):
             return _download_and_extract()
     _warn_no_filelock()
     return _download_and_extract()
@@ -190,7 +176,7 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
 
     console.print(f"[yellow]Fetching Calimero NEAR contracts {version}...[/yellow]")
     try:
-        r = requests.get(api_url, timeout=30)
+        r = requests.get(api_url, timeout=CONTRACT_DOWNLOAD_TIMEOUT)
         r.raise_for_status()
         data = r.json()
     except Exception as e:
@@ -258,7 +244,9 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
         )
     if checksum_url and not skip_checksum:
         try:
-            with requests.get(checksum_url, timeout=30) as cs_resp:
+            with requests.get(
+                checksum_url, timeout=CONTRACT_DOWNLOAD_TIMEOUT
+            ) as cs_resp:
                 cs_resp.raise_for_status()
                 line = (cs_resp.text or "").strip().split()
                 expected_hex = line[0] if line else ""
@@ -288,7 +276,7 @@ def _download_and_extract_impl(cache_dir: Path, version: str) -> str:
     try:
         with tarfile.open(tar_path) as tar:
             names = tar.getnames()
-            _safe_tar_extract(tar, temp_dir)
+            safe_tar_extract(tar, temp_dir)
         _safe_unlink(tar_path)
         result = _locate_contracts_after_extract(temp_dir, cache_dir, names)
     except (tarfile.TarError, OSError, RuntimeError) as e:

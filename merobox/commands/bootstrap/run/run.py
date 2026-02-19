@@ -92,6 +92,7 @@ async def run_workflow(
     auth_mode: Optional[str] = None,
     auth_username: Optional[str] = None,
     auth_password: Optional[str] = None,
+    dry_run: bool = False,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -104,6 +105,7 @@ async def run_workflow(
         auth_mode: Authentication mode for merod (binary mode only)
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
+        dry_run: If True, validate workflow without executing steps
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -203,21 +205,24 @@ async def run_workflow(
             auth_mode=effective_auth_mode,
             auth_username=auth_username,
             auth_password=auth_password,
+            dry_run=dry_run,
         )
 
         # Execute workflow
         success = await executor.execute_workflow()
 
-        if success:
-            console.print(
-                "\n[bold green]🎉 Workflow completed successfully![/bold green]"
-            )
-            if verbose and executor.workflow_results:
-                console.print("\n[bold]Workflow Results:[/bold]")
-                for key, value in executor.workflow_results.items():
-                    console.print(f"  {key}: {value}")
-        else:
-            console.print("\n[bold red]❌ Workflow failed![/bold red]")
+        # Skip duplicate messages for dry-run (executor prints its own summary)
+        if not dry_run:
+            if success:
+                console.print(
+                    "\n[bold green]🎉 Workflow completed successfully![/bold green]"
+                )
+                if verbose and executor.workflow_results:
+                    console.print("\n[bold]Workflow Results:[/bold]")
+                    for key, value in executor.workflow_results.items():
+                        console.print(f"  {key}: {value}")
+            else:
+                console.print("\n[bold red]❌ Workflow failed![/bold red]")
 
         return success
 
@@ -247,6 +252,7 @@ def run_workflow_sync(
     auth_mode: Optional[str] = None,
     auth_username: Optional[str] = None,
     auth_password: Optional[str] = None,
+    dry_run: bool = False,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -259,6 +265,7 @@ def run_workflow_sync(
         auth_mode: Authentication mode for merod (binary mode only)
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
+        dry_run: If True, validate workflow without executing steps
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -283,5 +290,6 @@ def run_workflow_sync(
             auth_mode=auth_mode,
             auth_username=auth_username,
             auth_password=auth_password,
+            dry_run=dry_run,
         )
     )

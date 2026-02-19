@@ -7,6 +7,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.call import call_function
+from merobox.commands.constants import STATE_RETRY_ATTEMPTS, STATE_RETRY_DELAY
 from merobox.commands.utils import console
 
 
@@ -166,8 +167,12 @@ class ExecuteStep(BaseStep):
             # Check if this step expects failure
             expected_failure = self.config.get("expected_failure", False)
 
-            max_state_retries = int(self.config.get("state_retry_attempts", 5))
-            state_retry_delay = float(self.config.get("state_retry_delay", 3.0))
+            max_state_retries = int(
+                self.config.get("state_retry_attempts", STATE_RETRY_ATTEMPTS)
+            )
+            state_retry_delay = float(
+                self.config.get("state_retry_delay", STATE_RETRY_DELAY)
+            )
             retry_attempt = 1
 
             while retry_attempt <= max_state_retries:

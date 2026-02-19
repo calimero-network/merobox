@@ -1,4 +1,5 @@
 import json
+import logging
 import platform
 import shutil
 import subprocess
@@ -10,9 +11,21 @@ import requests
 from rich.console import Console
 from tqdm import tqdm
 
-from .client import NearDevnetClient
+from merobox.commands.constants import (
+    CLEANUP_DELAY,
+    NEAR_SANDBOX_RPC_PORT,
+    PROCESS_WAIT_TIMEOUT,
+    RPC_INITIAL_DELAY,
+    RPC_POLL_INTERVAL,
+    RPC_WAIT_TIMEOUT,
+)
 
+from .client import NearDevnetClient
+from .utils import safe_tar_extract
+
+logger = logging.getLogger(__name__)
 console = Console()
+
 
 NEAR_SANDBOX_AWS_BASE_URL = (
     "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore"
@@ -25,7 +38,7 @@ class SandboxManager:
         self.home_dir = (
             Path(home_dir) if home_dir else Path.home() / ".merobox" / "sandbox"
         )
-        self.rpc_port = 3030
+        self.rpc_port = NEAR_SANDBOX_RPC_PORT
         self.process = None
         self.root_client = None
 
@@ -86,7 +99,7 @@ class SandboxManager:
 
             console.print("[yellow]Extracting...[/yellow]")
             with tarfile.open(tar_path) as tar:
-                tar.extractall(path=self.home_dir)
+                safe_tar_extract(tar, self.home_dir)
 
             # Clean up tar and ensure binary is executable
             tar_path.unlink()
@@ -160,10 +173,16 @@ class SandboxManager:
                 stderr=subprocess.DEVNULL,
             )
             # Wait for OS to release the port
-            time.sleep(0.5)
-        except Exception:
-            # pkill might fail or not be present, which is fine if no process exists
-            pass
+            time.sleep(CLEANUP_DELAY)
+        except FileNotFoundError:
+            # pkill command not found on this system, which is fine
+            logger.debug("pkill command not found, skipping sandbox cleanup")
+        except OSError as e:
+            # OS-level errors (permissions, etc.)
+            logger.debug("OS error during sandbox cleanup: %s", e)
+        except subprocess.SubprocessError as e:
+            # Subprocess execution errors
+            logger.debug("Subprocess error during sandbox cleanup: %s", e)
 
     async def stop(self):
         """Async stop that closes clients and process."""
@@ -179,15 +198,15 @@ class SandboxManager:
         if self.process:
             self.process.terminate()
             try:
-                self.process.wait(timeout=5)
+                self.process.wait(timeout=PROCESS_WAIT_TIMEOUT)
             except subprocess.TimeoutExpired:
                 self.process.kill()
             console.print("[yellow]NEAR Sandbox stopped[/yellow]")
             self.process = None
 
-    def _wait_for_rpc(self, timeout=10):
+    def _wait_for_rpc(self, timeout=RPC_WAIT_TIMEOUT):
         # Sleep a little bit to wait for a RPC spin up.
-        time.sleep(1.0)
+        time.sleep(RPC_INITIAL_DELAY)
         start = time.time()
 
         while time.time() - start < timeout:
@@ -198,7 +217,7 @@ class SandboxManager:
                 console.print(
                     f"[red]Failed to get status from sandbox via RPC: {e}[/red]"
                 )
-                time.sleep(0.1)
+                time.sleep(RPC_POLL_INTERVAL)
         return False
 
     def get_rpc_url(self, for_docker=False):

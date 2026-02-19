@@ -4,6 +4,7 @@ Main workflow executor - Orchestrates workflow execution and manages the overall
 
 import asyncio
 import os
+import re
 import time
 import uuid
 from typing import Any, Optional
@@ -43,7 +44,14 @@ from merobox.commands.bootstrap.steps.proposals import (
     GetProposalStep,
     ListProposalsStep,
 )
-from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
+from merobox.commands.constants import (
+    ASYNC_POLL_INTERVAL,
+    DEFAULT_P2P_PORT,
+    DEFAULT_RPC_PORT,
+    NODE_READY_TIMEOUT,
+    RESERVED_NODE_CONFIG_KEYS,
+)
+from merobox.commands.health import check_node_health
 from merobox.commands.manager import DockerManager
 from merobox.commands.near.contracts import (
     CONFIG_WASM,
@@ -53,6 +61,9 @@ from merobox.commands.near.contracts import (
 from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import console, get_node_rpc_url
+
+# Compiled regex pattern for extracting {{variable}} references
+_VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
 
 class WorkflowExecutor:
@@ -76,12 +87,14 @@ class WorkflowExecutor:
         auth_mode: Optional[str] = None,
         auth_username: Optional[str] = None,
         auth_password: Optional[str] = None,
+        dry_run: bool = False,
     ):
         self.config = config
         self.manager = manager
         self.workflow_dir = workflow_dir or "."
         self.sandbox = None
         self.near_config = {}
+        self.dry_run = dry_run
 
         # Embedded auth credentials
         self.auth_username = auth_username
@@ -169,6 +182,11 @@ class WorkflowExecutor:
     async def execute_workflow(self) -> bool:
         """Execute the complete workflow."""
         workflow_name = self.config.get("name", "Unnamed Workflow")
+
+        # Handle dry-run mode
+        if self.dry_run:
+            return await self._execute_dry_run(workflow_name)
+
         console.print(
             f"\n[bold blue]🚀 Executing Workflow: {workflow_name}[/bold blue]"
         )
@@ -390,6 +408,258 @@ class WorkflowExecutor:
             if self.sandbox:
                 await self.sandbox.stop()
 
+    async def _execute_dry_run(self, workflow_name: str) -> bool:
+        """
+        Execute workflow validation in dry-run mode.
+
+        This validates the workflow configuration without executing any steps:
+        - Validates config structure and required fields
+        - Resolves and displays variable references
+        - Checks node availability (local and remote)
+        - Reports what steps would be executed
+
+        Note: This method is async to maintain interface compatibility with
+        execute_workflow() and to support future remote node connectivity checks.
+
+        Args:
+            workflow_name: Name of the workflow for display
+
+        Returns:
+            True if validation passed, False otherwise
+        """
+        console.print(
+            f"\n[bold cyan]🔍 Dry-run validation: {workflow_name}[/bold cyan]"
+        )
+        console.print("[cyan]Validating workflow without executing steps...[/cyan]\n")
+
+        validation_errors: list[str] = []
+        warnings: list[str] = []
+
+        # Run validation phases
+        self._dry_run_validate_config(validation_errors)
+        self._dry_run_validate_nodes(validation_errors)
+        self._dry_run_validate_node_refs(validation_errors)
+        self._dry_run_check_remote_nodes()
+        self._dry_run_analyze_steps(warnings)
+
+        # Print summary and return result
+        return self._dry_run_print_summary(workflow_name, validation_errors, warnings)
+
+    def _dry_run_validate_config(self, errors: list[str]) -> None:
+        """Validate configuration structure in dry-run mode."""
+        console.print("[bold]Step 1: Validating configuration structure...[/bold]")
+        try:
+            from merobox.commands.bootstrap.config import validate_workflow_config
+
+            config_errors = validate_workflow_config(self.config)
+            if config_errors:
+                for error in config_errors:
+                    errors.append(f"Config: {error}")
+                    console.print(f"  [red]✗ {error}[/red]")
+            else:
+                console.print("  [green]✓ Configuration structure is valid[/green]")
+        except Exception as e:
+            errors.append(f"Config validation error: {str(e)}")
+            console.print(f"  [red]✗ Config validation error: {str(e)}[/red]")
+
+    def _dry_run_validate_nodes(self, errors: list[str]) -> None:
+        """Validate node configuration in dry-run mode."""
+        console.print("\n[bold]Step 2: Checking node configuration...[/bold]")
+        try:
+            self._setup_resolver()
+
+            local_nodes = self._get_local_node_names()
+            remote_nodes = self._get_remote_node_names()
+
+            if local_nodes:
+                console.print(
+                    f"  [cyan]Local nodes configured: {', '.join(sorted(local_nodes))}[/cyan]"
+                )
+            if remote_nodes:
+                console.print(
+                    f"  [cyan]Remote nodes configured: {', '.join(sorted(remote_nodes))}[/cyan]"
+                )
+
+            if not local_nodes and not remote_nodes:
+                errors.append("No nodes configured (local or remote)")
+                console.print("  [red]✗ No nodes configured[/red]")
+            else:
+                console.print("  [green]✓ Node configuration is valid[/green]")
+        except Exception as e:
+            errors.append(f"Node configuration error: {str(e)}")
+            console.print(f"  [red]✗ Node configuration error: {str(e)}[/red]")
+
+    def _dry_run_validate_node_refs(self, errors: list[str]) -> None:
+        """Validate node references in steps during dry-run."""
+        console.print("\n[bold]Step 3: Validating node references in steps...[/bold]")
+        invalid_refs = self._get_invalid_node_references()
+        if invalid_refs:
+            for ref_error in invalid_refs:
+                errors.append(ref_error)
+                console.print(f"  [red]✗ {ref_error}[/red]")
+        else:
+            console.print("  [green]✓ All node references are valid[/green]")
+
+    def _get_invalid_node_references(self) -> list[str]:
+        """Get list of invalid node reference errors for dry-run reporting."""
+        steps = self.config.get("steps", [])
+        if not steps:
+            return []
+
+        valid_nodes = self._get_valid_node_names()
+        referenced_nodes: set[str] = set()
+        for step in steps:
+            referenced_nodes.update(self._extract_node_references_from_step(step))
+
+        errors: list[str] = []
+        if not valid_nodes:
+            if referenced_nodes:
+                errors.append(
+                    f"Workflow references nodes but none configured: "
+                    f"{', '.join(sorted(referenced_nodes))}"
+                )
+        else:
+            invalid_nodes = referenced_nodes - valid_nodes
+            if invalid_nodes:
+                errors.append(
+                    f"References non-existent nodes: {', '.join(sorted(invalid_nodes))}"
+                )
+        return errors
+
+    def _dry_run_check_remote_nodes(self) -> None:
+        """Check remote node availability in dry-run mode."""
+        console.print("\n[bold]Step 4: Checking remote node availability...[/bold]")
+        remote_nodes_config = self.config.get("remote_nodes", {})
+        if remote_nodes_config:
+            for node_name, node_config in remote_nodes_config.items():
+                url = node_config.get("url", "N/A")
+                auth_config = node_config.get("auth", {})
+                auth_method = auth_config.get("method", "none")
+                console.print(
+                    f"  [cyan]• {node_name}: {url} (auth: {auth_method})[/cyan]"
+                )
+            console.print(
+                "  [yellow]ℹ Remote node connectivity not verified in dry-run[/yellow]"
+            )
+        else:
+            console.print("  [dim]No remote nodes configured[/dim]")
+
+    def _dry_run_analyze_steps(self, warnings: list[str]) -> None:
+        """Analyze workflow steps and variable resolution in dry-run mode."""
+        console.print("\n[bold]Step 5: Analyzing workflow steps...[/bold]")
+        steps = self.config.get("steps", [])
+        if not steps:
+            warnings.append("No workflow steps defined")
+            console.print("  [yellow]⚠ No workflow steps defined[/yellow]")
+            return
+
+        console.print(f"  [cyan]Total steps: {len(steps)}[/cyan]")
+
+        # Track variables incrementally - check each step against prior steps
+        available_vars: set[str] = set()
+        forward_ref_warnings: list[str] = []
+
+        for i, step in enumerate(steps, 1):
+            step_type = step.get("type", "unknown")
+            step_name = step.get("name", f"Step {i}")
+
+            # Get variables consumed by this step (exclude 'outputs' to avoid false positives)
+            step_for_vars = {k: v for k, v in step.items() if k != "outputs"}
+            step_vars = self._extract_variable_references(step_for_vars)
+
+            # Check for variables used before they're defined
+            undefined_in_step = step_vars - available_vars
+            if undefined_in_step:
+                forward_ref_warnings.append(
+                    f"Step {i} '{step_name}': uses undefined variables: "
+                    f"{', '.join(sorted(undefined_in_step))}"
+                )
+
+            # Add output variables to available set for subsequent steps
+            outputs = step.get("outputs")
+            if outputs:
+                if isinstance(outputs, dict):
+                    available_vars.update(outputs.keys())
+                else:
+                    forward_ref_warnings.append(
+                        f"Step {i} '{step_name}': 'outputs' should be a dict, got {type(outputs).__name__}"
+                    )
+
+            # Display step info
+            node = step.get("node", "N/A")
+            console.print(f"  [{i}] {step_name} ({step_type}) → node: {node}")
+
+            if outputs and isinstance(outputs, dict):
+                console.print(f"      [dim]outputs: {', '.join(outputs.keys())}[/dim]")
+            if step_vars:
+                console.print(
+                    f"      [dim]uses variables: {', '.join(sorted(step_vars))}[/dim]"
+                )
+
+        # Report forward reference warnings
+        if forward_ref_warnings:
+            for warning in forward_ref_warnings:
+                warnings.append(warning)
+                console.print(f"\n  [yellow]⚠ {warning}[/yellow]")
+
+        console.print("\n  [green]✓ Step analysis complete[/green]")
+
+    def _dry_run_print_summary(
+        self, workflow_name: str, errors: list[str], warnings: list[str]
+    ) -> bool:
+        """Print dry-run summary and return validation result."""
+        console.print("\n" + "=" * 60)
+        console.print("[bold]Dry-run Summary:[/bold]")
+
+        if errors:
+            console.print(
+                f"\n[red]❌ Validation failed with {len(errors)} error(s):[/red]"
+            )
+            for error in errors:
+                console.print(f"  [red]• {error}[/red]")
+        else:
+            console.print("\n[green]✓ Configuration validation passed[/green]")
+
+        if warnings:
+            console.print(f"\n[yellow]⚠ {len(warnings)} warning(s):[/yellow]")
+            for warning in warnings:
+                console.print(f"  [yellow]• {warning}[/yellow]")
+
+        if not errors:
+            console.print(
+                f"\n[bold green]✅ Workflow '{workflow_name}' is ready for execution[/bold green]"
+            )
+            return True
+        else:
+            console.print(
+                f"\n[bold red]❌ Workflow '{workflow_name}' has validation errors[/bold red]"
+            )
+            return False
+
+    def _extract_variable_references(self, obj: Any) -> set[str]:
+        """
+        Extract variable references ({{var_name}}) from a step configuration.
+
+        Args:
+            obj: The object to scan (can be dict, list, or string)
+
+        Returns:
+            Set of variable names referenced
+        """
+        variables: set[str] = set()
+
+        if isinstance(obj, str):
+            matches = _VAR_PATTERN.findall(obj)
+            variables.update(matches)
+        elif isinstance(obj, dict):
+            for value in obj.values():
+                variables.update(self._extract_variable_references(value))
+        elif isinstance(obj, list):
+            for item in obj:
+                variables.update(self._extract_variable_references(item))
+
+        return variables
+
     def _stop_nodes_on_failure(self) -> None:
         """
         Stop all nodes when workflow fails, if stop_all_nodes is configured.
@@ -553,8 +823,8 @@ class WorkflowExecutor:
             console.print("[red]No nodes configuration found[/red]")
             return False
 
-        base_port = nodes_config.get("base_port", 2428)
-        base_rpc_port = nodes_config.get("base_rpc_port", 2528)
+        base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
+        base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
 
         chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
@@ -835,8 +1105,13 @@ class WorkflowExecutor:
 
         Note: This only waits for local (docker/binary) nodes. Remote nodes
         are assumed to be already running and accessible.
+
+        Readiness is determined by:
+        1. Container/process is running
+        2. Admin port is bound and accepting connections
+        3. Health endpoint responds successfully (node is serving requests)
         """
-        wait_timeout = self.config.get("wait_timeout", 60)  # Default 60 seconds
+        wait_timeout = self.config.get("wait_timeout", NODE_READY_TIMEOUT)
 
         # Use only local node names (remote nodes don't need local readiness check)
         node_names = list(self._get_local_node_names())
@@ -846,7 +1121,13 @@ class WorkflowExecutor:
         )
 
         start_time = time.time()
-        ready_nodes = set()
+        ready_nodes: set[str] = set()
+        # Track nodes that have passed admin binding to avoid repeated expensive checks
+        admin_binding_passed: set[str] = set()
+        # Cache RPC URLs per node to avoid recalculating on each iteration
+        node_rpc_urls: dict[str, str] = {}
+        # Track nodes that have already logged the health check warning to avoid console spam
+        health_check_warned: set[str] = set()
 
         with Progress(
             SpinnerColumn(),
@@ -868,17 +1149,38 @@ class WorkflowExecutor:
                             is_running = self._is_node_running(node_name)
 
                             if is_running:
-                                if self.manager.verify_admin_binding(node_name):
+                                # Check admin binding only if not already passed
+                                if node_name not in admin_binding_passed:
+                                    if not self.manager.verify_admin_binding(node_name):
+                                        continue
+                                    admin_binding_passed.add(node_name)
+
+                                # Get cached RPC URL or compute and cache it
+                                if node_name not in node_rpc_urls:
+                                    node_rpc_urls[node_name] = get_node_rpc_url(
+                                        node_name, self.manager
+                                    )
+                                rpc_url = node_rpc_urls[node_name]
+
+                                # Probe health endpoint to ensure node is serving requests
+                                health_result = await check_node_health(rpc_url)
+                                if health_result.get("success"):
                                     ready_nodes.add(node_name)
                                     progress.update(task, completed=len(ready_nodes))
                                     console.print(
-                                        f"[green]✓ Node {node_name} is ready[/green]"
+                                        f"[green]✓ Node {node_name} is ready (health check passed)[/green]"
                                     )
+                                elif node_name not in health_check_warned:
+                                    # Only log the warning once per node
+                                    console.print(
+                                        f"[yellow]Node {node_name} admin binding OK, waiting for health check...[/yellow]"
+                                    )
+                                    health_check_warned.add(node_name)
                         except Exception:
                             pass
 
                 if len(ready_nodes) < len(node_names):
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(ASYNC_POLL_INTERVAL)
 
         if len(ready_nodes) == len(node_names):
             console.print("[green]✓ All nodes are ready[/green]")
