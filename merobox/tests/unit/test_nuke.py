@@ -2,6 +2,7 @@
 Unit tests for the nuke command and stale directory cleanup functionality.
 """
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -146,6 +147,22 @@ class TestGetRunningNodeNames:
 
     @patch("merobox.commands.nuke.BinaryManager")
     @patch("merobox.commands.nuke.DockerManager")
+    def test_handles_docker_manager_system_exit(
+        self, mock_docker_manager, mock_binary_manager
+    ):
+        """Should handle DockerManager SystemExit without crashing."""
+        mock_docker_manager.side_effect = SystemExit(1)
+
+        mock_binary_instance = MagicMock()
+        mock_binary_instance.is_node_running.return_value = False
+        mock_binary_manager.return_value = mock_binary_instance
+
+        result = get_running_node_names(fail_safe=False, silent=True)
+
+        assert isinstance(result, set)
+
+    @patch("merobox.commands.nuke.BinaryManager")
+    @patch("merobox.commands.nuke.DockerManager")
     def test_deduplicates_nodes_from_both_sources(
         self, mock_docker_manager, mock_binary_manager, tmp_path, monkeypatch
     ):
@@ -181,20 +198,17 @@ class TestGetRunningNodeNames:
 class TestFindStaleDataDirs:
     """Tests for find_stale_data_dirs function."""
 
-    @patch("merobox.commands.nuke._is_valid_calimero_data_dir")
     @patch("merobox.commands.nuke.get_running_node_names")
-    @patch("merobox.commands.nuke.find_calimero_data_dirs")
     def test_returns_dirs_without_running_nodes(
-        self, mock_find_dirs, mock_running_nodes, mock_is_valid
+        self, mock_running_nodes, tmp_path, monkeypatch
     ):
         """Should return directories that don't have running nodes."""
-        mock_find_dirs.return_value = [
-            "data/calimero-node-1",
-            "data/calimero-node-2",
-            "data/calimero-node-3",
-        ]
+        monkeypatch.chdir(tmp_path)
+        data_dir = tmp_path / "data"
+        for node_name in ["calimero-node-1", "calimero-node-2", "calimero-node-3"]:
+            node_dir = data_dir / node_name
+            (node_dir / node_name).mkdir(parents=True)
         mock_running_nodes.return_value = {"calimero-node-1"}
-        mock_is_valid.return_value = True
 
         result = find_stale_data_dirs(silent=True)
 
@@ -203,56 +217,83 @@ class TestFindStaleDataDirs:
         assert "data/calimero-node-3" in result
         assert "data/calimero-node-1" not in result
 
-    @patch("merobox.commands.nuke._is_valid_calimero_data_dir")
     @patch("merobox.commands.nuke.get_running_node_names")
-    @patch("merobox.commands.nuke.find_calimero_data_dirs")
     def test_returns_empty_when_all_nodes_running(
-        self, mock_find_dirs, mock_running_nodes, mock_is_valid
+        self, mock_running_nodes, tmp_path, monkeypatch
     ):
         """Should return empty list when all nodes are running."""
-        mock_find_dirs.return_value = [
-            "data/calimero-node-1",
-            "data/calimero-node-2",
-        ]
+        monkeypatch.chdir(tmp_path)
+        data_dir = tmp_path / "data"
+        for node_name in ["calimero-node-1", "calimero-node-2"]:
+            node_dir = data_dir / node_name
+            (node_dir / node_name).mkdir(parents=True)
         mock_running_nodes.return_value = {"calimero-node-1", "calimero-node-2"}
-        mock_is_valid.return_value = True
 
         result = find_stale_data_dirs(silent=True)
 
         assert result == []
 
-    @patch("merobox.commands.nuke._is_valid_calimero_data_dir")
     @patch("merobox.commands.nuke.get_running_node_names")
-    @patch("merobox.commands.nuke.find_calimero_data_dirs")
     def test_returns_all_when_no_nodes_running(
-        self, mock_find_dirs, mock_running_nodes, mock_is_valid
+        self, mock_running_nodes, tmp_path, monkeypatch
     ):
         """Should return all directories when no nodes are running."""
-        mock_find_dirs.return_value = [
-            "data/calimero-node-1",
-            "data/calimero-node-2",
-        ]
+        monkeypatch.chdir(tmp_path)
+        data_dir = tmp_path / "data"
+        for node_name in ["calimero-node-1", "calimero-node-2"]:
+            node_dir = data_dir / node_name
+            (node_dir / node_name).mkdir(parents=True)
         mock_running_nodes.return_value = set()
-        mock_is_valid.return_value = True
 
         result = find_stale_data_dirs(silent=True)
 
         assert len(result) == 2
+        assert "data/calimero-node-1" in result
+        assert "data/calimero-node-2" in result
 
-    @patch("merobox.commands.nuke._is_valid_calimero_data_dir")
     @patch("merobox.commands.nuke.get_running_node_names")
-    @patch("merobox.commands.nuke.find_calimero_data_dirs")
     def test_respects_prefix_filter(
-        self, mock_find_dirs, mock_running_nodes, mock_is_valid
+        self, mock_running_nodes, tmp_path, monkeypatch
     ):
         """Should respect prefix filter when finding stale directories."""
-        mock_find_dirs.return_value = ["data/prop-test-1"]
+        monkeypatch.chdir(tmp_path)
+        data_dir = tmp_path / "data"
+        prop_dir = data_dir / "prop-test-1"
+        node_dir = data_dir / "calimero-node-1"
+        (prop_dir / "prop-test-1").mkdir(parents=True)
+        (node_dir / "calimero-node-1").mkdir(parents=True)
         mock_running_nodes.return_value = set()
-        mock_is_valid.return_value = True
 
-        find_stale_data_dirs(prefix="prop-", silent=True)
+        result = find_stale_data_dirs(prefix="prop-", silent=True)
 
-        mock_find_dirs.assert_called_once_with("prop-")
+        assert result == ["data/prop-test-1"]
+
+    @patch("merobox.commands.nuke.BinaryManager")
+    @patch("merobox.commands.nuke.DockerManager")
+    def test_continues_when_docker_detection_fails_but_binary_works(
+        self, mock_docker_manager, mock_binary_manager, tmp_path, monkeypatch
+    ):
+        """Stale detection should proceed with binary-only detection on Docker failure."""
+        monkeypatch.chdir(tmp_path)
+        data_dir = tmp_path / "data"
+        for node_name in ["calimero-node-1", "calimero-node-2"]:
+            node_dir = data_dir / node_name
+            (node_dir / node_name).mkdir(parents=True)
+
+        pid_dir = data_dir / ".pids"
+        pid_dir.mkdir(parents=True)
+        (pid_dir / "calimero-node-1.pid").write_text("12345")
+
+        mock_docker_manager.side_effect = SystemExit(1)
+        mock_binary_instance = MagicMock()
+        mock_binary_instance.is_node_running.side_effect = (
+            lambda node_name: node_name == "calimero-node-1"
+        )
+        mock_binary_manager.return_value = mock_binary_instance
+
+        result = find_stale_data_dirs(silent=True)
+
+        assert result == ["data/calimero-node-2"]
 
 
 class TestNukeAllDataDirs:
@@ -332,12 +373,19 @@ class TestExecuteNuke:
     @patch("merobox.commands.nuke._stop_running_services")
     @patch("merobox.commands.nuke._cleanup_auth_services")
     @patch("merobox.commands.nuke.nuke_all_data_dirs")
+    @patch("merobox.commands.nuke._filter_still_stale_dirs")
     @patch("merobox.commands.nuke.find_stale_data_dirs")
     def test_stale_only_skips_stop_operations(
-        self, mock_find_stale, mock_nuke_dirs, mock_cleanup_auth, mock_stop_services
+        self,
+        mock_find_stale,
+        mock_filter_stale,
+        mock_nuke_dirs,
+        mock_cleanup_auth,
+        mock_stop_services,
     ):
         """Should skip stopping processes when stale_only=True."""
         mock_find_stale.return_value = ["data/calimero-node-1"]
+        mock_filter_stale.return_value = ["data/calimero-node-1"]
         mock_nuke_dirs.return_value = [
             {"path": "data/calimero-node-1", "status": "deleted", "size_bytes": 100}
         ]
@@ -354,6 +402,37 @@ class TestExecuteNuke:
         mock_stop_services.assert_not_called()
         # Verify cleanup auth helper was NOT called
         mock_cleanup_auth.assert_not_called()
+        # Verify stale dirs are re-checked before deletion
+        mock_filter_stale.assert_called_once_with(
+            ["data/calimero-node-1"], fail_safe=False, silent=True
+        )
+        mock_nuke_dirs.assert_called_once_with(["data/calimero-node-1"], dry_run=False)
+
+    @patch("merobox.commands.nuke.nuke_all_data_dirs")
+    @patch("merobox.commands.nuke._filter_still_stale_dirs")
+    @patch("merobox.commands.nuke.find_stale_data_dirs")
+    def test_precomputed_stale_dirs_skip_rediscovery(
+        self, mock_find_stale, mock_filter_stale, mock_nuke_dirs
+    ):
+        """Should avoid stale rediscovery when directories are precomputed."""
+        mock_filter_stale.return_value = ["data/calimero-node-1"]
+        mock_nuke_dirs.return_value = [
+            {"path": "data/calimero-node-1", "status": "deleted", "size_bytes": 100}
+        ]
+
+        result = execute_nuke(
+            stale_only=True,
+            silent=True,
+            force=True,
+            precomputed_data_dirs=["data/calimero-node-1"],
+        )
+
+        assert result is True
+        mock_find_stale.assert_not_called()
+        mock_filter_stale.assert_called_once_with(
+            ["data/calimero-node-1"], fail_safe=False, silent=True
+        )
+        mock_nuke_dirs.assert_called_once_with(["data/calimero-node-1"], dry_run=False)
 
     @patch("merobox.commands.nuke.find_stale_data_dirs")
     def test_stale_only_returns_false_on_detection_error(self, mock_find_stale):
@@ -389,10 +468,19 @@ class TestIsValidCalimeroDataDir:
 
         assert _is_valid_calimero_data_dir(str(node_dir)) is True
 
-    def test_returns_true_for_empty_dir(self, tmp_path):
-        """Should return True for empty directory (safe to delete)."""
+    def test_returns_false_for_recent_empty_dir(self, tmp_path):
+        """Should return False for very recent empty directory."""
         node_dir = tmp_path / "calimero-node-1"
         node_dir.mkdir()
+
+        assert _is_valid_calimero_data_dir(str(node_dir)) is False
+
+    def test_returns_true_for_old_empty_dir(self, tmp_path):
+        """Should return True for sufficiently old empty directory."""
+        node_dir = tmp_path / "calimero-node-1"
+        node_dir.mkdir()
+        old_timestamp = node_dir.stat().st_mtime - 10
+        os.utime(node_dir, (old_timestamp, old_timestamp))
 
         assert _is_valid_calimero_data_dir(str(node_dir)) is True
 
@@ -403,6 +491,16 @@ class TestIsValidCalimeroDataDir:
         (node_dir / "random_file.txt").write_text("random content")
 
         assert _is_valid_calimero_data_dir(str(node_dir)) is False
+
+    def test_returns_false_for_symlinked_directory(self, tmp_path):
+        """Should reject symlink paths even if target looks valid."""
+        real_dir = tmp_path / "real-node-dir"
+        real_dir.mkdir()
+        (real_dir / "real-node-dir").mkdir()
+        symlink_dir = tmp_path / "calimero-node-1"
+        symlink_dir.symlink_to(real_dir, target_is_directory=True)
+
+        assert _is_valid_calimero_data_dir(str(symlink_dir)) is False
 
 
 class TestDetectionResult:

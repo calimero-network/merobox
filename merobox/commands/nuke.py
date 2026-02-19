@@ -27,6 +27,7 @@ See NUKE_DOCUMENTATION.md for comprehensive usage guide.
 
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -36,9 +37,12 @@ from rich import box
 from rich.table import Table
 
 from merobox.commands.binary_manager import BinaryManager
-from merobox.commands.constants import NUKE_STOP_TIMEOUT
+from merobox.commands.constants import DEFAULT_DATA_DIR_PREFIX, NUKE_STOP_TIMEOUT
 from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console, format_file_size
+
+PID_DIR = Path(DEFAULT_DATA_DIR_PREFIX) / ".pids"
+EMPTY_DATA_DIR_MIN_AGE_SECONDS = 5
 
 
 def find_calimero_data_dirs(prefix: str = None) -> list:
@@ -176,24 +180,37 @@ def _detect_running_nodes(
     warnings = []
 
     # Check Docker containers
+    docker_manager = manager
+    created_local_manager = False
     try:
-        docker_manager = manager or DockerManager(enable_signal_handlers=False)
+        if docker_manager is None:
+            docker_manager = DockerManager(enable_signal_handlers=False)
+            created_local_manager = True
         containers = docker_manager.client.containers.list(
             filters={"label": "calimero.node=true", "status": "running"}
         )
         for container in containers:
             running_nodes.add(container.name)
+    except SystemExit as e:
+        warnings.append(f"Docker check failed: Docker manager exited ({e})")
+        docker_check_failed = True
     except docker.errors.DockerException as e:
         warnings.append(f"Docker check failed: {e}")
         docker_check_failed = True
     except Exception as e:
         warnings.append(f"Docker check failed unexpectedly: {e}")
         docker_check_failed = True
+    finally:
+        if created_local_manager and docker_manager and hasattr(docker_manager, "client"):
+            try:
+                docker_manager.client.close()
+            except Exception:
+                pass
 
     # Check binary processes via PID files
     # Note: If PID directory doesn't exist, we treat it as "no binary nodes"
     # rather than a detection failure, since there's nothing to detect.
-    pid_dir = Path("./data/.pids")
+    pid_dir = PID_DIR
     if pid_dir.exists():
         try:
             binary_manager = BinaryManager(
@@ -232,7 +249,7 @@ def _is_valid_calimero_data_dir(data_dir: str) -> bool:
         True if the directory appears to contain Calimero data.
     """
     dir_path = Path(data_dir)
-    if not dir_path.is_dir():
+    if not dir_path.is_dir() or dir_path.is_symlink():
         return False
 
     # Check for expected Calimero node subdirectories or files
@@ -250,11 +267,39 @@ def _is_valid_calimero_data_dir(data_dir: str) -> bool:
     if logs_dir.is_dir():
         return True
 
-    # Accept empty directories (they match the pattern and are safe to delete)
+    # Accept old empty directories, but skip very recent ones to reduce
+    # deletion risk during node startup races.
     if not any(dir_path.iterdir()):
-        return True
+        dir_age_seconds = time.time() - dir_path.stat().st_mtime
+        return dir_age_seconds >= EMPTY_DATA_DIR_MIN_AGE_SECONDS
 
     return False
+
+
+def _filter_still_stale_dirs(
+    data_dirs: list, fail_safe: bool = True, silent: bool = False
+) -> list:
+    """Exclude directories whose nodes became active since stale preview."""
+    if not data_dirs:
+        return []
+
+    running_nodes = get_running_node_names(fail_safe=fail_safe, silent=True)
+    stale_dirs = []
+    resumed_dirs = []
+
+    for data_dir in data_dirs:
+        node_name = os.path.basename(data_dir)
+        if node_name in running_nodes:
+            resumed_dirs.append(data_dir)
+        else:
+            stale_dirs.append(data_dir)
+
+    if resumed_dirs and not silent:
+        console.print(
+            f"[yellow]⚠️  Skipping {len(resumed_dirs)} directory(ies) that became active since preview[/yellow]"
+        )
+
+    return stale_dirs
 
 
 def find_stale_data_dirs(
@@ -392,8 +437,11 @@ def _stop_running_services(
                     docker_nodes_stopped += 1
             except docker.errors.NotFound:
                 pass
-            except docker.errors.APIError:
-                pass
+            except docker.errors.APIError as e:
+                if not silent:
+                    console.print(
+                        f"[yellow]⚠️  Warning: Could not stop Docker container {node_name}: {e}[/yellow]"
+                    )
 
         if docker_nodes_stopped > 0 and not silent:
             console.print(
@@ -424,8 +472,11 @@ def _cleanup_auth_services(
             console.print("[green]✓ Auth service stopped and removed[/green]")
     except docker.errors.NotFound:
         pass
-    except docker.errors.APIError:
-        pass
+    except docker.errors.APIError as e:
+        if not silent:
+            console.print(
+                f"[yellow]⚠️  Warning: Could not remove auth service: {e}[/yellow]"
+            )
 
     try:
         proxy_container = manager.client.containers.get("proxy")
@@ -437,8 +488,11 @@ def _cleanup_auth_services(
             console.print("[green]✓ Traefik proxy stopped and removed[/green]")
     except docker.errors.NotFound:
         pass
-    except docker.errors.APIError:
-        pass
+    except docker.errors.APIError as e:
+        if not silent:
+            console.print(
+                f"[yellow]⚠️  Warning: Could not remove Traefik proxy: {e}[/yellow]"
+            )
 
     # Remove auth data volume if it exists
     try:
@@ -464,6 +518,7 @@ def execute_nuke(
     silent: bool = False,
     stale_only: bool = False,
     force: bool = False,
+    precomputed_data_dirs: Optional[list] = None,
 ) -> bool:
     """
     Execute the nuke operation programmatically (for use in workflows).
@@ -475,12 +530,17 @@ def execute_nuke(
         silent: Suppress most output (for workflow automation)
         stale_only: If True, only clean up stale/orphan directories (not running nodes)
         force: If True, skip fail-safe checks for node detection
+        precomputed_data_dirs: Optional precomputed list of directories to delete.
+            Used by CLI flow to avoid re-running stale directory discovery between
+            preview and deletion confirmation.
 
     Returns:
         bool: True if nuke succeeded, False otherwise
     """
     try:
-        if stale_only:
+        if precomputed_data_dirs is not None:
+            data_dirs = list(precomputed_data_dirs)
+        elif stale_only:
             try:
                 data_dirs = find_stale_data_dirs(
                     prefix, fail_safe=not force, silent=silent
@@ -499,6 +559,25 @@ def execute_nuke(
                 )
         else:
             data_dirs = find_calimero_data_dirs(prefix)
+
+        if stale_only and data_dirs:
+            # Re-check running nodes right before deletion to avoid deleting a
+            # directory for a node that started after stale preview.
+            try:
+                data_dirs = _filter_still_stale_dirs(
+                    data_dirs, fail_safe=not force, silent=silent
+                )
+            except NodeDetectionError as e:
+                if not silent:
+                    console.print(f"[red]❌ {e}[/red]")
+                return False
+
+            if not data_dirs:
+                if not silent:
+                    console.print(
+                        "[yellow]No stale data directories found at deletion time.[/yellow]"
+                    )
+                return True
 
         if not data_dirs:
             if not silent:
@@ -720,6 +799,7 @@ def nuke(dry_run, force, verbose, prefix, stale):
         silent=False,
         stale_only=stale,
         force=force,
+        precomputed_data_dirs=data_dirs,
     ):
         if stale:
             console.print("\n[green]Stale directories cleaned up successfully.[/green]")
