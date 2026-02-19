@@ -2,7 +2,9 @@
 Stop node step executor - Stop nodes during workflow execution.
 """
 
-from typing import Any
+from typing import Any, Optional
+
+import docker
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -11,29 +13,34 @@ from merobox.commands.utils import console
 class StopNodeStep(BaseStep):
     """Stop nodes during workflow execution."""
 
-    def _is_node_running(self, node_name: str) -> bool:
+    def _is_node_running(self, node_name: str) -> Optional[bool]:
         """
         Check if a node is running.
-        
-        Works for both binary mode (via is_node_running) and Docker mode
-        (via container status check).
+
+        Returns:
+            True if running, False if confirmed stopped, None if status
+            could not be determined.
         """
         if not self.manager:
             return False
-        
-        # Binary mode: use is_node_running method
+
         if hasattr(self.manager, "is_node_running"):
-            return self.manager.is_node_running(node_name)
-        
-        # Docker mode fallback: check container status
-        if hasattr(self.manager, "client"):
             try:
-                container = self.manager.client.containers.get(node_name)
-                return container.status == "running"
-            except Exception:
-                return False
-        
-        return False
+                return self.manager.is_node_running(node_name)
+            except docker.errors.APIError as e:
+                explanation = getattr(e, "explanation", str(e))
+                console.print(
+                    f"[red]❌ Failed to check node status for {node_name}: {explanation}[/red]"
+                )
+                return None
+            except docker.errors.DockerException as e:
+                explanation = getattr(e, "explanation", str(e))
+                console.print(
+                    f"[red]❌ Docker error while checking node status for {node_name}: {explanation}[/red]"
+                )
+                return None
+
+        return None
 
     def _get_required_fields(self) -> list[str]:
         """
@@ -101,18 +108,28 @@ class StopNodeStep(BaseStep):
 
         for node_name in node_names:
             if hasattr(self.manager, "stop_node"):
-                # Check if node is already stopped (idempotent stop behavior)
+                # Stop first to avoid check-then-act races.
+                if self.manager.stop_node(node_name):
+                    stopped_nodes.append(node_name)
+                    continue
+
+                # If stop failed, verify status to preserve idempotent behavior.
                 is_running = self._is_node_running(node_name)
-                
-                if not is_running:
-                    # Node is already stopped, treat as success
+
+                if is_running is False:
                     console.print(
                         f"[yellow]⚠ Node {node_name} is not running (already stopped)[/yellow]"
                     )
                     stopped_nodes.append(node_name)
-                elif self.manager.stop_node(node_name):
-                    stopped_nodes.append(node_name)
+                elif is_running is True:
+                    console.print(
+                        f"[red]❌ Node {node_name} is still running after stop attempt[/red]"
+                    )
+                    failed_to_stop.append(node_name)
                 else:
+                    console.print(
+                        f"[red]❌ Failed to stop {node_name}: unable to verify node status[/red]"
+                    )
                     failed_to_stop.append(node_name)
             else:
                 console.print(

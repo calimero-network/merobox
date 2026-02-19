@@ -1233,6 +1233,16 @@ class DockerManager:
             console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
             return False
 
+    def is_node_running(self, node_name: str) -> bool:
+        """Check if a node container exists and is running."""
+        try:
+            container = self.client.containers.get(node_name)
+            return container.status == "running"
+        except docker.errors.NotFound:
+            return False
+        except docker.errors.APIError:
+            raise
+
     def stop_all_nodes(self) -> bool:
         """Stop all running Calimero nodes."""
         try:
