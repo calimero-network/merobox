@@ -9,6 +9,10 @@ from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
+from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
+from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
+from merobox.commands.bootstrap.steps.group_join_context import JoinGroupContextStep
 from merobox.commands.bootstrap.steps.identity import (
     CreateIdentityStep,
     InviteIdentityStep,
@@ -166,6 +170,14 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = GetProposalApproversStep
         elif step_type == "fuzzy_test":
             step_class = FuzzyTestStep
+        elif step_type == "create_group":
+            step_class = CreateGroupStep
+        elif step_type == "create_group_invitation":
+            step_class = CreateGroupInvitationStep
+        elif step_type == "join_group":
+            step_class = JoinGroupStep
+        elif step_type == "join_group_context":
+            step_class = JoinGroupContextStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

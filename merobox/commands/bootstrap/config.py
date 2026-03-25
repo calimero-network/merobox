@@ -19,9 +19,13 @@ VALID_STEP_TYPES = frozenset(
     {
         "install_application",
         "create_context",
+        "create_group",
+        "create_group_invitation",
         "create_identity",
         "invite_identity",
         "join_context",
+        "join_group",
+        "join_group_context",
         "invite_open",
         "join_open",
         "call",
