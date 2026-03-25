@@ -47,14 +47,24 @@ class JoinGroupStep(BaseStep):
         )
 
         # invitation may be a dict (captured from create_group_invitation step)
-        # or a JSON string — normalise to a JSON string for the client
+        # or a JSON string — normalise to JoinGroupApiRequest JSON for the client.
+        # JoinGroupApiRequest = { "invitation": <SignedGroupOpenInvitation>, "group_alias": null }
         if isinstance(invitation, dict):
-            invitation_json = json_lib.dumps(invitation)
+            # The dict is the raw SignedGroupOpenInvitation object stored by
+            # create_group_invitation; wrap it in the JoinGroupApiRequest shape.
+            if "invitation" not in invitation:
+                invitation_json = json_lib.dumps({"invitation": invitation})
+            else:
+                invitation_json = json_lib.dumps(invitation)
         elif isinstance(invitation, str):
             # Validate it's parseable JSON
             try:
-                json_lib.loads(invitation)
-                invitation_json = invitation
+                parsed = json_lib.loads(invitation)
+                # If the string is a raw invitation object (no wrapper), wrap it
+                if isinstance(parsed, dict) and "invitation" not in parsed:
+                    invitation_json = json_lib.dumps({"invitation": parsed})
+                else:
+                    invitation_json = invitation
             except json_lib.JSONDecodeError as e:
                 console.print(
                     f"[red]Step 'join_group' on {node_name}: "
@@ -105,9 +115,8 @@ class JoinGroupStep(BaseStep):
             )
             return True
         else:
-            console.print(
-                f"[red]Join group failed on {node_name}: "
-                f"{result.get('error', 'Unknown error')}[/red]"
-            )
+            exception = result.get("exception", {})
+            detail = exception.get("message", result.get("error", "Unknown error"))
+            console.print(f"[red]Join group failed on {node_name}: {detail}[/red]")
             self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False
