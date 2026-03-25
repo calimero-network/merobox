@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workflow Engine — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Workflow Engine</span></div>
+
+<h1>Workflow <em>Engine</em></h1>
+<p class="page-subtitle">WorkflowExecutor lifecycle, BaseStep pattern, step factory, and dynamic values</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">15+</div><div class="l">step types</div></div>
+  <div class="stat"><div class="v">9</div><div class="l">lifecycle phases</div></div>
+  <div class="stat"><div class="v">async</div><div class="l">execution model</div></div>
+  <div class="stat"><div class="v">dict</div><div class="l">result accumulation</div></div>
+</div>
+
+<!-- WorkflowExecutor Lifecycle -->
+<div class="card ga">
+<h2>WorkflowExecutor Lifecycle</h2>
+<p style="margin-bottom:16px;">The WorkflowExecutor orchestrates the entire run from YAML parse to final cleanup. Each phase is executed sequentially and any failure triggers the cleanup path.</p>
+
+<svg viewBox="0 0 960 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="30" width="90" height="50" rx="8" fill="#ef444410" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="45" y="55" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="9" font-weight="600">nuke</text>
+  <text x="45" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">optional</text>
+
+  <line x1="90" y1="55" x2="108" y2="55" stroke="#35354a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="108" y="30" width="90" height="50" rx="8" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="153" y="55" text-anchor="middle" fill="#8b5cf6" font-family="JetBrains Mono" font-size="9" font-weight="600">pull</text>
+  <text x="153" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">image</text>
+
+  <line x1="198" y1="55" x2="216" y2="55" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="216" y="30" width="90" height="50" rx="8" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="261" y="55" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="9" font-weight="600">sandbox</text>
+  <text x="261" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">start</text>
+
+  <line x1="306" y1="55" x2="324" y2="55" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="324" y="30" width="90" height="50" rx="8" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="369" y="55" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="9" font-weight="600">deploy</text>
+  <text x="369" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">contracts</text>
+
+  <line x1="414" y1="55" x2="432" y2="55" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="432" y="30" width="90" height="50" rx="8" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="477" y="55" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="9" font-weight="600">nodes</text>
+  <text x="477" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">start</text>
+
+  <line x1="522" y1="55" x2="540" y2="55" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="540" y="30" width="90" height="50" rx="8" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="585" y="55" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="9" font-weight="600">register</text>
+  <text x="585" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">remote</text>
+
+  <line x1="630" y1="55" x2="648" y2="55" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="648" y="30" width="90" height="50" rx="8" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="693" y="55" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="9" font-weight="600">steps</text>
+  <text x="693" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">execute</text>
+
+  <line x1="738" y1="55" x2="756" y2="55" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="756" y="30" width="90" height="50" rx="8" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="801" y="55" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="9" font-weight="600">cleanup</text>
+  <text x="801" y="72" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">always</text>
+
+  <!-- Failure arrow back to cleanup -->
+  <path d="M 693 80 L 693 105 L 801 105 L 801 80" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 3" fill="none"/>
+  <text x="747" y="100" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="7">on failure</text>
+</svg>
+</div>
+
+<!-- BaseStep Pattern -->
+<div class="card gb">
+<h2>BaseStep Pattern</h2>
+<p style="margin-bottom:16px;">All step types extend the abstract <span class="code">BaseStep</span> class. The pattern enforces validation before execution and standardizes result collection.</p>
+
+<div class="typedef">
+<span class="kw">class</span> <span class="ty">BaseStep</span>(<span class="ty">ABC</span>):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">step_type</span>: <span class="ty">str</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">config</span>: <span class="ty">dict</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># raw step config from YAML</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor</span>: <span class="ty">WorkflowExecutor</span>&nbsp;<span class="comment"># back-reference for results/nodes</span><br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">@abstractmethod</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">def</span> <span class="field">validate</span>(<span class="ty">self</span>) -&gt; <span class="ty">None</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Raise StepValidationError if config is invalid</span><br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">@abstractmethod</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">async def</span> <span class="field">execute</span>(<span class="ty">self</span>) -&gt; <span class="ty">StepResult</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Run the step, return ok() or fail()</span><br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">def</span> <span class="field">resolve_placeholders</span>(<span class="ty">self</span>, <span class="field">value</span>: <span class="ty">str</span>) -&gt; <span class="ty">str</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Replace ${results.step_name.field} with actual values</span><br>
+</div>
+
+<h3>Step Factory</h3>
+<p>The step factory maps <span class="code">step_type</span> strings to their corresponding <span class="code">BaseStep</span> subclass. When the WorkflowExecutor encounters a step in the YAML, it calls the factory to instantiate the correct handler.</p>
+
+<div class="typedef">
+<span class="field">STEP_REGISTRY</span> = {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"install_application"</span>: <span class="ty">InstallApplicationStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"create_context"</span>: <span class="ty">CreateContextStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"call"</span>: <span class="ty">CallStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"wait_for_sync"</span>: <span class="ty">WaitForSyncStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"repeat"</span>: <span class="ty">RepeatStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"parallel"</span>: <span class="ty">ParallelStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"script"</span>: <span class="ty">ScriptStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"assert"</span>: <span class="ty">AssertStep</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"fuzzy_test"</span>: <span class="ty">FuzzyTestStep</span>,<br>
+}
+</div>
+</div>
+
+<!-- Placeholder Resolution -->
+<div class="card gc">
+<h2>Placeholder Resolution</h2>
+<p style="margin-bottom:16px;">Steps can reference results from previous steps using the <span class="code">${results.step_name.field}</span> syntax. The executor resolves these at execution time from the <span class="code">workflow_results</span> dictionary.</p>
+
+<div class="g2">
+  <div>
+    <h3>Environment Variables</h3>
+    <p>Expanded at YAML load time:</p>
+    <div class="typedef">
+<span class="comment"># In YAML</span><br>
+<span class="field">contract_path</span>: <span class="ty">${CONTRACT_DIR}</span>/my_app.wasm<br>
+<br>
+<span class="comment"># After expansion</span><br>
+<span class="field">contract_path</span>: /home/user/contracts/my_app.wasm
+    </div>
+  </div>
+  <div>
+    <h3>Dynamic Values</h3>
+    <p>Resolved at step execution time:</p>
+    <div class="typedef">
+<span class="comment"># In YAML</span><br>
+<span class="field">context_id</span>: <span class="ty">${results.create_ctx.context_id}</span><br>
+<br>
+<span class="comment"># Resolves from workflow_results dict</span><br>
+<span class="field">context_id</span>: abc123def456...
+    </div>
+  </div>
+</div>
+
+<h3>workflow_results Accumulation</h3>
+<p>Each step that produces output stores it under its <span class="code">name</span> key in the <span class="code">workflow_results</span> dict. Subsequent steps can reference any previously stored value.</p>
+
+<div class="typedef">
+<span class="field">workflow_results</span> = {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"deploy_app"</span>: { <span class="field">"application_id"</span>: <span class="ty">"abc123"</span> },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"create_ctx"</span>: { <span class="field">"context_id"</span>: <span class="ty">"def456"</span> },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"call_method"</span>: { <span class="field">"result"</span>: <span class="ty">42</span>, <span class="field">"output"</span>: <span class="ty">"success"</span> },<br>
+}
+</div>
+</div>
+
+<!-- Step Types Grid -->
+<div class="card gd">
+<h2>Step Types</h2>
+<p style="margin-bottom:18px;">Each step type serves a specific purpose in the workflow execution pipeline.</p>
+
+<div class="g3">
+  <div class="cb">
+    <h4>install_application</h4>
+    <p>Installs a WASM application on a target node. Resolves the application binary from a local path or URL.</p>
+    <p style="margin-top:6px;"><span class="tag tag-done">core</span></p>
+  </div>
+  <div class="cb">
+    <h4>create_context</h4>
+    <p>Creates a new context on a target node, binding an application to a group. Returns context_id for subsequent steps.</p>
+    <p style="margin-top:6px;"><span class="tag tag-done">core</span></p>
+  </div>
+  <div class="cb">
+    <h4>call</h4>
+    <p>Invokes a method on an application within a context via JSON-RPC. Supports args, expected results, and retries.</p>
+    <p style="margin-top:6px;"><span class="tag tag-done">core</span></p>
+  </div>
+  <div class="cb">
+    <h4>wait_for_sync</h4>
+    <p>Waits until all nodes in the workflow have synchronized state for a given context. Polls with configurable timeout.</p>
+    <p style="margin-top:6px;"><span class="tag tag-done">core</span></p>
+  </div>
+  <div class="cb">
+    <h4>repeat</h4>
+    <p>Loops a sequence of sub-steps a specified number of times. Supports iteration variables accessible within child steps.</p>
+    <p style="margin-top:6px;"><span class="tag tag-partial">control</span></p>
+  </div>
+  <div class="cb">
+    <h4>parallel</h4>
+    <p>Executes multiple sub-steps concurrently using <span class="code">asyncio.gather</span>. All sub-steps must succeed for the parallel step to succeed.</p>
+    <p style="margin-top:6px;"><span class="tag tag-partial">control</span></p>
+  </div>
+  <div class="cb">
+    <h4>script</h4>
+    <p>Runs an arbitrary shell script or Python snippet. Captures stdout/stderr and exit code. Useful for custom validation.</p>
+    <p style="margin-top:6px;"><span class="tag tag-cli">utility</span></p>
+  </div>
+  <div class="cb">
+    <h4>assert</h4>
+    <p>Validates a condition against workflow results. Supports equality, contains, regex, and custom comparators.</p>
+    <p style="margin-top:6px;"><span class="tag tag-cli">testing</span></p>
+  </div>
+  <div class="cb">
+    <h4>fuzzy_test</h4>
+    <p>Randomized testing: generates random inputs, executes calls across nodes, and verifies eventual consistency.</p>
+    <p style="margin-top:6px;"><span class="tag tag-gap">advanced</span></p>
+  </div>
+</div>
+</div>
+
+<!-- Step Execution Detail -->
+<div class="card ga">
+<h2>Step Execution Detail</h2>
+<p style="margin-bottom:16px;">Each step follows a consistent execution pattern within the WorkflowExecutor.</p>
+
+<div class="step"><div class="n">1</div><h4>Instantiate</h4><p>The step factory creates a <span class="code">BaseStep</span> subclass from the YAML config. The executor reference is injected for access to nodes and results.</p></div>
+<div class="step"><div class="n">2</div><h4>Validate</h4><p>The <span class="code">validate()</span> method checks required fields, node references, and config sanity. Raises <span class="code">StepValidationError</span> on failure.</p></div>
+<div class="step"><div class="n">3</div><h4>Resolve</h4><p>All string values in the config are passed through <span class="code">resolve_placeholders()</span>, replacing <span class="code">${results.*}</span> and <span class="code">${nodes.*}</span> references.</p></div>
+<div class="step"><div class="n">4</div><h4>Execute</h4><p>The async <span class="code">execute()</span> method runs the step logic. For RPC steps, this calls the node via calimero-client-py. Returns <span class="code">ok(data)</span> or <span class="code">fail(error)</span>.</p></div>
+<div class="step"><div class="n">5</div><h4>Store</h4><p>If the step has a <span class="code">name</span> field, its result data is stored in <span class="code">workflow_results[name]</span> for use by subsequent steps.</p></div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

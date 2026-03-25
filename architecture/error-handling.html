@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Handling — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Error Handling</span></div>
+
+<h1>Error <em>Handling</em></h1>
+<p class="page-subtitle">MeroboxError hierarchy, result pattern, retry configuration, and error codes</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">9</div><div class="l">error types</div></div>
+  <div class="stat"><div class="v">ok/fail</div><div class="l">result pattern</div></div>
+  <div class="stat"><div class="v">@with_retry</div><div class="l">retry decorator</div></div>
+  <div class="stat"><div class="v">RetryConfig</div><div class="l">backoff strategy</div></div>
+</div>
+
+<!-- Error Hierarchy -->
+<div class="card ga">
+<h2>MeroboxError Hierarchy</h2>
+<p style="margin-bottom:16px;">All merobox errors inherit from a single base class, providing consistent handling and error messaging.</p>
+
+<svg viewBox="0 0 960 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Root -->
+  <rect x="350" y="10" width="260" height="45" rx="10" fill="#ef444415" stroke="#ef4444" stroke-width="2"/>
+  <text x="480" y="37" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="12" font-weight="700">MeroboxError</text>
+
+  <!-- Level 1 -->
+  <rect x="0" y="90" width="185" height="45" rx="8" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="92" y="117" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="9" font-weight="600">NodeResolutionError</text>
+
+  <rect x="200" y="90" width="180" height="45" rx="8" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="290" y="117" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="9" font-weight="600">AuthenticationError</text>
+
+  <rect x="395" y="90" width="170" height="45" rx="8" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="480" y="117" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="9" font-weight="600">WorkflowError</text>
+
+  <rect x="580" y="90" width="185" height="45" rx="8" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="672" y="117" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="9" font-weight="600">ConfigurationError</text>
+
+  <rect x="780" y="90" width="180" height="45" rx="8" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="870" y="117" text-anchor="middle" fill="#8b5cf6" font-family="JetBrains Mono" font-size="9" font-weight="600">MeroboxTimeoutError</text>
+
+  <!-- Lines to level 1 -->
+  <line x1="420" y1="55" x2="92" y2="90" stroke="#35354a" stroke-width="1"/>
+  <line x1="440" y1="55" x2="290" y2="90" stroke="#35354a" stroke-width="1"/>
+  <line x1="480" y1="55" x2="480" y2="90" stroke="#35354a" stroke-width="1"/>
+  <line x1="520" y1="55" x2="672" y2="90" stroke="#35354a" stroke-width="1"/>
+  <line x1="540" y1="55" x2="870" y2="90" stroke="#35354a" stroke-width="1"/>
+
+  <!-- Level 2 - WorkflowError children -->
+  <rect x="280" y="180" width="180" height="40" rx="8" fill="#06b6d410" stroke="#06b6d4" stroke-width="1"/>
+  <text x="370" y="205" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="9" font-weight="600">StepValidationError</text>
+
+  <rect x="480" y="180" width="180" height="40" rx="8" fill="#f9731610" stroke="#f97316" stroke-width="1"/>
+  <text x="570" y="205" text-anchor="middle" fill="#f97316" font-family="JetBrains Mono" font-size="9" font-weight="600">StepExecutionError</text>
+
+  <line x1="460" y1="135" x2="370" y2="180" stroke="#35354a" stroke-width="1"/>
+  <line x1="500" y1="135" x2="570" y2="180" stroke="#35354a" stroke-width="1"/>
+
+  <!-- Level 2 - Other -->
+  <rect x="60" y="180" width="160" height="40" rx="8" fill="#84cc1610" stroke="#84cc16" stroke-width="1"/>
+  <text x="140" y="205" text-anchor="middle" fill="#84cc16" font-family="JetBrains Mono" font-size="9" font-weight="600">ValidationError</text>
+
+  <rect x="720" y="180" width="160" height="40" rx="8" fill="#ef444410" stroke="#ef4444" stroke-width="1"/>
+  <text x="800" y="205" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="9" font-weight="600">ClientError</text>
+
+  <line x1="480" y1="55" x2="140" y2="180" stroke="#35354a" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="480" y1="55" x2="800" y2="180" stroke="#35354a" stroke-width="1" stroke-dasharray="3 3"/>
+</svg>
+</div>
+
+<!-- Error Descriptions -->
+<div class="card gb">
+<h2>Error Types</h2>
+<div class="g2">
+  <div class="cb">
+    <h4 style="color:var(--amber)">NodeResolutionError</h4>
+    <p>Raised when the NodeResolver cannot find a suitable backend for a declared node. All resolution strategies (remote, URL, Docker, binary) have been exhausted.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--pink)">AuthenticationError</h4>
+    <p>Raised when JWT authentication fails: invalid credentials, expired tokens, failed refresh, or missing auth configuration.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--green)">WorkflowError</h4>
+    <p>Base error for workflow-level issues. Parent of StepValidationError and StepExecutionError.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--cyan)">StepValidationError</h4>
+    <p>Raised during the <span class="code">validate()</span> phase when a step&rsquo;s configuration is missing required fields, references invalid nodes, or has incompatible options.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--orange)">StepExecutionError</h4>
+    <p>Raised during the <span class="code">execute()</span> phase when a step fails: RPC errors, unexpected results, assertion failures, or timeout during execution.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--blue)">ConfigurationError</h4>
+    <p>Raised when the YAML workflow file is malformed, missing required fields, or contains invalid values that prevent parsing.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--violet)">MeroboxTimeoutError</h4>
+    <p>Raised when an operation exceeds its configured timeout: health checks, sync waits, sandbox startup, or HTTP requests.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--lime)">ValidationError</h4>
+    <p>Generic validation error for non-step configuration: invalid port ranges, malformed URLs, unsupported backend types.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--red)">ClientError</h4>
+    <p>Raised by calimero-client-py when a JSON-RPC call returns an error response or the HTTP connection fails.</p>
+  </div>
+</div>
+</div>
+
+<!-- ok/fail Pattern -->
+<div class="card gc">
+<h2>ok() / fail() Pattern</h2>
+<p style="margin-bottom:16px;">Steps use the <span class="code">ok()</span> and <span class="code">fail()</span> helper functions to return structured results, enabling consistent error handling and result propagation.</p>
+
+<div class="g2">
+  <div>
+    <h3>ok(data)</h3>
+    <div class="typedef">
+<span class="kw">def</span> <span class="field">ok</span>(<span class="field">data</span>: <span class="ty">dict</span> = <span class="ty">None</span>) -&gt; <span class="ty">StepResult</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">return</span> <span class="ty">StepResult</span>(<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">success</span>=<span class="ty">True</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">data</span>=data <span class="kw">or</span> {},<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">error</span>=<span class="ty">None</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;)
+    </div>
+    <p>Used when a step completes successfully. The <span class="code">data</span> dict is stored in <span class="code">workflow_results</span> if the step has a <span class="code">name</span>.</p>
+  </div>
+  <div>
+    <h3>fail(error)</h3>
+    <div class="typedef">
+<span class="kw">def</span> <span class="field">fail</span>(<span class="field">error</span>: <span class="ty">str</span>, <span class="field">exc</span>: <span class="ty">Exception</span> = <span class="ty">None</span>) -&gt; <span class="ty">StepResult</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">return</span> <span class="ty">StepResult</span>(<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">success</span>=<span class="ty">False</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">data</span>={},<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">error</span>=error,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">exception</span>=exc,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;)
+    </div>
+    <p>Used when a step fails. The WorkflowExecutor checks <span class="code">result.success</span> and either continues or triggers cleanup.</p>
+  </div>
+</div>
+
+<div class="typedef" style="margin-top:16px;">
+<span class="kw">class</span> <span class="ty">StepResult</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">success</span>: <span class="ty">bool</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">data</span>: <span class="ty">dict</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">error</span>: <span class="ty">Optional[str]</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">exception</span>: <span class="ty">Optional[Exception]</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">duration_ms</span>: <span class="ty">float</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Execution time in milliseconds</span>
+</div>
+</div>
+
+<!-- RetryConfig -->
+<div class="card gd">
+<h2>RetryConfig &amp; @with_retry</h2>
+<p style="margin-bottom:16px;">Operations that may transiently fail (HTTP calls, health checks, sync waits) use the retry system.</p>
+
+<div class="g2">
+  <div>
+    <h3>RetryConfig</h3>
+    <div class="typedef">
+<span class="kw">class</span> <span class="ty">RetryConfig</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">max_retries</span>: <span class="ty">int</span> = <span class="ty">3</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">base_delay</span>: <span class="ty">float</span> = <span class="ty">1.0</span>&nbsp;&nbsp;<span class="comment"># seconds</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">max_delay</span>: <span class="ty">float</span> = <span class="ty">30.0</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">backoff_factor</span>: <span class="ty">float</span> = <span class="ty">2.0</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">jitter</span>: <span class="ty">bool</span> = <span class="ty">True</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">retryable_errors</span>: <span class="ty">tuple</span> = (<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="ty">MeroboxTimeoutError</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="ty">ClientError</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="ty">ConnectionError</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;)
+    </div>
+  </div>
+  <div>
+    <h3>@with_retry Decorator</h3>
+    <div class="typedef">
+<span class="kw">@with_retry</span>(config=<span class="ty">RetryConfig</span>(max_retries=<span class="ty">5</span>))<br>
+<span class="kw">async def</span> <span class="field">health_check</span>(node: <span class="ty">Node</span>) -&gt; <span class="ty">bool</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Will retry up to 5 times with</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># exponential backoff on failure</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;resp = <span class="kw">await</span> node.get(<span class="comment">"/health"</span>)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">return</span> resp.status == <span class="ty">200</span>
+    </div>
+    <p style="margin-top:12px;">The decorator wraps async functions with automatic retry logic. On each failure, it checks if the exception matches <span class="code">retryable_errors</span>, calculates the next delay with exponential backoff and optional jitter, then retries. Non-retryable errors propagate immediately.</p>
+  </div>
+</div>
+
+<h3 style="margin-top:20px;">Backoff Timeline</h3>
+<svg viewBox="0 0 960 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="20" width="80" height="40" rx="6" fill="#ef444420" stroke="#ef4444" stroke-width="1"/>
+  <text x="40" y="45" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="9">attempt 1</text>
+
+  <line x1="80" y1="40" x2="150" y2="40" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="115" y="15" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="8">1s</text>
+
+  <rect x="150" y="20" width="80" height="40" rx="6" fill="#ef444420" stroke="#ef4444" stroke-width="1"/>
+  <text x="190" y="45" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="9">attempt 2</text>
+
+  <line x1="230" y1="40" x2="340" y2="40" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="285" y="15" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="8">2s</text>
+
+  <rect x="340" y="20" width="80" height="40" rx="6" fill="#ef444420" stroke="#ef4444" stroke-width="1"/>
+  <text x="380" y="45" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="9">attempt 3</text>
+
+  <line x1="420" y1="40" x2="580" y2="40" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="500" y="15" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="8">4s</text>
+
+  <rect x="580" y="20" width="80" height="40" rx="6" fill="#ef444420" stroke="#ef4444" stroke-width="1"/>
+  <text x="620" y="45" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="9">attempt 4</text>
+
+  <line x1="660" y1="40" x2="780" y2="40" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="720" y="15" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="8">8s</text>
+
+  <rect x="780" y="20" width="100" height="40" rx="6" fill="#10b98120" stroke="#10b981" stroke-width="1.5"/>
+  <text x="830" y="45" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="9" font-weight="600">success!</text>
+</svg>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

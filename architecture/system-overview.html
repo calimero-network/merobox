@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Overview — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>System Overview</span></div>
+
+<h1>System <em>Overview</em></h1>
+<p class="page-subtitle">High-level architecture, data flow, and component relationships</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">Click</div><div class="l">CLI framework</div></div>
+  <div class="stat"><div class="v">Docker</div><div class="l">primary backend</div></div>
+  <div class="stat"><div class="v">YAML</div><div class="l">workflow format</div></div>
+  <div class="stat"><div class="v">asyncio</div><div class="l">runtime</div></div>
+</div>
+
+<!-- Architecture Diagram -->
+<div class="card ga">
+<h2>Architecture Diagram</h2>
+<p style="margin-bottom:16px;">The complete data flow from CLI invocation through workflow execution to node management and external integrations.</p>
+
+<svg viewBox="0 0 1000 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- User -->
+  <rect x="420" y="10" width="160" height="40" rx="8" fill="#f59e0b15" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="500" y="35" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="11" font-weight="700">User / CI</text>
+
+  <!-- CLI -->
+  <rect x="300" y="75" width="400" height="55" rx="10" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="320" y="98" fill="#f59e0b" font-family="JetBrains Mono" font-size="12" font-weight="700">Click CLI</text>
+  <text x="320" y="118" fill="#6b6b80" font-family="DM Sans" font-size="10">merobox run workflow.yaml &middot; merobox stop &middot; merobox health</text>
+  <line x1="500" y1="50" x2="500" y2="75" stroke="#f59e0b" stroke-width="1.5"/>
+
+  <!-- Config Parser -->
+  <rect x="20" y="75" width="240" height="55" rx="10" fill="#f9731610" stroke="#f97316" stroke-width="1.5"/>
+  <text x="40" y="98" fill="#f97316" font-family="JetBrains Mono" font-size="11" font-weight="700">Config Parser</text>
+  <text x="40" y="118" fill="#6b6b80" font-family="DM Sans" font-size="10">YAML load &middot; ${ENV_VAR} expansion &middot; validation</text>
+  <line x1="300" y1="102" x2="260" y2="102" stroke="#f97316" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- WorkflowExecutor -->
+  <rect x="200" y="165" width="600" height="70" rx="10" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="220" y="192" fill="#10b981" font-family="JetBrains Mono" font-size="13" font-weight="700">WorkflowExecutor</text>
+  <text x="220" y="212" fill="#6b6b80" font-family="DM Sans" font-size="10">nuke &rarr; image_pull &rarr; sandbox_start &rarr; contract_deploy &rarr; node_start &rarr; remote_register &rarr; steps &rarr; cleanup</text>
+  <text x="220" y="228" fill="#6b6b80" font-family="DM Sans" font-size="9">Manages workflow_results dict, placeholder resolution, step factory</text>
+  <line x1="500" y1="130" x2="500" y2="165" stroke="#10b981" stroke-width="1.5"/>
+
+  <!-- NodeResolver -->
+  <rect x="20" y="270" width="220" height="55" rx="10" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="40" y="293" fill="#3b82f6" font-family="JetBrains Mono" font-size="11" font-weight="700">NodeResolver</text>
+  <text x="40" y="313" fill="#6b6b80" font-family="DM Sans" font-size="9">remote &rarr; URL &rarr; Docker &rarr; binary</text>
+
+  <!-- StepFactory -->
+  <rect x="280" y="270" width="220" height="55" rx="10" fill="#84cc1610" stroke="#84cc16" stroke-width="1.5"/>
+  <text x="300" y="293" fill="#84cc16" font-family="JetBrains Mono" font-size="11" font-weight="700">StepFactory</text>
+  <text x="300" y="313" fill="#6b6b80" font-family="DM Sans" font-size="9">BaseStep subclass instantiation</text>
+
+  <!-- AuthManager -->
+  <rect x="540" y="270" width="220" height="55" rx="10" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="560" y="293" fill="#06b6d4" font-family="JetBrains Mono" font-size="11" font-weight="700">AuthManager</text>
+  <text x="560" y="313" fill="#6b6b80" font-family="DM Sans" font-size="9">JWT tokens &middot; /auth/token &middot; disk cache</text>
+
+  <!-- RemoteNodeManager -->
+  <rect x="800" y="270" width="180" height="55" rx="10" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="820" y="293" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="700">RemoteNodeManager</text>
+  <text x="820" y="313" fill="#6b6b80" font-family="DM Sans" font-size="9">Register nodes to portal</text>
+
+  <line x1="300" y1="235" x2="130" y2="270" stroke="#3b82f6" stroke-width="1"/>
+  <line x1="420" y1="235" x2="390" y2="270" stroke="#84cc16" stroke-width="1"/>
+  <line x1="580" y1="235" x2="650" y2="270" stroke="#06b6d4" stroke-width="1"/>
+  <line x1="720" y1="235" x2="890" y2="270" stroke="#ec4899" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- DockerManager -->
+  <rect x="20" y="370" width="200" height="65" rx="10" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="40" y="393" fill="#8b5cf6" font-family="JetBrains Mono" font-size="11" font-weight="700">DockerManager</text>
+  <text x="40" y="411" fill="#6b6b80" font-family="DM Sans" font-size="9">Container lifecycle</text>
+  <text x="40" y="425" fill="#6b6b80" font-family="DM Sans" font-size="9">Traefik &middot; auth stack &middot; ports</text>
+
+  <!-- BinaryManager -->
+  <rect x="260" y="370" width="200" height="65" rx="10" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="280" y="393" fill="#06b6d4" font-family="JetBrains Mono" font-size="11" font-weight="700">BinaryManager</text>
+  <text x="280" y="411" fill="#6b6b80" font-family="DM Sans" font-size="9">Native subprocess</text>
+  <text x="280" y="425" fill="#6b6b80" font-family="DM Sans" font-size="9">PID files &middot; signal cleanup</text>
+
+  <!-- SandboxManager -->
+  <rect x="500" y="370" width="200" height="65" rx="10" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="520" y="393" fill="#ec4899" font-family="JetBrains Mono" font-size="11" font-weight="700">SandboxManager</text>
+  <text x="520" y="411" fill="#6b6b80" font-family="DM Sans" font-size="9">near-sandbox binary</text>
+  <text x="520" y="425" fill="#6b6b80" font-family="DM Sans" font-size="9">RPC &middot; NearDevnetClient</text>
+
+  <!-- calimero-client-py -->
+  <rect x="740" y="370" width="240" height="65" rx="10" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="760" y="393" fill="#10b981" font-family="JetBrains Mono" font-size="11" font-weight="700">calimero-client-py</text>
+  <text x="760" y="411" fill="#6b6b80" font-family="DM Sans" font-size="9">JSON-RPC client</text>
+  <text x="760" y="425" fill="#6b6b80" font-family="DM Sans" font-size="9">Async HTTP &middot; auth integration</text>
+
+  <line x1="80" y1="325" x2="80" y2="370" stroke="#8b5cf6" stroke-width="1"/>
+  <line x1="180" y1="325" x2="360" y2="370" stroke="#06b6d4" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="500" y1="235" x2="600" y2="370" stroke="#ec4899" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- External targets -->
+  <rect x="20" y="475" width="200" height="40" rx="8" fill="#1e1e2e" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="120" y="500" text-anchor="middle" fill="#8b5cf6" font-family="JetBrains Mono" font-size="10" font-weight="600">Docker Daemon</text>
+
+  <rect x="260" y="475" width="200" height="40" rx="8" fill="#1e1e2e" stroke="#06b6d4" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="360" y="500" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="10" font-weight="600">merod Binaries</text>
+
+  <rect x="500" y="475" width="200" height="40" rx="8" fill="#1e1e2e" stroke="#ec4899" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="600" y="500" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="600">NEAR Sandbox RPC</text>
+
+  <rect x="740" y="475" width="240" height="40" rx="8" fill="#1e1e2e" stroke="#10b981" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="860" y="500" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="10" font-weight="600">merod JSON-RPC</text>
+
+  <line x1="120" y1="435" x2="120" y2="475" stroke="#8b5cf6" stroke-width="1"/>
+  <line x1="360" y1="435" x2="360" y2="475" stroke="#06b6d4" stroke-width="1"/>
+  <line x1="600" y1="435" x2="600" y2="475" stroke="#ec4899" stroke-width="1"/>
+  <line x1="860" y1="435" x2="860" y2="475" stroke="#10b981" stroke-width="1"/>
+</svg>
+
+<div class="legend">
+  <div class="legend-item"><div class="ld" style="background:#f59e0b"></div>CLI / Config</div>
+  <div class="legend-item"><div class="ld" style="background:#10b981"></div>Workflow / Client</div>
+  <div class="legend-item"><div class="ld" style="background:#3b82f6"></div>Resolution</div>
+  <div class="legend-item"><div class="ld" style="background:#8b5cf6"></div>Docker</div>
+  <div class="legend-item"><div class="ld" style="background:#06b6d4"></div>Binary / Auth</div>
+  <div class="legend-item"><div class="ld" style="background:#ec4899"></div>NEAR</div>
+</div>
+</div>
+
+<!-- Execution Flow -->
+<div class="card gb">
+<h2>Execution Flow</h2>
+<p style="margin-bottom:18px;">When you run <span class="code">merobox run workflow.yaml</span>, the following sequence occurs:</p>
+
+<div class="step"><div class="n">1</div><h4>Parse &amp; Validate</h4><p>YAML file is loaded, environment variables (<span class="code">${ENV_VAR}</span>) are expanded, and the workflow schema is validated. Node definitions and step sequences are extracted.</p></div>
+<div class="step"><div class="n">2</div><h4>Nuke (optional)</h4><p>If the workflow or CLI flags request it, all existing Docker containers and volumes matching the merobox prefix are removed. Binary processes are killed via PID files.</p></div>
+<div class="step"><div class="n">3</div><h4>Image Pull</h4><p>Docker images for merod are pulled (or verified to exist locally). The image tag comes from the workflow YAML or defaults.</p></div>
+<div class="step"><div class="n">4</div><h4>NEAR Sandbox Start</h4><p>If the workflow uses NEAR integration, SandboxManager downloads (if needed) and starts a local near-sandbox process. Waits for RPC readiness.</p></div>
+<div class="step"><div class="n">5</div><h4>Contract Deploy</h4><p>Smart contracts referenced by the workflow are resolved (path or URL), compiled if needed, and deployed to the NEAR Sandbox via NearDevnetClient.</p></div>
+<div class="step"><div class="n">6</div><h4>Node Startup</h4><p>NodeResolver determines the backend for each node. DockerManager creates containers (with Traefik routing) or BinaryManager spawns native merod processes. Config TOML is generated per node.</p></div>
+<div class="step"><div class="n">7</div><h4>Remote Registration</h4><p>If remote nodes are declared, RemoteNodeManager registers them via the portal API. AuthManager handles JWT authentication for each node.</p></div>
+<div class="step"><div class="n">8</div><h4>Step Execution</h4><p>Steps run sequentially (or in parallel for <span class="code">parallel</span> steps). Each step resolves placeholders, executes via calimero-client-py JSON-RPC, and stores results in <span class="code">workflow_results</span>.</p></div>
+<div class="step"><div class="n">9</div><h4>Cleanup</h4><p>On success or failure, cleanup runs: containers are stopped/removed, binary processes are killed, sandbox is shut down, and temporary files are cleaned.</p></div>
+</div>
+
+<!-- Component Responsibilities -->
+<div class="card gc">
+<h2>Component Responsibilities</h2>
+<div class="g2">
+  <div>
+    <h3>WorkflowExecutor</h3>
+    <ul>
+      <li>Orchestrates the full lifecycle from YAML to completion</li>
+      <li>Manages <span class="code">workflow_results</span> dictionary</li>
+      <li>Resolves placeholders and dynamic values between steps</li>
+      <li>Handles step factory for creating step instances</li>
+      <li>Coordinates cleanup on both success and failure paths</li>
+    </ul>
+  </div>
+  <div>
+    <h3>NodeResolver</h3>
+    <ul>
+      <li>Determines backend for each declared node</li>
+      <li>Resolution chain: registered remote &rarr; URL &rarr; Docker &rarr; binary</li>
+      <li>Integrates AuthManager for authenticated endpoints</li>
+      <li>Integrates RemoteNodeManager for portal registration</li>
+      <li>Returns resolved node endpoints for step execution</li>
+    </ul>
+  </div>
+  <div>
+    <h3>AuthManager</h3>
+    <ul>
+      <li>Manages JWT authentication tokens per node</li>
+      <li>Calls <span class="code">/auth/token</span> and <span class="code">/auth/refresh</span> endpoints</li>
+      <li>Implements disk-based token cache for persistence</li>
+      <li>Handles automatic token refresh on expiry</li>
+    </ul>
+  </div>
+  <div>
+    <h3>Config System</h3>
+    <ul>
+      <li>YAML workflow files with <span class="code">${ENV_VAR}</span> expansion</li>
+      <li>TOML config for merod node configuration</li>
+      <li>Bootstrap node injection (<span class="code">apply_bootstrap_nodes</span>)</li>
+      <li>E2E defaults (<span class="code">apply_e2e_defaults</span>)</li>
+      <li>NEAR devnet config (<span class="code">apply_near_devnet_config_to_file</span>)</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- External Dependencies -->
+<div class="card gd">
+<h2>External Dependencies</h2>
+<div class="g3">
+  <div class="cb">
+    <h4>calimero-client-py</h4>
+    <p>JSON-RPC client library for communicating with merod nodes. Used by steps to execute methods, query state, and manage contexts.</p>
+    <p style="margin-top:6px;"><span class="tag tag-lib">library</span></p>
+  </div>
+  <div class="cb">
+    <h4>Docker SDK (docker-py)</h4>
+    <p>Python Docker API for container lifecycle management. Used by DockerManager for creating, starting, stopping, and removing containers.</p>
+    <p style="margin-top:6px;"><span class="tag tag-lib">library</span></p>
+  </div>
+  <div class="cb">
+    <h4>aiohttp</h4>
+    <p>Async HTTP client/server framework. Used for health checks, sandbox RPC communication, and async workflow execution.</p>
+    <p style="margin-top:6px;"><span class="tag tag-lib">library</span></p>
+  </div>
+  <div class="cb">
+    <h4>py-near</h4>
+    <p>Python NEAR SDK for account management, key operations, and contract interactions with the NEAR sandbox.</p>
+    <p style="margin-top:6px;"><span class="tag tag-lib">library</span></p>
+  </div>
+  <div class="cb">
+    <h4>Click</h4>
+    <p>CLI framework providing command groups, argument parsing, options, and help generation for all merobox commands.</p>
+    <p style="margin-top:6px;"><span class="tag tag-cli">cli</span></p>
+  </div>
+  <div class="cb">
+    <h4>PyYAML</h4>
+    <p>YAML parsing library for reading workflow definition files and configuration.</p>
+    <p style="margin-top:6px;"><span class="tag tag-lib">library</span></p>
+  </div>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

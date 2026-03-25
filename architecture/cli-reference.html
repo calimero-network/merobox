@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLI Reference — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>CLI Reference</span></div>
+
+<h1>CLI <em>Reference</em></h1>
+<p class="page-subtitle">All 7 Click commands with flags, options, and usage examples</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">7</div><div class="l">commands</div></div>
+  <div class="stat"><div class="v">Click</div><div class="l">framework</div></div>
+  <div class="stat"><div class="v">merobox</div><div class="l">entry point</div></div>
+  <div class="stat"><div class="v">Python</div><div class="l">language</div></div>
+</div>
+
+<!-- Command Overview -->
+<div class="card ga">
+<h2>Command Overview</h2>
+<p style="margin-bottom:16px;">merobox provides seven top-level commands for workflow orchestration, node management, and environment control.</p>
+
+<svg viewBox="0 0 960 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- merobox root -->
+  <rect x="380" y="10" width="200" height="40" rx="8" fill="#f59e0b15" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="480" y="35" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="12" font-weight="700">merobox</text>
+
+  <!-- Commands -->
+  <rect x="0" y="80" width="120" height="50" rx="8" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="60" y="102" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="10" font-weight="600">run</text>
+  <text x="60" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">workflow exec</text>
+
+  <rect x="140" y="80" width="120" height="50" rx="8" fill="#ef444410" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="200" y="102" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="10" font-weight="600">stop</text>
+  <text x="200" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">halt nodes</text>
+
+  <rect x="280" y="80" width="120" height="50" rx="8" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="340" y="102" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="10" font-weight="600">health</text>
+  <text x="340" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">check status</text>
+
+  <rect x="420" y="80" width="120" height="50" rx="8" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="480" y="102" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="10" font-weight="600">logs</text>
+  <text x="480" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">view output</text>
+
+  <rect x="560" y="80" width="120" height="50" rx="8" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="620" y="102" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="10" font-weight="600">nuke</text>
+  <text x="620" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">destroy all</text>
+
+  <rect x="700" y="80" width="120" height="50" rx="8" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="760" y="102" text-anchor="middle" fill="#8b5cf6" font-family="JetBrains Mono" font-size="10" font-weight="600">remote</text>
+  <text x="760" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">manage remotes</text>
+
+  <rect x="840" y="80" width="120" height="50" rx="8" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="900" y="102" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="600">bootstrap</text>
+  <text x="900" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">init config</text>
+
+  <!-- Connection lines -->
+  <line x1="430" y1="50" x2="60" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="445" y1="50" x2="200" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="460" y1="50" x2="340" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="480" y1="50" x2="480" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="500" y1="50" x2="620" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="515" y1="50" x2="760" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="530" y1="50" x2="900" y2="80" stroke="#35354a" stroke-width="1"/>
+</svg>
+</div>
+
+<!-- Individual Commands -->
+<div class="card gb">
+<h2>merobox run</h2>
+<p style="margin-bottom:14px;">Execute a workflow YAML file. This is the primary command &mdash; it orchestrates the full lifecycle from environment setup through step execution to cleanup.</p>
+
+<div class="typedef">
+<span class="ty">merobox run</span> &lt;workflow.yaml&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Arguments:</span><br>
+&nbsp;&nbsp;<span class="field">workflow</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Path to workflow YAML file</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--nuke</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Destroy existing environment before run</span><br>
+&nbsp;&nbsp;<span class="field">--no-cleanup</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Keep nodes running after workflow completes</span><br>
+&nbsp;&nbsp;<span class="field">--backend</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Force backend: "docker" or "binary" (default: auto)</span><br>
+&nbsp;&nbsp;<span class="field">--image</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Docker image override (e.g. merod:dev)</span><br>
+&nbsp;&nbsp;<span class="field">--binary-path</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Path to merod binary (for binary backend)</span><br>
+&nbsp;&nbsp;<span class="field">--near-sandbox</span>&nbsp;&nbsp;&nbsp;<span class="comment">Enable NEAR sandbox (auto-detected from YAML)</span><br>
+&nbsp;&nbsp;<span class="field">--env</span> KEY=VAL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Set environment variable (repeatable)</span><br>
+&nbsp;&nbsp;<span class="field">--verbose / -v</span>&nbsp;&nbsp;&nbsp;<span class="comment">Increase log verbosity</span><br>
+&nbsp;&nbsp;<span class="field">--dry-run</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Validate workflow without executing</span>
+</div>
+</div>
+
+<div class="card gc">
+<h2>merobox stop</h2>
+<p style="margin-bottom:14px;">Stop all running nodes managed by merobox.</p>
+
+<div class="typedef">
+<span class="ty">merobox stop</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Stop specific node by name</span><br>
+&nbsp;&nbsp;<span class="field">--all</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Stop all managed nodes (default)</span><br>
+&nbsp;&nbsp;<span class="field">--force</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Force kill (SIGKILL instead of SIGTERM)</span><br>
+&nbsp;&nbsp;<span class="field">--timeout</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Graceful shutdown timeout in seconds (default: 10)</span>
+</div>
+</div>
+
+<div class="card gd">
+<h2>merobox health</h2>
+<p style="margin-bottom:14px;">Check the health status of all running nodes.</p>
+
+<div class="typedef">
+<span class="ty">merobox health</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Check specific node by name</span><br>
+&nbsp;&nbsp;<span class="field">--json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Output in JSON format</span><br>
+&nbsp;&nbsp;<span class="field">--wait</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Wait until healthy (with timeout)</span><br>
+&nbsp;&nbsp;<span class="field">--timeout</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Wait timeout in seconds (default: 30)</span>
+</div>
+</div>
+
+<div class="card ga">
+<h2>merobox logs</h2>
+<p style="margin-bottom:14px;">View or follow log output from running nodes.</p>
+
+<div class="typedef">
+<span class="ty">merobox logs</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name to show logs for</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">--follow / -f</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Follow log output (like tail -f)</span><br>
+&nbsp;&nbsp;<span class="field">--tail</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Number of lines from end (default: 100)</span><br>
+&nbsp;&nbsp;<span class="field">--since</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show logs since timestamp or duration (e.g. "5m")</span>
+</div>
+</div>
+
+<div class="card gb">
+<h2>merobox nuke</h2>
+<p style="margin-bottom:14px;">Destroy all merobox-managed resources: containers, volumes, binary processes, PID files, and temp data.</p>
+
+<div class="typedef">
+<span class="ty">merobox nuke</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--confirm / -y</span>&nbsp;&nbsp;&nbsp;<span class="comment">Skip confirmation prompt</span><br>
+&nbsp;&nbsp;<span class="field">--keep-images</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Don't remove pulled Docker images</span><br>
+&nbsp;&nbsp;<span class="field">--keep-sandbox</span>&nbsp;&nbsp;&nbsp;<span class="comment">Don't remove NEAR sandbox data</span>
+</div>
+</div>
+
+<div class="card gc">
+<h2>merobox remote</h2>
+<p style="margin-bottom:14px;">Manage remote node registrations via the portal API.</p>
+
+<div class="typedef">
+<span class="ty">merobox remote</span> &lt;subcommand&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Subcommands:</span><br>
+&nbsp;&nbsp;<span class="field">add</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Register a new remote node</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--url</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node endpoint URL</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--token</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Auth token (or use $MEROBOX_TOKEN)</span><br>
+<br>
+&nbsp;&nbsp;<span class="field">remove</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Unregister a remote node</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name to remove</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+<br>
+&nbsp;&nbsp;<span class="field">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">List all registered remote nodes</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Output in JSON format</span>
+</div>
+</div>
+
+<div class="card gd">
+<h2>merobox bootstrap</h2>
+<p style="margin-bottom:14px;">Initialize a new merobox project with default configuration files and directory structure.</p>
+
+<div class="typedef">
+<span class="ty">merobox bootstrap</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--dir</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Target directory (default: current)</span><br>
+&nbsp;&nbsp;<span class="field">--template</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Workflow template: "minimal", "e2e", "near" (default: minimal)</span><br>
+&nbsp;&nbsp;<span class="field">--nodes</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Number of nodes to configure (default: 2)</span><br>
+&nbsp;&nbsp;<span class="field">--with-sandbox</span>&nbsp;&nbsp;&nbsp;<span class="comment">Include NEAR sandbox configuration</span>
+</div>
+
+<p style="margin-top:14px;">Creates the following structure:</p>
+<div class="typedef">
+<span class="field">./</span><br>
+&nbsp;&nbsp;<span class="field">workflow.yaml</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Starter workflow from template</span><br>
+&nbsp;&nbsp;<span class="field">contracts/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Directory for WASM contracts</span><br>
+&nbsp;&nbsp;<span class="field">.merobox/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Local config and cache</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">config.toml</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Default node configuration</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">tokens/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Auth token cache</span>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>
