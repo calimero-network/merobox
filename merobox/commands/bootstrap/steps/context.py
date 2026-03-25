@@ -44,6 +44,10 @@ class CreateContextStep(BaseStep):
         if "params" in self.config and not isinstance(self.config["params"], str):
             raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
 
+        # Validate group_id is a string if provided
+        if "group_id" in self.config and not isinstance(self.config["group_id"], str):
+            raise ValueError(f"Step '{step_name}': 'group_id' must be a string")
+
         # Validate protocol is NEAR-only when explicitly provided
         if "protocol" in self.config:
             validate_near_only_protocol(
@@ -111,6 +115,12 @@ class CreateContextStep(BaseStep):
                 console.print(f"[red]Failed to parse params JSON: {str(e)}[/red]")
                 return False
 
+        group_id: str | None = None
+        if "group_id" in self.config:
+            group_id = self._resolve_dynamic_value(
+                self.config["group_id"], workflow_results, dynamic_values
+            )
+
         # Resolve node (gets URL and ensures authentication)
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
@@ -129,6 +139,7 @@ class CreateContextStep(BaseStep):
                 application_id=application_id,
                 protocol=protocol,
                 params=params_json,
+                group_id=group_id,
             )
 
             result = ok(api_result)

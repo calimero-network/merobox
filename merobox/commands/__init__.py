@@ -20,6 +20,7 @@ from merobox.commands.errors import (
     ValidationError,
     WorkflowError,
 )
+from merobox.commands.group import group
 from merobox.commands.health import health
 from merobox.commands.identity import identity
 from merobox.commands.install import install
@@ -46,6 +47,7 @@ __all__ = [
     "nuke",
     "identity",
     "context",
+    "group",
     "bootstrap",
     "call",
     "blob",

@@ -21,12 +21,16 @@ from rich.progress import (
 from merobox.commands.auth import AUTH_METHOD_NONE, AuthenticationError, AuthManager
 from merobox.commands.bootstrap.steps import (
     CreateContextStep,
+    CreateGroupInvitationStep,
+    CreateGroupStep,
     CreateIdentityStep,
     ExecuteStep,
     InstallApplicationStep,
     InviteIdentityStep,
     InviteOpenStep,
     JoinContextStep,
+    JoinGroupContextStep,
+    JoinGroupStep,
     JoinOpenStep,
     ParallelStep,
     RepeatStep,
@@ -1530,6 +1534,14 @@ class WorkflowExecutor:
             return CreateMeshStep(step_config, **common_kwargs)
         elif step_type == "fuzzy_test":
             return FuzzyTestStep(step_config, **common_kwargs)
+        elif step_type == "create_group":
+            return CreateGroupStep(step_config, **common_kwargs)
+        elif step_type == "create_group_invitation":
+            return CreateGroupInvitationStep(step_config, **common_kwargs)
+        elif step_type == "join_group":
+            return JoinGroupStep(step_config, **common_kwargs)
+        elif step_type == "join_group_context":
+            return JoinGroupContextStep(step_config, **common_kwargs)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

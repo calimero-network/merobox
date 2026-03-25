@@ -8,6 +8,10 @@ from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
+from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
+from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
+from merobox.commands.bootstrap.steps.group_join_context import JoinGroupContextStep
 from merobox.commands.bootstrap.steps.identity import (
     CreateIdentityStep,
     InviteIdentityStep,
@@ -28,6 +32,10 @@ __all__ = [
     "BaseStep",
     "InstallApplicationStep",
     "CreateContextStep",
+    "CreateGroupStep",
+    "CreateGroupInvitationStep",
+    "JoinGroupStep",
+    "JoinGroupContextStep",
     "CreateIdentityStep",
     "InviteIdentityStep",
     "InviteOpenStep",

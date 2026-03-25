@@ -1,0 +1,95 @@
+description: >
+  Demonstrates Context Group Management — creates a group on node 1,
+  invites node 2 to join the group, creates a shared context inside the
+  group, has node 2 join that context via group membership, then verifies
+  state propagates correctly between both nodes.
+name: Context Group Management Example
+
+force_pull_image: true
+
+nodes:
+  chain_id: testnet-1
+  count: 2
+  image: ghcr.io/calimero-network/merod:prerelease
+  prefix: calimero-node
+
+steps:
+  # Step 1: Install the application on node 1
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # Step 2: Create a group on node 1 tied to the installed application.
+  # All contexts in this group will run the same application version,
+  # enabling unified upgrade propagation.
+  - name: Create Group on Node 1
+    type: create_group
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      group_id: groupId
+
+  # Step 3: Create a context inside the group on node 1.
+  # The group_id field registers this context with the group so that
+  # group membership controls who can join it.
+  - name: Create Group Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{group_id_calimero-node-1}}'
+    outputs:
+      context_id: contextId
+      member_key_node1: memberPublicKey
+
+  # Step 4: Create an invitation on node 1.
+  # The invitation uses a commit-reveal protocol to prevent front-running
+  # on-chain. The CLI handles this transparently — the output is a
+  # SignedGroupOpenInvitation that any joiner can use.
+  - name: Create Group Invitation on Node 1
+    type: create_group_invitation
+    node: calimero-node-1
+    group_id: '{{group_id_calimero-node-1}}'
+
+  # Step 5: Node 2 joins the group using the invitation from node 1.
+  # After this step node 2 becomes a group member with the default
+  # CAN_JOIN_OPEN_CONTEXTS capability.
+  - name: Node 2 Joins Group
+    type: join_group
+    node: calimero-node-2
+    invitation: '{{group_invitation_calimero-node-1}}'
+
+  # Step 6: Node 2 joins the existing context via group membership.
+  # join_group_context creates a fresh per-context identity for node 2,
+  # keeping its group identity and context identity separate for privacy.
+  - name: Node 2 Joins Group Context
+    type: join_group_context
+    node: calimero-node-2
+    group_id: '{{group_id_calimero-node-1}}'
+    context_id: '{{context_id_calimero-node-1}}'
+    outputs:
+      context_id: contextId
+      member_key_node2: memberPublicKey
+
+  # Step 7: Write a value on node 1 to produce a state change.
+  - name: Write Value on Node 1
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id_calimero-node-1}}'
+    executor_public_key: '{{member_key_node1_calimero-node-1}}'
+    method: set
+    args: '{"key": "hello", "value": "world"}'
+
+  # Step 8: Wait for node 2 to sync and verify both nodes have the same state.
+  - name: Wait for State Sync
+    type: wait_for_sync
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    context_id: '{{context_id_calimero-node-1}}'
+    timeout: 30
+
+stop_all_nodes: false
