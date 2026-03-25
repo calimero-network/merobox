@@ -11,7 +11,7 @@
 <div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Node Management</span></div>
 
 <h1>Node <em>Management</em></h1>
-<p class="page-subtitle">DockerManager, BinaryManager, container lifecycle, Traefik, and config TOML</p>
+<p class="page-subtitle">DockerManager, BinaryManager, container lifecycle, Traefik, auth service, and config TOML</p>
 
 <div class="g4" style="margin-bottom:36px;">
   <div class="stat"><div class="v">2</div><div class="l">node backends</div></div>
@@ -227,6 +227,313 @@
 </svg>
 
 <p style="margin-top:14px;">Each resolver integrates the <span class="code">AuthManager</span> to obtain JWT tokens for authenticated endpoints. If a node declares <span class="code">remote: true</span>, the RemoteNodeManager is consulted first.</p>
+</div>
+
+<!-- Auth Service (Docker Mode) -->
+<div class="card gc">
+<h2>Auth Service (Docker Mode)</h2>
+<p style="margin-bottom:16px;">When <span class="code">--auth-service</span> is enabled, merobox deploys a full authentication stack alongside the merod containers. This creates three interconnected components managed via Docker.</p>
+
+<h3>Stack Components</h3>
+<div class="g3">
+  <div class="step"><div class="n">1</div><h4>Traefik Proxy</h4><p><span class="code">proxy</span> container &mdash; routes HTTP traffic, applies authentication middleware, handles Host-based routing to individual nodes.</p></div>
+  <div class="step"><div class="n">2</div><h4>Auth Service</h4><p><span class="code">auth</span> container &mdash; handles authentication and authorization. Validates credentials, issues JWT tokens, manages user sessions.</p></div>
+  <div class="step"><div class="n">3</div><h4>Docker Networks</h4><p><span class="code">calimero_web</span> (external-facing) connects Traefik to node containers. <span class="code">calimero_internal</span> (backend) isolates auth service communication.</p></div>
+</div>
+
+<h3>Architecture</h3>
+<div class="typedef">
+Internet &rarr; <span class="ty">Traefik</span> (port 80) &rarr; <span class="field">Node Containers</span> (<span class="comment">calimero_web network</span>)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">Auth Service</span> (<span class="comment">calimero_internal network</span>)
+</div>
+
+<h3>URL Patterns</h3>
+<div class="g2">
+  <div class="cb">
+    <h4 style="color:var(--green)">With Auth Service</h4>
+    <ul>
+      <li><span class="code">http://node1.127.0.0.1.nip.io</span></li>
+      <li><span class="code">/auth/login</span> &mdash; web login UI</li>
+      <li><span class="code">/admin-dashboard</span> &mdash; admin panel</li>
+    </ul>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--cyan)">Without Auth Service</h4>
+    <ul>
+      <li><span class="code">http://localhost:2528/admin-dashboard</span></li>
+      <li><span class="code">http://localhost:2528/admin-api/</span></li>
+    </ul>
+  </div>
+</div>
+
+<h3>Route Protection</h3>
+<div class="g3">
+  <div class="cb">
+    <h4 style="color:var(--green)">Public</h4>
+    <ul>
+      <li><span class="code">/admin-dashboard</span></li>
+    </ul>
+    <p style="margin-top:6px;">Accessible without authentication.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--red)">Protected</h4>
+    <ul>
+      <li><span class="code">/admin-api/</span></li>
+      <li><span class="code">/jsonrpc</span></li>
+      <li><span class="code">/ws</span></li>
+    </ul>
+    <p style="margin-top:6px;">Require valid JWT token.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--violet)">Auth Endpoints</h4>
+    <ul>
+      <li><span class="code">/auth/login</span></li>
+      <li><span class="code">/admin/</span></li>
+    </ul>
+    <p style="margin-top:6px;">Handled by auth service.</p>
+  </div>
+</div>
+
+<h3>CLI Usage</h3>
+<div class="typedef">
+<span class="comment"># Start with auth service</span><br>
+<span class="kw">merobox</span> run <span class="field">--auth-service</span><br>
+<br>
+<span class="comment"># Multiple nodes with auth</span><br>
+<span class="kw">merobox</span> run <span class="field">--count</span> <span class="ty">2</span> <span class="field">--auth-service</span><br>
+<br>
+<span class="comment"># Custom auth image</span><br>
+<span class="kw">merobox</span> run <span class="field">--auth-service</span> <span class="field">--auth-image</span> <span class="ty">ghcr.io/calimero-network/mero-auth:latest</span><br>
+<br>
+<span class="comment"># Use cached auth image</span><br>
+<span class="kw">merobox</span> run <span class="field">--auth-service</span> <span class="field">--auth-use-cached</span><br>
+<br>
+<span class="comment"># Stop with auth cleanup</span><br>
+<span class="kw">merobox</span> stop <span class="field">--auth-service</span>
+</div>
+
+<h3>Workflow Integration</h3>
+<div class="typedef">
+<span class="field">auth_service</span>: <span class="ty">true</span>
+</div>
+
+<details>
+<summary>Auto-Management Details</summary>
+<div class="detail-body">
+  <p>When <span class="code">--auth-service</span> is enabled, merobox automatically handles:</p>
+  <ul>
+    <li>Traefik image pulled and started with correct port bindings</li>
+    <li>Auth service image pulled and started with environment config</li>
+    <li><span class="code">calimero_web</span> and <span class="code">calimero_internal</span> networks created</li>
+    <li>Node containers configured with Traefik Docker labels for routing</li>
+    <li>CORS headers enabled for cross-origin requests</li>
+  </ul>
+</div>
+</details>
+
+<h3>Frontend Management</h3>
+<div class="g2">
+  <div class="cb">
+    <h4 style="color:var(--amber)">Auth Frontend</h4>
+    <ul>
+      <li><strong>Fresh</strong> (default): <span class="code">CALIMERO_AUTH_FRONTEND_FETCH=1</span></li>
+      <li><strong>Cached</strong>: <span class="code">--auth-use-cached</span> or <span class="code">CALIMERO_AUTH_FRONTEND_FETCH=0</span></li>
+      <li><strong>Custom</strong>: <span class="code">--auth-image</span></li>
+    </ul>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--blue)">WebUI Frontend</h4>
+    <ul>
+      <li><strong>Fresh</strong> (default): <span class="code">CALIMERO_WEBUI_FETCH=1</span></li>
+      <li><strong>Cached</strong>: <span class="code">--webui-use-cached</span> or <span class="code">CALIMERO_WEBUI_FETCH=0</span></li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- Embedded Auth (Binary Mode) -->
+<div class="card gd">
+<h2>Embedded Auth (Binary Mode)</h2>
+<p style="margin-bottom:16px;">When using <span class="code">--no-docker</span> with <span class="code">--auth-mode embedded</span>, the merod binary runs a built-in authentication service that provides JWT-based protection without external containers.</p>
+
+<div class="g2">
+  <div>
+    <h3>How It Works</h3>
+    <ul>
+      <li>JWT protection on all endpoints: <span class="code">/jsonrpc</span>, <span class="code">/admin-api/</span>, <span class="code">/ws</span></li>
+      <li>Built-in auth service at <span class="code">/auth/*</span></li>
+      <li>Username/password provider enabled by default</li>
+      <li>Persistent storage in <span class="code">&lt;node_home&gt;/auth/</span> (RocksDB)</li>
+      <li>Auto-creates users on first authentication attempt</li>
+    </ul>
+  </div>
+  <div>
+    <h3>Auth Endpoints</h3>
+    <div class="step"><div class="n">1</div><h4>/auth/health</h4><p>Check auth service status and readiness.</p></div>
+    <div class="step"><div class="n">2</div><h4>/auth/providers</h4><p>List available authentication providers.</p></div>
+    <div class="step"><div class="n">3</div><h4>/auth/login</h4><p>Web-based login UI for interactive sessions.</p></div>
+    <div class="step"><div class="n">4</div><h4>/auth/token</h4><p>Programmatic token generation for API clients.</p></div>
+  </div>
+</div>
+
+<h3>Getting a JWT Token</h3>
+<div class="typedef">
+<span class="comment"># Request a token via the /auth/token endpoint</span><br>
+<span class="kw">curl</span> -X POST http://localhost:2528/auth/token \<br>
+&nbsp;&nbsp;-H <span class="ty">"Content-Type: application/json"</span> \<br>
+&nbsp;&nbsp;-d '{<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"auth_method"</span>: <span class="ty">"user_password"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"public_key"</span>: <span class="ty">"your-public-key"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"client_name"</span>: <span class="ty">"my-client"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"timestamp"</span>: <span class="ty">1234567890</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"permissions"</span>: [],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"provider_data"</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"username"</span>: <span class="ty">"admin"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">"password"</span>: <span class="ty">"password123"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+&nbsp;&nbsp;}'
+</div>
+
+<h3>Using Tokens</h3>
+<div class="typedef">
+<span class="comment"># Authenticate API requests with the JWT token</span><br>
+<span class="kw">curl</span> http://localhost:2528/jsonrpc \<br>
+&nbsp;&nbsp;-H <span class="ty">"Authorization: Bearer YOUR_ACCESS_TOKEN"</span>
+</div>
+
+<h3>CLI Usage</h3>
+<div class="typedef">
+<span class="comment"># Single node with embedded auth</span><br>
+<span class="kw">merobox</span> run <span class="field">--no-docker</span> <span class="field">--binary-path</span> <span class="ty">/path/to/merod</span> <span class="field">--auth-mode</span> <span class="ty">embedded</span><br>
+<br>
+<span class="comment"># Multiple nodes with embedded auth</span><br>
+<span class="kw">merobox</span> run <span class="field">--no-docker</span> <span class="field">--binary-path</span> <span class="ty">/path/to/merod</span> <span class="field">--count</span> <span class="ty">2</span> <span class="field">--auth-mode</span> <span class="ty">embedded</span>
+</div>
+
+<h3>Workflow Integration</h3>
+<div class="typedef">
+<span class="field">auth_mode</span>: <span class="ty">embedded</span>
+</div>
+
+<details>
+<summary>Storage &amp; Notes</summary>
+<div class="detail-body">
+  <ul>
+    <li>Binary mode only &mdash; not available with Docker backend</li>
+    <li>Auth data persisted at <span class="code">&lt;node_home&gt;/auth/</span> using RocksDB</li>
+    <li>Users are auto-created on first authentication attempt</li>
+    <li>Each node maintains its own independent auth database</li>
+  </ul>
+</div>
+</details>
+</div>
+
+<!-- Docker Image Management -->
+<div class="card ga">
+<h2>Docker Image Management</h2>
+<p style="margin-bottom:16px;">DockerManager provides intelligent image handling with automatic registry detection and smart caching to minimize unnecessary pulls.</p>
+
+<div class="g2">
+  <div class="cb">
+    <h4 style="color:var(--green)">Smart Pulling</h4>
+    <ul>
+      <li>Auto-detection of remote registry images (ghcr.io, Docker Hub, etc.)</li>
+      <li>Only pulls if the image is not already available locally</li>
+      <li>Progress display with layer-by-layer download status</li>
+    </ul>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--amber)">Force Pull</h4>
+    <ul>
+      <li>CLI: <span class="code">--force-pull</span></li>
+      <li>YAML: <span class="code">force_pull_image: true</span></li>
+      <li>Always pulls latest from registry, ignoring local cache</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- Log Level Configuration -->
+<div class="card gb">
+<h2>Log Level Configuration</h2>
+<p style="margin-bottom:16px;">Fine-grained logging control using Rust&rsquo;s <span class="code">RUST_LOG</span> syntax, supporting both global and per-module levels.</p>
+
+<h3>Configuration Methods</h3>
+<div class="g2">
+  <div class="cb">
+    <h4 style="color:var(--violet)">CLI</h4>
+    <div class="typedef">
+<span class="kw">merobox</span> run <span class="field">--log-level</span> <span class="ty">info</span><br>
+<br>
+<span class="comment"># Module-specific override</span><br>
+<span class="kw">merobox</span> run <span class="field">--log-level</span> <span class="ty">"info,calimero_context::handlers::execute=debug"</span>
+    </div>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--cyan)">YAML</h4>
+    <div class="typedef">
+<span class="field">log_level</span>: <span class="ty">"info,module::path=debug"</span>
+    </div>
+  </div>
+</div>
+
+<h3>Available Levels</h3>
+<div class="g2" style="margin-top:4px;">
+  <div>
+    <ul>
+      <li><span class="code">error</span> &mdash; critical failures only</li>
+      <li><span class="code">warn</span> &mdash; warnings and errors</li>
+      <li><span class="code">info</span> &mdash; informational messages</li>
+    </ul>
+  </div>
+  <div>
+    <ul>
+      <li><span class="code">debug</span> &mdash; detailed debug output (default)</li>
+      <li><span class="code">trace</span> &mdash; maximum verbosity</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- Custom Config Path -->
+<div class="card gc">
+<h2>Custom Config Path</h2>
+<p style="margin-bottom:16px;">Override the generated <span class="code">config.toml</span> with a custom configuration file. Useful for reproducible setups or non-standard node configurations.</p>
+
+<div class="g2">
+  <div>
+    <h3>Shared Config</h3>
+    <div class="typedef">
+<span class="field">nodes</span>:<br>
+&nbsp;&nbsp;<span class="field">config_path</span>: <span class="ty">./custom.toml</span>
+    </div>
+    <p style="margin-top:8px;">Applied to all nodes declared under the <span class="code">nodes</span> key. Skips automatic initialization when provided.</p>
+  </div>
+  <div>
+    <h3>Per-Node Override</h3>
+    <div class="typedef">
+<span class="field">nodes</span>:<br>
+&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">node1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">config_path</span>: <span class="ty">./node1-config.toml</span><br>
+&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">node2</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">config_path</span>: <span class="ty">./node2-config.toml</span>
+    </div>
+    <p style="margin-top:8px;">Each node can specify its own config, overriding the shared setting.</p>
+  </div>
+</div>
+
+<details>
+<summary>Compatibility Notes</summary>
+<div class="detail-body">
+  <ul>
+    <li>Works with both Docker and binary mode backends</li>
+    <li>Not supported with <span class="code">count</span> mode (each node needs a unique config)</li>
+    <li>Skips <span class="code">merod init</span> when a custom config path is provided</li>
+    <li>The file must be a valid TOML config that merod can parse</li>
+  </ul>
+</div>
+</details>
 </div>
 
 </div>
