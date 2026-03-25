@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEAR Integration — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>NEAR Integration</span></div>
+
+<h1>NEAR <em>Integration</em></h1>
+<p class="page-subtitle">SandboxManager, NearDevnetClient, contract deployment, and relayer mode</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">Sandbox</div><div class="l">local NEAR chain</div></div>
+  <div class="stat"><div class="v">RPC</div><div class="l">port 3030</div></div>
+  <div class="stat"><div class="v">py-near</div><div class="l">SDK client</div></div>
+  <div class="stat"><div class="v">WASM</div><div class="l">contract format</div></div>
+</div>
+
+<!-- SandboxManager -->
+<div class="card ga">
+<h2>SandboxManager</h2>
+<p style="margin-bottom:16px;">SandboxManager handles the full lifecycle of a local NEAR Sandbox instance: downloading the binary, starting the process, and exposing the RPC endpoint for contract interactions.</p>
+
+<div class="step"><div class="n">1</div><h4>Download Binary</h4><p>Checks if <span class="code">near-sandbox</span> exists in the local cache directory. If not, downloads the platform-specific binary from the NEAR releases page. Verifies checksum and sets executable permissions.</p></div>
+<div class="step"><div class="n">2</div><h4>Initialize Genesis</h4><p>Runs <span class="code">near-sandbox init</span> to create the genesis configuration. Sets up the root account (<span class="code">test.near</span>) with initial balance and configures block production parameters.</p></div>
+<div class="step"><div class="n">3</div><h4>Start Process</h4><p>Spawns the sandbox process with the configured home directory. Listens on <span class="code">127.0.0.1:3030</span> for JSON-RPC requests. Stdout/stderr captured to log files.</p></div>
+<div class="step"><div class="n">4</div><h4>Wait for Ready</h4><p>Polls the <span class="code">/status</span> endpoint until the sandbox responds with a valid block height. Timeout configurable, defaults to 30 seconds.</p></div>
+<div class="step"><div class="n">5</div><h4>Shutdown</h4><p>Sends SIGTERM to the sandbox process. Waits for graceful shutdown, then SIGKILL if needed. Cleans up data directory if <span class="code">preserve_data</span> is not set.</p></div>
+</div>
+
+<!-- NearDevnetClient -->
+<div class="card gb">
+<h2>NearDevnetClient</h2>
+<p style="margin-bottom:16px;">The NearDevnetClient wraps py-near to provide high-level account and contract operations against the local sandbox.</p>
+
+<div class="g2">
+  <div>
+    <h3>Account Operations</h3>
+    <div class="cb" style="margin-bottom:10px;">
+      <h4>create_account</h4>
+      <p>Creates a new named account under the root account (e.g. <span class="code">alice.test.near</span>). Generates a new key pair and funds the account from root.</p>
+    </div>
+    <div class="cb" style="margin-bottom:10px;">
+      <h4>create_key</h4>
+      <p>Generates and adds a new access key for an existing account. Supports full-access and function-call-only key types.</p>
+    </div>
+    <div class="cb" style="margin-bottom:10px;">
+      <h4>delete_account</h4>
+      <p>Deletes an account and transfers remaining balance to a beneficiary account.</p>
+    </div>
+    <div class="cb">
+      <h4>view_account</h4>
+      <p>Queries account state: balance, storage usage, code hash, and nonce.</p>
+    </div>
+  </div>
+  <div>
+    <h3>Contract Operations</h3>
+    <div class="cb" style="margin-bottom:10px;">
+      <h4>deploy_contract</h4>
+      <p>Deploys a WASM binary to a target account. The contract bytes are sent as a <span class="code">DeployContract</span> action in a transaction.</p>
+    </div>
+    <div class="cb" style="margin-bottom:10px;">
+      <h4>call_function</h4>
+      <p>Calls a method on a deployed contract. Supports both view (read-only, no gas) and change (mutating, requires gas and deposit) calls.</p>
+    </div>
+    <div class="cb" style="margin-bottom:10px;">
+      <h4>view_state</h4>
+      <p>Reads raw key-value state from a contract&rsquo;s storage trie with optional prefix filtering.</p>
+    </div>
+    <div class="cb">
+      <h4>send_tokens</h4>
+      <p>Transfers NEAR tokens between accounts. Used for funding test accounts during E2E setup.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Contract Resolution -->
+<div class="card gc">
+<h2>Contract Resolution</h2>
+<p style="margin-bottom:16px;">merobox resolves contract binaries from multiple sources before deployment.</p>
+
+<svg viewBox="0 0 960 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="20" width="220" height="55" rx="10" fill="#f9731610" stroke="#f97316" stroke-width="1.5"/>
+  <text x="110" y="42" text-anchor="middle" fill="#f97316" font-family="JetBrains Mono" font-size="10" font-weight="600">Local File Path</text>
+  <text x="110" y="60" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">./contracts/app.wasm</text>
+
+  <line x1="220" y1="48" x2="250" y2="48" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="250" y="20" width="220" height="55" rx="10" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="360" y="42" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="10" font-weight="600">URL Download</text>
+  <text x="360" y="60" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">https://.../*.wasm</text>
+
+  <line x1="470" y1="48" x2="500" y2="48" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="500" y="20" width="220" height="55" rx="10" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="610" y="42" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="10" font-weight="600">Build from Source</text>
+  <text x="610" y="60" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">cargo build --target wasm32</text>
+
+  <line x1="720" y1="48" x2="750" y2="48" stroke="#35354a" stroke-width="1.5"/>
+
+  <rect x="750" y="20" width="200" height="55" rx="10" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="850" y="42" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="600">Deploy to Sandbox</text>
+  <text x="850" y="60" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">NearDevnetClient</text>
+</svg>
+
+<p style="margin-top:16px;">The workflow YAML specifies contracts via <span class="code">contract_path</span> (local file) or <span class="code">contract_url</span> (remote download). After resolution, the WASM binary is deployed to a dedicated account on the sandbox.</p>
+</div>
+
+<!-- Relayer Mode -->
+<div class="card gd">
+<h2>Relayer Mode vs Local Sandbox</h2>
+<p style="margin-bottom:16px;">merobox supports two modes for NEAR integration, depending on the target environment.</p>
+
+<div class="g2">
+  <div class="cb">
+    <h4 style="color:var(--green)">Local Sandbox (default)</h4>
+    <ul>
+      <li>Downloads and runs <span class="code">near-sandbox</span> locally</li>
+      <li>Fully isolated from public NEAR networks</li>
+      <li>Fast block production (~1 second)</li>
+      <li>Unlimited test tokens for account funding</li>
+      <li>No gas fees, no external dependencies</li>
+      <li>Data is ephemeral (wiped on nuke)</li>
+    </ul>
+    <p style="margin-top:8px;"><span class="tag tag-done">E2E testing</span></p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--amber)">Relayer Mode</h4>
+    <ul>
+      <li>Connects to an existing NEAR network (testnet/mainnet)</li>
+      <li>Uses a relayer account for meta-transactions</li>
+      <li>Real network conditions and gas costs</li>
+      <li>Requires funded accounts and access keys</li>
+      <li>Persistent state across runs</li>
+      <li>Configured via workflow YAML <span class="code">near.relayer</span> section</li>
+    </ul>
+    <p style="margin-top:8px;"><span class="tag tag-partial">staging</span></p>
+  </div>
+</div>
+</div>
+
+<!-- NEAR Sandbox Architecture -->
+<div class="card ga">
+<h2>Sandbox Integration Flow</h2>
+<p style="margin-bottom:16px;">How the NEAR sandbox integrates with the workflow execution pipeline.</p>
+
+<svg viewBox="0 0 960 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- WorkflowExecutor -->
+  <rect x="330" y="10" width="300" height="45" rx="8" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="480" y="35" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="11" font-weight="700">WorkflowExecutor</text>
+
+  <!-- SandboxManager -->
+  <rect x="50" y="90" width="250" height="60" rx="10" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="70" y="115" fill="#ec4899" font-family="JetBrains Mono" font-size="11" font-weight="700">SandboxManager</text>
+  <text x="70" y="135" fill="#6b6b80" font-family="DM Sans" font-size="9">Download, start, health check</text>
+
+  <!-- NearDevnetClient -->
+  <rect x="355" y="90" width="250" height="60" rx="10" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="375" y="115" fill="#f59e0b" font-family="JetBrains Mono" font-size="11" font-weight="700">NearDevnetClient</text>
+  <text x="375" y="135" fill="#6b6b80" font-family="DM Sans" font-size="9">Accounts, contracts, tokens</text>
+
+  <!-- Config Generator -->
+  <rect x="660" y="90" width="250" height="60" rx="10" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="680" y="115" fill="#06b6d4" font-family="JetBrains Mono" font-size="11" font-weight="700">Config Generator</text>
+  <text x="680" y="135" fill="#6b6b80" font-family="DM Sans" font-size="9">near_devnet_config_to_file</text>
+
+  <line x1="400" y1="55" x2="175" y2="90" stroke="#ec4899" stroke-width="1"/>
+  <line x1="480" y1="55" x2="480" y2="90" stroke="#f59e0b" stroke-width="1"/>
+  <line x1="560" y1="55" x2="785" y2="90" stroke="#06b6d4" stroke-width="1"/>
+
+  <!-- near-sandbox process -->
+  <rect x="50" y="190" width="250" height="40" rx="8" fill="#1e1e2e" stroke="#ec4899" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="175" y="215" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="600">near-sandbox :3030</text>
+
+  <!-- Contract WASM -->
+  <rect x="355" y="190" width="250" height="40" rx="8" fill="#1e1e2e" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="480" y="215" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="10" font-weight="600">Contract WASM on chain</text>
+
+  <!-- merod config -->
+  <rect x="660" y="190" width="250" height="40" rx="8" fill="#1e1e2e" stroke="#06b6d4" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="785" y="215" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="10" font-weight="600">merod config.toml [near]</text>
+
+  <line x1="175" y1="150" x2="175" y2="190" stroke="#ec4899" stroke-width="1"/>
+  <line x1="480" y1="150" x2="480" y2="190" stroke="#f59e0b" stroke-width="1"/>
+  <line x1="785" y1="150" x2="785" y2="190" stroke="#06b6d4" stroke-width="1"/>
+</svg>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

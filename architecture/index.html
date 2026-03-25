@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero merobox — Architecture Reference</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+
+<div class="hero">
+  <h1>Calimero <em>merobox</em></h1>
+  <p class="tagline">Architecture reference for the Python CLI toolbox. Workflow orchestration, Docker &amp; binary node management, NEAR Sandbox integration, and end-to-end testing &mdash; all from a single command.</p>
+
+  <div class="g4" style="margin-bottom:36px;">
+    <div class="stat"><div class="v">7</div><div class="l">CLI commands</div></div>
+    <div class="stat"><div class="v">15+</div><div class="l">step types</div></div>
+    <div class="stat"><div class="v">2</div><div class="l">node backends</div></div>
+    <div class="stat"><div class="v">1</div><div class="l">workflow engine</div></div>
+  </div>
+</div>
+
+<div class="card ga">
+<h2>Start Here</h2>
+<p style="margin-bottom:18px;">New to merobox? Follow this path to understand the system from top to bottom.</p>
+<div class="g3">
+  <div class="step"><div class="n">1</div><h4>System Overview</h4><p>Understand the high-level architecture: CLI, workflow engine, node managers, and how they connect.</p><p style="margin-top:8px;"><a href="system-overview.html">Read System Overview &rarr;</a></p></div>
+  <div class="step"><div class="n">2</div><h4>Workflow Engine</h4><p>Dive into WorkflowExecutor: step lifecycle, placeholder resolution, dynamic values, and result accumulation.</p><p style="margin-top:8px;"><a href="workflow-engine.html">Read Workflow Engine &rarr;</a></p></div>
+  <div class="step"><div class="n">3</div><h4>Write a Workflow</h4><p>Learn the YAML schema for defining nodes, steps, and orchestration sequences.</p><p style="margin-top:8px;"><a href="workflow-yaml.html">Read YAML Reference &rarr;</a></p></div>
+</div>
+</div>
+
+<div class="card gb">
+<h2>System Map</h2>
+<svg viewBox="0 0 1000 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- CLI Layer -->
+  <rect x="20" y="15" width="960" height="55" rx="10" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="40" y="38" fill="#f59e0b" font-family="JetBrains Mono" font-size="12" font-weight="700">CLI Layer (Click)</text>
+  <text x="40" y="55" fill="#6b6b80" font-family="DM Sans" font-size="10">run &middot; stop &middot; health &middot; logs &middot; nuke &middot; remote &middot; bootstrap</text>
+
+  <!-- WorkflowExecutor -->
+  <a href="workflow-engine.html">
+  <rect x="250" y="100" width="500" height="60" rx="10" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="270" y="125" fill="#10b981" font-family="JetBrains Mono" font-size="12" font-weight="700">WorkflowExecutor</text>
+  <text x="270" y="145" fill="#6b6b80" font-family="DM Sans" font-size="10">Orchestration: nuke &rarr; pull &rarr; sandbox &rarr; deploy &rarr; nodes &rarr; register &rarr; steps &rarr; cleanup</text>
+  </a>
+  <line x1="500" y1="70" x2="500" y2="100" stroke="#f59e0b" stroke-width="1.5"/>
+
+  <!-- NodeResolver -->
+  <rect x="380" y="190" width="240" height="45" rx="8" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="500" y="212" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="11" font-weight="600">NodeResolver</text>
+  <text x="500" y="228" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">remote &rarr; URL &rarr; Docker &rarr; binary</text>
+  <line x1="500" y1="160" x2="500" y2="190" stroke="#3b82f6" stroke-width="1"/>
+
+  <!-- DockerManager -->
+  <a href="node-management.html">
+  <rect x="20" y="270" width="290" height="80" rx="10" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="40" y="295" fill="#8b5cf6" font-family="JetBrains Mono" font-size="12" font-weight="700">DockerManager</text>
+  <text x="40" y="313" fill="#6b6b80" font-family="DM Sans" font-size="10">Docker API, container lifecycle</text>
+  <text x="40" y="331" fill="#6b6b80" font-family="DM Sans" font-size="10">Traefik + auth stack, port mgmt</text>
+  </a>
+
+  <!-- BinaryManager -->
+  <a href="node-management.html">
+  <rect x="355" y="270" width="290" height="80" rx="10" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="375" y="295" fill="#06b6d4" font-family="JetBrains Mono" font-size="12" font-weight="700">BinaryManager</text>
+  <text x="375" y="313" fill="#6b6b80" font-family="DM Sans" font-size="10">Native merod subprocess</text>
+  <text x="375" y="331" fill="#6b6b80" font-family="DM Sans" font-size="10">PID files, signal cleanup</text>
+  </a>
+
+  <!-- SandboxManager -->
+  <a href="near-integration.html">
+  <rect x="690" y="270" width="290" height="80" rx="10" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="710" y="295" fill="#ec4899" font-family="JetBrains Mono" font-size="12" font-weight="700">SandboxManager</text>
+  <text x="710" y="313" fill="#6b6b80" font-family="DM Sans" font-size="10">near-sandbox download &amp; RPC</text>
+  <text x="710" y="331" fill="#6b6b80" font-family="DM Sans" font-size="10">NearDevnetClient account ops</text>
+  </a>
+
+  <line x1="380" y1="235" x2="165" y2="270" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="500" y1="235" x2="500" y2="270" stroke="#06b6d4" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="620" y1="235" x2="835" y2="270" stroke="#ec4899" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- merod nodes -->
+  <rect x="20" y="385" width="290" height="50" rx="8" fill="#1e1e2e" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="165" y="410" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="10" font-weight="600">merod Containers</text>
+  <text x="165" y="425" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">Docker or native processes</text>
+
+  <!-- calimero-client-py -->
+  <rect x="355" y="385" width="290" height="50" rx="8" fill="#1e1e2e" stroke="#10b981" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="500" y="410" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="10" font-weight="600">calimero-client-py</text>
+  <text x="500" y="425" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">JSON-RPC &middot; AuthManager</text>
+
+  <!-- NEAR Sandbox -->
+  <rect x="690" y="385" width="290" height="50" rx="8" fill="#1e1e2e" stroke="#ec4899" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="835" y="410" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="600">NEAR Sandbox</text>
+  <text x="835" y="425" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">Local RPC &middot; account ops &middot; contracts</text>
+
+  <line x1="165" y1="350" x2="165" y2="385" stroke="#8b5cf6" stroke-width="1"/>
+  <line x1="500" y1="350" x2="500" y2="385" stroke="#10b981" stroke-width="1"/>
+  <line x1="835" y1="350" x2="835" y2="385" stroke="#ec4899" stroke-width="1"/>
+
+  <!-- AuthManager -->
+  <rect x="830" y="100" width="150" height="45" rx="8" fill="#84cc1610" stroke="#84cc16" stroke-width="1.5"/>
+  <text x="905" y="122" text-anchor="middle" fill="#84cc16" font-family="JetBrains Mono" font-size="10" font-weight="600">AuthManager</text>
+  <text x="905" y="137" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="8">JWT &middot; cache &middot; refresh</text>
+  <line x1="750" y1="122" x2="830" y2="122" stroke="#84cc16" stroke-width="1" stroke-dasharray="3 3"/>
+</svg>
+
+<div class="legend">
+  <div class="legend-item"><div class="ld" style="background:#f59e0b"></div>CLI</div>
+  <div class="legend-item"><div class="ld" style="background:#10b981"></div>Workflow</div>
+  <div class="legend-item"><div class="ld" style="background:#3b82f6"></div>Resolution</div>
+  <div class="legend-item"><div class="ld" style="background:#8b5cf6"></div>Docker</div>
+  <div class="legend-item"><div class="ld" style="background:#06b6d4"></div>Binary</div>
+  <div class="legend-item"><div class="ld" style="background:#ec4899"></div>NEAR</div>
+  <div class="legend-item"><div class="ld" style="background:#84cc16"></div>Auth</div>
+</div>
+<p style="margin-top:12px;font-size:.8rem;color:var(--text-dim);">Click any box to jump to its deep-dive page.</p>
+</div>
+
+<h2 id="component-index" style="margin-top:40px;">Component Index</h2>
+<div class="g3">
+  <a href="system-overview.html" class="hero-card"><span class="card-icon" style="color:var(--blue);">&#9670;</span><h3 style="color:var(--blue)">System Overview</h3><p>High-level architecture, data flow, and component relationships.</p></a>
+  <a href="workflow-engine.html" class="hero-card"><span class="card-icon" style="color:var(--green);">&#9670;</span><h3 style="color:var(--green)">Workflow Engine</h3><p>WorkflowExecutor lifecycle, BaseStep pattern, step factory, dynamic values.</p></a>
+  <a href="node-management.html" class="hero-card"><span class="card-icon" style="color:var(--violet);">&#9670;</span><h3 style="color:var(--violet)">Node Management</h3><p>DockerManager vs BinaryManager, container lifecycle, Traefik, config TOML.</p></a>
+  <a href="near-integration.html" class="hero-card"><span class="card-icon" style="color:var(--pink);">&#9670;</span><h3 style="color:var(--pink)">NEAR Integration</h3><p>SandboxManager, NearDevnetClient, contract deployment, relayer mode.</p></a>
+  <a href="workflow-yaml.html" class="hero-card"><span class="card-icon" style="color:var(--orange);">&#9670;</span><h3 style="color:var(--orange)">Workflow YAML</h3><p>YAML schema reference: nodes, steps, placeholders, environment variables.</p></a>
+  <a href="cli-reference.html" class="hero-card"><span class="card-icon" style="color:var(--cyan);">&#9670;</span><h3 style="color:var(--cyan)">CLI Reference</h3><p>All 7 commands: run, stop, health, logs, nuke, remote, bootstrap.</p></a>
+  <a href="error-handling.html" class="hero-card"><span class="card-icon" style="color:var(--red);">&#9670;</span><h3 style="color:var(--red)">Error Handling</h3><p>MeroboxError hierarchy, ok()/fail() pattern, RetryConfig, @with_retry.</p></a>
+  <a href="glossary.html" class="hero-card"><span class="card-icon" style="color:var(--lime);">&#9670;</span><h3 style="color:var(--lime)">Glossary</h3><p>Terms and definitions for the merobox ecosystem.</p></a>
+</div>
+
+<div class="card gc" style="margin-top:32px;">
+<h2>Key Concepts</h2>
+<div class="g2">
+  <div>
+    <h3>Workflow</h3>
+    <p>A YAML file that declares a set of <strong>nodes</strong> and a sequence of <strong>steps</strong>. The WorkflowExecutor reads this file, resolves all placeholders (environment variables, dynamic values from prior steps), and orchestrates the full lifecycle: environment cleanup, node startup, step execution, and teardown.</p>
+  </div>
+  <div>
+    <h3>Node Resolution</h3>
+    <p>The NodeResolver determines how each declared node maps to a running merod instance. Resolution order: <strong>registered remote</strong> &rarr; <strong>URL</strong> &rarr; <strong>Docker container</strong> &rarr; <strong>native binary</strong>. Each backend has its own manager class handling lifecycle and health checks.</p>
+  </div>
+  <div>
+    <h3>Step Execution</h3>
+    <p>Steps are the atomic units of a workflow. Each step type extends <strong>BaseStep</strong> and implements validation and execution. Step types include: <span class="code">install_application</span>, <span class="code">create_context</span>, <span class="code">call</span>, <span class="code">wait_for_sync</span>, <span class="code">repeat</span>, <span class="code">parallel</span>, <span class="code">script</span>, <span class="code">assert</span>, and <span class="code">fuzzy_test</span>.</p>
+  </div>
+  <div>
+    <h3>NEAR Sandbox</h3>
+    <p>For E2E testing, merobox downloads and runs a local <strong>near-sandbox</strong> instance. The NearDevnetClient handles account creation, key management, and contract deployment. Nodes are configured to point at the local sandbox RPC endpoint for devnet operations.</p>
+  </div>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>
