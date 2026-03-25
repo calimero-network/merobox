@@ -73,14 +73,15 @@ class JoinGroupContextStep(BaseStep):
             self._export_variables(result["data"], node_name, dynamic_values)
 
             # Fallback: ensure context_id and member_public_key are captured
-            if f"context_id_{node_name}" not in dynamic_values:
-                raw = result["data"]
-                if isinstance(raw, dict):
-                    nested = raw.get("data", raw)
-                    if isinstance(nested, dict):
+            raw = result["data"]
+            if isinstance(raw, dict):
+                nested = raw.get("data", raw)
+                if isinstance(nested, dict):
+                    if f"context_id_{node_name}" not in dynamic_values:
                         ctx_id = nested.get("contextId")
                         if ctx_id:
                             dynamic_values[f"context_id_{node_name}"] = ctx_id
+                    if f"context_member_public_key_{node_name}" not in dynamic_values:
                         member_pk = nested.get("memberPublicKey")
                         if member_pk:
                             dynamic_values[f"context_member_public_key_{node_name}"] = (

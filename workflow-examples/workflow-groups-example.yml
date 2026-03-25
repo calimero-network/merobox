@@ -79,7 +79,7 @@ steps:
     type: call
     node: calimero-node-1
     context_id: '{{context_id_calimero-node-1}}'
-    executor_public_key: '{{member_key_node1_calimero-node-1}}'
+    executor_public_key: '{{member_key_node1}}'
     method: set
     args: '{"key": "hello", "value": "world"}'
 
