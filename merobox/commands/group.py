@@ -4,6 +4,7 @@ Group command - Create, list, and manage context groups for Calimero nodes.
 
 import json as json_lib
 import sys
+from typing import Any
 
 import click
 from rich import box
@@ -16,110 +17,25 @@ from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def list_groups_via_admin_api(rpc_url: str, node_name: str = None) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.list_groups()
-        return ok(result)
-    except Exception as e:
-        return fail("list_groups failed", error=e)
+def unwrap_api_response(result: dict) -> Any:
+    """Unwrap the nested ``{"data": {"data": ...}}`` envelope returned by admin API calls."""
+    data = result.get("data", {})
+    if isinstance(data, dict):
+        data = data.get("data", data)
+    return data
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
-async def create_group_via_admin_api(
-    rpc_url: str, application_id: str, node_name: str = None
+async def call_admin_api(
+    rpc_url: str, method_name: str, *args: Any, node_name: str = None
 ) -> dict:
+    """Generic wrapper that calls *method_name* on the admin client with retry."""
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.create_group(application_id)
+        result = getattr(client, method_name)(*args)
         return ok(result)
     except Exception as e:
-        return fail("create_group failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def get_group_info_via_admin_api(
-    rpc_url: str, group_id: str, node_name: str = None
-) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.get_group_info(group_id)
-        return ok(result)
-    except Exception as e:
-        return fail("get_group_info failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def delete_group_via_admin_api(
-    rpc_url: str, group_id: str, node_name: str = None
-) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.delete_group(group_id)
-        return ok(result)
-    except Exception as e:
-        return fail("delete_group failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def create_group_invitation_via_admin_api(
-    rpc_url: str, group_id: str, node_name: str = None
-) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.create_group_invitation(group_id)
-        return ok(result)
-    except Exception as e:
-        return fail("create_group_invitation failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def join_group_via_admin_api(
-    rpc_url: str, invitation_json: str, node_name: str = None
-) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.join_group(invitation_json)
-        return ok(result)
-    except Exception as e:
-        return fail("join_group failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def list_group_members_via_admin_api(
-    rpc_url: str, group_id: str, node_name: str = None
-) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.list_group_members(group_id)
-        return ok(result)
-    except Exception as e:
-        return fail("list_group_members failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def list_group_contexts_via_admin_api(
-    rpc_url: str, group_id: str, node_name: str = None
-) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.list_group_contexts(group_id)
-        return ok(result)
-    except Exception as e:
-        return fail("list_group_contexts failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def join_group_context_via_admin_api(
-    rpc_url: str, group_id: str, context_id: str, node_name: str = None
-) -> dict:
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.join_group_context(group_id, context_id)
-        return ok(result)
-    except Exception as e:
-        return fail("join_group_context failed", error=e)
+        return fail(f"{method_name} failed", error=e)
 
 
 # ---- CLI command group ----
@@ -140,12 +56,10 @@ def list_groups(node, verbose):
     rpc_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Listing groups on node {node}[/blue]")
 
-    result = run_async_function(list_groups_via_admin_api, rpc_url)
+    result = run_async_function(call_admin_api, rpc_url, "list_groups")
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
 
         groups = []
         if isinstance(data, dict) and "groups" in data:
@@ -196,12 +110,10 @@ def create(node, application_id, verbose):
         f"[blue]Creating group for application {application_id} on node {node}[/blue]"
     )
 
-    result = run_async_function(create_group_via_admin_api, rpc_url, application_id)
+    result = run_async_function(call_admin_api, rpc_url, "create_group", application_id)
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
         group_id = data.get("groupId") if isinstance(data, dict) else None
         console.print("[green]✓ Group created successfully![/green]")
         if group_id:
@@ -223,12 +135,10 @@ def get(group_id, node, verbose):
     rpc_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Getting group {group_id} from node {node}[/blue]")
 
-    result = run_async_function(get_group_info_via_admin_api, rpc_url, group_id)
+    result = run_async_function(call_admin_api, rpc_url, "get_group_info", group_id)
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
 
         console.print("[green]✓ Group info:[/green]")
         if isinstance(data, dict):
@@ -252,7 +162,7 @@ def delete(group_id, node):
     rpc_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Deleting group {group_id} on node {node}[/blue]")
 
-    result = run_async_function(delete_group_via_admin_api, rpc_url, group_id)
+    result = run_async_function(call_admin_api, rpc_url, "delete_group", group_id)
 
     if result["success"]:
         console.print("[green]✓ Group deleted successfully![/green]")
@@ -273,22 +183,18 @@ def invite(group_id, node):
     )
 
     result = run_async_function(
-        create_group_invitation_via_admin_api, rpc_url, group_id
+        call_admin_api, rpc_url, "create_group_invitation", group_id
     )
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
 
-        invitation = data.get("invitation") if isinstance(data, dict) else None
+        # Print the full SignedGroupOpenInvitation (invitation + inviter_signature),
+        # not just the inner GroupInvitationFromAdmin, so the joiner has complete data.
         console.print(
             "[green]✓ Invitation created. Share this JSON with the joiner:[/green]"
         )
-        if invitation is not None:
-            console.print(json_lib.dumps(invitation, indent=2))
-        else:
-            console.print(json_lib.dumps(data, indent=2))
+        console.print(json_lib.dumps(data, indent=2))
     else:
         console.print(
             f"[red]✗ Failed to create invitation: {result.get('error')}[/red]"
@@ -314,12 +220,10 @@ def join_group_cmd(invitation_json, node, verbose):
 
     console.print(f"[blue]Joining group on node {node}[/blue]")
 
-    result = run_async_function(join_group_via_admin_api, rpc_url, invitation_json)
+    result = run_async_function(call_admin_api, rpc_url, "join_group", invitation_json)
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
         console.print("[green]✓ Joined group successfully![/green]")
         if isinstance(data, dict):
             if "groupId" in data:
@@ -349,12 +253,10 @@ def list_members(group_id, node, verbose):
     rpc_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Listing members of group {group_id} on node {node}[/blue]")
 
-    result = run_async_function(list_group_members_via_admin_api, rpc_url, group_id)
+    result = run_async_function(call_admin_api, rpc_url, "list_group_members", group_id)
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
 
         members = []
         if isinstance(data, dict) and "members" in data:
@@ -402,12 +304,12 @@ def list_contexts_in_group(group_id, node, verbose):
     rpc_url = get_node_rpc_url(node, manager)
     console.print(f"[blue]Listing contexts in group {group_id} on node {node}[/blue]")
 
-    result = run_async_function(list_group_contexts_via_admin_api, rpc_url, group_id)
+    result = run_async_function(
+        call_admin_api, rpc_url, "list_group_contexts", group_id
+    )
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
 
         contexts = []
         if isinstance(data, dict) and "contexts" in data:
@@ -457,13 +359,11 @@ def join_context(group_id, node, context_id, verbose):
     )
 
     result = run_async_function(
-        join_group_context_via_admin_api, rpc_url, group_id, context_id
+        call_admin_api, rpc_url, "join_group_context", group_id, context_id
     )
 
     if result["success"]:
-        data = result.get("data", {})
-        if isinstance(data, dict):
-            data = data.get("data", data)
+        data = unwrap_api_response(result)
         console.print("[green]✓ Joined group context successfully![/green]")
         if isinstance(data, dict):
             if "contextId" in data:

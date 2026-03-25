@@ -5,6 +5,9 @@ Covers: CreateGroupStep, CreateGroupInvitationStep, JoinGroupStep,
         JoinGroupContextStep — validation logic and fallback capture.
 """
 
+import asyncio
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
@@ -234,38 +237,46 @@ class TestJoinGroupContextStep:
 
         Regression test for the bug where the memberPublicKey capture was
         nested inside the `if context_id not in dynamic_values` block.
+        Exercises the actual step execute() method via mocked client.
         """
         node_name = "calimero-node-2"
-        self._make_step(self.base_config)
+        step = self._make_step(self.base_config)
 
-        # Simulate dynamic_values that already has context_id (e.g. captured by
-        # _export_variables), but NOT yet the member public key.
+        # Pre-populate context_id as if _export_variables already captured it,
+        # but leave member public key absent.
         dynamic_values = {f"context_id_{node_name}": "ctx-xyz"}
+        workflow_results = {}
 
-        # Simulate the API response shape that the fallback code parses
-        raw_data = {
+        # Mock the client to return an API response with both fields
+        mock_client = MagicMock()
+        mock_client.join_group_context.return_value = {
             "data": {
                 "contextId": "ctx-xyz",
                 "memberPublicKey": "pk-abc123",
             }
         }
 
-        # Run the same fallback logic that lives in group_join_context.py
-        raw = raw_data
-        if isinstance(raw, dict):
-            nested = raw.get("data", raw)
-            if isinstance(nested, dict):
-                if f"context_id_{node_name}" not in dynamic_values:
-                    ctx_id = nested.get("contextId")
-                    if ctx_id:
-                        dynamic_values[f"context_id_{node_name}"] = ctx_id
-                if f"context_member_public_key_{node_name}" not in dynamic_values:
-                    member_pk = nested.get("memberPublicKey")
-                    if member_pk:
-                        dynamic_values[f"context_member_public_key_{node_name}"] = (
-                            member_pk
-                        )
+        with (
+            patch.object(
+                step,
+                "_resolve_node_for_client",
+                return_value=("http://localhost:1234", node_name),
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.group_join_context.get_client_for_rpc_url",
+                return_value=mock_client,
+            ),
+            patch.object(
+                step,
+                "_resolve_dynamic_value",
+                side_effect=lambda val, *_: val,
+            ),
+        ):
+            result = asyncio.get_event_loop().run_until_complete(
+                step.execute(workflow_results, dynamic_values)
+            )
 
+        assert result is True
         # context_id was already there and should remain unchanged
         assert dynamic_values[f"context_id_{node_name}"] == "ctx-xyz"
         # memberPublicKey MUST have been captured despite context_id already existing

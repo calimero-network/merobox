@@ -62,8 +62,9 @@ class CreateGroupInvitationStep(BaseStep):
 
             step_key = f"group_invitation_{node_name}"
             workflow_results[step_key] = result["data"]
+            self._export_variables(result["data"], node_name, dynamic_values)
 
-            # Extract and store the invitation object as a JSON string so
+            # Fallback: extract and store the invitation object so
             # join_group steps can reference it via {{group_invitation_<node>}}
             raw_data = result["data"]
             if isinstance(raw_data, dict):
