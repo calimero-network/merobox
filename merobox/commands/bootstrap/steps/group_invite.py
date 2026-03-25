@@ -69,8 +69,9 @@ class CreateGroupInvitationStep(BaseStep):
             if isinstance(raw_data, dict):
                 nested = raw_data.get("data", raw_data)
                 if isinstance(nested, dict):
-                    invitation = nested.get("invitation", nested)
-                    dynamic_values[f"group_invitation_{node_name}"] = invitation
+                    # Store the full SignedGroupOpenInvitation (invitation + inviter_signature),
+                    # NOT just the inner "invitation" field (GroupInvitationFromAdmin).
+                    dynamic_values[f"group_invitation_{node_name}"] = nested
                     console.print(
                         f"[green]✓ Group invitation created on {node_name}[/green]"
                     )
