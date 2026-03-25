@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Troubleshooting — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Troubleshooting</span></div>
+
+<h1><em>Troubleshooting</em></h1>
+<p class="page-subtitle">Common issues, diagnostics, and debugging techniques for merobox</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">6</div><div class="l">issue categories</div></div>
+  <div class="stat"><div class="v">DEBUG</div><div class="l">log level</div></div>
+  <div class="stat"><div class="v">--verbose</div><div class="l">CLI flag</div></div>
+  <div class="stat"><div class="v">merobox logs</div><div class="l">node output</div></div>
+</div>
+
+<!-- Node Startup Problems -->
+<div class="card ga">
+<h2>Node Startup Problems</h2>
+
+<details>
+  <summary>Docker not running</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">Cannot connect to the Docker daemon</span> or <span class="code">docker.errors.DockerException</span></p>
+    <ul>
+      <li>Verify Docker Desktop (or dockerd) is running: <span class="code">docker info</span></li>
+      <li>On Linux, check the daemon: <span class="code">sudo systemctl status docker</span></li>
+      <li>Ensure the Docker socket is accessible: <span class="code">ls -la /var/run/docker.sock</span></li>
+      <li>If using a remote Docker host, verify <span class="code">DOCKER_HOST</span> is set correctly</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Port conflicts</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">Bind for 0.0.0.0:2428 failed: port is already allocated</span></p>
+    <ul>
+      <li>Check what&rsquo;s using the port: <span class="code">lsof -i :2428</span> (macOS/Linux) or <span class="code">netstat -ano | findstr 2428</span> (Windows)</li>
+      <li>Stop conflicting processes or containers: <span class="code">docker ps</span> to find running containers</li>
+      <li>Run <span class="code">merobox nuke -y</span> to clean up stale merobox containers and free ports</li>
+      <li>Use a different port range in your workflow YAML via node configuration</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Permission issues</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">Permission denied</span> when creating containers, volumes, or binding ports</p>
+    <ul>
+      <li>On Linux, add your user to the docker group: <span class="code">sudo usermod -aG docker $USER</span> (requires logout/login)</li>
+      <li>Verify group membership: <span class="code">groups</span></li>
+      <li>For binary backend, ensure the merod binary is executable: <span class="code">chmod +x /path/to/merod</span></li>
+      <li>Check that the data directory is writable: <span class="code">ls -la ~/.merobox/</span></li>
+    </ul>
+  </div>
+</details>
+</div>
+
+<!-- Workflow Execution Issues -->
+<div class="card gb">
+<h2>Workflow Execution Issues</h2>
+
+<details>
+  <summary>Variable resolution fails</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">KeyError</span> or <span class="code">Variable 'XXX' not found</span> during step execution</p>
+    <ul>
+      <li><strong>Environment variables</strong> (<span class="code">${ENV_VAR}</span>): ensure the variable is exported in the shell before running merobox. Use <span class="code">echo $ENV_VAR</span> to verify.</li>
+      <li><strong>Dynamic values</strong> (<span class="code">${results.step_name.field}</span>): verify the referenced step has a <span class="code">name</span> field and has executed successfully before the current step.</li>
+      <li>Check for typos in variable names &mdash; both the reference and the definition must match exactly.</li>
+      <li>Use <span class="code">${VAR:-default}</span> syntax for optional environment variables.</li>
+      <li>Run with <span class="code">--verbose</span> to see which variables are being resolved and their values.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Step validation fails</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">StepValidationError: Missing required field 'xxx'</span></p>
+    <ul>
+      <li>Check the step type&rsquo;s required fields in the <a href="workflow-yaml.html">Workflow YAML reference</a>.</li>
+      <li>Ensure YAML indentation is correct &mdash; misaligned fields may not be parsed as part of the step.</li>
+      <li>Verify field types: some fields expect strings, others expect lists or integers.</li>
+      <li>Run <span class="code">merobox run --dry-run workflow.yaml</span> to validate without executing.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>API calls fail (JSON-RPC errors)</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">ClientError</span>, <span class="code">ConnectionRefused</span>, or JSON-RPC error responses in <span class="code">call</span> steps</p>
+    <ul>
+      <li>Verify the target node is running and healthy: <span class="code">merobox health --name &lt;node&gt;</span></li>
+      <li>Check that the application is installed and the context exists on the target node.</li>
+      <li>Ensure the method name and arguments match the application&rsquo;s expected interface.</li>
+      <li>Inspect node logs for server-side errors: <span class="code">merobox logs --name &lt;node&gt; --tail 50</span></li>
+      <li>For auth-related failures, verify JWT token validity or re-authenticate.</li>
+    </ul>
+  </div>
+</details>
+</div>
+
+<!-- Auth Service Issues -->
+<div class="card gc">
+<h2>Auth Service Issues</h2>
+
+<details>
+  <summary>nip.io URL not resolving</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> DNS resolution failure for <span class="code">*.nip.io</span> addresses used by the Traefik auth stack</p>
+    <ul>
+      <li>Check DNS resolution: <span class="code">nslookup 127.0.0.1.nip.io</span></li>
+      <li>Some corporate networks or VPNs block wildcard DNS services &mdash; try disconnecting from VPN.</li>
+      <li>As a workaround, add manual entries to <span class="code">/etc/hosts</span>:<br>
+        <span class="code">127.0.0.1 auth.127.0.0.1.nip.io</span></li>
+      <li>Consider using the binary backend which does not require Traefik or nip.io.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>404 on auth URLs</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">404 Not Found</span> when accessing <span class="code">/auth/token</span> or <span class="code">/auth/refresh</span></p>
+    <ul>
+      <li>Verify the Traefik container is running: <span class="code">docker ps | grep traefik</span></li>
+      <li>Check Traefik routing rules: <span class="code">docker logs &lt;traefik-container&gt;</span></li>
+      <li>Ensure the auth service container is healthy and registered with Traefik.</li>
+      <li>Verify the correct host header is being sent &mdash; auth routing depends on Host-based rules.</li>
+      <li>Try a direct request bypassing Traefik to isolate the issue.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Network connection problems</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">ConnectionError</span> or timeouts when authenticating with remote nodes</p>
+    <ul>
+      <li>Test basic connectivity: <span class="code">curl -v &lt;node-url&gt;/health</span></li>
+      <li>For remote nodes, check firewall rules and security group settings.</li>
+      <li>Verify TLS certificates if using HTTPS &mdash; self-signed certs may need to be trusted.</li>
+      <li>Run <span class="code">merobox remote test &lt;name&gt;</span> for a structured connectivity diagnostic.</li>
+      <li>Check if the node&rsquo;s auth endpoint is on a different port than the main API.</li>
+    </ul>
+  </div>
+</details>
+</div>
+
+<!-- Docker Issues -->
+<div class="card gd">
+<h2>Docker Issues</h2>
+
+<details>
+  <summary>Container creation fails</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> <span class="code">docker.errors.APIError</span> during container creation</p>
+    <ul>
+      <li>Check Docker disk space: <span class="code">docker system df</span> &mdash; prune unused resources with <span class="code">docker system prune</span></li>
+      <li>Verify the image exists locally or can be pulled: <span class="code">docker pull &lt;image&gt;</span></li>
+      <li>Check Docker resource limits (memory, CPU) in Docker Desktop settings.</li>
+      <li>For image pull failures, check network connectivity to the container registry.</li>
+      <li>Review the full error message &mdash; Docker API errors usually include the root cause.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Docker networking problems</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> Nodes can&rsquo;t discover each other, peer connections fail, or bootstrap nodes are unreachable</p>
+    <ul>
+      <li>Verify the merobox Docker network exists: <span class="code">docker network ls | grep merobox</span></li>
+      <li>Check that all containers are on the same network: <span class="code">docker network inspect merobox-net</span></li>
+      <li>Ensure bootstrap multiaddresses use container names (not localhost) for intra-container communication.</li>
+      <li>Run <span class="code">merobox nuke -y</span> and re-run to recreate the network from scratch.</li>
+      <li>On macOS, Docker networking has known limitations &mdash; containers can reach the host via <span class="code">host.docker.internal</span>.</li>
+    </ul>
+  </div>
+</details>
+</div>
+
+<!-- Performance Issues -->
+<div class="card ga">
+<h2>Performance Issues</h2>
+
+<details>
+  <summary>Slow workflow execution</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> Workflows take significantly longer than expected to complete</p>
+    <ul>
+      <li>Enable debug logging to identify which steps are slow: <span class="code">LOG_LEVEL=DEBUG merobox run workflow.yaml</span></li>
+      <li>Check for excessive retries in step configuration &mdash; each retry adds delay with exponential backoff.</li>
+      <li>Verify node health &mdash; unhealthy nodes cause timeouts and retries: <span class="code">merobox health</span></li>
+      <li>For <span class="code">wait_for_sync</span> steps, ensure the timeout and poll interval are appropriate for the data volume.</li>
+      <li>Consider using <span class="code">parallel</span> steps to execute independent operations concurrently.</li>
+      <li>Check Docker resource allocation &mdash; insufficient CPU or memory causes slow container performance.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>High memory usage</summary>
+  <div class="detail-body">
+    <p><strong>Symptom:</strong> System becomes unresponsive or Docker reports OOM (out of memory) kills</p>
+    <ul>
+      <li>Check container memory usage: <span class="code">docker stats</span></li>
+      <li>Reduce the number of concurrent nodes in the workflow.</li>
+      <li>Increase Docker Desktop memory allocation in Settings &rarr; Resources.</li>
+      <li>For the binary backend, check merod process memory: <span class="code">ps aux | grep merod</span></li>
+      <li>If running a NEAR sandbox, it consumes additional memory &mdash; ensure at least 4 GB total is available.</li>
+      <li>Use <span class="code">merobox nuke -y</span> between test runs to clean up orphaned containers.</li>
+    </ul>
+  </div>
+</details>
+</div>
+
+<!-- Debugging -->
+<div class="card gb">
+<h2>Debugging</h2>
+<p style="margin-bottom:18px;">Systematic techniques for diagnosing issues in merobox workflows and node management.</p>
+
+<h3>Enable Debug Logging</h3>
+<p style="margin-bottom:10px;">Set the <span class="code">LOG_LEVEL</span> environment variable to get detailed output from all merobox components.</p>
+<div class="typedef">
+<span class="ty">LOG_LEVEL=DEBUG</span> merobox run workflow.yaml<br>
+<br>
+<span class="comment"># Log levels: DEBUG, INFO (default), WARNING, ERROR, CRITICAL</span>
+</div>
+
+<h3>Verbose CLI Output</h3>
+<p style="margin-bottom:10px;">The <span class="code">--verbose</span> flag increases output detail for any merobox command.</p>
+<div class="typedef">
+<span class="ty">merobox run</span> workflow.yaml <span class="field">--verbose</span><br>
+<span class="ty">merobox health</span> <span class="field">--verbose</span><br>
+<span class="ty">merobox remote test</span> my-server <span class="field">--verbose</span>
+</div>
+
+<h3>Check Node Logs</h3>
+<p style="margin-bottom:10px;">View merod output for a specific node to diagnose server-side issues.</p>
+<div class="typedef">
+<span class="comment"># View recent logs</span><br>
+<span class="ty">merobox logs</span> --name node-1 --tail 100<br>
+<br>
+<span class="comment"># Follow live output</span><br>
+<span class="ty">merobox logs</span> --name node-1 --follow<br>
+<br>
+<span class="comment"># Logs since a time</span><br>
+<span class="ty">merobox logs</span> --name node-1 --since "5m"
+</div>
+
+<h3>Inspect Containers</h3>
+<p style="margin-bottom:10px;">Access a running container&rsquo;s shell for direct inspection.</p>
+<div class="typedef">
+<span class="comment"># List merobox containers</span><br>
+<span class="ty">docker ps</span> --filter "label=merobox"<br>
+<br>
+<span class="comment"># Shell into a container</span><br>
+<span class="ty">docker exec</span> -it &lt;container-id&gt; /bin/sh<br>
+<br>
+<span class="comment"># View container details</span><br>
+<span class="ty">docker inspect</span> &lt;container-id&gt;
+</div>
+
+<h3>Network Diagnostics</h3>
+<p style="margin-bottom:10px;">Diagnose connectivity between nodes, the sandbox, and external services.</p>
+<div class="typedef">
+<span class="comment"># Test node endpoint</span><br>
+<span class="ty">curl</span> -s http://localhost:2428/health | python -m json.tool<br>
+<br>
+<span class="comment"># Check NEAR sandbox</span><br>
+<span class="ty">curl</span> -s http://localhost:3030/status | python -m json.tool<br>
+<br>
+<span class="comment"># Inspect Docker network</span><br>
+<span class="ty">docker network inspect</span> merobox-net<br>
+<br>
+<span class="comment"># DNS resolution test</span><br>
+<span class="ty">nslookup</span> node-1.127.0.0.1.nip.io
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

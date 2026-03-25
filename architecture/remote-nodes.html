@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remote Nodes — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Remote Nodes</span></div>
+
+<h1>Remote <em>Nodes</em></h1>
+<p class="page-subtitle">Register, authenticate, and run workflows against pre-existing merod instances</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">3</div><div class="l">auth methods</div></div>
+  <div class="stat"><div class="v">CLI</div><div class="l">management</div></div>
+  <div class="stat"><div class="v">YAML</div><div class="l">workflow integration</div></div>
+  <div class="stat"><div class="v">JWT</div><div class="l">token caching</div></div>
+</div>
+
+<!-- Quick Start -->
+<div class="card ga">
+<h2>Quick Start</h2>
+<p style="margin-bottom:18px;">Get up and running with remote nodes in four steps.</p>
+
+<div class="step">
+  <div class="n">1</div>
+  <h4>Register a remote node</h4>
+  <div class="typedef">
+<span class="ty">merobox remote register</span> my-server --url https://node.example.com:2428 \<br>
+&nbsp;&nbsp;--auth-method user_password --username admin --description "Production node"
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">2</div>
+  <h4>Login to the remote node</h4>
+  <div class="typedef">
+<span class="ty">merobox remote login</span> my-server --username admin --password secret
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">3</div>
+  <h4>Test the connection</h4>
+  <div class="typedef">
+<span class="ty">merobox remote test</span> my-server
+  </div>
+  <p style="margin-top:6px;">Verifies connectivity, authentication, and node health.</p>
+</div>
+
+<div class="step">
+  <div class="n">4</div>
+  <h4>Run a workflow against the remote</h4>
+  <div class="typedef">
+<span class="ty">merobox run</span> workflow.yaml<br>
+<span class="comment"># Workflow references "my-server" in remote_nodes</span>
+  </div>
+</div>
+</div>
+
+<!-- CLI Commands -->
+<div class="card gb">
+<h2>CLI Commands</h2>
+<p style="margin-bottom:18px;">Full reference for all remote node management commands.</p>
+
+<h3>merobox remote register</h3>
+<p style="margin-bottom:10px;">Register a new remote merod node for use in workflows.</p>
+<div class="typedef">
+<span class="ty">merobox remote register</span> &lt;NAME&gt; --url &lt;URL&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Arguments:</span><br>
+&nbsp;&nbsp;<span class="field">NAME</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Unique name for the remote node</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--url</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node endpoint URL (e.g. https://node.example.com:2428)</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">--auth-method</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Authentication method: user_password, api_key, none</span><br>
+&nbsp;&nbsp;<span class="field">--username</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Username for user_password auth</span><br>
+&nbsp;&nbsp;<span class="field">--description</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Human-readable description of the node</span>
+</div>
+
+<h3>merobox remote login</h3>
+<p style="margin-bottom:10px;">Authenticate with a registered remote node and cache the token.</p>
+<div class="typedef">
+<span class="ty">merobox remote login</span> &lt;NAME&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--username</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Username (overrides registered default)</span><br>
+&nbsp;&nbsp;<span class="field">--password</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Password (or use MEROBOX_PASSWORD env var)</span><br>
+&nbsp;&nbsp;<span class="field">--api-key</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">API key for api_key auth method</span><br>
+&nbsp;&nbsp;<span class="field">--method</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Override auth method for this login</span>
+</div>
+
+<h3>merobox remote logout</h3>
+<p style="margin-bottom:10px;">Clear cached authentication tokens.</p>
+<div class="typedef">
+<span class="ty">merobox remote logout</span> &lt;NAME&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--all</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Clear tokens for all registered remotes</span>
+</div>
+
+<h3>merobox remote status</h3>
+<p style="margin-bottom:10px;">Display registration details and auth state for a remote node.</p>
+<div class="typedef">
+<span class="ty">merobox remote status</span> &lt;NAME&gt;
+</div>
+
+<h3>merobox remote test</h3>
+<p style="margin-bottom:10px;">Verify connectivity and authentication against a remote node.</p>
+<div class="typedef">
+<span class="ty">merobox remote test</span> &lt;NAME&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--username</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Username for inline auth test</span><br>
+&nbsp;&nbsp;<span class="field">--password</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Password for inline auth test</span><br>
+&nbsp;&nbsp;<span class="field">--api-key</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">API key for inline auth test</span>
+</div>
+
+<h3>merobox remote list</h3>
+<p style="margin-bottom:10px;">List all registered remote nodes with their URLs and auth status.</p>
+<div class="typedef">
+<span class="ty">merobox remote list</span>
+</div>
+
+<h3>merobox remote unregister</h3>
+<p style="margin-bottom:10px;">Remove a registered remote node.</p>
+<div class="typedef">
+<span class="ty">merobox remote unregister</span> &lt;NAME&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--remove-token</span>&nbsp;&nbsp;&nbsp;<span class="comment">Also delete cached auth tokens for this node</span>
+</div>
+</div>
+
+<!-- Remote Nodes in Workflows -->
+<div class="card gc">
+<h2>Remote Nodes in Workflows</h2>
+<p style="margin-bottom:16px;">Reference remote merod instances directly in workflow YAML files using the <span class="code">remote_nodes</span> key.</p>
+
+<h3>YAML Schema</h3>
+<div class="typedef">
+<span class="kw">remote_nodes</span>:<br>
+&nbsp;&nbsp;<span class="field">production-node</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://node.example.com:2428</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">user_password</span>&nbsp;&nbsp;<span class="comment"># user_password | api_key | none</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">username</span>: <span class="ty">admin</span><br>
+<br>
+&nbsp;&nbsp;<span class="field">staging-node</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://staging.example.com:2428</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">api_key</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">${STAGING_API_KEY}</span><br>
+<br>
+&nbsp;&nbsp;<span class="field">open-node</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://open.example.com:2428</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">none</span>
+</div>
+
+<h3>Environment Variable Expansion</h3>
+<p style="margin-bottom:10px;">All YAML values support environment variable substitution at parse time.</p>
+<div class="g2">
+  <div class="cb">
+    <h4>Standard expansion</h4>
+    <p><span class="code">${ENV_VAR}</span> &mdash; replaced with the value of <span class="code">ENV_VAR</span>. Fails if the variable is not set.</p>
+  </div>
+  <div class="cb">
+    <h4>Default values</h4>
+    <p><span class="code">${VAR:-default}</span> &mdash; uses the default value if <span class="code">VAR</span> is unset or empty.</p>
+  </div>
+</div>
+<div class="typedef" style="margin-top:12px;">
+<span class="kw">remote_nodes</span>:<br>
+&nbsp;&nbsp;<span class="field">my-node</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">${REMOTE_URL:-https://localhost:2428}</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">api_key</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">${MY_API_KEY}</span>
+</div>
+
+<h3>Mixed Local + Remote Workflows</h3>
+<p style="margin-bottom:10px;">Combine locally managed Docker/binary nodes with pre-existing remote nodes in a single workflow.</p>
+<div class="typedef">
+<span class="kw">nodes</span>:<br>
+&nbsp;&nbsp;<span class="field">local-node-1</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">image</span>: <span class="ty">ghcr.io/calimero-network/merod:latest</span><br>
+&nbsp;&nbsp;<span class="field">local-node-2</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">image</span>: <span class="ty">ghcr.io/calimero-network/merod:latest</span><br>
+<br>
+<span class="kw">remote_nodes</span>:<br>
+&nbsp;&nbsp;<span class="field">prod-server</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://prod.example.com:2428</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">user_password</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">username</span>: <span class="ty">${PROD_USER}</span><br>
+<br>
+<span class="kw">steps</span>:<br>
+&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">install_application</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">local-node-1</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># local Docker node</span><br>
+&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">prod-server</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># remote node</span>
+</div>
+</div>
+
+<!-- Bootstrap CLI Options -->
+<div class="card gd">
+<h2>Bootstrap CLI Options</h2>
+<p style="margin-bottom:16px;">Configure remote nodes during project initialization with <span class="code">merobox bootstrap</span>.</p>
+
+<div class="typedef">
+<span class="ty">merobox bootstrap</span> [OPTIONS]<br>
+<br>
+<span class="comment">Remote-specific options:</span><br>
+&nbsp;&nbsp;<span class="field">--remote-node</span> NAME=URL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Register a remote node (repeatable)</span><br>
+&nbsp;&nbsp;<span class="field">--remote-auth</span> NAME=AUTH&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Set auth method: user_password, api_key, none</span><br>
+&nbsp;&nbsp;<span class="field">--api-key</span> KEY&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">API key for api_key auth method</span>
+</div>
+
+<p style="margin-top:12px;margin-bottom:10px;">Example: bootstrap with two remote nodes.</p>
+<div class="typedef">
+<span class="ty">merobox bootstrap</span> \<br>
+&nbsp;&nbsp;--remote-node staging=https://staging.example.com:2428 \<br>
+&nbsp;&nbsp;--remote-auth staging=api_key \<br>
+&nbsp;&nbsp;--api-key ${STAGING_KEY} \<br>
+&nbsp;&nbsp;--remote-node prod=https://prod.example.com:2428 \<br>
+&nbsp;&nbsp;--remote-auth prod=user_password
+</div>
+</div>
+
+<!-- Authentication Methods -->
+<div class="card ga">
+<h2>Authentication Methods</h2>
+<p style="margin-bottom:18px;">Three authentication methods are supported, each suited for different deployment scenarios.</p>
+
+<div class="g3">
+  <div class="cb">
+    <h4 style="color:var(--amber)">User / Password</h4>
+    <p>Traditional username and password authentication. Credentials are exchanged for a JWT token which is cached locally.</p>
+    <p style="margin-top:8px;font-size:.78rem;color:var(--text-dim);">Best for: interactive use, development environments.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--green)">API Key</h4>
+    <p>Static API key passed in request headers. No token exchange required &mdash; the key is sent directly with each request.</p>
+    <p style="margin-top:8px;font-size:.78rem;color:var(--text-dim);">Best for: CI/CD pipelines, automated workflows.</p>
+  </div>
+  <div class="cb">
+    <h4 style="color:var(--blue)">None</h4>
+    <p>No authentication. The remote node accepts unauthenticated requests. Only suitable for local or trusted network deployments.</p>
+    <p style="margin-top:8px;font-size:.78rem;color:var(--text-dim);">Best for: local development, internal networks.</p>
+  </div>
+</div>
+
+<h3>Credential Resolution Order (User/Password)</h3>
+<p style="margin-bottom:12px;">When using <span class="code">user_password</span> auth, credentials are resolved in the following order:</p>
+<div class="step">
+  <div class="n">1</div>
+  <h4>CLI flags</h4>
+  <p>Explicit <span class="code">--username</span> and <span class="code">--password</span> flags on the command line take highest priority.</p>
+</div>
+<div class="step">
+  <div class="n">2</div>
+  <h4>Environment variables</h4>
+  <p><span class="code">MEROBOX_USERNAME</span> and <span class="code">MEROBOX_PASSWORD</span> environment variables are checked next.</p>
+</div>
+<div class="step">
+  <div class="n">3</div>
+  <h4>Interactive prompt</h4>
+  <p>If neither CLI flags nor environment variables provide credentials, the user is prompted interactively.</p>
+</div>
+</div>
+
+<!-- Token Caching -->
+<div class="card gb">
+<h2>Token Caching</h2>
+<p style="margin-bottom:16px;">JWT tokens obtained via <span class="code">user_password</span> authentication are cached to disk for reuse across commands.</p>
+
+<div class="g2">
+  <div>
+    <h3>Cache Location</h3>
+    <p>Tokens are stored in <span class="code">~/.merobox/auth_cache/</span>, with one file per registered remote node named <span class="code">&lt;node-name&gt;.json</span>.</p>
+    <div class="typedef" style="margin-top:10px;">
+<span class="field">~/.merobox/auth_cache/</span><br>
+&nbsp;&nbsp;<span class="field">my-server.json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># JWT + refresh token</span><br>
+&nbsp;&nbsp;<span class="field">staging.json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># JWT + refresh token</span>
+    </div>
+  </div>
+  <div>
+    <h3>Token Lifecycle</h3>
+    <ul>
+      <li><strong>Acquisition</strong> &mdash; obtained on <span class="code">merobox remote login</span> or first workflow run requiring auth</li>
+      <li><strong>Caching</strong> &mdash; written to <span class="code">~/.merobox/auth_cache/&lt;name&gt;.json</span> with both access and refresh tokens</li>
+      <li><strong>Automatic refresh</strong> &mdash; when the access token expires, the refresh token is used to obtain a new pair transparently</li>
+      <li><strong>Expiry</strong> &mdash; if both tokens expire, the user must re-authenticate via <span class="code">login</span> or credentials</li>
+      <li><strong>Clearing</strong> &mdash; <span class="code">merobox remote logout</span> deletes the cached token file</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- Environment Variables -->
+<div class="card gc">
+<h2>Environment Variables</h2>
+<p style="margin-bottom:16px;">Environment variables for remote node authentication and configuration.</p>
+
+<div class="fr">
+  <div class="fp">MEROBOX_USERNAME</div>
+  <div class="fd">Default username for <span class="code">user_password</span> authentication. Used when <span class="code">--username</span> is not provided on the CLI. Applies to all remote commands that require a username.</div>
+</div>
+<div class="fr">
+  <div class="fp">MEROBOX_PASSWORD</div>
+  <div class="fd">Default password for <span class="code">user_password</span> authentication. Used when <span class="code">--password</span> is not provided. Avoids interactive prompts in CI/CD environments.</div>
+</div>
+<div class="fr">
+  <div class="fp">MEROBOX_API_KEY</div>
+  <div class="fd">Default API key for <span class="code">api_key</span> authentication. Used when <span class="code">--api-key</span> is not provided on the CLI or in YAML configuration.</div>
+</div>
+</div>
+
+<!-- Troubleshooting -->
+<div class="card gd">
+<h2>Troubleshooting</h2>
+
+<details>
+  <summary>Connection refused or timeout</summary>
+  <div class="detail-body">
+    <ul>
+      <li>Verify the URL is correct and the port is accessible: <span class="code">curl -v https://node.example.com:2428/health</span></li>
+      <li>Check firewall rules allow inbound connections on the node port</li>
+      <li>Ensure the remote merod instance is running and healthy</li>
+      <li>Try <span class="code">merobox remote test &lt;name&gt;</span> for a structured diagnostic</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Authentication failed (401 / 403)</summary>
+  <div class="detail-body">
+    <ul>
+      <li>Confirm the auth method matches what the remote node expects</li>
+      <li>For <span class="code">user_password</span>: verify username and password are correct</li>
+      <li>For <span class="code">api_key</span>: ensure the key is valid and not expired</li>
+      <li>Clear cached tokens with <span class="code">merobox remote logout &lt;name&gt;</span> and re-authenticate</li>
+      <li>Check that environment variables (<span class="code">MEROBOX_USERNAME</span>, <span class="code">MEROBOX_PASSWORD</span>, <span class="code">MEROBOX_API_KEY</span>) are set correctly</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Token expired &mdash; automatic refresh failed</summary>
+  <div class="detail-body">
+    <ul>
+      <li>The refresh token has also expired &mdash; re-authenticate: <span class="code">merobox remote login &lt;name&gt;</span></li>
+      <li>Check that the remote node&rsquo;s auth service is running and responding</li>
+      <li>Inspect the cached token file at <span class="code">~/.merobox/auth_cache/&lt;name&gt;.json</span> for expiry timestamps</li>
+      <li>Delete stale tokens: <span class="code">merobox remote logout &lt;name&gt;</span></li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Environment variable not expanding</summary>
+  <div class="detail-body">
+    <ul>
+      <li>Ensure the variable is exported in the shell: <span class="code">export MY_VAR=value</span></li>
+      <li>Check for typos in the <span class="code">${VAR_NAME}</span> placeholder</li>
+      <li>Variables without a default (<span class="code">${VAR}</span>) will cause a parse error if unset &mdash; use <span class="code">${VAR:-default}</span> for optional values</li>
+      <li>Environment variables are expanded at YAML parse time, not at step execution time</li>
+    </ul>
+  </div>
+</details>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

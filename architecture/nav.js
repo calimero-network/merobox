@@ -12,11 +12,15 @@
     { section: 'Components' },
     { label: 'Workflow Engine', href: 'workflow-engine.html', dot: '#10b981' },
     { label: 'Node Management', href: 'node-management.html', dot: '#8b5cf6' },
-    { label: 'NEAR Integration', href: 'near-integration.html', dot: '#ec4899' },
+    { label: 'Remote Nodes', href: 'remote-nodes.html', dot: '#ec4899' },
+    { label: 'NEAR Integration', href: 'near-integration.html', dot: '#f97316' },
     { section: 'Reference' },
     { label: 'Workflow YAML', href: 'workflow-yaml.html', dot: '#f97316' },
     { label: 'CLI Reference', href: 'cli-reference.html', dot: '#06b6d4' },
     { label: 'Error Handling', href: 'error-handling.html', dot: '#ef4444' },
+    { section: 'Guides' },
+    { label: 'Testing', href: 'testing.html', dot: '#84cc16' },
+    { label: 'Troubleshooting', href: 'troubleshooting.html', dot: '#f59e0b' },
     { label: 'Glossary', href: 'glossary.html', dot: '#84cc16' },
   ];
 
