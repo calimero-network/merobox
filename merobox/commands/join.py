@@ -45,8 +45,8 @@ async def join_context_via_admin_api(
             invitation_json = str(invitation_data)
 
         result = client.join_context_by_open_invitation(
-            invitation=invitation_json,
-            new_member_public_key=invitee_id,
+            invitation_json,
+            invitee_id,
         )
         return ok(
             result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_JOIN}", payload_format=0
