@@ -18,6 +18,7 @@ ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 VALID_STEP_TYPES = frozenset(
     {
         "install_application",
+        "install_bundle",
         "create_context",
         "create_group",
         "create_group_invitation",
@@ -126,6 +127,15 @@ class InstallApplicationStep(BaseStepConfig):
     """Configuration for install_application step."""
 
     type: Literal["install_application"] = "install_application"
+    node: str = Field(..., description="Target node for installation")
+    path: str = Field(..., description="Path to the WASM file")
+    dev: Optional[bool] = Field(False, description="Install in dev mode")
+
+
+class InstallBundleStep(BaseStepConfig):
+    """Configuration for install_bundle step."""
+
+    type: Literal["install_bundle"] = "install_bundle"
     node: str = Field(..., description="Target node for installation")
     path: str = Field(..., description="Path to the WASM file")
     dev: Optional[bool] = Field(False, description="Install in dev mode")
@@ -348,6 +358,7 @@ class FuzzyTestStep(BaseStepConfig):
 # This avoids recreating the dict on every validation call
 STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "install_application": InstallApplicationStep,
+    "install_bundle": InstallBundleStep,
     "create_context": CreateContextStep,
     "create_identity": CreateIdentityStep,
     "invite_identity": InviteIdentityStep,
