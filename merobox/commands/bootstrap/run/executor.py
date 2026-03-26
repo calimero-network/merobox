@@ -409,8 +409,11 @@ class WorkflowExecutor:
                 self._stop_nodes_on_failure()
             return False
         finally:
-            if self.sandbox:
+            stop_all = self.config.get("stop_all_nodes", False)
+            if self.sandbox and stop_all:
                 await self.sandbox.stop()
+            elif self.sandbox:
+                console.print("[yellow]Leaving NEAR Sandbox running (stop_all_nodes=false)[/yellow]")
 
     async def _execute_dry_run(self, workflow_name: str) -> bool:
         """
@@ -1492,7 +1495,7 @@ class WorkflowExecutor:
             "auth_mode": self.auth_mode,
         }
 
-        if step_type == "install_application":
+        if step_type in ("install_application", "install_bundle"):
             return InstallApplicationStep(step_config, **common_kwargs)
         elif step_type == "create_context":
             return CreateContextStep(step_config, **common_kwargs)
