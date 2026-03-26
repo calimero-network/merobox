@@ -15,26 +15,54 @@
 
 <div class="g4" style="margin-bottom:36px;">
   <div class="stat"><div class="v">YAML</div><div class="l">format</div></div>
-  <div class="stat"><div class="v">${}</div><div class="l">env expansion</div></div>
-  <div class="stat"><div class="v">15+</div><div class="l">step types</div></div>
+  <div class="stat"><div class="v">{{}}</div><div class="l">dynamic vars</div></div>
+  <div class="stat"><div class="v">16</div><div class="l">step types</div></div>
   <div class="stat"><div class="v">2</div><div class="l">node modes</div></div>
 </div>
 
-<!-- Top-Level Schema -->
+<!-- ─────────────────────────────────────────────── -->
+<!-- Top-Level Schema                                -->
+<!-- ─────────────────────────────────────────────── -->
 <div class="card ga">
 <h2>Top-Level Schema</h2>
-<p style="margin-bottom:16px;">Every workflow YAML file has three top-level keys.</p>
+<p style="margin-bottom:16px;">Every workflow YAML file starts with top-level keys that configure the environment, nodes, and execution sequence.</p>
 
 <div class="typedef">
 <span class="comment"># workflow.yaml</span><br>
-<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Workflow display name</span><br>
-<span class="field">nodes</span>: <span class="ty">NodeConfig</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Node definition (count-based or explicit)</span><br>
-<span class="field">remote_nodes</span>: <span class="ty">list</span>&nbsp;&nbsp;<span class="comment"># Optional remote node declarations</span><br>
-<span class="field">steps</span>: <span class="ty">list[Step]</span>&nbsp;&nbsp;&nbsp;<span class="comment"># Ordered sequence of workflow steps</span>
+<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Workflow display name</span><br>
+<span class="field">nodes</span>: <span class="ty">NodeConfig</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Node definition (count-based or explicit)</span><br>
+<span class="field">remote_nodes</span>: <span class="ty">dict</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Optional remote node declarations</span><br>
+<span class="field">steps</span>: <span class="ty">list[Step]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Ordered sequence of workflow steps</span><br>
+<br>
+<span class="comment"># Lifecycle options</span><br>
+<span class="field">nuke_on_start</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Clean slate before workflow (default: false)</span><br>
+<span class="field">nuke_on_end</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Destroy data after completion (default: false)</span><br>
+<span class="field">force_pull_image</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Force pull Docker images (default: false)</span><br>
+<br>
+<span class="comment"># Auth configuration</span><br>
+<span class="field">auth_service</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Enable Traefik + auth stack (default: false)</span><br>
+<span class="field">auth_mode</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># "embedded" or "proxy" (binary mode only)</span><br>
+<span class="field">auth_image</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Custom auth service Docker image</span><br>
+<span class="field">auth_use_cached</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Use cached auth frontend (default: false)</span><br>
+<br>
+<span class="comment"># Image &amp; frontend</span><br>
+<span class="field">image</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Custom merod Docker image</span><br>
+<span class="field">webui_use_cached</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Use cached WebUI frontend (default: false)</span><br>
+<br>
+<span class="comment"># NEAR configuration</span><br>
+<span class="field">near_devnet</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Use local NEAR Sandbox (default: true)</span><br>
+<span class="field">contracts_dir</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Path to Calimero NEAR context WASM contracts</span><br>
+<br>
+<span class="comment"># Node configuration</span><br>
+<span class="field">config_path</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Custom config.toml path for all nodes</span><br>
+<span class="field">log_level</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># RUST_LOG level (default: debug)</span><br>
+<span class="field">bootstrap_nodes</span>: <span class="ty">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Multiaddr strings for DHT bootstrap peers</span>
 </div>
 </div>
 
-<!-- Node Configuration -->
+<!-- ─────────────────────────────────────────────── -->
+<!-- Node Configuration                              -->
+<!-- ─────────────────────────────────────────────── -->
 <div class="card gb">
 <h2>Node Configuration</h2>
 <p style="margin-bottom:16px;">Nodes can be defined using count-based (dynamic) or explicit (named) mode.</p>
@@ -46,125 +74,652 @@
     <div class="typedef">
 <span class="field">nodes</span>:<br>
 &nbsp;&nbsp;<span class="field">count</span>: <span class="ty">3</span><br>
-&nbsp;&nbsp;<span class="field">prefix</span>: <span class="ty">node</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># → node-0, node-1, node-2</span><br>
+&nbsp;&nbsp;<span class="field">prefix</span>: <span class="ty">node</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># &rarr; node-0, node-1, node-2</span><br>
 &nbsp;&nbsp;<span class="field">ports</span>:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">rpc_start</span>: <span class="ty">2528</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">swarm_start</span>: <span class="ty">2428</span>
     </div>
+    <p style="margin-top:8px;font-size:.82rem;color:var(--text-dim);">Count mode does not support per-node <span class="code">config_path</span> overrides.</p>
   </div>
   <div>
     <h3>Explicit Mode</h3>
-    <p>Name each node individually with specific settings.</p>
+    <p>Name each node individually with specific settings and optional per-node config.</p>
     <div class="typedef">
 <span class="field">nodes</span>:<br>
-&nbsp;&nbsp;<span class="field">explicit</span>:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">alice</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">rpc_port</span>: <span class="ty">2528</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">swarm_port</span>: <span class="ty">2428</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">bob</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">rpc_port</span>: <span class="ty">2529</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">swarm_port</span>: <span class="ty">2429</span>
+&nbsp;&nbsp;<span class="field">config_path</span>: <span class="ty">./default.toml</span>&nbsp;&nbsp;<span class="comment"># shared</span><br>
+&nbsp;&nbsp;<span class="field">alice</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">port</span>: <span class="ty">2428</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">rpc_port</span>: <span class="ty">2528</span><br>
+&nbsp;&nbsp;<span class="field">bob</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">port</span>: <span class="ty">2429</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">rpc_port</span>: <span class="ty">2529</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">config_path</span>: <span class="ty">./special.toml</span>&nbsp;&nbsp;<span class="comment"># override</span>
     </div>
   </div>
 </div>
 
 <h3 style="margin-top:24px;">Remote Nodes</h3>
-<p>Remote nodes are pre-existing merod instances outside the local environment.</p>
+<p>Remote nodes are pre-existing merod instances outside the local environment. Auth fields support <span class="code">${ENV_VAR}</span> and <span class="code">${ENV_VAR:-default}</span> expansion.</p>
 <div class="typedef">
 <span class="field">remote_nodes</span>:<br>
-&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">gateway</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://gateway.example.com</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth_token</span>: <span class="ty">${GATEWAY_TOKEN}</span><br>
-&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">relay</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">${RELAY_URL}</span>
+&nbsp;&nbsp;<span class="field">prod-node</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://prod.example.com</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">user_password</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># user_password | api_key | none</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">username</span>: <span class="ty">${PROD_USERNAME}</span><br>
+<br>
+&nbsp;&nbsp;<span class="field">staging-node</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://staging.example.com</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">api_key</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">${STAGING_API_KEY}</span><br>
+<br>
+&nbsp;&nbsp;<span class="field">public-node</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">https://public.example.com</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">auth</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">none</span>
 </div>
 </div>
 
-<!-- Step Types Reference -->
+<!-- ─────────────────────────────────────────────── -->
+<!-- Dynamic Variables & Outputs                     -->
+<!-- ─────────────────────────────────────────────── -->
 <div class="card gc">
+<h2>Dynamic Variables &amp; Outputs</h2>
+<p style="margin-bottom:16px;">Workflows support dynamic variable substitution using <span class="code">{{variable_name}}</span> syntax. Variables are resolved at execution time; missing variables cause workflow failure.</p>
+
+<div class="g2">
+  <div>
+    <h3>Variable Sources</h3>
+    <ul>
+      <li><strong>Step outputs</strong> &mdash; variables exported by previous steps via <span class="code">outputs</span></li>
+      <li><strong>Workflow context</strong> &mdash; global workflow variables</li>
+      <li><strong>Environment</strong> &mdash; <span class="code">${ENV_VAR}</span> and <span class="code">${ENV_VAR:-default}</span> expansion</li>
+      <li><strong>Embedded</strong> &mdash; variables can appear inside strings: <span class="code">user_{{user_id}}_data_{{iteration}}</span></li>
+    </ul>
+  </div>
+  <div>
+    <h3>Output Configuration</h3>
+    <p>Each step can export variables for use in subsequent steps.</p>
+    <div class="typedef">
+<span class="comment"># Simple string &mdash; maps API field to name</span><br>
+<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;<span class="field">my_var</span>: <span class="ty">result</span><br>
+<br>
+<span class="comment"># Dotted path (recommended)</span><br>
+&nbsp;&nbsp;<span class="field">nested</span>: <span class="ty">result.output</span><br>
+&nbsp;&nbsp;<span class="field">deep</span>: <span class="ty">result.data.user.name</span><br>
+&nbsp;&nbsp;<span class="field">array</span>: <span class="ty">items.0.id</span><br>
+<br>
+<span class="comment"># Dict-based (legacy, still supported)</span><br>
+&nbsp;&nbsp;<span class="field">my_value</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">field</span>: <span class="ty">result</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">json</span>: <span class="ty">true</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">path</span>: <span class="ty">output</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ─────────────────────────────────────────────── -->
+<!-- Step Type Reference                             -->
+<!-- ─────────────────────────────────────────────── -->
+<div class="card gd">
 <h2>Step Type Reference</h2>
 <p style="margin-bottom:18px;">Complete field reference for each step type. <span class="tag tag-gap">required</span> fields must be present; all others are optional.</p>
 
+<!-- ── install / install_application ── -->
 <details>
-  <summary>install_application</summary>
+  <summary>install / install_application</summary>
   <div class="detail-body">
-    <p>Installs a WASM application on a target node.</p>
+    <p>Installs a WASM application on a target node. Use <span class="code">path</span> for local files or <span class="code">url</span> for remote downloads. Remote nodes require <span class="code">url</span> (not <span class="code">path</span>).</p>
     <div class="typedef">
-- <span class="field">type</span>: <span class="ty">install_application</span><br>
-&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Step name for results reference</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+- <span class="field">type</span>: <span class="ty">install</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># or install_application</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Step name for result reference</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Target node name</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">path</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Local path to .wasm file</span><br>
 &nbsp;&nbsp;<span class="field">url</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># URL to download .wasm</span><br>
-&nbsp;&nbsp;<span class="field">metadata</span>: <span class="ty">dict</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Application metadata</span>
+&nbsp;&nbsp;<span class="field">dev</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Development mode install (local only)</span><br>
+&nbsp;&nbsp;<span class="field">metadata</span>: <span class="ty">dict</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Application metadata</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">applicationId</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Installed application ID</span>
     </div>
-    <p>Output: <span class="code">{ "application_id": "..." }</span></p>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Install App</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">install</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;<span class="field">path</span>: <span class="ty">./application.wasm</span><br>
+&nbsp;&nbsp;<span class="field">dev</span>: <span class="ty">true</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">applicationId</span>: <span class="ty">app_id</span>
+    </div>
   </div>
 </details>
 
+<!-- ── context / create_context ── -->
 <details>
-  <summary>create_context</summary>
+  <summary>context / create_context</summary>
   <div class="detail-body">
     <p>Creates a new context binding an application to a group on a node.</p>
     <div class="typedef">
-- <span class="field">type</span>: <span class="ty">create_context</span><br>
+- <span class="field">type</span>: <span class="ty">context</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># or create_context</span><br>
 &nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Or ${results.install.application_id}</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Or {{app_id}} from prior step</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">params</span>: <span class="ty">dict</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Context initialization parameters</span><br>
-&nbsp;&nbsp;<span class="field">seed</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Deterministic context ID seed</span>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Created context ID</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">memberPublicKey</span>: <span class="ty">string</span>&nbsp;&nbsp;<span class="comment"># Creator's public key</span>
     </div>
-    <p>Output: <span class="code">{ "context_id": "...", "member_public_key": "..." }</span></p>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Create Context</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">context</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">"{{app_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">params</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">param1</span>: <span class="ty">value1</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">context_id</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">memberPublicKey</span>: <span class="ty">member_key</span>
+    </div>
   </div>
 </details>
 
+<!-- ── identity ── -->
 <details>
-  <summary>call</summary>
+  <summary>identity</summary>
   <div class="detail-body">
-    <p>Invokes a method on an application within a context.</p>
+    <p>Generates a cryptographic identity on a target node.</p>
     <div class="typedef">
-- <span class="field">type</span>: <span class="ty">call</span><br>
+- <span class="field">type</span>: <span class="ty">identity</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">publicKey</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Generated public key</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Create Identity</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">identity</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-2</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">publicKey</span>: <span class="ty">public_key</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── invite ── -->
+<details>
+  <summary>invite</summary>
+  <div class="detail-body">
+    <p>Invites an identity to join a context. The invitation payload is used in the subsequent <span class="code">join</span> step.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">invite</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Node that owns the context</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">grantee_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Public key of the identity to invite</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">invitation</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Invitation payload for join step</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Invite Identity</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">invite</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">grantee_id</span>: <span class="ty">"{{public_key}}"</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">invitation</span>: <span class="ty">invitation_data</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── join ── -->
+<details>
+  <summary>join</summary>
+  <div class="detail-body">
+    <p>Joins a context using an invitation payload from a prior <span class="code">invite</span> step.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">join</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Node joining the context</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">invitee_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Public key of the joining identity</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">invitation</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Invitation payload from invite step</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Join Context</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">join</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-2</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">invitee_id</span>: <span class="ty">"{{public_key}}"</span><br>
+&nbsp;&nbsp;<span class="field">invitation</span>: <span class="ty">"{{invitation_data}}"</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── create_mesh ── -->
+<details>
+  <summary>create_mesh</summary>
+  <div class="detail-body">
+    <p>Creates a context and connects multiple nodes in a single compound step. Automatically creates the context on the specified node, generates identities for each target node, sends invitations, and joins all nodes.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">create_mesh</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">context_node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Node where context is created</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">nodes</span>: <span class="ty">list[string]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Nodes to join the context</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">capability</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Invitation capability (default: "member")</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">contextId</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">member_public_key</span>: <span class="ty">memberPublicKey</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Auto-exported: public_key_{node_name} for each joined node</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># If only one node: also exported as public_key</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Create Mesh</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">create_mesh</span><br>
+&nbsp;&nbsp;<span class="field">context_node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">"{{app_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">nodes</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">calimero-node-2</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">calimero-node-3</span><br>
+&nbsp;&nbsp;<span class="field">capability</span>: <span class="ty">member</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">contextId</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">member_public_key</span>: <span class="ty">memberPublicKey</span>
+    </div>
+    <p style="margin-top:10px;">After execution, <span class="code">{{public_key_calimero-node-2}}</span> and <span class="code">{{public_key_calimero-node-3}}</span> are available for use in later steps.</p>
+  </div>
+</details>
+
+<!-- ── call / execute ── -->
+<details>
+  <summary>call / execute</summary>
+  <div class="detail-body">
+    <p>Invokes a smart contract method within a context. Supports dotted-path output extraction and negative testing via <span class="code">expected_failure</span>.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">call</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># or execute</span><br>
 &nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Method name to invoke</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Contract method name</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">args</span>: <span class="ty">dict</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Method arguments (JSON serialized)</span><br>
-&nbsp;&nbsp;<span class="field">expected</span>: <span class="ty">any</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Expected return value</span><br>
-&nbsp;&nbsp;<span class="field">executor_key</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Specific key to sign with</span><br>
-&nbsp;&nbsp;<span class="field">retry</span>: <span class="ty">RetryConfig</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Retry settings on failure</span>
+&nbsp;&nbsp;<span class="field">executor_public_key</span>: <span class="ty">string</span><span class="comment"># Signing key</span><br>
+&nbsp;&nbsp;<span class="field">expected_failure</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Enable negative testing (default: false)</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">result</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Simple field access</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">nested</span>: <span class="ty">result.output</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Dotted path with auto JSON parsing</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">deep</span>: <span class="ty">result.data.user.name</span><span class="comment"># Deep nesting</span>
     </div>
-    <p>Output: <span class="code">{ "result": ..., "output": "..." }</span></p>
+
+    <h4>Negative Testing (expected_failure)</h4>
+    <p style="margin-bottom:10px;">When <span class="code">expected_failure: true</span>, the step continues on failure and exports error details for assertion.</p>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Expected Failure</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">executor_public_key</span>: <span class="ty">"{{member_public_key}}"</span><br>
+&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">invalid_method</span><br>
+&nbsp;&nbsp;<span class="field">args</span>: {}<br>
+&nbsp;&nbsp;<span class="field">expected_failure</span>: <span class="ty">true</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">error_code</span>: <span class="ty">error_code</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># JSON-RPC error code</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">error_type</span>: <span class="ty">error_type</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># e.g. "FunctionCallError"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">error_message</span>: <span class="ty">error_message</span>&nbsp;&nbsp;<span class="comment"># Error message text</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">error</span>: <span class="ty">error</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Full error object</span><br>
+<br>
+- <span class="field">name</span>: <span class="ty">Assert Error</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">assert</span><br>
+&nbsp;&nbsp;<span class="field">statements</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"is_set({{error_type}})"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"equal({{error_type}}, FunctionCallError)"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"contains({{error_message}}, not found)"</span>
+    </div>
+    <p style="margin-top:8px;font-size:.82rem;color:var(--text-dim);"><strong>JSON-RPC errors:</strong> error fields extracted from response. <strong>Network errors:</strong> captured and exported. <strong>Unexpected success:</strong> warning shown, error fields exported as <span class="code">None</span>.</p>
   </div>
 </details>
 
+<!-- ── wait ── -->
+<details>
+  <summary>wait</summary>
+  <div class="detail-body">
+    <p>Simple delay between steps.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">wait</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">seconds</span>: <span class="ty">number</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Seconds to wait</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Wait for propagation</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">wait</span><br>
+&nbsp;&nbsp;<span class="field">seconds</span>: <span class="ty">5</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── wait_for_sync ── -->
 <details>
   <summary>wait_for_sync</summary>
   <div class="detail-body">
-    <p>Waits until all specified nodes have synchronized state for a context.</p>
+    <p>Waits until all specified nodes reach consensus by verifying they share the same root hash. More reliable than fixed wait times because it only proceeds once nodes are actually synchronized.</p>
     <div class="typedef">
 - <span class="field">type</span>: <span class="ty">wait_for_sync</span><br>
 &nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">nodes</span>: <span class="ty">list[string]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Nodes to check (defaults to all)</span><br>
-&nbsp;&nbsp;<span class="field">timeout</span>: <span class="ty">int</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Timeout in seconds (default: 60)</span><br>
-&nbsp;&nbsp;<span class="field">poll_interval</span>: <span class="ty">float</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Seconds between polls (default: 2.0)</span>
+&nbsp;&nbsp;<span class="field">timeout</span>: <span class="ty">int</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Max seconds to wait (default: 30)</span><br>
+&nbsp;&nbsp;<span class="field">check_interval</span>: <span class="ty">float</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Seconds between checks (default: 1.0)</span><br>
+&nbsp;&nbsp;<span class="field">trigger_sync</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Trigger sync before checking (default: true)</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">root_hash</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Consensus root hash</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">elapsed_seconds</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;<span class="comment"># Time taken to sync</span>
+    </div>
+    <h4>When to Use</h4>
+    <ul>
+      <li>After state-changing operations (set, delete, update)</li>
+      <li>After nodes join a context</li>
+      <li>Before reading data from different nodes</li>
+      <li>In critical workflows where consistency is required</li>
+    </ul>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Wait for Nodes to Sync</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">wait_for_sync</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">nodes</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">calimero-node-2</span><br>
+&nbsp;&nbsp;<span class="field">timeout</span>: <span class="ty">30</span><br>
+&nbsp;&nbsp;<span class="field">check_interval</span>: <span class="ty">1</span><br>
+&nbsp;&nbsp;<span class="field">trigger_sync</span>: <span class="ty">true</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">root_hash</span>: <span class="ty">synced_hash</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">elapsed_seconds</span>: <span class="ty">sync_time</span>
     </div>
   </div>
 </details>
 
+<!-- ── repeat ── -->
 <details>
   <summary>repeat</summary>
   <div class="detail-body">
-    <p>Loops a sequence of sub-steps a specified number of times.</p>
+    <p>Loops a sequence of sub-steps a specified number of times. Exposes <span class="code">{{current_iteration}}</span> (zero-based) inside the loop body.</p>
     <div class="typedef">
 - <span class="field">type</span>: <span class="ty">repeat</span><br>
 &nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">count</span>: <span class="ty">int</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Number of iterations</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">steps</span>: <span class="ty">list[Step]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Sub-steps to repeat</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">iter_var</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Variable name for current index</span>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">iteration</span>: <span class="ty">current_iteration</span>&nbsp;<span class="comment"># Current loop index</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Repeat Operations</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">repeat</span><br>
+&nbsp;&nbsp;<span class="field">count</span>: <span class="ty">3</span><br>
+&nbsp;&nbsp;<span class="field">steps</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">Set Value</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">set</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">args</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">"iteration_{{current_iteration}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">value</span>: <span class="ty">"value_{{current_iteration}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_public_key</span>: <span class="ty">"{{member_key}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">Wait</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">wait</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">seconds</span>: <span class="ty">2</span>
     </div>
   </div>
 </details>
 
+<!-- ── fuzzy_test ── -->
+<details>
+  <summary>fuzzy_test</summary>
+  <div class="detail-body">
+    <p>Long-duration randomized load testing with weighted operation patterns and assertion-based validation. Application-agnostic &mdash; works with any smart contract.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">fuzzy_test</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">duration_minutes</span>: <span class="ty">int</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># How long to run</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">success_threshold</span>: <span class="ty">float</span>&nbsp;&nbsp;&nbsp;<span class="comment"># Pass if N%+ assertions succeed (e.g. 95.0)</span><br>
+&nbsp;&nbsp;<span class="field">nodes</span>: <span class="ty">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Node configs with executor keys</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">string</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_key</span>: <span class="ty">string</span><br>
+&nbsp;&nbsp;<span class="field">operations</span>: <span class="ty">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Weighted operation patterns</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Operation pattern name</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">weight</span>: <span class="ty">int</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Relative frequency (sums don't need to = 100)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">steps</span>: <span class="ty">list[Step]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Steps in this pattern</span>
+    </div>
+
+    <h4>Random Value Generators</h4>
+    <p style="margin-bottom:10px;">Use these inside <span class="code">{{}}</span> placeholders within fuzzy test steps:</p>
+    <div class="typedef">
+<span class="field">{{random_int(min, max)}}</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Random integer in range</span><br>
+<span class="field">{{random_string(length)}}</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Random alphanumeric string</span><br>
+<span class="field">{{random_float(min, max)}}</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Random float in range</span><br>
+<span class="field">{{random_choice([a, b, c])}}</span>&nbsp;&nbsp;<span class="comment"># Random pick from list</span><br>
+<span class="field">{{timestamp}}</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Current Unix timestamp</span><br>
+<span class="field">{{uuid}}</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Random UUID</span><br>
+<span class="field">{{random_node}}</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Random node from nodes list</span><br>
+<span class="field">{{random_executor}}</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Random executor key from nodes list</span>
+    </div>
+
+    <h4>Auto-Captured Arguments (fuzzy_ prefix)</h4>
+    <p style="margin-bottom:10px;">When a <span class="code">call</span> step executes inside a fuzzy test, its resolved arguments are automatically captured with a <span class="code">fuzzy_</span> prefix for use in subsequent assertion steps:</p>
+    <div class="typedef">
+<span class="comment"># If call step has args.key and args.value, then:</span><br>
+<span class="field">{{fuzzy_key}}</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># resolved value of args.key</span><br>
+<span class="field">{{fuzzy_value}}</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># resolved value of args.value</span><br>
+<span class="field">{{fuzzy_amount}}</span>&nbsp;&nbsp;&nbsp;<span class="comment"># resolved value of args.amount (etc.)</span>
+    </div>
+
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Fuzzy Load Test</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">fuzzy_test</span><br>
+&nbsp;&nbsp;<span class="field">duration_minutes</span>: <span class="ty">30</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">success_threshold</span>: <span class="ty">95.0</span><br>
+&nbsp;&nbsp;<span class="field">nodes</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_key</span>: <span class="ty">"{{member_public_key}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">calimero-node-2</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_key</span>: <span class="ty">"{{public_key_node2}}"</span><br>
+&nbsp;&nbsp;<span class="field">operations</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">set_and_verify</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">weight</span>: <span class="ty">40</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">steps</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">"{{random_node}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">set</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_public_key</span>: <span class="ty">"{{random_executor}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">args</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">"test_{{random_int(1, 1000)}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">value</span>: <span class="ty">"{{uuid}}_{{timestamp}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">wait</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">seconds</span>: <span class="ty">1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">"{{random_node}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">get</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_public_key</span>: <span class="ty">"{{random_executor}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">args</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">"{{fuzzy_key}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">retrieved</span>: <span class="ty">result</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">assert</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">non_blocking</span>: <span class="ty">true</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">statements</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">statement</span>: <span class="ty">"contains({{retrieved}}, {{fuzzy_value}})"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">message</span>: <span class="ty">"Value should match"</span>
+    </div>
+    <p style="margin-top:8px;font-size:.82rem;color:var(--text-dim);"><strong>Features:</strong> Weighted patterns, non-blocking assertions, live progress summaries every 60s, detailed final report with pass rates and failure analysis.</p>
+  </div>
+</details>
+
+<!-- ── upload_blob ── -->
+<details>
+  <summary>upload_blob</summary>
+  <div class="detail-body">
+    <p>Uploads files to blob storage and captures blob IDs for use in subsequent contract calls.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">upload_blob</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">file_path</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Path to local file</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Optional context association</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">blob_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Uploaded blob ID</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">size</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Blob size in bytes</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Upload WASM to Blob</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">upload_blob</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;<span class="field">file_path</span>: <span class="ty">res/kv_store.wasm</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">blob_id</span>: <span class="ty">wasm_blob_id</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">size</span>: <span class="ty">wasm_blob_size</span><br>
+<br>
+- <span class="field">name</span>: <span class="ty">Register Blob in Contract</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">register_blob</span><br>
+&nbsp;&nbsp;<span class="field">args</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">blob_id</span>: <span class="ty">"{{wasm_blob_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">size</span>: <span class="ty">"{{wasm_blob_size}}"</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── script ── -->
+<details>
+  <summary>script</summary>
+  <div class="detail-body">
+    <p>Runs an arbitrary script or inline command. The <span class="code">target</span> field controls where execution happens.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">script</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">target</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># "image" | "nodes" | "local"</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">script</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Path to script file</span><br>
+&nbsp;&nbsp;<span class="field">inline</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Inline script content (alternative to file)</span><br>
+&nbsp;&nbsp;<span class="field">args</span>: <span class="ty">list[string]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Arguments (supports {{var}} placeholders)</span>
+    </div>
+    <h4>Targets</h4>
+    <ul>
+      <li><span class="code">image</span> &mdash; runs inside a temporary container from the node image (before nodes start)</li>
+      <li><span class="code">nodes</span> &mdash; copies and runs inside each running Calimero node container</li>
+      <li><span class="code">local</span> &mdash; runs on host machine via <span class="code">/bin/sh</span></li>
+    </ul>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Echo Exported Value</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">script</span><br>
+&nbsp;&nbsp;<span class="field">target</span>: <span class="ty">local</span><br>
+&nbsp;&nbsp;<span class="field">inline</span>: |<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="ty">echo "Value is: {{read_value}}"</span><br>
+<br>
+- <span class="field">name</span>: <span class="ty">Run Script File</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">script</span><br>
+&nbsp;&nbsp;<span class="field">target</span>: <span class="ty">local</span><br>
+&nbsp;&nbsp;<span class="field">script</span>: <span class="ty">./scripts/setup.sh</span><br>
+&nbsp;&nbsp;<span class="field">args</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"{{read_value}}"</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── assert ── -->
+<details>
+  <summary>assert</summary>
+  <div class="detail-body">
+    <p>Statement-based assertions against exported variables and literals. Placeholders are resolved before evaluation.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">assert</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">statements</span>: <span class="ty">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">non_blocking</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Failures don't stop workflow (fuzzy tests)</span>
+    </div>
+    <h4>Supported Forms</h4>
+    <div class="typedef">
+<span class="comment"># Presence checks</span><br>
+<span class="field">is_set</span>(<span class="ty">A</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># A is not null/empty</span><br>
+<span class="field">is_empty</span>(<span class="ty">A</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># A is null/empty</span><br>
+<br>
+<span class="comment"># String checks</span><br>
+<span class="field">contains</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># A contains substring B</span><br>
+<span class="field">not_contains</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># A does not contain B</span><br>
+<span class="field">regex</span>(<span class="ty">A</span>, <span class="ty">PATTERN</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># A matches regex PATTERN</span><br>
+<br>
+<span class="comment"># Comparisons</span><br>
+<span class="ty">A</span> <span class="field">==</span> <span class="ty">B</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Equality</span><br>
+<span class="ty">A</span> <span class="field">!=</span> <span class="ty">B</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Inequality</span><br>
+<span class="ty">A</span> <span class="field">&gt;=</span> <span class="ty">B</span> &nbsp; <span class="ty">A</span> <span class="field">&gt;</span> <span class="ty">B</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Greater than (or equal)</span><br>
+<span class="ty">A</span> <span class="field">&lt;=</span> <span class="ty">B</span> &nbsp; <span class="ty">A</span> <span class="field">&lt;</span> <span class="ty">B</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Less than (or equal)</span><br>
+<br>
+<span class="comment"># Equality helpers</span><br>
+<span class="field">equal</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Same as ==</span><br>
+<span class="field">equals</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Same as ==</span><br>
+<span class="field">not_equal</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Same as !=</span><br>
+<span class="field">not_equals</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Same as !=</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Assert exported variables</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">assert</span><br>
+&nbsp;&nbsp;<span class="field">statements</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"is_set({{context_id}})"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"{{count}} >= 1"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"contains({{get_result}}, 'hello')"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"regex({{value}}, '^abc')"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"equal({{a}}, {{b}})"</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── json_assert ── -->
+<details>
+  <summary>json_assert</summary>
+  <div class="detail-body">
+    <p>Compare JSON-like values (Python dict/list or JSON strings). For deep structural comparison beyond simple string matching.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">json_assert</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">statements</span>: <span class="ty">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+    <h4>Supported Forms</h4>
+    <div class="typedef">
+<span class="field">json_equal</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># A equals B (deep comparison)</span><br>
+<span class="field">equal</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Alias for json_equal</span><br>
+<span class="field">json_subset</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># B is a subset of A</span><br>
+<span class="field">subset</span>(<span class="ty">A</span>, <span class="ty">B</span>)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Alias for json_subset</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Assert JSON equality</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">json_assert</span><br>
+&nbsp;&nbsp;<span class="field">statements</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"json_equal({{get_result}}, {'output': 'assert_value'})"</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── parallel ── -->
 <details>
   <summary>parallel</summary>
   <div class="detail-body">
@@ -175,66 +730,40 @@
 &nbsp;&nbsp;<span class="field">steps</span>: <span class="ty">list[Step]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Steps to run concurrently</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">fail_fast</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Cancel remaining on first failure (default: true)</span>
     </div>
-  </div>
-</details>
-
-<details>
-  <summary>script</summary>
-  <div class="detail-body">
-    <p>Runs an arbitrary shell command or script.</p>
+    <h4>Example</h4>
     <div class="typedef">
-- <span class="field">type</span>: <span class="ty">script</span><br>
-&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">command</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Shell command to execute</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">cwd</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Working directory</span><br>
-&nbsp;&nbsp;<span class="field">env</span>: <span class="ty">dict</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Additional environment variables</span><br>
-&nbsp;&nbsp;<span class="field">timeout</span>: <span class="ty">int</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Timeout in seconds</span>
-    </div>
-    <p>Output: <span class="code">{ "exit_code": 0, "stdout": "...", "stderr": "..." }</span></p>
-  </div>
-</details>
-
-<details>
-  <summary>assert</summary>
-  <div class="detail-body">
-    <p>Validates a condition against workflow results or step output.</p>
-    <div class="typedef">
-- <span class="field">type</span>: <span class="ty">assert</span><br>
-&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">value</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Value to check (supports placeholders)</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">equals</span>: <span class="ty">any</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Expected equality</span><br>
-&nbsp;&nbsp;<span class="field">contains</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Substring match</span><br>
-&nbsp;&nbsp;<span class="field">matches</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Regex pattern</span><br>
-&nbsp;&nbsp;<span class="field">not_null</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Assert value is not null/empty</span>
-    </div>
-  </div>
-</details>
-
-<details>
-  <summary>fuzzy_test</summary>
-  <div class="detail-body">
-    <p>Randomized testing for eventual consistency verification.</p>
-    <div class="typedef">
-- <span class="field">type</span>: <span class="ty">fuzzy_test</span><br>
-&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">iterations</span>: <span class="ty">int</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Number of random calls (default: 100)</span><br>
-&nbsp;&nbsp;<span class="field">arg_generator</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Python expression for random args</span><br>
-&nbsp;&nbsp;<span class="field">sync_after</span>: <span class="ty">bool</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Wait for sync between iterations</span><br>
-&nbsp;&nbsp;<span class="field">verify_consistency</span>: <span class="ty">bool</span>&nbsp;&nbsp;<span class="comment"># Check all nodes agree at end</span>
+- <span class="field">name</span>: <span class="ty">Parallel Calls</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">parallel</span><br>
+&nbsp;&nbsp;<span class="field">fail_fast</span>: <span class="ty">true</span><br>
+&nbsp;&nbsp;<span class="field">steps</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">Call Node 1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">get_count</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">name</span>: <span class="ty">Call Node 2</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">call</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">calimero-node-2</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">get_count</span>
     </div>
   </div>
 </details>
 </div>
 
-<!-- Complete Example -->
-<div class="card gd">
+<!-- ─────────────────────────────────────────────── -->
+<!-- Complete Example Workflow                        -->
+<!-- ─────────────────────────────────────────────── -->
+<div class="card ga">
 <h2>Complete Example</h2>
-<p style="margin-bottom:16px;">A full workflow demonstrating node setup, application installation, context creation, and method invocation.</p>
+<p style="margin-bottom:16px;">A full workflow demonstrating installation, context mesh creation, contract calls, sync verification, and assertions across multiple nodes.</p>
 
 <div class="typedef">
-<span class="field">name</span>: <span class="ty">e2e-counter-test</span><br>
+<span class="field">name</span>: <span class="ty">e2e-kv-store-test</span><br>
+<br>
+<span class="field">nuke_on_start</span>: <span class="ty">true</span><br>
+<span class="field">nuke_on_end</span>: <span class="ty">true</span><br>
+<span class="field">log_level</span>: <span class="ty">"info,calimero_context::handlers::execute=debug"</span><br>
 <br>
 <span class="field">nodes</span>:<br>
 &nbsp;&nbsp;<span class="field">count</span>: <span class="ty">2</span><br>
@@ -244,32 +773,60 @@
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">swarm_start</span>: <span class="ty">2428</span><br>
 <br>
 <span class="field">steps</span>:<br>
-&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">install_application</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">install_counter</span><br>
+&nbsp;&nbsp;<span class="comment"># 1. Install the WASM application</span><br>
+&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">install</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">install_kv</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">node-0</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">path</span>: <span class="ty">${CONTRACT_DIR}/counter.wasm</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">path</span>: <span class="ty">./res/kv_store.wasm</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">applicationId</span>: <span class="ty">app_id</span><br>
 <br>
-&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">create_context</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">create_ctx</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">node-0</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">${results.install_counter.application_id}</span><br>
+&nbsp;&nbsp;<span class="comment"># 2. Create context and mesh all nodes</span><br>
+&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">create_mesh</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">setup_mesh</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_node</span>: <span class="ty">node-0</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">"{{app_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">nodes</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">node-1</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">contextId</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">member_public_key</span>: <span class="ty">memberPublicKey</span><br>
 <br>
+&nbsp;&nbsp;<span class="comment"># 3. Write a value on node-0</span><br>
 &nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">call</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">increment</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">set_value</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">node-0</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">${results.create_ctx.context_id}</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">increment</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">set</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">args</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">hello</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">value</span>: <span class="ty">world</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_public_key</span>: <span class="ty">"{{member_public_key}}"</span><br>
 <br>
+&nbsp;&nbsp;<span class="comment"># 4. Wait for nodes to sync</span><br>
 &nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">wait_for_sync</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">sync</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">${results.create_ctx.context_id}</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">sync_nodes</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">timeout</span>: <span class="ty">30</span><br>
 <br>
+&nbsp;&nbsp;<span class="comment"># 5. Read back on node-1 and verify</span><br>
 &nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">call</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">verify</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">get_value</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">node-1</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">${results.create_ctx.context_id}</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">get_count</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">expected</span>: <span class="ty">1</span>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">"{{context_id}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">get</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">args</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">key</span>: <span class="ty">hello</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">executor_public_key</span>: <span class="ty">"{{public_key_node-1}}"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">read_value</span>: <span class="ty">result.output</span><br>
+<br>
+&nbsp;&nbsp;<span class="comment"># 6. Assert the value propagated correctly</span><br>
+&nbsp;&nbsp;- <span class="field">type</span>: <span class="ty">assert</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">verify_sync</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">statements</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"is_set({{read_value}})"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">"contains({{read_value}}, world)"</span>
 </div>
 </div>
 

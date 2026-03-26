@@ -11,191 +11,649 @@
 <div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>CLI Reference</span></div>
 
 <h1>CLI <em>Reference</em></h1>
-<p class="page-subtitle">All 7 Click commands with flags, options, and usage examples</p>
+<p class="page-subtitle">All commands, subcommands, flags, and environment variables</p>
 
 <div class="g4" style="margin-bottom:36px;">
-  <div class="stat"><div class="v">7</div><div class="l">commands</div></div>
+  <div class="stat"><div class="v">14</div><div class="l">commands</div></div>
   <div class="stat"><div class="v">Click</div><div class="l">framework</div></div>
   <div class="stat"><div class="v">merobox</div><div class="l">entry point</div></div>
   <div class="stat"><div class="v">Python</div><div class="l">language</div></div>
 </div>
 
-<!-- Command Overview -->
+<!-- ─────────────────────────────────────────────── -->
+<!-- Command Tree SVG                                -->
+<!-- ─────────────────────────────────────────────── -->
 <div class="card ga">
 <h2>Command Overview</h2>
-<p style="margin-bottom:16px;">merobox provides seven top-level commands for workflow orchestration, node management, and environment control.</p>
+<p style="margin-bottom:16px;">merobox provides top-level commands for node management, workflow orchestration, and environment control.</p>
 
-<svg viewBox="0 0 960 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1100 220" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- merobox root -->
-  <rect x="380" y="10" width="200" height="40" rx="8" fill="#f59e0b15" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="480" y="35" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="12" font-weight="700">merobox</text>
+  <rect x="440" y="10" width="200" height="40" rx="8" fill="#f59e0b15" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="540" y="35" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="12" font-weight="700">merobox</text>
 
-  <!-- Commands -->
-  <rect x="0" y="80" width="120" height="50" rx="8" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
-  <text x="60" y="102" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="10" font-weight="600">run</text>
-  <text x="60" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">workflow exec</text>
+  <!-- Row 1: Core node commands -->
+  <rect x="0" y="80" width="105" height="50" rx="8" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="52" y="102" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="10" font-weight="600">run</text>
+  <text x="52" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">start nodes</text>
 
-  <rect x="140" y="80" width="120" height="50" rx="8" fill="#ef444410" stroke="#ef4444" stroke-width="1.5"/>
-  <text x="200" y="102" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="10" font-weight="600">stop</text>
-  <text x="200" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">halt nodes</text>
+  <rect x="115" y="80" width="105" height="50" rx="8" fill="#ef444410" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="167" y="102" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="10" font-weight="600">stop</text>
+  <text x="167" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">halt nodes</text>
 
-  <rect x="280" y="80" width="120" height="50" rx="8" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
-  <text x="340" y="102" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="10" font-weight="600">health</text>
-  <text x="340" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">check status</text>
+  <rect x="230" y="80" width="105" height="50" rx="8" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="282" y="102" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="10" font-weight="600">list</text>
+  <text x="282" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">show nodes</text>
 
-  <rect x="420" y="80" width="120" height="50" rx="8" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
-  <text x="480" y="102" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="10" font-weight="600">logs</text>
-  <text x="480" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">view output</text>
+  <rect x="345" y="80" width="105" height="50" rx="8" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="397" y="102" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="10" font-weight="600">health</text>
+  <text x="397" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">check status</text>
 
-  <rect x="560" y="80" width="120" height="50" rx="8" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="620" y="102" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="10" font-weight="600">nuke</text>
-  <text x="620" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">destroy all</text>
+  <rect x="460" y="80" width="105" height="50" rx="8" fill="#84cc1610" stroke="#84cc16" stroke-width="1.5"/>
+  <text x="512" y="102" text-anchor="middle" fill="#84cc16" font-family="JetBrains Mono" font-size="10" font-weight="600">logs</text>
+  <text x="512" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">view output</text>
 
-  <rect x="700" y="80" width="120" height="50" rx="8" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
-  <text x="760" y="102" text-anchor="middle" fill="#8b5cf6" font-family="JetBrains Mono" font-size="10" font-weight="600">remote</text>
-  <text x="760" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">manage remotes</text>
+  <rect x="575" y="80" width="105" height="50" rx="8" fill="#f59e0b10" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="627" y="102" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono" font-size="10" font-weight="600">nuke</text>
+  <text x="627" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">destroy all</text>
 
-  <rect x="840" y="80" width="120" height="50" rx="8" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
-  <text x="900" y="102" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="600">bootstrap</text>
-  <text x="900" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">init config</text>
+  <rect x="690" y="80" width="105" height="50" rx="8" fill="#ec489910" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="742" y="102" text-anchor="middle" fill="#ec4899" font-family="JetBrains Mono" font-size="10" font-weight="600">bootstrap</text>
+  <text x="742" y="120" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">workflows</text>
 
-  <!-- Connection lines -->
-  <line x1="430" y1="50" x2="60" y2="80" stroke="#35354a" stroke-width="1"/>
-  <line x1="445" y1="50" x2="200" y2="80" stroke="#35354a" stroke-width="1"/>
-  <line x1="460" y1="50" x2="340" y2="80" stroke="#35354a" stroke-width="1"/>
-  <line x1="480" y1="50" x2="480" y2="80" stroke="#35354a" stroke-width="1"/>
-  <line x1="500" y1="50" x2="620" y2="80" stroke="#35354a" stroke-width="1"/>
-  <line x1="515" y1="50" x2="760" y2="80" stroke="#35354a" stroke-width="1"/>
-  <line x1="530" y1="50" x2="900" y2="80" stroke="#35354a" stroke-width="1"/>
+  <!-- Row 2: Resource & interaction commands -->
+  <rect x="0" y="155" width="105" height="50" rx="8" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="52" y="177" text-anchor="middle" fill="#8b5cf6" font-family="JetBrains Mono" font-size="10" font-weight="600">install</text>
+  <text x="52" y="195" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">add WASM app</text>
+
+  <rect x="115" y="155" width="105" height="50" rx="8" fill="#f9731610" stroke="#f97316" stroke-width="1.5"/>
+  <text x="167" y="177" text-anchor="middle" fill="#f97316" font-family="JetBrains Mono" font-size="10" font-weight="600">application</text>
+  <text x="167" y="195" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">manage apps</text>
+
+  <rect x="230" y="155" width="105" height="50" rx="8" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="282" y="177" text-anchor="middle" fill="#06b6d4" font-family="JetBrains Mono" font-size="10" font-weight="600">context</text>
+  <text x="282" y="195" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">manage ctxs</text>
+
+  <rect x="345" y="155" width="105" height="50" rx="8" fill="#10b98110" stroke="#10b981" stroke-width="1.5"/>
+  <text x="397" y="177" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono" font-size="10" font-weight="600">identity</text>
+  <text x="397" y="195" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">crypto keys</text>
+
+  <rect x="460" y="155" width="105" height="50" rx="8" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="512" y="177" text-anchor="middle" fill="#3b82f6" font-family="JetBrains Mono" font-size="10" font-weight="600">call</text>
+  <text x="512" y="195" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">exec contract</text>
+
+  <rect x="575" y="155" width="105" height="50" rx="8" fill="#ef444410" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="627" y="177" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="10" font-weight="600">join</text>
+  <text x="627" y="195" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">join context</text>
+
+  <rect x="690" y="155" width="105" height="50" rx="8" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="742" y="177" text-anchor="middle" fill="#8b5cf6" font-family="JetBrains Mono" font-size="10" font-weight="600">remote</text>
+  <text x="742" y="195" text-anchor="middle" fill="#6b6b80" font-family="JetBrains Mono" font-size="7">manage remotes</text>
+
+  <!-- Connection lines row 1 -->
+  <line x1="470" y1="50" x2="52" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="480" y1="50" x2="167" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="490" y1="50" x2="282" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="510" y1="50" x2="397" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="540" y1="50" x2="512" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="560" y1="50" x2="627" y2="80" stroke="#35354a" stroke-width="1"/>
+  <line x1="580" y1="50" x2="742" y2="80" stroke="#35354a" stroke-width="1"/>
+
+  <!-- Connection lines row 2 -->
+  <line x1="470" y1="50" x2="52" y2="155" stroke="#35354a" stroke-width="0.5" stroke-dasharray="3 3"/>
+  <line x1="480" y1="50" x2="167" y2="155" stroke="#35354a" stroke-width="0.5" stroke-dasharray="3 3"/>
+  <line x1="490" y1="50" x2="282" y2="155" stroke="#35354a" stroke-width="0.5" stroke-dasharray="3 3"/>
+  <line x1="510" y1="50" x2="397" y2="155" stroke="#35354a" stroke-width="0.5" stroke-dasharray="3 3"/>
+  <line x1="540" y1="50" x2="512" y2="155" stroke="#35354a" stroke-width="0.5" stroke-dasharray="3 3"/>
+  <line x1="560" y1="50" x2="627" y2="155" stroke="#35354a" stroke-width="0.5" stroke-dasharray="3 3"/>
+  <line x1="580" y1="50" x2="742" y2="155" stroke="#35354a" stroke-width="0.5" stroke-dasharray="3 3"/>
 </svg>
 </div>
 
-<!-- Individual Commands -->
+<!-- ─────────────────────────────────────────────── -->
+<!-- merobox run                                     -->
+<!-- ─────────────────────────────────────────────── -->
 <div class="card gb">
-<h2>merobox run</h2>
-<p style="margin-bottom:14px;">Execute a workflow YAML file. This is the primary command &mdash; it orchestrates the full lifecycle from environment setup through step execution to cleanup.</p>
+<h2>Node Management</h2>
+<p style="margin-bottom:18px;">Commands for starting, stopping, listing, monitoring, and destroying Calimero nodes.</p>
 
-<div class="typedef">
-<span class="ty">merobox run</span> &lt;workflow.yaml&gt; [OPTIONS]<br>
-<br>
-<span class="comment">Arguments:</span><br>
-&nbsp;&nbsp;<span class="field">workflow</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Path to workflow YAML file</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+<details open>
+  <summary>merobox run</summary>
+  <div class="detail-body">
+    <p>Start Calimero nodes in Docker containers or as native processes.</p>
+    <div class="typedef">
+<span class="ty">merobox run</span> [OPTIONS]<br>
 <br>
 <span class="comment">Options:</span><br>
-&nbsp;&nbsp;<span class="field">--nuke</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Destroy existing environment before run</span><br>
-&nbsp;&nbsp;<span class="field">--no-cleanup</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Keep nodes running after workflow completes</span><br>
-&nbsp;&nbsp;<span class="field">--backend</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Force backend: "docker" or "binary" (default: auto)</span><br>
-&nbsp;&nbsp;<span class="field">--image</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Docker image override (e.g. merod:dev)</span><br>
-&nbsp;&nbsp;<span class="field">--binary-path</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Path to merod binary (for binary backend)</span><br>
-&nbsp;&nbsp;<span class="field">--near-sandbox</span>&nbsp;&nbsp;&nbsp;<span class="comment">Enable NEAR sandbox (auto-detected from YAML)</span><br>
-&nbsp;&nbsp;<span class="field">--env</span> KEY=VAL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Set environment variable (repeatable)</span><br>
-&nbsp;&nbsp;<span class="field">--verbose / -v</span>&nbsp;&nbsp;&nbsp;<span class="comment">Increase log verbosity</span><br>
-&nbsp;&nbsp;<span class="field">--dry-run</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Validate workflow without executing</span>
-</div>
-</div>
+&nbsp;&nbsp;<span class="field">--count</span> <span class="ty">INTEGER</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Number of nodes to start (default: 1)</span><br>
+&nbsp;&nbsp;<span class="field">--prefix</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name prefix (default: "calimero-node")</span><br>
+&nbsp;&nbsp;<span class="field">--restart</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Restart existing nodes</span><br>
+&nbsp;&nbsp;<span class="field">--image</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Custom Docker image to use</span><br>
+&nbsp;&nbsp;<span class="field">--force-pull</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Force pull image even if it exists locally</span><br>
+&nbsp;&nbsp;<span class="field">--no-docker</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Run as native processes instead of Docker</span><br>
+&nbsp;&nbsp;<span class="field">--binary-path</span> <span class="ty">PATH</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Path to merod binary (required with --no-docker)</span><br>
+<br>
+<span class="comment">Auth options:</span><br>
+&nbsp;&nbsp;<span class="field">--auth-service</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Enable Traefik + auth stack (Docker mode only)</span><br>
+&nbsp;&nbsp;<span class="field">--auth-image</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Custom auth service image</span><br>
+&nbsp;&nbsp;<span class="field">--auth-mode</span> <span class="ty">[embedded|proxy]</span><span class="comment"> Auth mode for merod (binary mode only)</span><br>
+&nbsp;&nbsp;<span class="field">--auth-use-cached</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Use cached auth frontend (skip fresh fetch)</span><br>
+&nbsp;&nbsp;<span class="field">--webui-use-cached</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Use cached WebUI frontend (skip fresh fetch)</span><br>
+<br>
+<span class="comment">Logging:</span><br>
+&nbsp;&nbsp;<span class="field">--log-level</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">RUST_LOG level (default: debug). Supports patterns:</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">"info,module::path=debug"</span><br>
+&nbsp;&nbsp;<span class="field">--rust-backtrace</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;<span class="comment">RUST_BACKTRACE level (default: 0)</span>
+    </div>
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="comment"># Start 2 nodes with default settings</span><br>
+<span class="ty">merobox run --count 2</span><br>
+<br>
+<span class="comment"># Start with auth service</span><br>
+<span class="ty">merobox run --auth-service --count 2</span><br>
+<br>
+<span class="comment"># Binary mode with embedded auth</span><br>
+<span class="ty">merobox run --no-docker --binary-path /usr/local/bin/merod --auth-mode embedded</span><br>
+<br>
+<span class="comment"># Force pull latest image</span><br>
+<span class="ty">merobox run --image ghcr.io/calimero-network/merod:edge --force-pull</span>
+    </div>
+  </div>
+</details>
 
-<div class="card gc">
-<h2>merobox stop</h2>
-<p style="margin-bottom:14px;">Stop all running nodes managed by merobox.</p>
-
-<div class="typedef">
+<details>
+  <summary>merobox stop</summary>
+  <div class="detail-body">
+    <p>Stop running Calimero nodes and optional auth service stack.</p>
+    <div class="typedef">
 <span class="ty">merobox stop</span> [OPTIONS]<br>
 <br>
 <span class="comment">Options:</span><br>
-&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Stop specific node by name</span><br>
-&nbsp;&nbsp;<span class="field">--all</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Stop all managed nodes (default)</span><br>
-&nbsp;&nbsp;<span class="field">--force</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Force kill (SIGKILL instead of SIGTERM)</span><br>
-&nbsp;&nbsp;<span class="field">--timeout</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Graceful shutdown timeout in seconds (default: 10)</span>
-</div>
-</div>
+&nbsp;&nbsp;<span class="field">--all</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Stop all running nodes and auth service stack</span><br>
+&nbsp;&nbsp;<span class="field">--auth-service</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Stop auth service stack only (Traefik + Auth)</span><br>
+&nbsp;&nbsp;<span class="field">--prefix</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Stop nodes with specific prefix</span>
+    </div>
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="ty">merobox stop --all</span><br>
+<span class="ty">merobox stop --auth-service</span><br>
+<span class="ty">merobox stop --prefix test-node</span>
+    </div>
+  </div>
+</details>
 
-<div class="card gd">
-<h2>merobox health</h2>
-<p style="margin-bottom:14px;">Check the health status of all running nodes.</p>
+<details>
+  <summary>merobox list</summary>
+  <div class="detail-body">
+    <p>List all running Calimero nodes managed by merobox.</p>
+    <div class="typedef">
+<span class="ty">merobox list</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--help</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show help message</span>
+    </div>
+  </div>
+</details>
 
-<div class="typedef">
+<details>
+  <summary>merobox health</summary>
+  <div class="detail-body">
+    <p>Check health status of all running nodes.</p>
+    <div class="typedef">
 <span class="ty">merobox health</span> [OPTIONS]<br>
 <br>
 <span class="comment">Options:</span><br>
-&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Check specific node by name</span><br>
-&nbsp;&nbsp;<span class="field">--json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Output in JSON format</span><br>
-&nbsp;&nbsp;<span class="field">--wait</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Wait until healthy (with timeout)</span><br>
-&nbsp;&nbsp;<span class="field">--timeout</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Wait timeout in seconds (default: 30)</span>
-</div>
-</div>
+&nbsp;&nbsp;<span class="field">--help</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show help message</span>
+    </div>
+  </div>
+</details>
 
-<div class="card ga">
-<h2>merobox logs</h2>
-<p style="margin-bottom:14px;">View or follow log output from running nodes.</p>
-
-<div class="typedef">
-<span class="ty">merobox logs</span> [OPTIONS]<br>
+<details>
+  <summary>merobox logs</summary>
+  <div class="detail-body">
+    <p>View or follow log output from a running node.</p>
+    <div class="typedef">
+<span class="ty">merobox logs</span> [OPTIONS] <span class="ty">NODE_NAME</span><br>
+<br>
+<span class="comment">Arguments:</span><br>
+&nbsp;&nbsp;<span class="field">NODE_NAME</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node to show logs for</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 <br>
 <span class="comment">Options:</span><br>
-&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name to show logs for</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">--follow / -f</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Follow log output (like tail -f)</span><br>
-&nbsp;&nbsp;<span class="field">--tail</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Number of lines from end (default: 100)</span><br>
-&nbsp;&nbsp;<span class="field">--since</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show logs since timestamp or duration (e.g. "5m")</span>
-</div>
-</div>
+&nbsp;&nbsp;<span class="field">--follow</span>, <span class="field">-f</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Follow log output (like tail -f)</span>
+    </div>
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="ty">merobox logs calimero-node-1</span><br>
+<span class="ty">merobox logs calimero-node-1 --follow</span>
+    </div>
+  </div>
+</details>
 
-<div class="card gb">
-<h2>merobox nuke</h2>
-<p style="margin-bottom:14px;">Destroy all merobox-managed resources: containers, volumes, binary processes, PID files, and temp data.</p>
-
-<div class="typedef">
+<details>
+  <summary>merobox nuke</summary>
+  <div class="detail-body">
+    <p>Remove all merobox-managed resources: containers, volumes, binary processes, PID files, and temp data.</p>
+    <div class="typedef">
 <span class="ty">merobox nuke</span> [OPTIONS]<br>
 <br>
 <span class="comment">Options:</span><br>
-&nbsp;&nbsp;<span class="field">--confirm / -y</span>&nbsp;&nbsp;&nbsp;<span class="comment">Skip confirmation prompt</span><br>
-&nbsp;&nbsp;<span class="field">--keep-images</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Don't remove pulled Docker images</span><br>
-&nbsp;&nbsp;<span class="field">--keep-sandbox</span>&nbsp;&nbsp;&nbsp;<span class="comment">Don't remove NEAR sandbox data</span>
-</div>
+&nbsp;&nbsp;<span class="field">--dry-run</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show what would be deleted without deleting</span><br>
+&nbsp;&nbsp;<span class="field">--force</span>, <span class="field">-f</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Force deletion without confirmation prompt</span><br>
+&nbsp;&nbsp;<span class="field">--verbose</span>, <span class="field">-v</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show verbose output</span><br>
+&nbsp;&nbsp;<span class="field">--prefix</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Filter nodes by prefix (e.g. "test-node-")</span>
+    </div>
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="ty">merobox nuke --force</span><br>
+<span class="ty">merobox nuke --dry-run --verbose</span><br>
+<span class="ty">merobox nuke --prefix test-node</span>
+    </div>
+  </div>
+</details>
 </div>
 
+<!-- ─────────────────────────────────────────────── -->
+<!-- merobox bootstrap                               -->
+<!-- ─────────────────────────────────────────────── -->
 <div class="card gc">
-<h2>merobox remote</h2>
-<p style="margin-bottom:14px;">Manage remote node registrations via the portal API.</p>
+<h2>Workflow Orchestration</h2>
+<p style="margin-bottom:18px;">The <span class="code">bootstrap</span> command executes, validates, and scaffolds workflows.</p>
 
-<div class="typedef">
-<span class="ty">merobox remote</span> &lt;subcommand&gt; [OPTIONS]<br>
+<details open>
+  <summary>merobox bootstrap</summary>
+  <div class="detail-body">
+    <p>Execute workflows, validate configurations, and create sample files.</p>
+    <div class="typedef">
+<span class="ty">merobox bootstrap</span> &lt;SUBCOMMAND&gt; [OPTIONS]<br>
 <br>
 <span class="comment">Subcommands:</span><br>
-&nbsp;&nbsp;<span class="field">add</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Register a new remote node</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--url</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node endpoint URL</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--token</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Auth token (or use $MEROBOX_TOKEN)</span><br>
+&nbsp;&nbsp;<span class="field">run</span> <span class="ty">&lt;config_file&gt;</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Execute a workflow</span><br>
+&nbsp;&nbsp;<span class="field">validate</span> <span class="ty">&lt;config_file&gt;</span>&nbsp;<span class="comment">Validate workflow configuration</span><br>
+&nbsp;&nbsp;<span class="field">create-sample</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Create a sample workflow file</span>
+    </div>
+
+    <h4>bootstrap run</h4>
+    <div class="typedef">
+<span class="ty">merobox bootstrap run</span> <span class="ty">&lt;config_file&gt;</span> [OPTIONS]<br>
 <br>
-&nbsp;&nbsp;<span class="field">remove</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Unregister a remote node</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name to remove</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+<span class="comment">Auth options:</span><br>
+&nbsp;&nbsp;<span class="field">--auth-service</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Enable Traefik + auth stack (Docker mode)</span><br>
+&nbsp;&nbsp;<span class="field">--auth-image</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Custom auth service Docker image</span><br>
+&nbsp;&nbsp;<span class="field">--auth-mode</span> <span class="ty">[embedded|proxy]</span><span class="comment"> Auth mode for merod (binary mode)</span><br>
+&nbsp;&nbsp;<span class="field">--auth-username</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Username for embedded auth (required with embedded)</span><br>
+&nbsp;&nbsp;<span class="field">--auth-password</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Password for embedded auth (required with embedded)</span><br>
+&nbsp;&nbsp;<span class="field">--auth-use-cached</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Use cached auth frontend</span><br>
+&nbsp;&nbsp;<span class="field">--webui-use-cached</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Use cached WebUI frontend</span><br>
 <br>
-&nbsp;&nbsp;<span class="field">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">List all registered remote nodes</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">--json</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Output in JSON format</span>
-</div>
+<span class="comment">NEAR options:</span><br>
+&nbsp;&nbsp;<span class="field">--enable-relayer</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Use relayer/testnet instead of local sandbox</span><br>
+&nbsp;&nbsp;<span class="field">--contracts-dir</span> <span class="ty">PATH</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Directory with Calimero NEAR WASM contracts</span><br>
+<br>
+<span class="comment">Remote nodes:</span><br>
+&nbsp;&nbsp;<span class="field">--remote-node</span> <span class="ty">NAME=URL</span>&nbsp;&nbsp;&nbsp;<span class="comment">Register remote node (repeatable)</span><br>
+&nbsp;&nbsp;<span class="field">--remote-auth</span> <span class="ty">NAME=AUTH</span>&nbsp;&nbsp;<span class="comment">Set auth: name=user:pass or name=apikey:KEY</span><br>
+&nbsp;&nbsp;<span class="field">--api-key</span> <span class="ty">KEY</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Default API key for nodes without explicit auth</span><br>
+<br>
+<span class="comment">Logging:</span><br>
+&nbsp;&nbsp;<span class="field">--log-level</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">RUST_LOG level for Calimero nodes (default: debug)</span><br>
+&nbsp;&nbsp;<span class="field">--rust-backtrace</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;<span class="comment">RUST_BACKTRACE level (default: 0)</span><br>
+&nbsp;&nbsp;<span class="field">--verbose</span>, <span class="field">-v</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Enable verbose output</span>
+    </div>
+
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="comment"># Basic workflow execution</span><br>
+<span class="ty">merobox bootstrap run workflow.yml</span><br>
+<br>
+<span class="comment"># With auth service</span><br>
+<span class="ty">merobox bootstrap run workflow.yml --auth-service</span><br>
+<br>
+<span class="comment"># Embedded auth (binary mode)</span><br>
+<span class="ty">merobox bootstrap run workflow.yml --auth-mode embedded --auth-username admin --auth-password secret</span><br>
+<br>
+<span class="comment"># Use relayer instead of local sandbox</span><br>
+<span class="ty">merobox bootstrap run workflow.yml --enable-relayer</span><br>
+<br>
+<span class="comment"># With remote nodes</span><br>
+<span class="ty">merobox bootstrap run workflow.yml \</span><br>
+<span class="ty">&nbsp;&nbsp;--remote-node prod=https://prod.example.com \</span><br>
+<span class="ty">&nbsp;&nbsp;--remote-auth prod=admin:secret123</span><br>
+<br>
+<span class="comment"># Multiple remote nodes with API key</span><br>
+<span class="ty">merobox bootstrap run workflow.yml \</span><br>
+<span class="ty">&nbsp;&nbsp;--remote-node prod=https://prod.example.com \</span><br>
+<span class="ty">&nbsp;&nbsp;--remote-node staging=https://staging.example.com \</span><br>
+<span class="ty">&nbsp;&nbsp;--api-key sk-default-key</span>
+    </div>
+  </div>
+</details>
 </div>
 
+<!-- ─────────────────────────────────────────────── -->
+<!-- Resource Management                             -->
+<!-- ─────────────────────────────────────────────── -->
 <div class="card gd">
-<h2>merobox bootstrap</h2>
-<p style="margin-bottom:14px;">Initialize a new merobox project with default configuration files and directory structure.</p>
+<h2>Resource Management</h2>
+<p style="margin-bottom:18px;">Commands for installing applications, managing contexts, and handling identities directly (outside workflows).</p>
 
-<div class="typedef">
-<span class="ty">merobox bootstrap</span> [OPTIONS]<br>
+<details>
+  <summary>merobox install</summary>
+  <div class="detail-body">
+    <p>Install a WASM application on a Calimero node.</p>
+    <div class="typedef">
+<span class="ty">merobox install</span> [OPTIONS]<br>
 <br>
 <span class="comment">Options:</span><br>
-&nbsp;&nbsp;<span class="field">--dir</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Target directory (default: current)</span><br>
-&nbsp;&nbsp;<span class="field">--template</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Workflow template: "minimal", "e2e", "near" (default: minimal)</span><br>
-&nbsp;&nbsp;<span class="field">--nodes</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Number of nodes to configure (default: 2)</span><br>
-&nbsp;&nbsp;<span class="field">--with-sandbox</span>&nbsp;&nbsp;&nbsp;<span class="comment">Include NEAR sandbox configuration</span>
+&nbsp;&nbsp;<span class="field">--node</span>, <span class="field">-n</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name to install on</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">--url</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">URL to install the application from</span><br>
+&nbsp;&nbsp;<span class="field">--path</span> <span class="ty">PATH</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Local path for dev installation</span><br>
+&nbsp;&nbsp;<span class="field">--dev</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Install as development application from local path</span><br>
+&nbsp;&nbsp;<span class="field">--metadata</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Application metadata (optional)</span><br>
+&nbsp;&nbsp;<span class="field">--timeout</span> <span class="ty">INTEGER</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Installation timeout in seconds (default: 30)</span><br>
+&nbsp;&nbsp;<span class="field">--verbose</span>, <span class="field">-v</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show verbose output</span>
+    </div>
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="ty">merobox install --node my-node --url https://example.com/app.wasm</span><br>
+<span class="ty">merobox install --node my-node --path ./app.wasm --dev</span>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>merobox application</summary>
+  <div class="detail-body">
+    <p>Manage installed applications on Calimero nodes.</p>
+    <div class="typedef">
+<span class="ty">merobox application</span> &lt;SUBCOMMAND&gt;<br>
+<br>
+<span class="comment">Subcommands:</span><br>
+&nbsp;&nbsp;<span class="field">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">List all installed applications on a node</span>
+    </div>
+
+    <h4>application list</h4>
+    <div class="typedef">
+<span class="ty">merobox application list</span> --node <span class="ty">NODE_NAME</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--node</span>, <span class="field">-n</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name to list apps from</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">--verbose</span>, <span class="field">-v</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show verbose output including full API response</span>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>merobox context</summary>
+  <div class="detail-body">
+    <p>Manage blockchain contexts on Calimero nodes.</p>
+    <div class="typedef">
+<span class="ty">merobox context</span> &lt;SUBCOMMAND&gt;<br>
+<br>
+<span class="comment">Subcommands:</span><br>
+&nbsp;&nbsp;<span class="field">create</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Create a new context</span><br>
+&nbsp;&nbsp;<span class="field">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">List all contexts on a node</span><br>
+&nbsp;&nbsp;<span class="field">show</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show details of a specific context</span>
+    </div>
+
+    <h4>context create</h4>
+    <div class="typedef">
+<span class="ty">merobox context create</span> [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--node</span>, <span class="field">-n</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node name</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">--application-id</span>, <span class="field">-a</span> <span class="ty">TEXT</span><span class="comment"> Application ID</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">--protocol</span>, <span class="field">-p</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Protocol type (only "near" supported)</span><br>
+&nbsp;&nbsp;<span class="field">--params</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Init parameters as JSON string</span><br>
+&nbsp;&nbsp;<span class="field">--verbose</span>, <span class="field">-v</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show verbose output</span>
+    </div>
+
+    <h4>context list</h4>
+    <div class="typedef">
+<span class="ty">merobox context list</span> --node <span class="ty">NODE_NAME</span> [--verbose]
+    </div>
+
+    <h4>context show</h4>
+    <div class="typedef">
+<span class="ty">merobox context show</span> --node <span class="ty">NODE_NAME</span> --context-id <span class="ty">CONTEXT_ID</span> [--verbose]
+    </div>
+
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="ty">merobox context create --node my-node --application-id app-123</span><br>
+<span class="ty">merobox context create --node my-node --application-id app-123 --params '{"key": "value"}'</span><br>
+<span class="ty">merobox context list --node my-node</span><br>
+<span class="ty">merobox context show --node my-node --context-id ctx-456</span>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>merobox identity</summary>
+  <div class="detail-body">
+    <p>Manage cryptographic identities on Calimero nodes.</p>
+    <div class="typedef">
+<span class="ty">merobox identity</span> &lt;SUBCOMMAND&gt;<br>
+<br>
+<span class="comment">Subcommands:</span><br>
+&nbsp;&nbsp;<span class="field">generate</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Generate a new identity</span><br>
+&nbsp;&nbsp;<span class="field">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">List identities on a node</span><br>
+&nbsp;&nbsp;<span class="field">show</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show identity details</span>
+    </div>
+  </div>
+</details>
 </div>
 
-<p style="margin-top:14px;">Creates the following structure:</p>
+<!-- ─────────────────────────────────────────────── -->
+<!-- Direct Interaction                              -->
+<!-- ─────────────────────────────────────────────── -->
+<div class="card ga">
+<h2>Direct Interaction</h2>
+<p style="margin-bottom:18px;">Commands for calling contract methods and joining contexts directly from the CLI.</p>
+
+<details>
+  <summary>merobox call</summary>
+  <div class="detail-body">
+    <p>Execute smart contract functions via JSON-RPC.</p>
+    <div class="typedef">
+<span class="ty">merobox call</span> [OPTIONS] <span class="ty">NODE_NAME</span> <span class="ty">CONTEXT_ID</span> <span class="ty">METHOD</span> [ARGS]...<br>
+<br>
+<span class="comment">Arguments:</span><br>
+&nbsp;&nbsp;<span class="field">NODE_NAME</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Target node name</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">CONTEXT_ID</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Context ID to call within</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">METHOD</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Method name to invoke</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">ARGS</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Method arguments (optional)</span><br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--executor-key</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Executor public key for signing</span><br>
+&nbsp;&nbsp;<span class="field">--exec-type</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Execution type</span>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>merobox join</summary>
+  <div class="detail-body">
+    <p>Join a blockchain context using an invitation payload.</p>
+    <div class="typedef">
+<span class="ty">merobox join</span> <span class="ty">NODE_NAME</span> <span class="ty">CONTEXT_ID</span> <span class="ty">INVITEE_ID</span> <span class="ty">INVITATION</span><br>
+<br>
+<span class="comment">Arguments:</span><br>
+&nbsp;&nbsp;<span class="field">NODE_NAME</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Node to join with</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">CONTEXT_ID</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Context ID to join</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">INVITEE_ID</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Public key of joining identity</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">INVITATION</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Invitation payload</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+</div>
+
+<!-- ─────────────────────────────────────────────── -->
+<!-- merobox remote                                  -->
+<!-- ─────────────────────────────────────────────── -->
+<div class="card gb">
+<h2>Remote Node Management</h2>
+<p style="margin-bottom:18px;">Register, authenticate with, and manage remote Calimero nodes.</p>
+
+<details open>
+  <summary>merobox remote</summary>
+  <div class="detail-body">
+    <div class="typedef">
+<span class="ty">merobox remote</span> &lt;SUBCOMMAND&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Subcommands:</span><br>
+&nbsp;&nbsp;<span class="field">register</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Register a remote node</span><br>
+&nbsp;&nbsp;<span class="field">unregister</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Remove a registered node</span><br>
+&nbsp;&nbsp;<span class="field">login</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Authenticate with a remote node</span><br>
+&nbsp;&nbsp;<span class="field">logout</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Remove cached authentication</span><br>
+&nbsp;&nbsp;<span class="field">status</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show registered nodes and cached tokens</span><br>
+&nbsp;&nbsp;<span class="field">test</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Test connectivity and authentication</span><br>
+&nbsp;&nbsp;<span class="field">list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">List registered remote nodes</span>
+    </div>
+
+    <h4>remote register</h4>
+    <div class="typedef">
+<span class="ty">merobox remote register</span> &lt;name&gt; &lt;url&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--auth-method</span>, <span class="field">-m</span> <span class="ty">TEXT</span>&nbsp;&nbsp;<span class="comment">Auth method: user_password, api_key, none</span><br>
+&nbsp;&nbsp;<span class="field">--username</span>, <span class="field">-u</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Username for user_password auth</span><br>
+&nbsp;&nbsp;<span class="field">--description</span>, <span class="field">-d</span> <span class="ty">TEXT</span>&nbsp;<span class="comment">Human-readable description</span>
+    </div>
+
+    <h4>remote unregister</h4>
+    <div class="typedef">
+<span class="ty">merobox remote unregister</span> &lt;name&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--remove-token</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Also remove cached authentication token</span>
+    </div>
+
+    <h4>remote login</h4>
+    <div class="typedef">
+<span class="ty">merobox remote login</span> &lt;url_or_name&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--username</span>, <span class="field">-u</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Username (prompts if not provided)</span><br>
+&nbsp;&nbsp;<span class="field">--password</span>, <span class="field">-p</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Password (prompts if not provided)</span><br>
+&nbsp;&nbsp;<span class="field">--api-key</span>, <span class="field">-k</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">API key for api_key auth method</span><br>
+&nbsp;&nbsp;<span class="field">--method</span>, <span class="field">-m</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Auth method override</span>
+    </div>
+
+    <h4>remote logout</h4>
+    <div class="typedef">
+<span class="ty">merobox remote logout</span> &lt;url_or_name&gt;<br>
+<span class="ty">merobox remote logout --all</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Remove all cached tokens</span>
+    </div>
+
+    <h4>remote test</h4>
+    <div class="typedef">
+<span class="ty">merobox remote test</span> &lt;url_or_name&gt; [OPTIONS]<br>
+<br>
+<span class="comment">Options:</span><br>
+&nbsp;&nbsp;<span class="field">--username</span>, <span class="field">-u</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Username for testing</span><br>
+&nbsp;&nbsp;<span class="field">--password</span>, <span class="field">-p</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Password for testing</span><br>
+&nbsp;&nbsp;<span class="field">--api-key</span>, <span class="field">-k</span> <span class="ty">TEXT</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">API key for testing</span>
+    </div>
+    <p style="margin-top:8px;font-size:.82rem;color:var(--text-dim);">Tests: 1) Network connectivity, 2) Auth requirement detection, 3) Authentication, 4) API access verification.</p>
+
+    <h4>remote status &amp; list</h4>
+    <div class="typedef">
+<span class="ty">merobox remote status</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Nodes + cached tokens with expiry</span><br>
+<span class="ty">merobox remote list</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Registered remote nodes</span>
+    </div>
+
+    <h4>Examples</h4>
+    <div class="typedef">
+<span class="comment"># Register and authenticate</span><br>
+<span class="ty">merobox remote register prod https://prod.example.com -m user_password -u admin</span><br>
+<span class="ty">merobox remote login prod</span><br>
+<br>
+<span class="comment"># API key auth</span><br>
+<span class="ty">merobox remote register staging https://staging.example.com -m api_key</span><br>
+<span class="ty">merobox remote login staging -k sk-your-api-key</span><br>
+<br>
+<span class="comment"># Test and manage</span><br>
+<span class="ty">merobox remote test prod</span><br>
+<span class="ty">merobox remote status</span><br>
+<span class="ty">merobox remote logout prod</span><br>
+<span class="ty">merobox remote unregister prod --remove-token</span>
+    </div>
+  </div>
+</details>
+</div>
+
+<!-- ─────────────────────────────────────────────── -->
+<!-- Environment Variables                           -->
+<!-- ─────────────────────────────────────────────── -->
+<div class="card gc">
+<h2>Environment Variables</h2>
+<p style="margin-bottom:16px;">Environment variables that control merobox behavior. Set via <span class="code">export VAR=value</span> or inline before commands.</p>
+
 <div class="typedef">
-<span class="field">./</span><br>
-&nbsp;&nbsp;<span class="field">workflow.yaml</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Starter workflow from template</span><br>
-&nbsp;&nbsp;<span class="field">contracts/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Directory for WASM contracts</span><br>
-&nbsp;&nbsp;<span class="field">.merobox/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Local config and cache</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">config.toml</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Default node configuration</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">tokens/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Auth token cache</span>
+<span class="comment"># Docker &amp; Image</span><br>
+<span class="field">CALIMERO_IMAGE</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Docker image for Calimero nodes</span><br>
+<span class="field">DOCKER_HOST</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Docker daemon connection string</span><br>
+<br>
+<span class="comment"># Logging</span><br>
+<span class="field">LOG_LEVEL</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Logging level: DEBUG, INFO, WARNING, ERROR</span><br>
+<span class="field">RUST_BACKTRACE</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Rust backtrace level: 0, 1, full</span><br>
+<br>
+<span class="comment"># Frontend caching</span><br>
+<span class="field">CALIMERO_AUTH_FRONTEND_FETCH</span>&nbsp;&nbsp;<span class="comment">Set to "0" for cached auth frontend (default: "1")</span><br>
+<span class="field">CALIMERO_WEBUI_FETCH</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Set to "0" for cached WebUI frontend (default: "1")</span><br>
+<br>
+<span class="comment"># Authentication credentials</span><br>
+<span class="field">MEROBOX_USERNAME</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Default username for user_password auth</span><br>
+<span class="field">MEROBOX_PASSWORD</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Default password for user_password auth</span><br>
+<span class="field">MEROBOX_API_KEY</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Default API key for api_key auth</span>
+</div>
+
+<h3>Credential Resolution Order</h3>
+<p style="margin-bottom:10px;">For remote node authentication, credentials are resolved in this priority:</p>
+<div class="typedef">
+<span class="comment">1.</span> <span class="field">CLI flags</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">--password, -p / --api-key, -k</span><br>
+<span class="comment">2.</span> <span class="field">Environment variables</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">MEROBOX_PASSWORD / MEROBOX_API_KEY</span><br>
+<span class="comment">3.</span> <span class="field">Interactive prompt</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Secure password input</span>
+</div>
+
+<h3>Usage Examples</h3>
+<div class="typedef">
+<span class="comment"># Use cached frontends</span><br>
+<span class="ty">export CALIMERO_AUTH_FRONTEND_FETCH=0</span><br>
+<span class="ty">export CALIMERO_WEBUI_FETCH=0</span><br>
+<span class="ty">merobox run --auth-service --count 2</span><br>
+<br>
+<span class="comment"># Pre-set credentials for non-interactive use</span><br>
+<span class="ty">export MEROBOX_USERNAME=admin</span><br>
+<span class="ty">export MEROBOX_PASSWORD=secret</span><br>
+<span class="ty">merobox remote login prod-node</span>&nbsp;&nbsp;<span class="comment"># No prompts</span><br>
+<br>
+<span class="comment"># Inline for single command</span><br>
+<span class="ty">CALIMERO_WEBUI_FETCH=0 merobox run --count 2</span>
+</div>
+</div>
+
+<!-- ─────────────────────────────────────────────── -->
+<!-- Global Options                                  -->
+<!-- ─────────────────────────────────────────────── -->
+<div class="card gd">
+<h2>Global Options</h2>
+<div class="typedef">
+<span class="ty">merobox</span> [OPTIONS] <span class="ty">COMMAND</span> [ARGS]...<br>
+<br>
+<span class="field">--version</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show version and exit</span><br>
+<span class="field">--help</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">Show help message and exit</span>
+</div>
+
+<h3>Token Caching</h3>
+<p style="margin-bottom:10px;">Authentication tokens are automatically cached at <span class="code">~/.merobox/auth_cache/</span> with restrictive permissions (0o600). Tokens are refreshed automatically on 401 responses.</p>
+<div class="typedef">
+<span class="comment"># Token lifecycle</span><br>
+<span class="ty">merobox remote login prod-node -u admin -p secret</span>&nbsp;&nbsp;<span class="comment"># Caches token</span><br>
+<span class="ty">merobox bootstrap run workflow.yml</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Uses cache</span><br>
+<span class="ty">merobox remote status</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Check expiry</span><br>
+<span class="ty">merobox remote logout prod-node</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Clear cache</span>
 </div>
 </div>
 

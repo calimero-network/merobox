@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Testing — merobox Architecture</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Testing</span></div>
+
+<h1>Testing &amp; <em>Development</em></h1>
+<p class="page-subtitle">Test harness, pytest fixtures, development setup, building, and release process</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">2</div><div class="l">context managers</div></div>
+  <div class="stat"><div class="v">2</div><div class="l">pytest fixtures</div></div>
+  <div class="stat"><div class="v">pytest</div><div class="l">test framework</div></div>
+  <div class="stat"><div class="v">make</div><div class="l">build system</div></div>
+</div>
+
+<!-- Test Harness -->
+<div class="card ga">
+<h2>Test Harness</h2>
+<p style="margin-bottom:16px;">The <span class="code">merobox.testing</span> module provides context managers and pytest fixtures for spinning up clusters and running workflows in test suites.</p>
+
+<h3>cluster() Context Manager</h3>
+<p style="margin-bottom:10px;">Spins up an isolated cluster of merod nodes for the duration of the block, tearing down on exit.</p>
+<div class="typedef">
+<span class="kw">from</span> <span class="ty">merobox.testing</span> <span class="kw">import</span> cluster<br>
+<br>
+<span class="kw">async with</span> <span class="ty">cluster</span>(<br>
+&nbsp;&nbsp;<span class="field">count</span>=<span class="ty">3</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># number of nodes to spawn</span><br>
+&nbsp;&nbsp;<span class="field">prefix</span>=<span class="ty">"test"</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># name prefix for containers</span><br>
+&nbsp;&nbsp;<span class="field">image</span>=<span class="ty">"merod:latest"</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Docker image to use</span><br>
+) <span class="kw">as</span> <span class="field">env</span>:<br>
+&nbsp;&nbsp;<span class="comment"># env is a dict with:</span><br>
+&nbsp;&nbsp;<span class="comment">#   nodes     &mdash; list of node names</span><br>
+&nbsp;&nbsp;<span class="comment">#   endpoints &mdash; dict mapping node name to URL</span><br>
+&nbsp;&nbsp;<span class="kw">assert</span> <span class="ty">len</span>(env[<span class="ty">"nodes"</span>]) == <span class="ty">3</span>
+</div>
+
+<h3>pytest_cluster Fixture</h3>
+<p style="margin-bottom:10px;">A pytest fixture that wraps <span class="code">cluster()</span> for seamless test integration.</p>
+<div class="typedef">
+<span class="kw">import</span> <span class="ty">pytest</span><br>
+<span class="kw">from</span> <span class="ty">merobox.testing</span> <span class="kw">import</span> pytest_cluster<br>
+<br>
+<span class="field">@pytest.fixture</span>(<span class="field">scope</span>=<span class="ty">"module"</span>)&nbsp;&nbsp;<span class="comment"># scope: function | class | module | session</span><br>
+<span class="kw">async def</span> <span class="ty">my_cluster</span>():<br>
+&nbsp;&nbsp;<span class="kw">async with</span> <span class="ty">pytest_cluster</span>(<span class="field">scope</span>=<span class="ty">"module"</span>) <span class="kw">as</span> env:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">yield</span> env<br>
+<br>
+<span class="kw">async def</span> <span class="ty">test_node_health</span>(<span class="field">my_cluster</span>):<br>
+&nbsp;&nbsp;<span class="kw">for</span> name, url <span class="kw">in</span> my_cluster[<span class="ty">"endpoints"</span>].items():<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># assert node is reachable</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;...
+</div>
+</div>
+
+<!-- Workflow Testing -->
+<div class="card gb">
+<h2>Workflow Testing</h2>
+
+<h3>workflow() Context Manager</h3>
+<p style="margin-bottom:10px;">Executes a workflow YAML file and exposes the resulting environment for assertions.</p>
+<div class="typedef">
+<span class="kw">from</span> <span class="ty">merobox.testing</span> <span class="kw">import</span> workflow<br>
+<br>
+<span class="kw">async with</span> <span class="ty">workflow</span>(<br>
+&nbsp;&nbsp;<span class="field">workflow_path</span>=<span class="ty">"tests/e2e.yaml"</span>,<br>
+&nbsp;&nbsp;<span class="field">prefix</span>=<span class="ty">"e2e"</span>,<br>
+) <span class="kw">as</span> <span class="field">env</span>:<br>
+&nbsp;&nbsp;<span class="comment"># env is a dict with:</span><br>
+&nbsp;&nbsp;<span class="comment">#   workflow_result &mdash; final StepResult</span><br>
+&nbsp;&nbsp;<span class="comment">#   nodes           &mdash; list of node names</span><br>
+&nbsp;&nbsp;<span class="comment">#   endpoints       &mdash; dict mapping node name to URL</span><br>
+&nbsp;&nbsp;<span class="comment">#   manager         &mdash; NodeManager instance for direct control</span><br>
+&nbsp;&nbsp;<span class="kw">assert</span> env[<span class="ty">"workflow_result"</span>].success
+</div>
+
+<h3>pytest_workflow Fixture</h3>
+<p style="margin-bottom:10px;">A full-featured pytest fixture for workflow-based integration tests.</p>
+<div class="typedef">
+<span class="kw">from</span> <span class="ty">merobox.testing</span> <span class="kw">import</span> pytest_workflow<br>
+<br>
+<span class="field">@pytest.fixture</span>(<span class="field">scope</span>=<span class="ty">"module"</span>)<br>
+<span class="kw">async def</span> <span class="ty">e2e_env</span>():<br>
+&nbsp;&nbsp;<span class="kw">async with</span> <span class="ty">pytest_workflow</span>(<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">workflow_path</span>=<span class="ty">"tests/e2e.yaml"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">prefix</span>=<span class="ty">"e2e"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">image</span>=<span class="ty">"merod:latest"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">chain_id</span>=<span class="ty">"localnet"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">wait_for_ready</span>=<span class="ty">True</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">scope</span>=<span class="ty">"module"</span>,<br>
+&nbsp;&nbsp;) <span class="kw">as</span> env:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">yield</span> env<br>
+<br>
+<span class="kw">async def</span> <span class="ty">test_workflow_passes</span>(<span class="field">e2e_env</span>):<br>
+&nbsp;&nbsp;<span class="kw">assert</span> e2e_env[<span class="ty">"workflow_result"</span>].success
+</div>
+
+<div class="g2" style="margin-top:18px;">
+  <div class="cb">
+    <h4>Fixture Parameters</h4>
+    <ul>
+      <li><span class="code">workflow_path</span> &mdash; path to the workflow YAML file</li>
+      <li><span class="code">prefix</span> &mdash; name prefix for containers and resources</li>
+      <li><span class="code">image</span> &mdash; Docker image override for merod nodes</li>
+      <li><span class="code">chain_id</span> &mdash; NEAR chain ID for sandbox configuration</li>
+      <li><span class="code">wait_for_ready</span> &mdash; block until all nodes are healthy</li>
+      <li><span class="code">scope</span> &mdash; pytest fixture scope (function, class, module, session)</li>
+    </ul>
+  </div>
+  <div class="cb">
+    <h4>Environment Dict Keys</h4>
+    <ul>
+      <li><span class="code">workflow_result</span> &mdash; final <span class="code">StepResult</span> from the workflow execution</li>
+      <li><span class="code">nodes</span> &mdash; list of node name strings</li>
+      <li><span class="code">endpoints</span> &mdash; dict mapping node names to HTTP endpoint URLs</li>
+      <li><span class="code">manager</span> &mdash; the active <span class="code">NodeManager</span> instance for direct node control</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- Development Setup -->
+<div class="card gc">
+<h2>Development Setup</h2>
+
+<h3>Prerequisites</h3>
+<div class="g3" style="margin-bottom:16px;">
+  <div class="stat"><div class="v">3.9&ndash;3.11</div><div class="l">Python</div></div>
+  <div class="stat"><div class="v">20.10+</div><div class="l">Docker</div></div>
+  <div class="stat"><div class="v">pip</div><div class="l">package manager</div></div>
+</div>
+
+<h3>Local Development Setup</h3>
+<div class="step">
+  <div class="n">1</div>
+  <h4>Clone and enter the repository</h4>
+  <div class="typedef">
+<span class="ty">git clone</span> https://github.com/calimero-network/merobox.git<br>
+<span class="ty">cd</span> merobox
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">2</div>
+  <h4>Create a virtual environment</h4>
+  <div class="typedef">
+<span class="ty">python -m venv</span> .venv<br>
+<span class="ty">source</span> .venv/bin/activate
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">3</div>
+  <h4>Install dependencies</h4>
+  <div class="typedef">
+<span class="ty">pip install</span> -e ".[dev]"<br>
+<span class="comment"># or: make install</span>
+  </div>
+</div>
+</div>
+
+<!-- Building -->
+<div class="card gd">
+<h2>Building</h2>
+<p style="margin-bottom:16px;">All build tasks are managed via <span class="code">make</span>. Run <span class="code">make help</span> for the full list.</p>
+
+<div class="fr">
+  <div class="fp">make help</div>
+  <div class="fd">Display all available make targets with descriptions.</div>
+</div>
+<div class="fr">
+  <div class="fp">make build</div>
+  <div class="fd">Build the package distribution (wheel + sdist) into the <span class="code">dist/</span> directory.</div>
+</div>
+<div class="fr">
+  <div class="fp">make check</div>
+  <div class="fd">Run all linters: ruff, mypy, and format checking. Fails on any violation.</div>
+</div>
+<div class="fr">
+  <div class="fp">make install</div>
+  <div class="fd">Install merobox in editable mode with all dev dependencies.</div>
+</div>
+<div class="fr">
+  <div class="fp">make format</div>
+  <div class="fd">Auto-format all Python files with ruff format and isort.</div>
+</div>
+<div class="fr">
+  <div class="fp">make format-check</div>
+  <div class="fd">Check formatting without modifying files. Returns non-zero on violations.</div>
+</div>
+</div>
+
+<!-- Testing -->
+<div class="card ga">
+<h2>Running Tests</h2>
+<p style="margin-bottom:16px;">Tests use pytest with async support via <span class="code">pytest-asyncio</span>.</p>
+
+<div class="g2">
+  <div class="cb">
+    <h4>All tests</h4>
+    <div class="typedef">
+<span class="ty">make test</span><br>
+<span class="comment"># equivalent to: pytest tests/ -v</span>
+    </div>
+  </div>
+  <div class="cb">
+    <h4>Specific tests</h4>
+    <div class="typedef">
+<span class="ty">pytest</span> tests/test_workflow.py -v<br>
+<span class="ty">pytest</span> tests/ -k "test_cluster" -v
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Adding New Commands -->
+<div class="card gb">
+<h2>Adding New Commands</h2>
+<p style="margin-bottom:16px;">merobox uses Click for CLI command definitions. Each command lives in its own file under <span class="code">merobox/commands/</span>.</p>
+
+<div class="step">
+  <div class="n">1</div>
+  <h4>Create the command file</h4>
+  <p>Create a new file in <span class="code">merobox/commands/</span>, e.g. <span class="code">merobox/commands/my_command.py</span>.</p>
+</div>
+
+<div class="step">
+  <div class="n">2</div>
+  <h4>Implement the Click command</h4>
+  <div class="typedef">
+<span class="kw">import</span> <span class="ty">click</span><br>
+<br>
+<span class="field">@click.command</span>()<br>
+<span class="field">@click.argument</span>(<span class="ty">"name"</span>)<br>
+<span class="field">@click.option</span>(<span class="ty">"--verbose"</span>, is_flag=<span class="ty">True</span>, help=<span class="ty">"Enable verbose output"</span>)<br>
+<span class="kw">def</span> <span class="ty">my_command</span>(name, verbose):<br>
+&nbsp;&nbsp;<span class="ty">"""Short description of the command."""</span><br>
+&nbsp;&nbsp;...
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">3</div>
+  <h4>Register the command</h4>
+  <p>Add the import to <span class="code">merobox/commands/__init__.py</span> and register with the CLI group.</p>
+  <div class="typedef">
+<span class="kw">from</span> <span class="ty">.my_command</span> <span class="kw">import</span> my_command<br>
+<br>
+<span class="comment"># In the CLI group registration:</span><br>
+cli.add_command(my_command)
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">4</div>
+  <h4>Update __all__</h4>
+  <p>Add the command name to <span class="code">__all__</span> in <span class="code">merobox/commands/__init__.py</span> for clean imports.</p>
+</div>
+</div>
+
+<!-- Adding New Step Types -->
+<div class="card gc">
+<h2>Adding New Step Types</h2>
+<p style="margin-bottom:16px;">Step types extend <span class="code">BaseStep</span> and register with the step factory for use in workflows.</p>
+
+<div class="step">
+  <div class="n">1</div>
+  <h4>Create the step file</h4>
+  <p>Create a new file in <span class="code">merobox/steps/</span>, e.g. <span class="code">merobox/steps/my_step.py</span>.</p>
+</div>
+
+<div class="step">
+  <div class="n">2</div>
+  <h4>Inherit from BaseStep</h4>
+  <div class="typedef">
+<span class="kw">from</span> <span class="ty">merobox.steps.base</span> <span class="kw">import</span> BaseStep, StepResult, ok, fail<br>
+<br>
+<span class="kw">class</span> <span class="ty">MyStep</span>(<span class="ty">BaseStep</span>):<br>
+&nbsp;&nbsp;step_type = <span class="ty">"my_step"</span>
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">3</div>
+  <h4>Implement required methods</h4>
+  <div class="typedef">
+<span class="kw">def</span> <span class="ty">_get_required_fields</span>(self) -&gt; list[str]:<br>
+&nbsp;&nbsp;<span class="kw">return</span> [<span class="ty">"target"</span>, <span class="ty">"value"</span>]<br>
+<br>
+<span class="kw">def</span> <span class="ty">_validate_field_types</span>(self) -&gt; None:<br>
+&nbsp;&nbsp;<span class="comment"># Validate config field types</span><br>
+&nbsp;&nbsp;<span class="kw">if not isinstance</span>(self.config[<span class="ty">"target"</span>], str):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">raise</span> <span class="ty">StepValidationError</span>(<span class="ty">"target must be a string"</span>)<br>
+<br>
+<span class="kw">async def</span> <span class="ty">execute</span>(self, context) -&gt; <span class="ty">StepResult</span>:<br>
+&nbsp;&nbsp;<span class="comment"># Step logic here</span><br>
+&nbsp;&nbsp;<span class="kw">return</span> <span class="ty">ok</span>({<span class="ty">"result"</span>: <span class="ty">"value"</span>})
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">4</div>
+  <h4>Register in the step factory</h4>
+  <p>Add the step type mapping in the executor&rsquo;s step factory registry.</p>
+  <div class="typedef">
+<span class="comment"># In merobox/executor.py or step factory</span><br>
+STEP_REGISTRY[<span class="ty">"my_step"</span>] = <span class="ty">MyStep</span>
+  </div>
+</div>
+</div>
+
+<!-- Release Process -->
+<div class="card gd">
+<h2>Release Process</h2>
+<p style="margin-bottom:16px;">Releases are version-gated and fully automated once a tag is pushed.</p>
+
+<h3>Version Source of Truth</h3>
+<p style="margin-bottom:10px;">The version string lives in <span class="code">merobox/__init__.py</span> and is the single source of truth for the package version.</p>
+<div class="typedef">
+<span class="comment"># merobox/__init__.py</span><br>
+<span class="field">__version__</span> = <span class="ty">"0.4.2"</span>
+</div>
+
+<h3>Automated Pipeline</h3>
+<div class="g4" style="margin-top:12px;">
+  <div class="step">
+    <div class="n">1</div>
+    <h4>Auto-tag</h4>
+    <p>CI detects version bump in <span class="code">__init__.py</span> and creates a git tag <span class="code">v0.4.2</span>.</p>
+  </div>
+  <div class="step">
+    <div class="n">2</div>
+    <h4>Build binaries</h4>
+    <p>Wheel and sdist are built for all supported platforms (Linux, macOS, Windows).</p>
+  </div>
+  <div class="step">
+    <div class="n">3</div>
+    <h4>GitHub Release</h4>
+    <p>A GitHub Release is created with the tag, changelog, and build artifacts attached.</p>
+  </div>
+  <div class="step">
+    <div class="n">4</div>
+    <h4>PyPI Publish</h4>
+    <p>The wheel and sdist are uploaded to PyPI for <span class="code">pip install merobox</span> access.</p>
+  </div>
+</div>
+</div>
+
+<!-- Project Structure -->
+<div class="card ga">
+<h2>Project Structure</h2>
+<div class="typedef">
+<span class="field">merobox/</span><br>
+&nbsp;&nbsp;<span class="field">__init__.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Version (__version__), package root</span><br>
+&nbsp;&nbsp;<span class="field">cli.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Click CLI entry point</span><br>
+&nbsp;&nbsp;<span class="field">executor.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># WorkflowExecutor orchestration</span><br>
+&nbsp;&nbsp;<span class="field">config.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Configuration loading and merging</span><br>
+&nbsp;&nbsp;<span class="field">errors.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># MeroboxError hierarchy</span><br>
+&nbsp;&nbsp;<span class="field">commands/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># CLI command implementations</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">__init__.py</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">run.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># merobox run</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">stop.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># merobox stop</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">health.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># merobox health</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">logs.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># merobox logs</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">nuke.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># merobox nuke</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">remote.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># merobox remote</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">bootstrap.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># merobox bootstrap</span><br>
+&nbsp;&nbsp;<span class="field">steps/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Workflow step implementations</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">base.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># BaseStep, StepResult, ok(), fail()</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">call.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># call step</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">assert_step.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># assert step</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">parallel.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># parallel step</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">repeat.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># repeat step</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">script.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># script step</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">...</span><br>
+&nbsp;&nbsp;<span class="field">managers/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Node management backends</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">docker.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># DockerManager</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">binary.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># BinaryManager</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">sandbox.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># SandboxManager</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">remote.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># RemoteNodeManager</span><br>
+&nbsp;&nbsp;<span class="field">testing/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Test harness module</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">__init__.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># cluster(), workflow(), fixtures</span><br>
+&nbsp;&nbsp;<span class="field">auth/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Authentication</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">manager.py</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># AuthManager, JWT handling</span><br>
+<span class="field">tests/</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Test suite</span><br>
+<span class="field">Makefile</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Build and task automation</span><br>
+<span class="field">pyproject.toml</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Package configuration</span>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>
