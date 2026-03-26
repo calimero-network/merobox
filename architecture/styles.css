@@ -536,23 +536,23 @@ html.light h1 {
 }
 html.light .code { background: #eaeef2; color: #1a7f37; border-color: #d0d7de; }
 html.light .typedef { background: #f0f3f6; border-color: #d0d7de; color: #24292f; }
-html.light svg { background: var(--surface); border-radius: var(--radius-md); padding: 8px; }
-html.light svg rect[fill="#1e1e2e"],
-html.light svg rect[fill="#12121a"],
-html.light svg rect[fill="#1a1a28"],
-html.light svg rect[fill="#0f0f16"] { fill: #eaeef2; }
-html.light svg rect[fill="#0a0a0f"] { fill: #f0f3f6; }
-html.light svg text[fill="#e4e4e7"],
-html.light svg text[fill="#d4d4dc"],
-html.light svg text[fill="#f0f0f5"],
-html.light svg text[fill="#fafafa"] { fill: #1f2328; }
-html.light svg text[fill="#6b6b80"],
-html.light svg text[fill="#71717a"] { fill: #57606a; }
-html.light svg line[stroke="#2a2a3a"],
-html.light svg line[stroke="#252538"],
-html.light svg rect[stroke="#2a2a3a"],
-html.light svg rect[stroke="#252538"],
-html.light svg rect[stroke="#35354a"] { stroke: #d0d7de; }
+html.light .content svg { background: var(--surface); border-radius: var(--radius-md); padding: 8px; }
+html.light .content svg rect[fill="#1e1e2e"],
+html.light .content svg rect[fill="#12121a"],
+html.light .content svg rect[fill="#1a1a28"],
+html.light .content svg rect[fill="#0f0f16"] { fill: #eaeef2; }
+html.light .content svg rect[fill="#0a0a0f"] { fill: #f0f3f6; }
+html.light .content svg text[fill="#e4e4e7"],
+html.light .content svg text[fill="#d4d4dc"],
+html.light .content svg text[fill="#f0f0f5"],
+html.light .content svg text[fill="#fafafa"] { fill: #1f2328; }
+html.light .content svg text[fill="#6b6b80"],
+html.light .content svg text[fill="#71717a"] { fill: #57606a; }
+html.light .content svg line[stroke="#2a2a3a"],
+html.light .content svg line[stroke="#252538"],
+html.light .content svg rect[stroke="#2a2a3a"],
+html.light .content svg rect[stroke="#252538"],
+html.light .content svg rect[stroke="#35354a"] { stroke: #d0d7de; }
 
 /* ── DOCS SEARCH BUTTON (sidebar) ── */
 .docs-search-btn {
