@@ -139,40 +139,76 @@
 
   /* ── FULL-TEXT SEARCH ── */
   let searchIndex = null;
+  let searchIndexPromise = null;
   let searchLoading = false;
   let selectedIdx = -1;
 
-  async function buildIndex() {
-    if (searchIndex) return searchIndex;
-    if (searchLoading) return null;
+  function buildIndex() {
+    if (searchIndex) return Promise.resolve(searchIndex);
+    if (searchIndexPromise) return searchIndexPromise;
     searchLoading = true;
 
     const pages = NAV.filter(item => item.href);
-    const results = await Promise.all(pages.map(async (page) => {
-      try {
-        const res = await fetch(PAGES_BASE + page.href);
-        const html = await res.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        doc.querySelectorAll('script, style, nav, .sidebar, .menu-toggle').forEach(el => el.remove());
-        const contentEl = doc.querySelector('.content') || doc.body;
-        const headings = Array.from(contentEl.querySelectorAll('h1,h2,h3'))
-          .map(h => h.textContent.trim())
-          .filter(Boolean);
-        const text = contentEl.textContent.replace(/\s+/g, ' ').trim();
-        return { label: page.label, href: page.href, dot: page.dot, text, headings };
-      } catch {
-        return null;
-      }
-    }));
+    searchIndexPromise = (async () => {
+      const results = await Promise.all(pages.map(async (page) => {
+        try {
+          const res = await fetch(PAGES_BASE + page.href);
+          const html = await res.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          doc.querySelectorAll('script, style, nav, .sidebar, .menu-toggle').forEach(el => el.remove());
+          const contentEl = doc.querySelector('.content') || doc.body;
+          const headings = Array.from(contentEl.querySelectorAll('h1,h2,h3'))
+            .map(h => h.textContent.trim())
+            .filter(Boolean);
+          const text = contentEl.textContent.replace(/\s+/g, ' ').trim();
+          return { label: page.label, href: page.href, dot: page.dot, text, headings };
+        } catch {
+          return null;
+        }
+      }));
 
-    searchIndex = results.filter(Boolean);
-    searchLoading = false;
-    return searchIndex;
+      searchIndex = results.filter(Boolean);
+      return searchIndex;
+    })().finally(() => {
+      searchLoading = false;
+      searchIndexPromise = null;
+    });
+
+    return searchIndexPromise;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
   }
 
   function escapeRe(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function highlightText(text, query) {
+    if (!query) return escapeHtml(text);
+
+    const re = new RegExp(escapeRe(query), 'gi');
+    let out = '';
+    let lastIdx = 0;
+
+    for (const match of text.matchAll(re)) {
+      const idx = match.index ?? 0;
+      out += escapeHtml(text.slice(lastIdx, idx));
+      out += `<mark>${escapeHtml(match[0])}</mark>`;
+      lastIdx = idx + match[0].length;
+    }
+
+    if (lastIdx === 0) return escapeHtml(text);
+    out += escapeHtml(text.slice(lastIdx));
+    return out;
   }
 
   function getExcerpt(text, query, ctxLen = 140) {
@@ -181,7 +217,7 @@
     const start = Math.max(0, idx - 60);
     const end = Math.min(text.length, idx + ctxLen);
     const raw = (start > 0 ? '…' : '') + text.slice(start, end).trimStart() + (end < text.length ? '…' : '');
-    return raw.replace(new RegExp(`(${escapeRe(query)})`, 'gi'), '<mark>$1</mark>');
+    return highlightText(raw, query);
   }
 
   function searchDocs(query, index) {
@@ -208,7 +244,7 @@
       return;
     }
     if (!results.length) {
-      el.innerHTML = `<p class="search-hint">No results for <strong>"${query}"</strong></p>`;
+      el.innerHTML = `<p class="search-hint">No results for <strong>"${escapeHtml(query)}"</strong></p>`;
       selectedIdx = -1;
       return;
     }
@@ -216,7 +252,7 @@
       <a class="search-result-item" href="${PAGES_BASE + r.href}" data-idx="${i}">
         <div class="search-result-header">
           <span class="nav-dot" style="background:${r.dot};width:8px;height:8px;border-radius:2px;flex-shrink:0;display:inline-block;"></span>
-          <span class="search-result-title">${r.label.replace(new RegExp(`(${escapeRe(query)})`, 'gi'), '<mark>$1</mark>')}</span>
+          <span class="search-result-title">${highlightText(r.label, query)}</span>
         </div>
         ${r.excerpt ? `<p class="search-result-excerpt">${r.excerpt}</p>` : ''}
       </a>
@@ -270,11 +306,10 @@
         const statusEl = document.getElementById('search-results');
         debounceTimer = setTimeout(async () => {
           const q = input.value;
-          if (!searchIndex && !searchLoading) {
+          if (!searchIndex) {
             statusEl.innerHTML = '<p class="search-hint search-loading">Loading index…</p>';
           }
           const index = await buildIndex();
-          if (!index) return;
           renderResults(searchDocs(q, index), q);
         }, 120);
       });
