@@ -175,8 +175,8 @@ class InviteOpenStep(BaseStepConfig):
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID")
     granter_id: str = Field(..., description="Granter public key")
-    valid_for_seconds: Optional[int] = Field(
-        None, description="Number of seconds the invitation is valid for"
+    valid_for_blocks: Optional[int] = Field(
+        None, description="Number of blocks the invitation is valid for"
     )
 
 
