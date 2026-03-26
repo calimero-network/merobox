@@ -26,14 +26,32 @@ def unwrap_api_response(result: dict) -> Any:
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
+async def _call_admin_api_with_retry(
+    rpc_url: str, method_name: str, *args: Any, node_name: str = None
+) -> dict:
+    """Internal function that performs the admin API call with retry support.
+
+    This function may raise exceptions to trigger the retry decorator.
+    Use call_admin_api() for the public API that always returns result objects.
+    """
+    client = get_client_for_rpc_url(rpc_url, node_name=node_name)
+    result = getattr(client, method_name)(*args)
+    return ok(result)
+
+
 async def call_admin_api(
     rpc_url: str, method_name: str, *args: Any, node_name: str = None
 ) -> dict:
-    """Generic wrapper that calls *method_name* on the admin client with retry."""
+    """Generic wrapper that calls *method_name* on the admin client with retry.
+
+    Always returns a result dict with a 'success' key. Never raises exceptions -
+    all errors (including network failures after retry exhaustion) are converted
+    to fail() results.
+    """
     try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = getattr(client, method_name)(*args)
-        return ok(result)
+        return await _call_admin_api_with_retry(
+            rpc_url, method_name, *args, node_name=node_name
+        )
     except Exception as e:
         return fail(f"{method_name} failed", error=e)
 
