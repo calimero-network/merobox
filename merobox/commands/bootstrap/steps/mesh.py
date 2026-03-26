@@ -144,12 +144,8 @@ class CreateMeshStep(BaseStep):
             client = get_client_for_rpc_url(
                 context_rpc_url, node_name=client_context_node
             )
-            protocol = validate_near_only_protocol(
-                self.config.get("protocol", DEFAULT_PROTOCOL)
-            )
             api_result = client.create_context(
                 application_id=application_id,
-                protocol=protocol,
                 params=params_json,
             )
             context_result = ok(api_result)

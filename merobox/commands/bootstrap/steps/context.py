@@ -132,12 +132,8 @@ class CreateContextStep(BaseStep):
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-            protocol = validate_near_only_protocol(
-                self.config.get("protocol", DEFAULT_PROTOCOL)
-            )
             api_result = client.create_context(
                 application_id=application_id,
-                protocol=protocol,
                 params=params_json,
                 group_id=group_id,
             )
