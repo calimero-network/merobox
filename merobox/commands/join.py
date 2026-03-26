@@ -21,25 +21,32 @@ async def join_context_via_admin_api(
     rpc_url: str,
     context_id: str,
     invitee_id: str,
-    invitation_data: str,
+    invitation_data,
     node_name: str = None,
 ) -> dict:
-    """Join a context using calimero-client-py.
+    """Join a context using calimero-client-py (open invitation).
 
     Args:
         rpc_url: The RPC URL to connect to.
-        context_id: Context ID to join.
+        context_id: Unused — kept for backward compatibility.
         invitee_id: Public key of the invitee.
-        invitation_data: Invitation payload/token.
+        invitation_data: SignedOpenInvitation (dict or JSON string).
         node_name: Optional node name for token caching (required for authenticated nodes).
     """
     try:
+        import json as json_lib
+
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
-        result = client.join_context(
-            context_id=context_id,
-            invitee_id=invitee_id,
-            invitation_payload=invitation_data,
+        # Normalize invitation_data to a JSON string for the open invitation API
+        if isinstance(invitation_data, dict):
+            invitation_json = json_lib.dumps(invitation_data)
+        else:
+            invitation_json = str(invitation_data)
+
+        result = client.join_context_by_open_invitation(
+            invitation=invitation_json,
+            new_member_public_key=invitee_id,
         )
         return ok(
             result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_JOIN}", payload_format=0

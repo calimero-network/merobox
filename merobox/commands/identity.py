@@ -95,25 +95,28 @@ async def invite_identity_via_admin_api(
     rpc_url: str,
     context_id: str,
     inviter_id: str,
-    invitee_id: str,
+    invitee_id: str = None,
     capability: str = None,
     node_name: str = None,
+    valid_for_seconds: int = 3600,
 ) -> dict:
-    """Invite identity using calimero-client-py.
+    """Invite identity using calimero-client-py (signed open invitation).
 
     Args:
         rpc_url: The RPC URL to connect to.
         context_id: Context ID to invite to.
         inviter_id: Public key of the inviter.
-        invitee_id: Public key of the invitee.
-        capability: Optional capability to grant.
+        invitee_id: Unused — kept for backward compatibility.
+        capability: Unused — kept for backward compatibility.
         node_name: Optional node name for token caching (required for authenticated nodes).
+        valid_for_seconds: Seconds the invitation is valid for.
     """
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        # Some clients may not need inviter id; keeping parameter for compatibility
-        result = client.invite_to_context(
-            context_id=context_id, inviter_id=inviter_id, invitee_id=invitee_id
+        result = client.invite_to_context_by_open_invitation(
+            context_id=context_id,
+            inviter_id=inviter_id,
+            valid_for_blocks=valid_for_seconds,
         )
         return ok(
             result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_INVITE}", payload_format=0
@@ -127,7 +130,7 @@ async def create_open_invitation_via_admin_api(
     rpc_url: str,
     context_id: str,
     inviter_id: str,
-    valid_for_blocks: int = 1000,
+    valid_for_seconds: int = 3600,
     node_name: str = None,
 ) -> dict:
     """Create an open invitation using calimero-client-py.
@@ -136,7 +139,7 @@ async def create_open_invitation_via_admin_api(
         rpc_url: The RPC URL to connect to.
         context_id: Context ID to create invitation for.
         inviter_id: Public key of the inviter.
-        valid_for_blocks: Number of blocks the invitation is valid for.
+        valid_for_seconds: Number of seconds the invitation is valid for.
         node_name: Optional node name for token caching (required for authenticated nodes).
     """
     try:

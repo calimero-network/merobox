@@ -15,7 +15,7 @@ async def create_open_invitation_via_admin_api(
     rpc_url: str,
     context_id: str,
     granter_id: str,
-    valid_for_blocks: int = 1000,
+    valid_for_blocks: int = 3600,
     node_name: str | None = None,
 ) -> dict:
     """Create an open invitation using calimero-client-py.
@@ -24,7 +24,7 @@ async def create_open_invitation_via_admin_api(
         rpc_url: The RPC URL to connect to.
         context_id: The context ID to create invitation for.
         granter_id: The granter ID.
-        valid_for_blocks: Number of blocks the invitation is valid for.
+        valid_for_blocks: Number of seconds the invitation is valid for.
         node_name: Optional stable node name for token caching (required for authenticated nodes).
     """
     try:
@@ -111,7 +111,8 @@ class InviteOpenStep(BaseStep):
         granter_id = self._resolve_dynamic_value(
             self.config["granter_id"], workflow_results, dynamic_values
         )
-        valid_for_blocks = self.config.get("valid_for_blocks", 1000)
+        valid_for_seconds = self.config.get("valid_for_seconds",
+            self.config.get("valid_for_blocks", 3600))
 
         # Validate export configuration
         if not self._validate_export_config():
@@ -134,7 +135,7 @@ class InviteOpenStep(BaseStep):
             rpc_url,
             context_id,
             granter_id,
-            valid_for_blocks,
+            valid_for_seconds,
             node_name=client_node_name,
         )
 
