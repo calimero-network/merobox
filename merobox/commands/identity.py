@@ -125,7 +125,6 @@ async def invite_identity_via_admin_api(
         return fail("invite_to_context failed", error=e)
 
 
-@with_retry(config=NETWORK_RETRY_CONFIG)
 async def create_open_invitation_via_admin_api(
     rpc_url: str,
     context_id: str,
@@ -133,29 +132,14 @@ async def create_open_invitation_via_admin_api(
     valid_for_seconds: int = 3600,
     node_name: str = None,
 ) -> dict:
-    """Create an open invitation using calimero-client-py.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: Context ID to create invitation for.
-        inviter_id: Public key of the inviter.
-        valid_for_seconds: Number of seconds the invitation is valid for.
-        node_name: Optional node name for token caching (required for authenticated nodes).
-    """
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.invite_to_context_by_open_invitation(
-            context_id=context_id,
-            inviter_id=inviter_id,
-            valid_for_blocks=valid_for_seconds,
-        )
-        return ok(
-            result,
-            endpoint=f"{rpc_url}/admin-api/dev/contexts/invite-open",
-            payload_format=0,
-        )
-    except Exception as e:
-        return fail("create_open_invitation failed", error=e)
+    """Create an open invitation. Delegates to invite_identity_via_admin_api."""
+    return await invite_identity_via_admin_api(
+        rpc_url=rpc_url,
+        context_id=context_id,
+        inviter_id=inviter_id,
+        valid_for_seconds=valid_for_seconds,
+        node_name=node_name,
+    )
 
 
 @click.group()
