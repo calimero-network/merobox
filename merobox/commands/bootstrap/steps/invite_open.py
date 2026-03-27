@@ -9,11 +9,9 @@ import json as json_lib
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console
 
 
-@with_retry(config=NETWORK_RETRY_CONFIG)
 async def create_open_invitation_via_admin_api(
     rpc_url: str,
     context_id: str,
@@ -21,22 +19,16 @@ async def create_open_invitation_via_admin_api(
     valid_for_seconds: int = 3600,
     node_name: str | None = None,
 ) -> dict:
-    """Create an open invitation using calimero-client-py."""
-    try:
-        from merobox.commands.client import get_client_for_rpc_url
-        from merobox.commands.result import fail, ok
+    """Create an open invitation. Delegates to the single implementation in identity.py."""
+    from merobox.commands.identity import invite_identity_via_admin_api
 
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.invite_to_context(
-            context_id=context_id,
-            inviter_id=granter_id,
-            valid_for_seconds=valid_for_seconds,
-        )
-        return ok(result)
-    except Exception as e:
-        from merobox.commands.result import fail
-
-        return fail("create_open_invitation failed", error=e)
+    return await invite_identity_via_admin_api(
+        rpc_url=rpc_url,
+        context_id=context_id,
+        inviter_id=granter_id,
+        valid_for_seconds=valid_for_seconds,
+        node_name=node_name,
+    )
 
 
 class InviteOpenStep(BaseStep):
