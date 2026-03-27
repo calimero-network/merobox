@@ -123,7 +123,7 @@ async def invite_identity_via_admin_api(
             "validForSeconds": valid_for_seconds,
         }
 
-        url = f"{rpc_url}/admin-api/dev/contexts/invite_by_open_invitation"
+        url = f"{rpc_url}/admin-api/contexts/invite_by_open_invitation"
         resp = requests.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         result = resp.json()

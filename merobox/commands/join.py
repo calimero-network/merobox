@@ -49,7 +49,7 @@ async def join_context_via_admin_api(
             "newMemberPublicKey": invitee_id,
         }
 
-        url = f"{rpc_url}/admin-api/dev/contexts/join_by_open_invitation"
+        url = f"{rpc_url}/admin-api/contexts/join_by_open_invitation"
         resp = requests.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         result = resp.json()
