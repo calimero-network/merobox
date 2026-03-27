@@ -33,15 +33,12 @@ ADMIN_API_NODE_INFO = f"{ADMIN_API_BASE}/node-info"
 # Network ports
 DEFAULT_RPC_PORT = 2528
 DEFAULT_P2P_PORT = 2428
-NEAR_SANDBOX_RPC_PORT = 3030
-
 # Docker port binding strings (used in container port mappings)
 RPC_PORT_BINDING = f"{DEFAULT_RPC_PORT}/tcp"
 P2P_PORT_BINDING = f"{DEFAULT_P2P_PORT}/tcp"
 
 # Default values
 DEFAULT_CHAIN_ID = "testnet-1"
-DEFAULT_PROTOCOL = "near"
 DEFAULT_TIMEOUT = 30
 NODE_READY_TIMEOUT = 60  # seconds to wait for nodes to be ready and accessible
 DEFAULT_WAIT_TIMEOUT = NODE_READY_TIMEOUT  # deprecated alias for backward compatibility
@@ -101,10 +98,6 @@ HEALTH_CHECK_TIMEOUT = 10  # seconds
 # Application installation timeout
 INSTALL_TIMEOUT = 30  # seconds
 
-# File lock timeout for contract downloads
-CONTRACT_DOWNLOAD_LOCK_TIMEOUT = 300  # seconds
-CONTRACT_DOWNLOAD_TIMEOUT = 30  # seconds
-
 # Docker configuration
 DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:prerelease"
 DEFAULT_NODE_PREFIX = "calimero-node"
@@ -148,19 +141,6 @@ STEP_REPEAT = "repeat"
 STEP_GET_PROPOSAL = "get_proposal"
 STEP_LIST_PROPOSALS = "list_proposals"
 STEP_GET_PROPOSAL_APPROVERS = "get_proposal_approvers"
-
-# Protocol types
-PROTOCOL_NEAR = "near"
-
-# Network types
-NETWORK_MAINNET = "mainnet"
-NETWORK_TESTNET = "testnet"
-NETWORK_LOCAL = "local"
-
-# Valid protocol networks mapping
-VALID_NETWORKS = {
-    PROTOCOL_NEAR: [NETWORK_MAINNET, NETWORK_TESTNET, NETWORK_LOCAL],
-}
 
 # Container data directory patterns
 CONTAINER_DATA_DIR_PATTERNS = [

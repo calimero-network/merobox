@@ -435,12 +435,6 @@ class WorkflowConfig(BaseModel):
         None, description="Bootstrap nodes to connect to"
     )
 
-    # NEAR options
-    near_devnet: Optional[bool] = Field(None, description="Enable NEAR devnet")
-    contracts_dir: Optional[str] = Field(
-        None, description="Directory containing NEAR contracts"
-    )
-
 
 def _format_pydantic_error(error: dict[str, Any]) -> str:
     """Format a single Pydantic validation error into a readable message."""

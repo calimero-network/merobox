@@ -8,16 +8,12 @@ import pytest
 
 from merobox.testing import nodes, run_workflow
 
-# None = merobox auto-downloads NEAR contracts when near_devnet is True
-CONTRACTS_DIR = None
-
-
 # ============================================================================
 # Main session-scoped fixtures for reuse across all tests
 # ============================================================================
 
 
-@nodes(count=3, prefix="shared-test", scope="session", near_devnet=True, contracts_dir=CONTRACTS_DIR)
+@nodes(count=3, prefix="shared-test", scope="session")
 def shared_cluster():
     """Main shared cluster with 3 nodes for all tests - session scoped for maximum reuse"""
     pass
@@ -33,8 +29,6 @@ def multi_test_nodes():
     "./workflows/workflow-example.yml",
     prefix="shared-workflow",
     scope="session",
-    near_devnet=True,
-    contracts_dir=CONTRACTS_DIR,
 )
 def shared_workflow():
     """Shared workflow setup for advanced testing - session scoped for reuse"""

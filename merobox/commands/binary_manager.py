@@ -20,7 +20,6 @@ from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
-    apply_near_devnet_config_to_file,
 )
 from merobox.commands.constants import (
     DEFAULT_P2P_PORT,
@@ -191,7 +190,6 @@ class BinaryManager(CleanupMixin):
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         config_path: Optional[str] = None,  # custom config.toml path
-        near_devnet_config: dict = None,  # Enable NEAR Devnet
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
     ) -> bool:
@@ -346,25 +344,6 @@ class BinaryManager(CleanupMixin):
             # Apply bootstrap nodes configuration (works regardless of e2e_mode)
             if bootstrap_nodes:
                 apply_bootstrap_nodes(actual_config_file, node_name, bootstrap_nodes)
-
-            # Apply NEAR Devnet config if provided
-            if near_devnet_config:
-                console.print(
-                    "[green]✓ Applying Near Devnet config for the node [/green]"
-                )
-
-                actual_config_file = node_data_dir / node_name / "config.toml"
-                if not self._apply_near_devnet_config(
-                    actual_config_file,
-                    node_name,
-                    near_devnet_config["rpc_url"],
-                    near_devnet_config["contract_id"],
-                    near_devnet_config["account_id"],
-                    near_devnet_config["public_key"],
-                    near_devnet_config["secret_key"],
-                ):
-                    console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
-                    return False
 
             # Build run command (ports are taken from config created during init)
             cmd = [
@@ -782,7 +761,6 @@ class BinaryManager(CleanupMixin):
         rust_backtrace: str = "0",
         workflow_id: Optional[str] = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
-        near_devnet_config: dict = None,  # Enable NEAR Devnet
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
     ) -> bool:
@@ -846,12 +824,6 @@ class BinaryManager(CleanupMixin):
                 port = base_port + i
                 rpc_port = base_rpc_port + i
 
-            # Resolve specific config for this node if a map is provided
-            node_specific_near_config = None
-            if near_devnet_config:
-                if node_name in near_devnet_config:
-                    node_specific_near_config = near_devnet_config[node_name]
-
             if self.run_node(
                 node_name=node_name,
                 port=port,
@@ -861,7 +833,6 @@ class BinaryManager(CleanupMixin):
                 rust_backtrace=rust_backtrace,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
-                near_devnet_config=node_specific_near_config,
                 bootstrap_nodes=bootstrap_nodes,
                 auth_mode=auth_mode,
             ):
@@ -925,24 +896,3 @@ class BinaryManager(CleanupMixin):
             raise RuntimeError(f"Could not find {count} available ports")
 
         return ports
-
-    def _apply_near_devnet_config(
-        self,
-        config_file: Path,
-        node_name: str,
-        rpc_url: str,
-        contract_id: str,
-        account_id: str,
-        pub_key: str,
-        secret_key: str,
-    ):
-        """Wrapper for shared config utility."""
-        return apply_near_devnet_config_to_file(
-            config_file,
-            node_name,
-            rpc_url,
-            contract_id,
-            account_id,
-            pub_key,
-            secret_key,
-        )
