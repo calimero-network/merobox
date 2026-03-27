@@ -26,12 +26,10 @@ from merobox.commands.bootstrap.steps import (
     CreateIdentityStep,
     ExecuteStep,
     InstallApplicationStep,
-    InviteIdentityStep,
     InviteOpenStep,
     JoinContextStep,
     JoinGroupContextStep,
     JoinGroupStep,
-    JoinOpenStep,
     ParallelStep,
     RepeatStep,
     ScriptStep,
@@ -1359,14 +1357,10 @@ class WorkflowExecutor:
             return CreateContextStep(step_config, **common_kwargs)
         elif step_type == "create_identity":
             return CreateIdentityStep(step_config, **common_kwargs)
-        elif step_type == "invite_identity":
-            return InviteIdentityStep(step_config, **common_kwargs)
-        elif step_type == "join_context":
-            return JoinContextStep(step_config, **common_kwargs)
-        elif step_type == "invite_open":
+        elif step_type in ("invite", "invite_open", "invite_identity"):
             return InviteOpenStep(step_config, **common_kwargs)
-        elif step_type == "join_open":
-            return JoinOpenStep(step_config, **common_kwargs)
+        elif step_type in ("join", "join_context", "join_open"):
+            return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":

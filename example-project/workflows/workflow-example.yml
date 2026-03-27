@@ -49,7 +49,7 @@ steps:
   # Step 5: Invite the second node to join the context
   # Uses captured values: context ID, member public key, and identity public key
   - name: Invite Node 2 from Node 1
-    type: invite_identity
+    type: invite
     node: calimero-node-1
     context_id: '{{context_id}}'
     grantee_id: '{{public_key}}'
@@ -61,7 +61,7 @@ steps:
   # Step 6: Join the context from the second node
   # Uses captured values: context ID, invitee identity, and invitation data
   - name: Join Context from Node 2
-    type: join_context
+    type: join
     node: calimero-node-2
     context_id: '{{context_id}}'
     invitee_id: '{{public_key}}'

@@ -22,7 +22,9 @@ VALID_STEP_TYPES = frozenset(
         "create_group",
         "create_group_invitation",
         "create_identity",
+        "invite",
         "invite_identity",
+        "join",
         "join_context",
         "join_group",
         "join_group_context",
@@ -146,44 +148,30 @@ class CreateIdentityStep(BaseStepConfig):
     node: str = Field(..., description="Target node")
 
 
-class InviteIdentityStep(BaseStepConfig):
-    """Configuration for invite_identity step."""
+class InviteStep(BaseStepConfig):
+    """Configuration for invite step (also handles invite_open and invite_identity)."""
 
-    type: Literal["invite_identity"] = "invite_identity"
-    node: str = Field(..., description="Target node")
-    context_id: str = Field(..., description="Context ID")
-    grantee_id: str = Field(..., description="Grantee public key")
-    granter_id: str = Field(..., description="Granter public key")
-    capability: Optional[str] = Field("member", description="Capability to grant")
-
-
-class JoinContextStep(BaseStepConfig):
-    """Configuration for join_context step."""
-
-    type: Literal["join_context"] = "join_context"
-    node: str = Field(..., description="Target node")
-    context_id: str = Field(..., description="Context ID")
-    invitee_id: str = Field(..., description="Invitee public key")
-    invitation: str = Field(..., description="Invitation data")
-
-
-class InviteOpenStep(BaseStepConfig):
-    """Configuration for invite_open step."""
-
-    type: Literal["invite_open"] = "invite_open"
+    type: Literal["invite", "invite_open", "invite_identity"] = "invite"
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID")
     granter_id: str = Field(..., description="Granter public key")
+    grantee_id: Optional[str] = Field(
+        None, description="Grantee public key (legacy invite_identity compat)"
+    )
+    capability: Optional[str] = Field(
+        None, description="Capability to grant (legacy invite_identity compat)"
+    )
     valid_for_seconds: Optional[int] = Field(
         None, description="Number of seconds the invitation is valid for"
     )
 
 
-class JoinOpenStep(BaseStepConfig):
-    """Configuration for join_open step."""
+class JoinStep(BaseStepConfig):
+    """Configuration for join step (also handles join_context and join_open)."""
 
-    type: Literal["join_open"] = "join_open"
+    type: Literal["join", "join_context", "join_open"] = "join"
     node: str = Field(..., description="Target node")
+    context_id: Optional[str] = Field(None, description="Context ID")
     invitee_id: str = Field(..., description="Invitee public key")
     invitation: str = Field(..., description="Invitation data")
 
@@ -349,10 +337,12 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "install_application": InstallApplicationStep,
     "create_context": CreateContextStep,
     "create_identity": CreateIdentityStep,
-    "invite_identity": InviteIdentityStep,
-    "join_context": JoinContextStep,
-    "invite_open": InviteOpenStep,
-    "join_open": JoinOpenStep,
+    "invite": InviteStep,
+    "invite_identity": InviteStep,
+    "invite_open": InviteStep,
+    "join": JoinStep,
+    "join_context": JoinStep,
+    "join_open": JoinStep,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
@@ -792,19 +782,16 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
             },
             {
                 "name": "Invite Identity",
-                "type": "invite_identity",
+                "type": "invite",
                 "node": "calimero-node-1",
                 "context_id": "{{context_id}}",
-                "grantee_id": "{{public_key}}",
                 "granter_id": "{{member_public_key}}",
-                "capability": "member",
                 "outputs": {"invitation": "invitation"},
             },
             {
                 "name": "Join Context from Node 2",
-                "type": "join_context",
+                "type": "join",
                 "node": "calimero-node-2",
-                "context_id": "{{context_id}}",
                 "invitee_id": "{{public_key}}",
                 "invitation": "{{invitation}}",
             },

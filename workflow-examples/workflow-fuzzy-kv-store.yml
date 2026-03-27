@@ -50,7 +50,7 @@ steps:
 
   # Step 6: Invite node 2 to context
   - name: Invite Node 2
-    type: invite_open
+    type: invite
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node2}}"
@@ -61,7 +61,7 @@ steps:
 
   # Step 7: Join context from node 2
   - name: Join Context from Node 2
-    type: join_context
+    type: join
     node: calimero-node-2
     context_id: "{{context_id}}"
     invitee_id: "{{public_key_node2}}"
@@ -69,7 +69,7 @@ steps:
 
   # Step 8: Invite node 3 to context
   - name: Invite Node 3
-    type: invite_open
+    type: invite
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node3}}"
@@ -80,7 +80,7 @@ steps:
 
   # Step 9: Join context from node 3
   - name: Join Context from Node 3
-    type: join_context
+    type: join
     node: calimero-node-3
     context_id: "{{context_id}}"
     invitee_id: "{{public_key_node3}}"

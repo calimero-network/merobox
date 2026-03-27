@@ -74,7 +74,7 @@ steps:
 
   # Create open invitation
   - name: Create Open Invitation
-    type: invite_open
+    type: invite
     node: open-inv-node-1
     context_id: "{{context_id}}"
     granter_id: "{{member_public_key}}"
@@ -84,7 +84,7 @@ steps:
 
   # Join using open invitation
   - name: Join via Open Invitation - Node 2
-    type: join_open
+    type: join
     node: open-inv-node-2
     invitee_id: "{{public_key_2}}"
     invitation: "{{open_invitation}}"

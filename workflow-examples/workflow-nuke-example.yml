@@ -45,7 +45,7 @@ steps:
 
   # Invite second node
   - name: Invite Node 2 from Node 1
-    type: invite_open
+    type: invite
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key}}"
@@ -56,7 +56,7 @@ steps:
 
   # Join context
   - name: Join Context from Node 2
-    type: join_context
+    type: join
     node: calimero-node-2
     context_id: "{{context_id}}"
     invitee_id: "{{public_key}}"

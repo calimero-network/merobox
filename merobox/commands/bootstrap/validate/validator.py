@@ -13,14 +13,10 @@ from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
 from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
 from merobox.commands.bootstrap.steps.group_join_context import JoinGroupContextStep
-from merobox.commands.bootstrap.steps.identity import (
-    CreateIdentityStep,
-    InviteIdentityStep,
-)
+from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
-from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
@@ -132,14 +128,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = CreateIdentityStep
         elif step_type == "create_mesh":
             step_class = CreateMeshStep
-        elif step_type == "invite_identity":
-            step_class = InviteIdentityStep
-        elif step_type == "join_context":
-            step_class = JoinContextStep
-        elif step_type == "invite_open":
+        elif step_type in ("invite", "invite_identity", "invite_open"):
             step_class = InviteOpenStep
-        elif step_type == "join_open":
-            step_class = JoinOpenStep
+        elif step_type in ("join", "join_context", "join_open"):
+            step_class = JoinContextStep
         elif step_type == "call":
             step_class = ExecuteStep
         elif step_type == "wait":

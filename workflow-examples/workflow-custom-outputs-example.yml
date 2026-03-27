@@ -48,7 +48,7 @@ steps:
 
   # Step 5: Invite identity using custom output names
   - name: Invite Identity with Custom Names
-    type: invite_open
+    type: invite
     node: calimero-node-1
     context_id: "{{my_context_id}}" # Use custom context ID
     granter_id: "{{member_key}}" # Use custom member key
@@ -59,7 +59,7 @@ steps:
 
   # Step 6: Join context using custom output names
   - name: Join Context with Custom Names
-    type: join_context
+    type: join
     node: calimero-node-2
     context_id: "{{my_context_id}}" # Use custom context ID
     invitee_id: "{{my_public_key}}" # Use custom public key

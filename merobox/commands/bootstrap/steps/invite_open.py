@@ -1,5 +1,8 @@
 """
-Invite Open step executor - Create open invitations for context.
+Invite step executor - Create invitations for context.
+
+Unified step that handles both open invitations and identity-targeted invitations.
+Step types 'invite', 'invite_open', and 'invite_identity' all route here.
 """
 
 import json as json_lib
@@ -37,35 +40,27 @@ async def create_open_invitation_via_admin_api(
 
 
 class InviteOpenStep(BaseStep):
-    """Execute an invite open step."""
+    """Execute an invite step (unified: handles invite, invite_open, invite_identity)."""
 
     def _get_required_fields(self) -> list[str]:
-        """
-        Define which fields are required for this step.
-
-        Returns:
-            List of required field names
-        """
         return ["node", "context_id", "granter_id"]
 
     def _validate_field_types(self) -> None:
-        """
-        Validate that fields have the correct types.
-        """
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
 
-        # Validate node is a string
         if not isinstance(self.config.get("node"), str):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
-        # Validate context_id is a string
         if not isinstance(self.config.get("context_id"), str):
             raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
-        # Validate granter_id is a string
         if not isinstance(self.config.get("granter_id"), str):
             raise ValueError(f"Step '{step_name}': 'granter_id' must be a string")
-        # Validate valid_for_seconds is an integer if provided
+        # Optional fields from legacy invite_identity step type
+        if "grantee_id" in self.config and not isinstance(
+            self.config.get("grantee_id"), str
+        ):
+            raise ValueError(f"Step '{step_name}': 'grantee_id' must be a string")
         for key in ("valid_for_seconds", "valid_for_blocks"):
             if key in self.config and not isinstance(self.config.get(key), int):
                 raise ValueError(f"Step '{step_name}': '{key}' must be an integer")
@@ -74,8 +69,8 @@ class InviteOpenStep(BaseStep):
         """
         Define which variables this step can export.
 
-        Available variables from invite_open API response:
-        - invitation: Signed open invitation data (JSON object)
+        Available variables from invite API response:
+        - invitation: Signed invitation data (JSON object)
         """
         return [
             (
@@ -102,7 +97,7 @@ class InviteOpenStep(BaseStep):
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  InviteOpen step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Invite step export configuration validation failed[/yellow]"
             )
 
         # Resolve node (gets URL and ensures authentication)
@@ -124,7 +119,7 @@ class InviteOpenStep(BaseStep):
             node_name=client_node_name,
         )
 
-        console.print(f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")
+        console.print(f"[cyan]🔍 Invitation API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")
@@ -152,7 +147,7 @@ class InviteOpenStep(BaseStep):
                 return False
 
             # Store result for later use
-            step_key = f"invite_open_{node_name}_{context_id}"
+            step_key = f"invite_{node_name}_{context_id}"
             workflow_results[step_key] = result["data"]
 
             # Export variables as dict - the join_open step will serialize it to JSON
@@ -167,6 +162,6 @@ class InviteOpenStep(BaseStep):
             return True
         else:
             console.print(
-                f"[red]Open invitation creation failed: {result.get('error', 'Unknown error')}[/red]"
+                f"[red]Invitation creation failed: {result.get('error', 'Unknown error')}[/red]"
             )
             return False

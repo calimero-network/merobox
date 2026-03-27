@@ -12,14 +12,10 @@ from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
 from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
 from merobox.commands.bootstrap.steps.group_join_context import JoinGroupContextStep
-from merobox.commands.bootstrap.steps.identity import (
-    CreateIdentityStep,
-    InviteIdentityStep,
-)
+from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
-from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
@@ -27,6 +23,10 @@ from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
+
+# Backward-compat aliases
+InviteIdentityStep = InviteOpenStep
+JoinOpenStep = JoinContextStep
 
 __all__ = [
     "BaseStep",
@@ -37,8 +37,8 @@ __all__ = [
     "JoinGroupStep",
     "JoinGroupContextStep",
     "CreateIdentityStep",
-    "InviteIdentityStep",
     "InviteOpenStep",
+    "InviteIdentityStep",
     "JoinContextStep",
     "JoinOpenStep",
     "ExecuteStep",
