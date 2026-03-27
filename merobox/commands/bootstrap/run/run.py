@@ -219,14 +219,16 @@ async def run_workflow(
                 if verbose and executor.workflow_results:
                     console.print("\n[bold]Workflow Results:[/bold]")
                     for key, value in executor.workflow_results.items():
-                        console.print(f"  {key}: {value}")
+                        console.print(f"  {key}: {value}", markup=False)
             else:
                 console.print("\n[bold red]❌ Workflow failed![/bold red]")
 
         return success
 
     except Exception as e:
-        console.print(f"[red]Failed to execute workflow: {str(e)}[/red]")
+        from rich.markup import escape
+
+        console.print(f"[red]Failed to execute workflow: {escape(str(e))}[/red]")
         return False
 
 
