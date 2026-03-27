@@ -15,7 +15,7 @@ async def create_open_invitation_via_admin_api(
     rpc_url: str,
     context_id: str,
     granter_id: str,
-    valid_for_blocks: int = 3600,
+    valid_for_seconds: int = 3600,
     node_name: str | None = None,
 ) -> dict:
     """Create an open invitation using calimero-client-py.
@@ -24,7 +24,7 @@ async def create_open_invitation_via_admin_api(
         rpc_url: The RPC URL to connect to.
         context_id: The context ID to create invitation for.
         granter_id: The granter ID.
-        valid_for_blocks: Number of seconds the invitation is valid for.
+        valid_for_seconds: Number of seconds the invitation is valid for.
         node_name: Optional stable node name for token caching (required for authenticated nodes).
     """
     try:
@@ -36,7 +36,7 @@ async def create_open_invitation_via_admin_api(
         result = client.invite_to_context_by_open_invitation(
             context_id=context_id,
             inviter_id=granter_id,
-            valid_for_blocks=valid_for_blocks,
+            valid_for_blocks=valid_for_seconds,
         )
 
         return ok(
@@ -79,12 +79,10 @@ class InviteOpenStep(BaseStep):
         # Validate granter_id is a string
         if not isinstance(self.config.get("granter_id"), str):
             raise ValueError(f"Step '{step_name}': 'granter_id' must be a string")
-        # Validate valid_for_blocks is an integer if provided
-        if "valid_for_blocks" in self.config:
-            if not isinstance(self.config.get("valid_for_blocks"), int):
-                raise ValueError(
-                    f"Step '{step_name}': 'valid_for_blocks' must be an integer"
-                )
+        # Validate valid_for_seconds is an integer if provided
+        for key in ("valid_for_seconds", "valid_for_blocks"):
+            if key in self.config and not isinstance(self.config.get(key), int):
+                raise ValueError(f"Step '{step_name}': '{key}' must be an integer")
 
     def _get_exportable_variables(self):
         """

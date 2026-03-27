@@ -347,13 +347,13 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
     "--inviter-id", required=True, help="Public key of the inviter (context member)"
 )
 @click.option(
-    "--valid-for-blocks",
-    default=1000,
-    help="Number of blocks the invitation is valid for (default: 1000)",
+    "--valid-for-seconds",
+    default=3600,
+    help="Number of seconds the invitation is valid for (default: 3600)",
     type=int,
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
+def invite_open(node, context_id, inviter_id, valid_for_seconds, verbose):
     """Create an open invitation that can be used by multiple identities."""
     manager = DockerManager()
 
@@ -362,14 +362,14 @@ def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
     console.print(
         f"[blue]Creating open invitation for context {context_id} on node {node}[/blue]"
     )
-    console.print(f"[blue]Valid for {valid_for_blocks} blocks[/blue]")
+    console.print(f"[blue]Valid for {valid_for_seconds}s[/blue]")
 
     result = run_async_function(
         create_open_invitation_via_admin_api,
         admin_url,
         context_id,
         inviter_id,
-        valid_for_blocks,
+        valid_for_seconds,
     )
 
     # Show which endpoint was used if successful
@@ -386,7 +386,7 @@ def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
 
         table.add_row("Context ID", context_id)
         table.add_row("Inviter ID", inviter_id)
-        table.add_row("Valid for Blocks", str(valid_for_blocks))
+        table.add_row("Valid for (seconds)", str(valid_for_seconds))
 
         console.print(table)
 
