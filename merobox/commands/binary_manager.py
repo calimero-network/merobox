@@ -177,7 +177,6 @@ class BinaryManager(CleanupMixin):
         node_name: str,
         port: int = DEFAULT_P2P_PORT,
         rpc_port: int = DEFAULT_RPC_PORT,
-        chain_id: str = "testnet-1",
         data_dir: Optional[str] = None,
         image: Optional[str] = None,  # Ignored in binary mode
         auth_service: bool = False,  # Ignored in binary mode
@@ -200,7 +199,6 @@ class BinaryManager(CleanupMixin):
             node_name: Name of the node
             port: P2P port
             rpc_port: RPC port
-            chain_id: Chain ID
             data_dir: Data directory (defaults to ./data/{node_name})
             log_level: Rust log level
             rust_backtrace: RUST_BACKTRACE level
@@ -750,7 +748,6 @@ class BinaryManager(CleanupMixin):
         count: int,
         base_port: int = DEFAULT_P2P_PORT,
         base_rpc_port: int = DEFAULT_RPC_PORT,
-        chain_id: str = "testnet-1",
         prefix: str = "calimero-node",
         image: Optional[str] = None,  # Ignored in binary mode
         auth_service: bool = False,  # Not supported in binary mode
@@ -771,7 +768,6 @@ class BinaryManager(CleanupMixin):
             count: Number of nodes to start
             base_port: Base P2P port (each node gets base_port + index)
             base_rpc_port: Base RPC port (each node gets base_rpc_port + index)
-            chain_id: Blockchain chain ID
             prefix: Node name prefix
             image: Ignored (binary mode doesn't use Docker images)
             auth_service: Not supported in binary mode
@@ -828,7 +824,6 @@ class BinaryManager(CleanupMixin):
                 node_name=node_name,
                 port=port,
                 rpc_port=rpc_port,
-                chain_id=chain_id,
                 log_level=log_level,
                 rust_backtrace=rust_backtrace,
                 workflow_id=workflow_id,

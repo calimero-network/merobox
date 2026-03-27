@@ -50,7 +50,6 @@ def cluster(
     *,
     prefix: str = "test",
     image: str | None = None,
-    chain_id: str = "testnet-1",
     base_port: int | None = None,
     base_rpc_port: int | None = None,
     stop_all: bool = True,
@@ -62,7 +61,6 @@ def cluster(
         count: Number of nodes to start.
         prefix: Node name prefix.
         image: Docker image to use for nodes.
-        chain_id: Chain ID.
         base_port: Optional base P2P port to start from (auto-detect if None).
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.
@@ -78,7 +76,6 @@ def cluster(
             count=count,
             prefix=prefix,
             image=image,
-            chain_id=chain_id,
             base_port=base_port,
             base_rpc_port=base_rpc_port,
         )
@@ -116,7 +113,6 @@ def workflow(
     *,
     prefix: str = "test-node",
     image: str | None = None,
-    chain_id: str = "testnet-1",
     base_port: int | None = None,
     base_rpc_port: int | None = None,
     stop_all: bool = True,
@@ -128,7 +124,6 @@ def workflow(
         workflow_path: Path to the workflow YAML file.
         prefix: Node name prefix for any nodes created by the workflow.
         image: Docker image to use for nodes.
-        chain_id: Blockchain chain ID.
         base_port: Optional base P2P port to start from (auto-detect if None).
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.

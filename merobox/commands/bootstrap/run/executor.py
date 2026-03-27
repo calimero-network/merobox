@@ -746,7 +746,6 @@ class WorkflowExecutor:
         base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
         base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
 
-        chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
         config_path = self._resolve_config_path(nodes_config.get("config_path"))
@@ -775,7 +774,6 @@ class WorkflowExecutor:
                     "count": count,
                     "base_port": base_port,
                     "base_rpc_port": base_rpc_port,
-                    "chain_id": chain_id,
                     "prefix": prefix,
                     "image": image,
                     "auth_service": self.auth_service,
@@ -818,7 +816,6 @@ class WorkflowExecutor:
                         "node_name": node_name,
                         "port": port,
                         "rpc_port": rpc_port,
-                        "chain_id": chain_id,
                         "data_dir": None,
                         "image": image,
                         "auth_service": self.auth_service,
@@ -860,7 +857,6 @@ class WorkflowExecutor:
             if isinstance(node_cfg, dict):
                 port = node_cfg.get("port", base_port)
                 rpc_port = node_cfg.get("rpc_port", base_rpc_port)
-                node_chain_id = node_cfg.get("chain_id", chain_id)
                 node_image = (
                     self.image
                     if self.image is not None
@@ -876,7 +872,6 @@ class WorkflowExecutor:
             else:
                 port = base_port
                 rpc_port = base_rpc_port
-                node_chain_id = chain_id
                 node_image = image
                 data_dir = None
                 node_config_path = config_path
@@ -910,7 +905,6 @@ class WorkflowExecutor:
                         "node_name": node_name,
                         "port": port,
                         "rpc_port": rpc_port,
-                        "chain_id": node_chain_id,
                         "data_dir": data_dir,
                         "image": node_image,
                         "auth_service": self.auth_service,
@@ -946,7 +940,6 @@ class WorkflowExecutor:
                     "node_name": node_name,
                     "port": port,
                     "rpc_port": rpc_port,
-                    "chain_id": node_chain_id,
                     "data_dir": data_dir,
                     "image": node_image,
                     "auth_service": self.auth_service,

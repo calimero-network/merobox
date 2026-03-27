@@ -58,7 +58,6 @@ class NodesConfig(BaseModel):
 
     count: Optional[int] = Field(None, ge=1, description="Number of nodes to create")
     prefix: Optional[str] = Field("calimero-node", description="Prefix for node names")
-    chain_id: Optional[str] = Field(None, description="Chain ID for nodes")
     image: Optional[str] = Field(None, description="Docker image for nodes")
     base_port: Optional[int] = Field(
         None, ge=1, le=65535, description="Base port for nodes"
@@ -767,7 +766,6 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",
-            "chain_id": "testnet-1",
             "image": "ghcr.io/calimero-network/merod:6a47604",
         },
         "steps": [

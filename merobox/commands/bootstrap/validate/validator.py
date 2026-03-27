@@ -67,13 +67,7 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
             )
 
             if has_count:
-                # Count mode: require chain_id, image, prefix
-                required_count_fields = ["chain_id", "image", "prefix"]
-                for field in required_count_fields:
-                    if field not in nodes:
-                        errors.append(
-                            f"Missing required node field for 'count' mode: {field}"
-                        )
+                pass
 
                 # Validate config_path and count compatibility
                 if "config_path" in nodes:
@@ -84,7 +78,7 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
             elif not has_individual_nodes:
                 # Neither count mode nor individual nodes defined
                 errors.append(
-                    "Nodes configuration must either use 'count' mode (with chain_id, image, prefix) "
+                    "Nodes configuration must either use 'count' mode (with prefix, image) "
                     "or define individual nodes."
                 )
 

@@ -38,7 +38,6 @@ RPC_PORT_BINDING = f"{DEFAULT_RPC_PORT}/tcp"
 P2P_PORT_BINDING = f"{DEFAULT_P2P_PORT}/tcp"
 
 # Default values
-DEFAULT_CHAIN_ID = "testnet-1"
 DEFAULT_TIMEOUT = 30
 NODE_READY_TIMEOUT = 60  # seconds to wait for nodes to be ready and accessible
 DEFAULT_WAIT_TIMEOUT = NODE_READY_TIMEOUT  # deprecated alias for backward compatibility
@@ -110,7 +109,6 @@ RESERVED_NODE_CONFIG_KEYS = {
     "prefix",
     "base_port",
     "base_rpc_port",
-    "chain_id",
     "image",
     "config_path",
     "use_image_entrypoint",
@@ -144,7 +142,6 @@ STEP_GET_PROPOSAL_APPROVERS = "get_proposal_approvers"
 
 # Container data directory patterns
 CONTAINER_DATA_DIR_PATTERNS = [
-    "data/{prefix}-{node_num}-{chain_id}",
     "data/{node_name}",
 ]
 
