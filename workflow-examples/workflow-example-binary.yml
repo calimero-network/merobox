@@ -25,7 +25,6 @@ no_docker: true
 force_pull_image: false
 
 nodes:
-  chain_id: testnet-1
   count: 3
   # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility
   image: ghcr.io/calimero-network/merod:prerelease
@@ -79,7 +78,7 @@ steps:
   # Step 6: Invite the second node to join the context
   # Uses captured values: context ID, member public key, and identity public key
   - name: Invite Node 2 from Node 1
-    type: invite_identity
+    type: invite_open
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node2}}"
@@ -100,7 +99,7 @@ steps:
   # Step 8: Invite the third node to join the context
   # Uses captured values: context ID, member public key, and identity public key
   - name: Invite Node 3 from Node 1
-    type: invite_identity
+    type: invite_open
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node3}}"

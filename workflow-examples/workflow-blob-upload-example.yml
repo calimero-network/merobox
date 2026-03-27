@@ -5,7 +5,6 @@ description: A workflow demonstrating the Calimero blob API for file sharing
 force_pull_image: true
 
 nodes:
-  chain_id: testnet-1
   count: 2
   image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
@@ -48,7 +47,7 @@ steps:
 
   # Step 4: Invite second node to join the context
   - name: Invite Node 2 from Node 1
-    type: invite_identity
+    type: invite_open
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key}}"

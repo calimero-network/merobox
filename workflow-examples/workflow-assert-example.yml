@@ -3,7 +3,6 @@ name: Assert and JSON Assert Example
 
 # Keep it light: single node to speed up CI
 nodes:
-  chain_id: testnet-1
   count: 1
   image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node

@@ -6,7 +6,6 @@ name: Fuzzy KV Store Load Test
 # under sustained load, with assertion-based validation.
 
 nodes:
-  chain_id: testnet-1
   count: 3
   image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
@@ -51,7 +50,7 @@ steps:
 
   # Step 6: Invite node 2 to context
   - name: Invite Node 2
-    type: invite_identity
+    type: invite_open
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node2}}"
@@ -70,7 +69,7 @@ steps:
 
   # Step 8: Invite node 3 to context
   - name: Invite Node 3
-    type: invite_identity
+    type: invite_open
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node3}}"

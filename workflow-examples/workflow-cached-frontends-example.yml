@@ -14,7 +14,6 @@ nodes:
   count: 2
   base_port: 2428
   base_rpc_port: 2528
-  chain_id: "testnet-1"
   prefix: "calimero-node"
 
 steps:

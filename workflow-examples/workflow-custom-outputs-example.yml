@@ -2,7 +2,6 @@ description: A workflow example demonstrating custom outputs configuration for d
 name: Custom Outputs Example Workflow
 
 nodes:
-  chain_id: testnet-1
   count: 2
   image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
@@ -49,7 +48,7 @@ steps:
 
   # Step 5: Invite identity using custom output names
   - name: Invite Identity with Custom Names
-    type: invite_identity
+    type: invite_open
     node: calimero-node-1
     context_id: "{{my_context_id}}" # Use custom context ID
     granter_id: "{{member_key}}" # Use custom member key
