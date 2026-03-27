@@ -67,8 +67,6 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
             )
 
             if has_count:
-                pass
-
                 # Validate config_path and count compatibility
                 if "config_path" in nodes:
                     errors.append(
