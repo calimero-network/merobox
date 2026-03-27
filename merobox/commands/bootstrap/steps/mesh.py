@@ -7,7 +7,6 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL
 from merobox.commands.identity import (
     generate_identity_via_admin_api,
     invite_identity_via_admin_api,

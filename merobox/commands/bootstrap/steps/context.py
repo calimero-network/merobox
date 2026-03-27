@@ -6,7 +6,6 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 from merobox.commands.validation_utils import validate_near_only_protocol

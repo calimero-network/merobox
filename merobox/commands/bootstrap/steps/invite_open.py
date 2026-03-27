@@ -111,8 +111,9 @@ class InviteOpenStep(BaseStep):
         granter_id = self._resolve_dynamic_value(
             self.config["granter_id"], workflow_results, dynamic_values
         )
-        valid_for_seconds = self.config.get("valid_for_seconds",
-            self.config.get("valid_for_blocks", 3600))
+        valid_for_seconds = self.config.get(
+            "valid_for_seconds", self.config.get("valid_for_blocks", 3600)
+        )
 
         # Validate export configuration
         if not self._validate_export_config():
