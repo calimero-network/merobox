@@ -147,7 +147,7 @@ async def create_open_invitation_via_admin_api(
         result = client.invite_to_context_by_open_invitation(
             context_id=context_id,
             inviter_id=inviter_id,
-            valid_for_blocks=valid_for_blocks,
+            valid_for_blocks=valid_for_seconds,
         )
         return ok(
             result,
