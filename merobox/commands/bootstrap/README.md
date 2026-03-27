@@ -154,7 +154,7 @@ The `failure_mode` configuration option controls how failures are handled:
 ## Configuration
 
 Workflows are defined in YAML files with:
-- **nodes**: Node configuration (count, image, chain_id)
+- **nodes**: Node configuration (count, image, prefix)
 - **steps**: Ordered list of workflow steps
 - **options**: Workflow behavior settings
 

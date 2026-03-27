@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+- **NEAR blockchain removed**: All NEAR Sandbox, relayer, and blockchain functionality has been removed. Context management is now fully local (P2P gossip).
+- **`--enable-relayer` / `--no-enable-relayer` CLI flags**: Removed.
+- **`--chain-id` CLI flag**: Removed.
+- **`chain_id` in workflow YAML**: No longer required or used in node config.
+- **`near_devnet` in workflow YAML**: No longer used.
+- **`protocol` parameter**: Removed from `context create` command.
+- **`merobox/commands/near/`**: Entire module deleted (sandbox, client, contracts, utils).
+- **`workflow-proposals-example.yml`**: Deleted (proposals were blockchain-only).
+- **`testing.cluster()` / `testing.workflow()`**: `near_devnet` and `chain_id` parameters removed.
+
+### Changed
+- **Invitations**: `invite_identity` step type renamed to `invite_open` in workflows. All invitations now use signed open invitations via `calimero-client-py`.
+- **`valid_for_blocks`**: Renamed to `valid_for_seconds` throughout (old name accepted as fallback in workflow configs).
+- **`create_open_invitation_via_admin_api`**: Now delegates to `invite_identity_via_admin_api` (deduplicated).
+
+### Removed
+- `merobox/commands/near/` (sandbox.py, client.py, contracts.py, utils.py)
+- `merobox/tests/unit/test_near_devnet.py`
+- `merobox/tests/unit/test_near_sandbox.py`
+- `workflow-examples/workflow-proposals-example.yml`
+- NEAR-specific constants (`NEAR_SANDBOX_RPC_PORT`, `DEFAULT_PROTOCOL`, `PROTOCOL_NEAR`, etc.)
+
 ## [0.3.7] - 2026-02-12
 
 ### Breaking
