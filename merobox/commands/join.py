@@ -9,7 +9,6 @@ from rich import box
 from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import ADMIN_API_CONTEXTS_JOIN
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
@@ -24,33 +23,37 @@ async def join_context_via_admin_api(
     invitation_data,
     node_name: str = None,
 ) -> dict:
-    """Join a context using calimero-client-py (open invitation).
+    """Join a context via raw HTTP POST to preserve all invitation fields.
+
+    Uses direct HTTP instead of calimero-client-py to avoid the typed
+    deserialization that drops new SignedOpenInvitation fields (application_id,
+    blob_id, source, group_id) due to Cargo build cache staleness.
 
     Args:
         rpc_url: The RPC URL to connect to.
         context_id: Unused — kept for backward compatibility.
         invitee_id: Public key of the invitee.
         invitation_data: SignedOpenInvitation (dict or JSON string).
-        node_name: Optional node name for token caching (required for authenticated nodes).
+        node_name: Optional node name for token caching.
     """
     try:
         import json as json_lib
 
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
+        import requests
 
-        # Normalize invitation_data to a JSON string for the open invitation API
-        if isinstance(invitation_data, dict):
-            invitation_json = json_lib.dumps(invitation_data)
-        else:
-            invitation_json = str(invitation_data)
+        if isinstance(invitation_data, str):
+            invitation_data = json_lib.loads(invitation_data)
 
-        result = client.join_context_by_open_invitation(
-            invitation_json,
-            invitee_id,
-        )
-        return ok(
-            result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_JOIN}", payload_format=0
-        )
+        payload = {
+            "invitation": invitation_data,
+            "newMemberPublicKey": invitee_id,
+        }
+
+        url = f"{rpc_url}/admin-api/dev/contexts/join_by_open_invitation"
+        resp = requests.post(url, json=payload, timeout=30)
+        resp.raise_for_status()
+        result = resp.json()
+        return ok(result, endpoint=url, payload_format=0)
     except Exception as e:
         return fail("join_context failed", error=e)
 
