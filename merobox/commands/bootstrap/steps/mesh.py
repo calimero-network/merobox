@@ -98,7 +98,7 @@ class CreateMeshStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
         nodes = self.config["nodes"]
-        capability = self.config.get("capability", "member")
+        # capability was removed — invitations are always open now
 
         console.print(
             f"[bold cyan]Creating mesh: context on {context_node}, connecting {len(nodes)} nodes[/bold cyan]"
@@ -321,8 +321,6 @@ class CreateMeshStep(BaseStep):
                 context_rpc_url,
                 context_id,
                 member_public_key,
-                public_key,
-                capability,
                 node_name=client_context_node,
             )
 

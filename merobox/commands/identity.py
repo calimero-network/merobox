@@ -94,8 +94,6 @@ async def invite_identity_via_admin_api(
     rpc_url: str,
     context_id: str,
     inviter_id: str,
-    invitee_id: str = None,
-    capability: str = None,
     node_name: str = None,
     valid_for_seconds: int = 3600,
 ) -> dict:
@@ -230,26 +228,14 @@ def generate(node, verbose=False):
 @click.option(
     "--inviter-id", required=True, help="Public key of the inviter (context member)"
 )
-@click.option(
-    "--invitee-id", required=True, help="Public key of the identity to invite"
-)
-@click.option(
-    "--capability",
-    default=None,
-    help="Capability (not used in invitation, kept for compatibility)",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
-    """Invite an identity to join a context."""
+def invite(node, context_id, inviter_id, verbose):
+    """Create an open invitation for a context."""
     manager = DockerManager()
 
-    # Check if node is running
-    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
-
-    # Get admin API URL and run invitation
     admin_url = get_node_rpc_url(node, manager)
     console.print(
-        f"[blue]Inviting identity {invitee_id} to context {context_id} on node {node} via {admin_url}[/blue]"
+        f"[blue]Creating invitation for context {context_id} on node {node} via {admin_url}[/blue]"
     )
 
     result = run_async_function(
@@ -257,8 +243,6 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         admin_url,
         context_id,
         inviter_id,
-        invitee_id,
-        capability,
     )
 
     # Show which endpoint was used if successful
@@ -275,7 +259,6 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
 
         table.add_row("Context ID", context_id)
         table.add_row("Inviter ID", inviter_id)
-        table.add_row("Invitee ID", invitee_id)
 
         console.print(table)
 
