@@ -18,32 +18,26 @@ async def create_open_invitation_via_admin_api(
     valid_for_seconds: int = 3600,
     node_name: str | None = None,
 ) -> dict:
-    """Create an open invitation using calimero-client-py.
+    """Create an open invitation via raw HTTP POST.
 
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: The context ID to create invitation for.
-        granter_id: The granter ID.
-        valid_for_seconds: Number of seconds the invitation is valid for.
-        node_name: Optional stable node name for token caching (required for authenticated nodes).
+    Uses direct HTTP to preserve all SignedOpenInvitation fields.
     """
     try:
-        from merobox.commands.client import get_client_for_rpc_url
+        import requests
+
         from merobox.commands.result import fail, ok
 
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
+        payload = {
+            "contextId": context_id,
+            "inviterId": granter_id,
+            "validForSeconds": valid_for_seconds,
+        }
 
-        result = client.invite_to_context_by_open_invitation(
-            context_id=context_id,
-            inviter_id=granter_id,
-            valid_for_blocks=valid_for_seconds,
-        )
-
-        return ok(
-            result,
-            endpoint=f"{rpc_url}/admin-api/dev/contexts/invite-open",
-            payload_format=0,
-        )
+        url = f"{rpc_url}/admin-api/contexts/invite_by_open_invitation"
+        resp = requests.post(url, json=payload, timeout=30)
+        resp.raise_for_status()
+        result = resp.json()
+        return ok(result, endpoint=url, payload_format=0)
     except Exception as e:
         from merobox.commands.result import fail
 
