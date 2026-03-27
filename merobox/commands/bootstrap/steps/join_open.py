@@ -7,7 +7,6 @@ import os
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -18,39 +17,26 @@ async def join_context_via_open_invitation(
     new_member_public_key: str,
     node_name: str | None = None,
 ) -> dict:
-    """Join a context using an open invitation.
+    """Join a context using an open invitation via raw HTTP POST.
 
-    Args:
-        rpc_url: The RPC URL to connect to.
-        invitation_dict: The invitation dictionary.
-        new_member_public_key: The public key of the new member.
-        node_name: Optional stable node name for token caching (required for authenticated nodes).
+    Uses direct HTTP to preserve all SignedOpenInvitation fields.
     """
     try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-    except Exception as exc:
-        return fail(
-            "join_context_via_open_invitation failed during client creation",
-            error=exc,
-        )
+        import requests
 
-    try:
-        invitation_json = json_lib.dumps(invitation_dict)
-    except (TypeError, ValueError) as exc:
-        return fail(
-            "join_context_via_open_invitation failed: invalid invitation", error=exc
-        )
+        payload = {
+            "invitation": invitation_dict,
+            "newMemberPublicKey": new_member_public_key,
+        }
 
-    try:
-        result = client.join_context_by_open_invitation(
-            invitation_json=invitation_json,
-            new_member_public_key=new_member_public_key,
-        )
+        url = f"{rpc_url}/admin-api/contexts/join_by_open_invitation"
+        resp = requests.post(url, json=payload, timeout=30)
+        resp.raise_for_status()
+        result = resp.json()
     except Exception as exc:
         return fail(
             f"join_context_via_open_invitation failed: {exc!s}",
             error=exc,
-            client_method="client.join_context_by_open_invitation",
             endpoint="calimero_client_py.join_context_by_open_invitation",
         )
 
