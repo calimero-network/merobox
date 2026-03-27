@@ -99,7 +99,7 @@ class JoinContextStep(BaseStep):
         # Execute join
         console.print("[blue]About to call join function...[/blue]")
         result = await join_context_via_admin_api(
-            rpc_url, context_id, invitee_id, invitation, node_name=client_node_name
+            rpc_url, invitee_id, invitation, node_name=client_node_name
         )
         console.print(f"[blue]Join function returned: {result}[/blue]")
 

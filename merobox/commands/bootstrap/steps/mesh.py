@@ -354,7 +354,6 @@ class CreateMeshStep(BaseStep):
             console.print(f"  [cyan]Joining context from {node_name}...[/cyan]")
             join_result = await join_context_via_admin_api(
                 node_rpc_url,
-                context_id,
                 public_key,
                 invitation,
                 node_name=client_node_name,

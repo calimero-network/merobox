@@ -18,7 +18,6 @@ from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def join_context_via_admin_api(
     rpc_url: str,
-    context_id: str,
     invitee_id: str,
     invitation_data,
     node_name: str = None,
