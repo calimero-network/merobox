@@ -112,23 +112,6 @@ async def invite_identity_via_admin_api(
         return fail("invite_to_context failed", error=e)
 
 
-async def create_open_invitation_via_admin_api(
-    rpc_url: str,
-    context_id: str,
-    inviter_id: str,
-    valid_for_seconds: int = 3600,
-    node_name: str = None,
-) -> dict:
-    """Create an open invitation. Delegates to invite_identity_via_admin_api."""
-    return await invite_identity_via_admin_api(
-        rpc_url=rpc_url,
-        context_id=context_id,
-        inviter_id=inviter_id,
-        valid_for_seconds=valid_for_seconds,
-        node_name=node_name,
-    )
-
-
 @click.group()
 def identity():
     """Manage Calimero identities for contexts."""
@@ -352,11 +335,11 @@ def invite_open(node, context_id, inviter_id, valid_for_seconds, verbose):
     console.print(f"[blue]Valid for {valid_for_seconds}s[/blue]")
 
     result = run_async_function(
-        create_open_invitation_via_admin_api,
+        invite_identity_via_admin_api,
         admin_url,
         context_id,
         inviter_id,
-        valid_for_seconds,
+        valid_for_seconds=valid_for_seconds,
     )
 
     # Show which endpoint was used if successful
