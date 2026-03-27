@@ -18,26 +18,18 @@ async def create_open_invitation_via_admin_api(
     valid_for_seconds: int = 3600,
     node_name: str | None = None,
 ) -> dict:
-    """Create an open invitation via raw HTTP POST.
-
-    Uses direct HTTP to preserve all SignedOpenInvitation fields.
-    """
+    """Create an open invitation using calimero-client-py."""
     try:
-        import requests
-
+        from merobox.commands.client import get_client_for_rpc_url
         from merobox.commands.result import fail, ok
 
-        payload = {
-            "contextId": context_id,
-            "inviterId": granter_id,
-            "validForSeconds": valid_for_seconds,
-        }
-
-        url = f"{rpc_url}/admin-api/contexts/invite_by_open_invitation"
-        resp = requests.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        result = resp.json()
-        return ok(result, endpoint=url, payload_format=0)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
+        result = client.invite_to_context(
+            context_id=context_id,
+            inviter_id=granter_id,
+            valid_for_seconds=valid_for_seconds,
+        )
+        return ok(result)
     except Exception as e:
         from merobox.commands.result import fail
 

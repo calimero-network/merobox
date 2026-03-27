@@ -7,7 +7,6 @@ import os
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
 
@@ -17,35 +16,23 @@ async def join_context_via_open_invitation(
     new_member_public_key: str,
     node_name: str | None = None,
 ) -> dict:
-    """Join a context using an open invitation via raw HTTP POST.
-
-    Uses direct HTTP to preserve all SignedOpenInvitation fields.
-    """
+    """Join a context using an open invitation."""
     try:
-        import requests
+        from merobox.commands.client import get_client_for_rpc_url
+        from merobox.commands.result import fail, ok
 
-        payload = {
-            "invitation": invitation_dict,
-            "newMemberPublicKey": new_member_public_key,
-        }
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
-        url = f"{rpc_url}/admin-api/contexts/join_by_open_invitation"
-        resp = requests.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        result = resp.json()
-    except Exception as exc:
-        return fail(
-            f"join_context_via_open_invitation failed: {exc!s}",
-            error=exc,
-            endpoint="calimero_client_py.join_context_by_open_invitation",
+        invitation_json = json_lib.dumps(invitation_dict)
+        result = client.join_context(
+            invitation_json,
+            new_member_public_key,
         )
+        return ok(result)
+    except Exception as exc:
+        from merobox.commands.result import fail
 
-    return ok(
-        result,
-        client_method="client.join_context_by_open_invitation",
-        payload_format="json",
-        endpoint="calimero_client_py.join_context_by_open_invitation",
-    )
+        return fail(f"join_context_via_open_invitation failed: {exc!s}", error=exc)
 
 
 class JoinOpenStep(BaseStep):

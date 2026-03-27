@@ -8,6 +8,7 @@ import click
 from rich import box
 from rich.table import Table
 
+from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
@@ -22,37 +23,22 @@ async def join_context_via_admin_api(
     invitation_data,
     node_name: str = None,
 ) -> dict:
-    """Join a context via raw HTTP POST to preserve all invitation fields.
-
-    Uses direct HTTP instead of calimero-client-py to avoid the typed
-    deserialization that drops new SignedOpenInvitation fields (application_id,
-    blob_id, source, group_id) due to Cargo build cache staleness.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: Unused — kept for backward compatibility.
-        invitee_id: Public key of the invitee.
-        invitation_data: SignedOpenInvitation (dict or JSON string).
-        node_name: Optional node name for token caching.
-    """
+    """Join a context using calimero-client-py."""
     try:
         import json as json_lib
 
-        import requests
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
-        if isinstance(invitation_data, str):
-            invitation_data = json_lib.loads(invitation_data)
+        if isinstance(invitation_data, dict):
+            invitation_json = json_lib.dumps(invitation_data)
+        else:
+            invitation_json = str(invitation_data)
 
-        payload = {
-            "invitation": invitation_data,
-            "newMemberPublicKey": invitee_id,
-        }
-
-        url = f"{rpc_url}/admin-api/contexts/join_by_open_invitation"
-        resp = requests.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        result = resp.json()
-        return ok(result, endpoint=url, payload_format=0)
+        result = client.join_context(
+            invitation_json,
+            invitee_id,
+        )
+        return ok(result)
     except Exception as e:
         return fail("join_context failed", error=e)
 
@@ -64,38 +50,20 @@ async def join_context_via_open_invitation(
     new_member_public_key: str,
     node_name: str = None,
 ) -> dict:
-    """Join a context using an open invitation via raw HTTP POST.
-
-    Uses direct HTTP to preserve all SignedOpenInvitation fields.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        invitation_json: The SignedOpenInvitation as dict or JSON string.
-        new_member_public_key: The public key as string.
-        node_name: Optional node name for token caching.
-    """
+    """Join a context using an open invitation."""
     try:
         import json as json_lib
 
-        import requests
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
-        if isinstance(invitation_json, str):
-            invitation_data = json_lib.loads(invitation_json)
-        elif isinstance(invitation_json, dict):
-            invitation_data = invitation_json
-        else:
-            invitation_data = invitation_json
+        if isinstance(invitation_json, dict):
+            invitation_json = json_lib.dumps(invitation_json)
 
-        payload = {
-            "invitation": invitation_data,
-            "newMemberPublicKey": new_member_public_key,
-        }
-
-        url = f"{rpc_url}/admin-api/contexts/join_by_open_invitation"
-        resp = requests.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        result = resp.json()
-        return ok(result, endpoint=url, payload_format=0)
+        result = client.join_context(
+            invitation_json,
+            new_member_public_key,
+        )
+        return ok(result)
     except Exception as e:
         return fail("join_context_via_open_invitation failed", error=e)
 

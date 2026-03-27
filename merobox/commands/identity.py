@@ -99,35 +99,15 @@ async def invite_identity_via_admin_api(
     node_name: str = None,
     valid_for_seconds: int = 3600,
 ) -> dict:
-    """Create an open invitation via raw HTTP POST.
-
-    Uses direct HTTP instead of calimero-client-py to preserve all
-    SignedOpenInvitation fields (application_id, blob_id, source, group_id)
-    which are dropped by the typed Rust deserialization in the client.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: Context ID to invite to.
-        inviter_id: Public key of the inviter.
-        invitee_id: Unused — kept for backward compatibility.
-        capability: Unused — kept for backward compatibility.
-        node_name: Optional node name for token caching.
-        valid_for_seconds: Seconds the invitation is valid for.
-    """
+    """Create an open invitation using calimero-client-py."""
     try:
-        import requests
-
-        payload = {
-            "contextId": context_id,
-            "inviterId": inviter_id,
-            "validForSeconds": valid_for_seconds,
-        }
-
-        url = f"{rpc_url}/admin-api/contexts/invite_by_open_invitation"
-        resp = requests.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        result = resp.json()
-        return ok(result, endpoint=url, payload_format=0)
+        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
+        result = client.invite_to_context(
+            context_id=context_id,
+            inviter_id=inviter_id,
+            valid_for_seconds=valid_for_seconds,
+        )
+        return ok(result)
     except Exception as e:
         return fail("invite_to_context failed", error=e)
 
