@@ -56,8 +56,8 @@ steps:
   # Wait for group gossip to propagate from node 1 to node 2.
   # Node 2 needs the group metadata before it can process the join.
   - name: Wait for Group Gossip Propagation
-    type: mesh
-    timeout: 10
+    type: wait
+    seconds: 5
 
   # Step 5: Node 2 joins the group using the invitation from node 1.
   # After this step node 2 becomes a group member with the default
