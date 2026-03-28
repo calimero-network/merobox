@@ -8,7 +8,7 @@ force_pull_image: true
 # Testing image merod:3e23d21
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:6aa4926
   prefix: open-inv-node
 
 steps:

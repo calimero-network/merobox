@@ -7,7 +7,7 @@ name: Fuzzy KV Store Load Test
 
 nodes:
   count: 3
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:6aa4926
   prefix: calimero-node
 
 steps:

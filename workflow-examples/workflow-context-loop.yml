@@ -3,7 +3,7 @@ name: Context Creation Loop Workflow
 
 nodes:
   count: 1
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:6aa4926
   prefix: calimero-node
 
 steps:
