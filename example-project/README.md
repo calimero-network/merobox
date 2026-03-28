@@ -193,9 +193,9 @@ def test_development_features(dev_node):
 
 ```python
 @pytest.fixture
-def client(blockchain_endpoints):
+def client(cluster_endpoints):
     """Provide a configured client."""
-    first_endpoint = list(blockchain_endpoints.values())[0]
+    first_endpoint = list(cluster_endpoints.values())[0]
     return Client(first_endpoint)
 
 def test_with_client(client):

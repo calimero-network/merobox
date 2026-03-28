@@ -132,19 +132,19 @@ def client(shared_cluster):
 
 
 @pytest.fixture
-def blockchain_nodes(shared_cluster):
+def cluster_nodes(shared_cluster):
     """Quick access to nodes from the shared cluster"""
     return shared_cluster.nodes
 
 
 @pytest.fixture
-def blockchain_endpoints(shared_cluster):
+def cluster_endpoints(shared_cluster):
     """Quick access to endpoints from the shared cluster"""
     return shared_cluster.endpoints
 
 
 @pytest.fixture
-def blockchain_manager(shared_cluster):
+def cluster_manager(shared_cluster):
     """Quick access to manager from the shared cluster"""
     return shared_cluster.manager
 

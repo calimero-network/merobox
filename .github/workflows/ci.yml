@@ -104,7 +104,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Build workflow WASM apps (kv_store, blobs, blockchain from calimero-network/core)
+      - name: Build workflow WASM apps (kv_store, blobs from calimero-network/core)
         run: |
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh
@@ -192,7 +192,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Build workflow WASM apps (kv_store, blobs, blockchain from calimero-network/core)
+      - name: Build workflow WASM apps (kv_store, blobs from calimero-network/core)
         run: |
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh
