@@ -207,10 +207,14 @@ jobs:
 
           failed_workflows=()
 
-          # Run all workflows with Docker (skip binary-only, fuzzy-kv-store)
+          # Run all workflows with Docker (skip binary-only, fuzzy-kv-store, groups)
+          # Groups workflow is skipped in Docker mode because the edge image
+          # may lag behind master; it is tested in binary mode which builds
+          # merod from source.
           for f in workflow-examples/*.yml; do
             [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]] && continue
             [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
+            [[ "$f" == "workflow-examples/workflow-groups-example.yml" ]] && continue
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
               --e2e-mode; then
