@@ -42,6 +42,12 @@ class CreateGroupStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
 
+        parent_group_id = None
+        if "parent_group_id" in self.config:
+            parent_group_id = self._resolve_dynamic_value(
+                self.config["parent_group_id"], workflow_results, dynamic_values
+            )
+
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
         except Exception as e:
@@ -50,7 +56,9 @@ class CreateGroupStep(BaseStep):
 
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.create_group(application_id=application_id)
+            api_result = client.create_group(
+                application_id=application_id, parent_group_id=parent_group_id
+            )
             result = ok(api_result)
         except Exception as e:
             result = fail("create_group failed", error=e)

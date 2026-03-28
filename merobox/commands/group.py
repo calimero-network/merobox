@@ -119,8 +119,14 @@ def list_groups(node, verbose):
 @click.option(
     "--application-id", "-a", required=True, help="Application ID for the group"
 )
+@click.option(
+    "--parent-group-id",
+    "-p",
+    default=None,
+    help="Parent group ID to create this as a subgroup",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def create(node, application_id, verbose):
+def create(node, application_id, parent_group_id, verbose):
     """Create a new group."""
     manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
@@ -128,7 +134,9 @@ def create(node, application_id, verbose):
         f"[blue]Creating group for application {application_id} on node {node}[/blue]"
     )
 
-    result = run_async_function(call_admin_api, rpc_url, "create_group", application_id)
+    result = run_async_function(
+        call_admin_api, rpc_url, "create_group", application_id, parent_group_id
+    )
 
     if result["success"]:
         data = unwrap_api_response(result)
