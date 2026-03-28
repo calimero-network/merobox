@@ -27,7 +27,7 @@ force_pull_image: false
 nodes:
   count: 3
   # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility
-  image: ghcr.io/calimero-network/merod:6aa4926
+  image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
   # Optional: reserve base ports for native nodes (BinaryManager will auto-allocate if omitted)
   # base_port: 2428

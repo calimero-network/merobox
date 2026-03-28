@@ -5,7 +5,7 @@ force_pull_image: true
 
 nodes:
   count: 1
-  image: ghcr.io/calimero-network/merod:6aa4926
+  image: ghcr.io/calimero-network/merod:edge
   prefix: benchmark-node
 
 steps:

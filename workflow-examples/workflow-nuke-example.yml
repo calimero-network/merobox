@@ -9,7 +9,7 @@ nuke_on_end: true
 
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:6aa4926
+  image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
 
 steps:

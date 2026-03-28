@@ -7,7 +7,7 @@ e2e_mode: true
 
 nodes:
   count: 5
-  image: ghcr.io/calimero-network/merod:6aa4926
+  image: ghcr.io/calimero-network/merod:edge
   prefix: dag-node
 
 steps:

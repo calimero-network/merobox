@@ -4,7 +4,7 @@ name: Assert and JSON Assert Example
 # Keep it light: single node to speed up CI
 nodes:
   count: 1
-  image: ghcr.io/calimero-network/merod:6aa4926
+  image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
   base_port: 9002
   base_rpc_port: 9102
