@@ -6,9 +6,8 @@ nuke_on_start: true
 e2e_mode: true
 
 nodes:
-  chain_id: testnet-1
   count: 5
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:edge
   prefix: dag-node
 
 steps:

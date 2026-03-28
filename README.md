@@ -1,6 +1,6 @@
 # Merobox CLI
 
-A Python CLI for managing Calimero nodes (Docker or native) and orchestrating YAML workflows with local NEAR Sandbox support.
+A Python CLI for managing Calimero nodes (Docker or native) and orchestrating YAML workflows.
 
 > **Full documentation**: [Architecture Reference](https://calimero-network.github.io/merobox/)
 
@@ -97,7 +97,6 @@ steps:
 - **Workflow Orchestration** — 15+ step types for complex multi-step YAML workflows
 - **Remote Nodes** — Connect to remote Calimero nodes with user/password or API key auth
 - **Auth Integration** — Traefik proxy (Docker) or embedded JWT auth (binary mode)
-- **Local NEAR Sandbox** — Zero-cost local blockchain testing (default; `--enable-relayer` for testnet)
 - **Fuzzy Testing** — Long-duration randomized load tests with weighted operations
 - **pytest Integration** — `cluster()` and `workflow()` context managers for test harnesses
 
@@ -117,7 +116,6 @@ All detailed documentation lives in the **[Architecture Reference](https://calim
 | WorkflowExecutor, BaseStep, step factory | [Workflow Engine](https://calimero-network.github.io/merobox/workflow-engine.html) |
 | DockerManager, BinaryManager, Traefik | [Node Management](https://calimero-network.github.io/merobox/node-management.html) |
 | Remote node CLI & auth methods | [Remote Nodes](https://calimero-network.github.io/merobox/remote-nodes.html) |
-| NEAR Sandbox & contract deployment | [NEAR Integration](https://calimero-network.github.io/merobox/near-integration.html) |
 | Complete YAML schema & all 16 step types | [Workflow YAML](https://calimero-network.github.io/merobox/workflow-yaml.html) |
 | All CLI commands with flags & options | [CLI Reference](https://calimero-network.github.io/merobox/cli-reference.html) |
 | MeroboxError hierarchy, retry patterns | [Error Handling](https://calimero-network.github.io/merobox/error-handling.html) |

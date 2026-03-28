@@ -5,9 +5,8 @@ name: Force Pull Image Test
 force_pull_image: true
 
 nodes:
-  chain_id: testnet-1
   count: 1
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:edge
   prefix: test-node
 
 steps:

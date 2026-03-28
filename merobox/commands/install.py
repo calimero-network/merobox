@@ -54,15 +54,7 @@ def _prepare_container_path(
     # Fallback to pattern matching if not found from container or path doesn't exist
     if not container_data_dir or not os.path.exists(container_data_dir):
         for pattern in CONTAINER_DATA_DIR_PATTERNS:
-            if "{prefix}-{node_num}-{chain_id}" in pattern:
-                parts = node_name.split("-")
-                if len(parts) >= 3:
-                    candidate = pattern.format(
-                        prefix=parts[0], node_num=parts[1], chain_id=parts[2]
-                    )
-                else:
-                    candidate = None
-            elif "{node_name}" in pattern:
+            if "{node_name}" in pattern:
                 candidate = pattern.format(node_name=node_name)
             else:
                 candidate = None

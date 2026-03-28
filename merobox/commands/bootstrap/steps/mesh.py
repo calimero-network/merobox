@@ -7,7 +7,6 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL
 from merobox.commands.identity import (
     generate_identity_via_admin_api,
     invite_identity_via_admin_api,
@@ -15,7 +14,6 @@ from merobox.commands.identity import (
 from merobox.commands.join import join_context_via_admin_api
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console, extract_nested_data
-from merobox.commands.validation_utils import validate_near_only_protocol
 
 
 class CreateMeshStep(BaseStep):
@@ -71,12 +69,6 @@ class CreateMeshStep(BaseStep):
         if "params" in self.config and not isinstance(self.config["params"], str):
             raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
 
-        # Validate protocol is NEAR-only when explicitly provided
-        if "protocol" in self.config:
-            validate_near_only_protocol(
-                self.config["protocol"], context=f"Step '{step_name}'"
-            )
-
     def _get_exportable_variables(self):
         """
         Define which variables this step can export.
@@ -106,7 +98,7 @@ class CreateMeshStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
         nodes = self.config["nodes"]
-        capability = self.config.get("capability", "member")
+        # capability was removed — invitations are always open now
 
         console.print(
             f"[bold cyan]Creating mesh: context on {context_node}, connecting {len(nodes)} nodes[/bold cyan]"
@@ -144,12 +136,8 @@ class CreateMeshStep(BaseStep):
             client = get_client_for_rpc_url(
                 context_rpc_url, node_name=client_context_node
             )
-            protocol = validate_near_only_protocol(
-                self.config.get("protocol", DEFAULT_PROTOCOL)
-            )
             api_result = client.create_context(
                 application_id=application_id,
-                protocol=protocol,
                 params=params_json,
             )
             context_result = ok(api_result)
@@ -333,8 +321,6 @@ class CreateMeshStep(BaseStep):
                 context_rpc_url,
                 context_id,
                 member_public_key,
-                public_key,
-                capability,
                 node_name=client_context_node,
             )
 
@@ -368,7 +354,6 @@ class CreateMeshStep(BaseStep):
             console.print(f"  [cyan]Joining context from {node_name}...[/cyan]")
             join_result = await join_context_via_admin_api(
                 node_rpc_url,
-                context_id,
                 public_key,
                 invitation,
                 node_name=client_node_name,

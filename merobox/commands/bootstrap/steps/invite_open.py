@@ -1,97 +1,50 @@
 """
-Invite Open step executor - Create open invitations for context.
+Invite step executor - Create invitations for context.
+
+Unified step that handles both open invitations and identity-targeted invitations.
+Step types 'invite', 'invite_open', and 'invite_identity' all route here.
 """
 
 import json as json_lib
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
+from merobox.commands.identity import invite_identity_via_admin_api
 from merobox.commands.utils import console
 
 
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def create_open_invitation_via_admin_api(
-    rpc_url: str,
-    context_id: str,
-    granter_id: str,
-    valid_for_blocks: int = 1000,
-    node_name: str | None = None,
-) -> dict:
-    """Create an open invitation using calimero-client-py.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: The context ID to create invitation for.
-        granter_id: The granter ID.
-        valid_for_blocks: Number of blocks the invitation is valid for.
-        node_name: Optional stable node name for token caching (required for authenticated nodes).
-    """
-    try:
-        from merobox.commands.client import get_client_for_rpc_url
-        from merobox.commands.result import fail, ok
-
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-
-        result = client.invite_to_context_by_open_invitation(
-            context_id=context_id,
-            inviter_id=granter_id,
-            valid_for_blocks=valid_for_blocks,
-        )
-
-        return ok(
-            result,
-            endpoint=f"{rpc_url}/admin-api/dev/contexts/invite-open",
-            payload_format=0,
-        )
-    except Exception as e:
-        from merobox.commands.result import fail
-
-        return fail("create_open_invitation failed", error=e)
-
-
 class InviteOpenStep(BaseStep):
-    """Execute an invite open step."""
+    """Execute an invite step (unified: handles invite, invite_open, invite_identity)."""
 
     def _get_required_fields(self) -> list[str]:
-        """
-        Define which fields are required for this step.
-
-        Returns:
-            List of required field names
-        """
         return ["node", "context_id", "granter_id"]
 
     def _validate_field_types(self) -> None:
-        """
-        Validate that fields have the correct types.
-        """
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
 
-        # Validate node is a string
         if not isinstance(self.config.get("node"), str):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
-        # Validate context_id is a string
         if not isinstance(self.config.get("context_id"), str):
             raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
-        # Validate granter_id is a string
         if not isinstance(self.config.get("granter_id"), str):
             raise ValueError(f"Step '{step_name}': 'granter_id' must be a string")
-        # Validate valid_for_blocks is an integer if provided
-        if "valid_for_blocks" in self.config:
-            if not isinstance(self.config.get("valid_for_blocks"), int):
-                raise ValueError(
-                    f"Step '{step_name}': 'valid_for_blocks' must be an integer"
-                )
+        # Optional fields from legacy invite_identity step type
+        if "grantee_id" in self.config and not isinstance(
+            self.config.get("grantee_id"), str
+        ):
+            raise ValueError(f"Step '{step_name}': 'grantee_id' must be a string")
+        for key in ("valid_for_seconds", "valid_for_blocks"):
+            if key in self.config and not isinstance(self.config.get(key), int):
+                raise ValueError(f"Step '{step_name}': '{key}' must be an integer")
 
     def _get_exportable_variables(self):
         """
         Define which variables this step can export.
 
-        Available variables from invite_open API response:
-        - invitation: Signed open invitation data (JSON object)
+        Available variables from invite API response:
+        - invitation: Signed invitation data (JSON object)
         """
         return [
             (
@@ -111,12 +64,14 @@ class InviteOpenStep(BaseStep):
         granter_id = self._resolve_dynamic_value(
             self.config["granter_id"], workflow_results, dynamic_values
         )
-        valid_for_blocks = self.config.get("valid_for_blocks", 1000)
+        valid_for_seconds = self.config.get(
+            "valid_for_seconds", self.config.get("valid_for_blocks", 3600)
+        )
 
         # Validate export configuration
         if not self._validate_export_config():
             console.print(
-                "[yellow]⚠️  InviteOpen step export configuration validation failed[/yellow]"
+                "[yellow]⚠️  Invite step export configuration validation failed[/yellow]"
             )
 
         # Resolve node (gets URL and ensures authentication)
@@ -130,15 +85,15 @@ class InviteOpenStep(BaseStep):
         console.print(
             f"[blue]Creating open invitation for context {context_id} on {node_name}...[/blue]"
         )
-        result = await create_open_invitation_via_admin_api(
+        result = await invite_identity_via_admin_api(
             rpc_url,
             context_id,
             granter_id,
-            valid_for_blocks,
+            valid_for_seconds=valid_for_seconds,
             node_name=client_node_name,
         )
 
-        console.print(f"[cyan]🔍 Open Invitation API Response for {node_name}:[/cyan]")
+        console.print(f"[cyan]🔍 Invitation API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")
@@ -166,7 +121,7 @@ class InviteOpenStep(BaseStep):
                 return False
 
             # Store result for later use
-            step_key = f"invite_open_{node_name}_{context_id}"
+            step_key = f"invite_{node_name}_{context_id}"
             workflow_results[step_key] = result["data"]
 
             # Export variables as dict - the join_open step will serialize it to JSON
@@ -181,6 +136,6 @@ class InviteOpenStep(BaseStep):
             return True
         else:
             console.print(
-                f"[red]Open invitation creation failed: {result.get('error', 'Unknown error')}[/red]"
+                f"[red]Invitation creation failed: {result.get('error', 'Unknown error')}[/red]"
             )
             return False

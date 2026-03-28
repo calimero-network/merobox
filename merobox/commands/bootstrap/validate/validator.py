@@ -13,14 +13,10 @@ from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
 from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
 from merobox.commands.bootstrap.steps.group_join_context import JoinGroupContextStep
-from merobox.commands.bootstrap.steps.identity import (
-    CreateIdentityStep,
-    InviteIdentityStep,
-)
+from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
-from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
@@ -67,14 +63,6 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
             )
 
             if has_count:
-                # Count mode: require chain_id, image, prefix
-                required_count_fields = ["chain_id", "image", "prefix"]
-                for field in required_count_fields:
-                    if field not in nodes:
-                        errors.append(
-                            f"Missing required node field for 'count' mode: {field}"
-                        )
-
                 # Validate config_path and count compatibility
                 if "config_path" in nodes:
                     errors.append(
@@ -84,7 +72,7 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
             elif not has_individual_nodes:
                 # Neither count mode nor individual nodes defined
                 errors.append(
-                    "Nodes configuration must either use 'count' mode (with chain_id, image, prefix) "
+                    "Nodes configuration must either use 'count' mode (with prefix, image) "
                     "or define individual nodes."
                 )
 
@@ -140,14 +128,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = CreateIdentityStep
         elif step_type == "create_mesh":
             step_class = CreateMeshStep
-        elif step_type == "invite_identity":
-            step_class = InviteIdentityStep
-        elif step_type == "join_context":
-            step_class = JoinContextStep
-        elif step_type == "invite_open":
+        elif step_type in ("invite", "invite_identity", "invite_open"):
             step_class = InviteOpenStep
-        elif step_type == "join_open":
-            step_class = JoinOpenStep
+        elif step_type in ("join", "join_context", "join_open"):
+            step_class = JoinContextStep
         elif step_type == "call":
             step_class = ExecuteStep
         elif step_type == "wait":

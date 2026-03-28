@@ -6,9 +6,8 @@ force_pull_image: true
 # node synchronization by comparing root hashes instead of using fixed wait times.
 
 nodes:
-  chain_id: testnet-1
   count: 3
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:edge
   prefix: sync-node
 
 steps:
@@ -51,7 +50,7 @@ steps:
 
   # Step 6: Invite node 2 to join
   - name: Invite Node 2
-    type: invite_identity
+    type: invite
     node: sync-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node_2}}"
@@ -62,7 +61,7 @@ steps:
 
   # Step 7: Node 2 joins the context
   - name: Join Context from Node 2
-    type: join_context
+    type: join
     node: sync-node-2
     context_id: "{{context_id}}"
     invitee_id: "{{public_key_node_2}}"
@@ -70,7 +69,7 @@ steps:
 
   # Step 8: Invite node 3 to join
   - name: Invite Node 3
-    type: invite_identity
+    type: invite
     node: sync-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key_node_3}}"
@@ -81,7 +80,7 @@ steps:
 
   # Step 9: Node 3 joins the context
   - name: Join Context from Node 3
-    type: join_context
+    type: join
     node: sync-node-3
     context_id: "{{context_id}}"
     invitee_id: "{{public_key_node_3}}"

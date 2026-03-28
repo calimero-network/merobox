@@ -19,7 +19,6 @@ from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
-    apply_near_devnet_config_to_file,
 )
 from merobox.commands.constants import (
     CONTAINER_STOP_TIMEOUT,
@@ -297,7 +296,6 @@ class DockerManager(CleanupMixin):
         node_name: str,
         port: int = DEFAULT_P2P_PORT,
         rpc_port: int = DEFAULT_RPC_PORT,
-        chain_id: str = "testnet-1",
         data_dir: str = None,
         image: str = None,
         auth_service: bool = False,
@@ -309,7 +307,6 @@ class DockerManager(CleanupMixin):
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
         config_path: str = None,  # custom config.toml path
-        near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
         cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
@@ -480,13 +477,11 @@ class DockerManager(CleanupMixin):
                 "labels": {
                     "calimero.node": "true",
                     "node.name": node_name,
-                    "chain.id": chain_id,
                 },
             }
 
-            # Near Devnet and E2E mode support
-            if near_devnet_config or e2e_mode:
-                # Add host gateway so container can reach services on the host machine
+            # E2E mode support
+            if e2e_mode:
                 if "extra_hosts" not in container_config:
                     container_config["extra_hosts"] = {}
                 container_config["extra_hosts"]["host.docker.internal"] = "host-gateway"
@@ -649,34 +644,9 @@ class DockerManager(CleanupMixin):
             config_file = os.path.join(node_data_dir, "config.toml")
 
             try:
-                if near_devnet_config:
-                    # Docker might creates files as root; we need to own them to modify config.toml
-                    self._fix_permissions(node_data_dir)
-
-                    console.print(
-                        "[green]✓ Applying Near Devnet config for the node [/green]"
-                    )
-                    # Calculate the config path here, using the resolved data_dir/node_data_dir
-                    actual_config_file = Path(node_data_dir) / "config.toml"
-
-                    if not self._apply_near_devnet_config(
-                        actual_config_file,
-                        node_name,
-                        near_devnet_config["rpc_url"],
-                        near_devnet_config["contract_id"],
-                        near_devnet_config["account_id"],
-                        near_devnet_config["public_key"],
-                        near_devnet_config["secret_key"],
-                    ):
-                        console.print("[red]✗ Failed to apply NEAR Devnet config[/red]")
-                        return False
-
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
-                    # Docker might create files as root; we need to own them to modify config.toml
-                    # Only fix permissions if not already fixed (when near_devnet_config is provided)
-                    if not near_devnet_config:
-                        self._fix_permissions(node_data_dir)
+                    self._fix_permissions(node_data_dir)
                     apply_e2e_defaults(config_file, node_name, workflow_id)
 
                 # Apply bootstrap nodes configuration (works regardless of e2e_mode)
@@ -771,7 +741,6 @@ class DockerManager(CleanupMixin):
             )
             console.print(f"  - P2P Port: {port}")
             console.print(f"  - RPC/Admin Port: {rpc_port}")
-            console.print(f"  - Chain ID: {chain_id}")
             console.print(f"  - Data Directory: {data_dir}")
             host_rpc_port = self._extract_host_port(container, RPC_PORT_BINDING)
             if host_rpc_port is None and rpc_port is not None:
@@ -1154,7 +1123,6 @@ class DockerManager(CleanupMixin):
         count: int,
         base_port: int = None,
         base_rpc_port: int = None,
-        chain_id: str = "testnet-1",
         prefix: str = "calimero-node",
         image: str = None,
         auth_service: bool = False,
@@ -1165,7 +1133,6 @@ class DockerManager(CleanupMixin):
         rust_backtrace: str = "0",
         workflow_id: str = None,  # for test isolation
         e2e_mode: bool = False,  # enable e2e-style defaults
-        near_devnet_config: dict = None,
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
         cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
@@ -1196,17 +1163,10 @@ class DockerManager(CleanupMixin):
             port = p2p_ports[i]
             rpc_port = rpc_ports[i]
 
-            # Resolve specific config for this node if a map is provided
-            node_specific_near_config = None
-            if near_devnet_config:
-                if node_name in near_devnet_config:
-                    node_specific_near_config = near_devnet_config[node_name]
-
             if self.run_node(
                 node_name,
                 port,
                 rpc_port,
-                chain_id,
                 image=image,
                 auth_service=auth_service,
                 auth_image=auth_image,
@@ -1216,7 +1176,6 @@ class DockerManager(CleanupMixin):
                 rust_backtrace=rust_backtrace,
                 workflow_id=workflow_id,
                 e2e_mode=e2e_mode,
-                near_devnet_config=node_specific_near_config,
                 bootstrap_nodes=bootstrap_nodes,
                 use_image_entrypoint=use_image_entrypoint,
                 cors_allowed_origins=cors_allowed_origins,
@@ -1477,7 +1436,6 @@ class DockerManager(CleanupMixin):
                 table.add_column("Image", style="blue")
                 table.add_column("P2P Port", style="yellow")
                 table.add_column("RPC/Admin Port", style="yellow")
-                table.add_column("Chain ID", style="magenta")
                 table.add_column("Created", style="white")
 
                 for container in node_containers:
@@ -1506,9 +1464,6 @@ class DockerManager(CleanupMixin):
                         elif len(port_list) == 1:
                             p2p_port = str(port_list[0])
 
-                    # Extract chain ID from labels
-                    chain_id = container.labels.get("chain.id", "N/A")
-
                     table.add_row(
                         container.name,
                         container.status,
@@ -1519,7 +1474,6 @@ class DockerManager(CleanupMixin):
                         ),
                         p2p_port,
                         rpc_port,
-                        chain_id,
                         container.attrs["Created"][:19].replace("T", " "),
                     )
 
@@ -1639,28 +1593,6 @@ class DockerManager(CleanupMixin):
                 f"[red]Failed to verify admin binding for {node_name}: {str(e)}[/red]"
             )
             return False
-
-    def _apply_near_devnet_config(
-        self,
-        config_file: Path,
-        node_name: str,
-        rpc_url: str,
-        contract_id: str,
-        account_id: str,
-        pub_key: str,
-        secret_key: str,
-    ):
-        """Wrapper for shared config utility."""
-
-        return apply_near_devnet_config_to_file(
-            config_file,
-            node_name,
-            rpc_url,
-            contract_id,
-            account_id,
-            pub_key,
-            secret_key,
-        )
 
     def _fix_permissions(self, path: str):
         """Fix ownership and write permissions of files created by Docker."""

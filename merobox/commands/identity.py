@@ -10,7 +10,6 @@ from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
-    ADMIN_API_CONTEXTS_INVITE,
     ADMIN_API_IDENTITY_CONTEXT,
 )
 from merobox.commands.manager import DockerManager
@@ -95,64 +94,20 @@ async def invite_identity_via_admin_api(
     rpc_url: str,
     context_id: str,
     inviter_id: str,
-    invitee_id: str,
-    capability: str = None,
     node_name: str = None,
+    valid_for_seconds: int = 3600,
 ) -> dict:
-    """Invite identity using calimero-client-py.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: Context ID to invite to.
-        inviter_id: Public key of the inviter.
-        invitee_id: Public key of the invitee.
-        capability: Optional capability to grant.
-        node_name: Optional node name for token caching (required for authenticated nodes).
-    """
+    """Create an open invitation using calimero-client-py."""
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        # Some clients may not need inviter id; keeping parameter for compatibility
         result = client.invite_to_context(
-            context_id=context_id, inviter_id=inviter_id, invitee_id=invitee_id
-        )
-        return ok(
-            result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_INVITE}", payload_format=0
-        )
-    except Exception as e:
-        return fail("invite_to_context failed", error=e)
-
-
-@with_retry(config=NETWORK_RETRY_CONFIG)
-async def create_open_invitation_via_admin_api(
-    rpc_url: str,
-    context_id: str,
-    inviter_id: str,
-    valid_for_blocks: int = 1000,
-    node_name: str = None,
-) -> dict:
-    """Create an open invitation using calimero-client-py.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: Context ID to create invitation for.
-        inviter_id: Public key of the inviter.
-        valid_for_blocks: Number of blocks the invitation is valid for.
-        node_name: Optional node name for token caching (required for authenticated nodes).
-    """
-    try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.invite_to_context_by_open_invitation(
             context_id=context_id,
             inviter_id=inviter_id,
-            valid_for_blocks=valid_for_blocks,
+            valid_for_seconds=valid_for_seconds,
         )
-        return ok(
-            result,
-            endpoint=f"{rpc_url}/admin-api/dev/contexts/invite-open",
-            payload_format=0,
-        )
+        return ok(result)
     except Exception as e:
-        return fail("create_open_invitation failed", error=e)
+        return fail("invite_to_context failed", error=e)
 
 
 @click.group()
@@ -273,26 +228,14 @@ def generate(node, verbose=False):
 @click.option(
     "--inviter-id", required=True, help="Public key of the inviter (context member)"
 )
-@click.option(
-    "--invitee-id", required=True, help="Public key of the identity to invite"
-)
-@click.option(
-    "--capability",
-    default=None,
-    help="Capability (not used in invitation, kept for compatibility)",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
-    """Invite an identity to join a context."""
+def invite(node, context_id, inviter_id, verbose):
+    """Create an open invitation for a context."""
     manager = DockerManager()
 
-    # Check if node is running
-    # check_node_running(node, manager) # This function is removed from utils, so commenting out or removing
-
-    # Get admin API URL and run invitation
     admin_url = get_node_rpc_url(node, manager)
     console.print(
-        f"[blue]Inviting identity {invitee_id} to context {context_id} on node {node} via {admin_url}[/blue]"
+        f"[blue]Creating invitation for context {context_id} on node {node} via {admin_url}[/blue]"
     )
 
     result = run_async_function(
@@ -300,8 +243,6 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
         admin_url,
         context_id,
         inviter_id,
-        invitee_id,
-        capability,
     )
 
     # Show which endpoint was used if successful
@@ -318,7 +259,6 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
 
         table.add_row("Context ID", context_id)
         table.add_row("Inviter ID", inviter_id)
-        table.add_row("Invitee ID", invitee_id)
 
         console.print(table)
 
@@ -360,13 +300,13 @@ def invite(node, context_id, inviter_id, invitee_id, capability, verbose):
     "--inviter-id", required=True, help="Public key of the inviter (context member)"
 )
 @click.option(
-    "--valid-for-blocks",
-    default=1000,
-    help="Number of blocks the invitation is valid for (default: 1000)",
+    "--valid-for-seconds",
+    default=3600,
+    help="Number of seconds the invitation is valid for (default: 3600)",
     type=int,
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
+def invite_open(node, context_id, inviter_id, valid_for_seconds, verbose):
     """Create an open invitation that can be used by multiple identities."""
     manager = DockerManager()
 
@@ -375,14 +315,14 @@ def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
     console.print(
         f"[blue]Creating open invitation for context {context_id} on node {node}[/blue]"
     )
-    console.print(f"[blue]Valid for {valid_for_blocks} blocks[/blue]")
+    console.print(f"[blue]Valid for {valid_for_seconds}s[/blue]")
 
     result = run_async_function(
-        create_open_invitation_via_admin_api,
+        invite_identity_via_admin_api,
         admin_url,
         context_id,
         inviter_id,
-        valid_for_blocks,
+        valid_for_seconds=valid_for_seconds,
     )
 
     # Show which endpoint was used if successful
@@ -399,7 +339,7 @@ def invite_open(node, context_id, inviter_id, valid_for_blocks, verbose):
 
         table.add_row("Context ID", context_id)
         table.add_row("Inviter ID", inviter_id)
-        table.add_row("Valid for Blocks", str(valid_for_blocks))
+        table.add_row("Valid for (seconds)", str(valid_for_seconds))
 
         console.print(table)
 

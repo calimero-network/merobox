@@ -8,7 +8,6 @@ Calimero nodes, including cluster management and workflow execution.
 from __future__ import annotations
 
 import asyncio
-import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypedDict
@@ -51,25 +50,17 @@ def cluster(
     *,
     prefix: str = "test",
     image: str | None = None,
-    chain_id: str = "testnet-1",
     base_port: int | None = None,
     base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
-    near_devnet: bool = True,
-    contracts_dir: str | None = None,
 ) -> ClusterEnv:
     """Run a cluster of Calimero nodes as pretest setup and tear down automatically.
-
-    .. note:: **Breaking change**: ``near_devnet`` defaults to ``True`` (local sandbox).
-        If your tests relied on the previous default (relayer/testnet), pass
-        ``near_devnet=False`` explicitly.
 
     Args:
         count: Number of nodes to start.
         prefix: Node name prefix.
         image: Docker image to use for nodes.
-        chain_id: Blockchain chain ID.
         base_port: Optional base P2P port to start from (auto-detect if None).
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.
@@ -79,38 +70,26 @@ def cluster(
         ClusterEnv with node names, endpoints map, and manager.
     """
     manager = DockerManager()
-    sandbox = None
-    near_devnet_configs = None
 
     try:
-        if near_devnet:
-            sandbox, near_devnet_configs = _setup_near_devnet(
-                contracts_dir, count, prefix
-            )
-
-        # Use the efficient run_multiple_nodes method instead of manual loop
         success = manager.run_multiple_nodes(
             count=count,
             prefix=prefix,
             image=image,
-            chain_id=chain_id,
             base_port=base_port,
             base_rpc_port=base_rpc_port,
-            near_devnet_config=near_devnet_configs if near_devnet else None,
         )
 
         if not success:
             raise RuntimeError(f"Failed to start Merobox cluster with {count} nodes")
 
-        # Get the node names that were actually started
         node_names = [f"{prefix}-{i+1}" for i in range(count)]
 
-        # Wait for nodes to be ready if requested
         if wait_for_ready:
             console.print("[blue]Waiting for nodes to be ready...[/blue]")
             import time
 
-            time.sleep(5)  # Basic wait for services to start
+            time.sleep(5)
 
         endpoints: dict[str, Any] = {
             n: get_node_rpc_url(n, manager) for n in node_names
@@ -120,16 +99,12 @@ def cluster(
 
     finally:
         if stop_all:
-            # Stop all nodes that were created
             for i in range(count):
                 node_name = f"{prefix}-{i+1}"
                 try:
                     manager.stop_node(node_name)
                 except Exception:
                     pass
-        if sandbox:
-            # Stop Sandobox
-            sandbox.stop_process()
 
 
 @contextmanager
@@ -138,13 +113,10 @@ def workflow(
     *,
     prefix: str = "test-node",
     image: str | None = None,
-    chain_id: str = "testnet-1",
     base_port: int | None = None,
     base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
-    near_devnet: bool = True,
-    contracts_dir: str | None = None,
 ) -> WorkflowEnv:
     """Run a Merobox workflow as pretest setup and tear down automatically.
 
@@ -152,7 +124,6 @@ def workflow(
         workflow_path: Path to the workflow YAML file.
         prefix: Node name prefix for any nodes created by the workflow.
         image: Docker image to use for nodes.
-        chain_id: Blockchain chain ID.
         base_port: Optional base P2P port to start from (auto-detect if None).
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.
@@ -182,8 +153,6 @@ def workflow(
         executor = WorkflowExecutor(
             config,
             manager,
-            near_devnet=near_devnet,
-            contracts_dir=contracts_dir,
         )
         workflow_result = asyncio.run(executor.execute_workflow())
 
@@ -408,59 +377,3 @@ def using(*fixtures):
         return test_func
 
     return wrapper
-
-
-def _setup_near_devnet(
-    contracts_dir: str | None, count: int, prefix: str
-) -> tuple[Any, dict[str, Any]]:
-    """
-    Helper to spin up NEAR Sandbox, deploy contracts, and generate node accounts.
-    Returns the sandbox instance and the configuration dictionary.
-    If contracts_dir is None, contracts are downloaded automatically.
-    """
-    from merobox.commands.near.contracts import ensure_calimero_near_contracts
-    from merobox.commands.near.sandbox import SandboxManager
-
-    if not contracts_dir:
-        contracts_dir = ensure_calimero_near_contracts()
-
-    # Start Sandbox
-    sandbox = SandboxManager()
-    sandbox.start()
-
-    # Paths to contracts
-    ctx_path = os.path.join(contracts_dir, "calimero_context_config_near.wasm")
-    proxy_path = os.path.join(contracts_dir, "calimero_context_proxy_near.wasm")
-
-    configs = {}
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    try:
-        # Deploy Contracts
-        contract_id = loop.run_until_complete(
-            sandbox.setup_calimero(ctx_path, proxy_path)
-        )
-
-        # Get RPC URL
-        rpc_url = sandbox.get_rpc_url(for_docker=True)
-
-        # Generate configs for each node
-        for i in range(count):
-            node_name = f"{prefix}-{i+1}"
-            creds = loop.run_until_complete(sandbox.create_node_account(node_name))
-            configs[node_name] = {
-                "rpc_url": rpc_url,
-                "contract_id": contract_id,
-                **creds,
-            }
-    except Exception:
-        # Ensure sandbox is stopped if setup fails
-        sandbox.stop_process()
-        loop.close()
-        raise
-    finally:
-        if not loop.is_closed():
-            loop.close()
-
-    return sandbox, configs

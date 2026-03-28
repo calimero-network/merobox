@@ -8,11 +8,9 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
-from merobox.commands.bootstrap.steps.identity import (
-    CreateIdentityStep,
-    InviteIdentityStep,
-)
+from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
+from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import JoinContextStep
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
@@ -363,18 +361,10 @@ class RepeatStep(BaseStep):
             return CreateContextStep(step_config, **common_kwargs)
         elif step_type == "create_identity":
             return CreateIdentityStep(step_config, **common_kwargs)
-        elif step_type == "invite_identity":
-            return InviteIdentityStep(step_config, **common_kwargs)
-        elif step_type == "join_context":
-            return JoinContextStep(step_config, **common_kwargs)
-        elif step_type == "invite_open":
-            from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
-
+        elif step_type in ("invite", "invite_identity", "invite_open"):
             return InviteOpenStep(step_config, **common_kwargs)
-        elif step_type == "join_open":
-            from merobox.commands.bootstrap.steps.join_open import JoinOpenStep
-
-            return JoinOpenStep(step_config, **common_kwargs)
+        elif step_type in ("join", "join_context", "join_open"):
+            return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":

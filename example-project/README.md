@@ -138,7 +138,6 @@ def merobox_cluster(shared_cluster):
 - **`scope`**: Pytest fixture scope (`function`, `class`, `module`, `session`)
 - **`workflow_path`**: Path to workflow YAML file
 - **`image`**: Custom Docker image
-- **`chain_id`**: Chain ID
 
 ## 💡 Usage Examples
 

@@ -22,7 +22,6 @@ console = Console()
 @click.option(
     "--base-rpc-port", "-r", help="Base RPC port (auto-detect if not specified)"
 )
-@click.option("--chain-id", default="testnet-1", help="Chain ID (default: testnet-1)")
 @click.option(
     "--prefix",
     default="calimero-node",
@@ -93,7 +92,6 @@ def run(
     count,
     base_port,
     base_rpc_port,
-    chain_id,
     prefix,
     data_dir,
     image,
@@ -160,7 +158,6 @@ def run(
             "node_name": node_name,
             "port": base_port,
             "rpc_port": base_rpc_port,
-            "chain_id": chain_id,
             "data_dir": data_dir,
             "image": (image if not no_docker else None),
             "auth_service": auth_service,
@@ -190,7 +187,6 @@ def run(
             "count": count,
             "base_port": base_port,
             "base_rpc_port": base_rpc_port,
-            "chain_id": chain_id,
             "prefix": prefix,
             "image": image if not no_docker else None,
             "auth_service": auth_service,

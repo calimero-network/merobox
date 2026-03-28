@@ -271,7 +271,6 @@ class TestValidateWorkflowConfig:
             "nodes": {
                 "count": 3,
                 "prefix": "test-node",
-                "chain_id": "testnet-1",
                 "image": "ghcr.io/test/image:latest",
             },
             "steps": [

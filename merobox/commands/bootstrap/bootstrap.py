@@ -191,25 +191,6 @@ def bootstrap():
     help="Enable e2e test mode with aggressive sync settings and test isolation (disables bootstrap nodes, uses unique rendezvous namespaces)",
 )
 @click.option(
-    "--enable-relayer",
-    "enable_relayer",
-    flag_value=True,
-    default=None,
-    help="Use the relayer/testnet for NEAR. If omitted, workflow YAML near_devnet is used (default: local sandbox).",
-)
-@click.option(
-    "--no-enable-relayer",
-    "enable_relayer",
-    flag_value=False,
-    help="Use local NEAR sandbox (explicit). Overrides workflow YAML near_devnet.",
-)
-@click.option(
-    "--contracts-dir",
-    type=click.Path(exists=True),
-    default=None,
-    help="Directory containing calimero_context_config_near.wasm and calimero_context_proxy_near.wasm. If omitted, contracts are downloaded automatically (unless --enable-relayer).",
-)
-@click.option(
     "--remote-node",
     multiple=True,
     metavar="NAME=URL",
@@ -257,8 +238,6 @@ def run(
     no_docker,
     binary_path,
     e2e_mode,
-    enable_relayer,
-    contracts_dir,
     remote_node,
     remote_auth,
     api_key,
@@ -318,8 +297,6 @@ def run(
         no_docker=no_docker,
         binary_path=binary_path,
         e2e_mode=e2e_mode,
-        enable_relayer=enable_relayer,
-        contracts_dir=contracts_dir,
         cli_remote_nodes=cli_remote_nodes,
         auth_mode=auth_mode,
         auth_username=auth_username,
@@ -363,10 +340,8 @@ def validate(config_file, verbose):
                 nodes_config = config.get("nodes", {})
                 if isinstance(nodes_config, dict):
                     console.print(f"  Nodes: {nodes_config.get('count', 'N/A')}")
-                    console.print(f"  Chain ID: {nodes_config.get('chain_id', 'N/A')}")
                 else:
                     console.print("  Nodes: N/A")
-                    console.print("  Chain ID: N/A")
         else:
             console.print(
                 "\n[bold red]❌ Workflow configuration validation failed![/bold red]"

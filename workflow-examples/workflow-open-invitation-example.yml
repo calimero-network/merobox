@@ -3,14 +3,12 @@ name: Open Invitation Workflow
 
 # Force pull Docker images even if they exist locally
 force_pull_image: true
-# Local NEAR sandbox is the default; no --contracts-dir needed (auto-download).
 # Run: merobox bootstrap run workflow-examples/workflow-open-invitation-example.yml --e2e-mode
 
 # Testing image merod:3e23d21
 nodes:
-  chain_id: testnet-1
   count: 2
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:edge
   prefix: open-inv-node
 
 steps:
@@ -76,17 +74,17 @@ steps:
 
   # Create open invitation
   - name: Create Open Invitation
-    type: invite_open
+    type: invite
     node: open-inv-node-1
     context_id: "{{context_id}}"
     granter_id: "{{member_public_key}}"
-    valid_for_blocks: 1000
+    valid_for_seconds: 1000
     outputs:
       open_invitation: invitation
 
   # Join using open invitation
   - name: Join via Open Invitation - Node 2
-    type: join_open
+    type: join
     node: open-inv-node-2
     invitee_id: "{{public_key_2}}"
     invitation: "{{open_invitation}}"

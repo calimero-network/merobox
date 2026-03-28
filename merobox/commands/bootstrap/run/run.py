@@ -85,8 +85,6 @@ async def run_workflow(
     no_docker: bool = False,
     binary_path: Optional[str] = None,
     e2e_mode: bool = False,
-    enable_relayer: Optional[bool] = None,
-    contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
     auth_mode: Optional[str] = None,
     auth_username: Optional[str] = None,
@@ -184,9 +182,6 @@ async def run_workflow(
         except Exception:
             pass
 
-        # enable_relayer=True => use testnet/relayer (near_devnet=False); enable_relayer=False => sandbox (near_devnet=True); None => defer to YAML.
-        near_devnet = None if enable_relayer is None else (not enable_relayer)
-
         executor = WorkflowExecutor(
             config,
             manager,
@@ -199,8 +194,6 @@ async def run_workflow(
             rust_backtrace,
             e2e_mode,
             workflow_dir=workflow_dir,
-            near_devnet=near_devnet,
-            contracts_dir=contracts_dir,
             auth_mode=effective_auth_mode,
             auth_username=auth_username,
             auth_password=auth_password,
@@ -219,14 +212,16 @@ async def run_workflow(
                 if verbose and executor.workflow_results:
                     console.print("\n[bold]Workflow Results:[/bold]")
                     for key, value in executor.workflow_results.items():
-                        console.print(f"  {key}: {value}")
+                        console.print(f"  {key}: {value}", markup=False)
             else:
                 console.print("\n[bold red]❌ Workflow failed![/bold red]")
 
         return success
 
     except Exception as e:
-        console.print(f"[red]Failed to execute workflow: {str(e)}[/red]")
+        from rich.markup import escape
+
+        console.print(f"[red]Failed to execute workflow: {escape(str(e))}[/red]")
         return False
 
 
@@ -243,8 +238,6 @@ def run_workflow_sync(
     no_docker: bool = False,
     binary_path: Optional[str] = None,
     e2e_mode: bool = False,
-    enable_relayer: Optional[bool] = None,
-    contracts_dir: Optional[str] = None,
     cli_remote_nodes: Optional[dict[str, dict[str, Any]]] = None,
     auth_mode: Optional[str] = None,
     auth_username: Optional[str] = None,
@@ -281,8 +274,6 @@ def run_workflow_sync(
             no_docker=no_docker,
             binary_path=binary_path,
             e2e_mode=e2e_mode,
-            enable_relayer=enable_relayer,
-            contracts_dir=contracts_dir,
             cli_remote_nodes=cli_remote_nodes,
             auth_mode=auth_mode,
             auth_username=auth_username,

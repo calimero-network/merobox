@@ -1,5 +1,8 @@
 """
 Join context step executor.
+
+Unified step that handles both identity-targeted joins and open invitation joins.
+Step types 'join', 'join_context', and 'join_open' all route here.
 """
 
 from typing import Any
@@ -10,38 +13,25 @@ from merobox.commands.utils import console
 
 
 class JoinContextStep(BaseStep):
-    """Execute a join context step."""
+    """Execute a join step (unified: handles join, join_context, join_open)."""
 
     def _get_required_fields(self) -> list[str]:
-        """
-        Define which fields are required for this step.
-
-        Returns:
-            List of required field names
-        """
-        return ["node", "context_id", "invitee_id", "invitation"]
+        return ["node", "invitee_id", "invitation"]
 
     def _validate_field_types(self) -> None:
-        """
-        Validate that fields have the correct types.
-        """
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
 
-        # Validate node is a string
         if not isinstance(self.config.get("node"), str):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
-
-        # Validate context_id is a string
-        if not isinstance(self.config.get("context_id"), str):
+        # context_id is optional (open invitations carry it internally)
+        if "context_id" in self.config and not isinstance(
+            self.config.get("context_id"), str
+        ):
             raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
-
-        # Validate invitee_id is a string
         if not isinstance(self.config.get("invitee_id"), str):
             raise ValueError(f"Step '{step_name}': 'invitee_id' must be a string")
-
-        # Validate invitation is a string
         if not isinstance(self.config.get("invitation"), str):
             raise ValueError(f"Step '{step_name}': 'invitation' must be a string")
 
@@ -70,9 +60,11 @@ class JoinContextStep(BaseStep):
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
-        context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
-        )
+        context_id = None
+        if "context_id" in self.config:
+            context_id = self._resolve_dynamic_value(
+                self.config["context_id"], workflow_results, dynamic_values
+            )
         invitee_id = self._resolve_dynamic_value(
             self.config["invitee_id"], workflow_results, dynamic_values
         )
@@ -107,7 +99,7 @@ class JoinContextStep(BaseStep):
         # Execute join
         console.print("[blue]About to call join function...[/blue]")
         result = await join_context_via_admin_api(
-            rpc_url, context_id, invitee_id, invitation, node_name=client_node_name
+            rpc_url, invitee_id, invitation, node_name=client_node_name
         )
         console.print(f"[blue]Join function returned: {result}[/blue]")
 

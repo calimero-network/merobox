@@ -2,7 +2,6 @@
 Commands module - All available CLI commands.
 """
 
-from merobox.commands import near
 from merobox.commands.application import application
 from merobox.commands.blob import blob
 from merobox.commands.bootstrap import bootstrap
@@ -54,7 +53,6 @@ __all__ = [
     "join",
     "proposals",
     "remote",
-    "near",
     # Error classes
     "MeroboxError",
     "NodeResolutionError",

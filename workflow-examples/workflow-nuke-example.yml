@@ -8,9 +8,8 @@ nuke_on_start: true
 nuke_on_end: true
 
 nodes:
-  chain_id: testnet-1
   count: 2
-  image: ghcr.io/calimero-network/merod:prerelease
+  image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
 
 steps:
@@ -46,7 +45,7 @@ steps:
 
   # Invite second node
   - name: Invite Node 2 from Node 1
-    type: invite_identity
+    type: invite
     node: calimero-node-1
     context_id: "{{context_id}}"
     grantee_id: "{{public_key}}"
@@ -57,7 +56,7 @@ steps:
 
   # Join context
   - name: Join Context from Node 2
-    type: join_context
+    type: join
     node: calimero-node-2
     context_id: "{{context_id}}"
     invitee_id: "{{public_key}}"

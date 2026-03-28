@@ -338,7 +338,6 @@ class TestDryRunConfigValidation:
             "nodes": {
                 "count": 2,
                 "prefix": "calimero-node",
-                "chain_id": "testnet-1",
                 "image": "test:latest",
             },
             "steps": [

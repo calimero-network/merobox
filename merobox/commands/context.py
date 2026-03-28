@@ -10,19 +10,16 @@ from rich import box
 from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import DEFAULT_PROTOCOL, PROTOCOL_NEAR
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console, get_node_rpc_url, run_async_function
-from merobox.commands.validation_utils import validate_near_only_protocol
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def create_context_via_admin_api(
     rpc_url: str,
     application_id: str,
-    protocol: str = None,
     params: str = None,
     node_name: str = None,
 ) -> dict:
@@ -31,16 +28,12 @@ async def create_context_via_admin_api(
     Args:
         rpc_url: The RPC URL to connect to.
         application_id: Application ID to create context for.
-        protocol: Optional protocol type.
         params: Optional initialization parameters as JSON string.
         node_name: Optional node name for token caching (required for authenticated nodes).
     """
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        protocol = validate_near_only_protocol(protocol or DEFAULT_PROTOCOL)
-        api_result = client.create_context(
-            application_id=application_id, protocol=protocol, params=params
-        )
+        api_result = client.create_context(application_id=application_id, params=params)
         return ok(api_result)
     except Exception as e:
         return fail("create_context failed", error=e)
@@ -110,7 +103,7 @@ def create_context_table(contexts_data: list) -> Table:
 
 @click.group()
 def context():
-    """Manage blockchain contexts."""
+    """Manage contexts."""
     pass
 
 
@@ -123,30 +116,13 @@ def context():
     help="Application ID to create context for",
 )
 @click.option(
-    "--protocol",
-    "-p",
-    default=None,
-    help=(
-        f"Protocol type (optional, only '{PROTOCOL_NEAR}' is supported; "
-        f"defaults to '{DEFAULT_PROTOCOL}')"
-    ),
-)
-@click.option(
     "--params",
     help="Initialization parameters as JSON string (optional)",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def create(node, application_id, protocol, params, verbose):
+def create(node, application_id, params, verbose):
     """Create a new context for an application."""
     manager = DockerManager()
-    try:
-        protocol = validate_near_only_protocol(protocol or DEFAULT_PROTOCOL)
-    except ValueError as e:
-        console.print(
-            f"[red]✗ {e} "
-            "Use NEAR defaults; workflow runs use a local sandbox by default, or use '--enable-relayer' for testnet.[/red]"
-        )
-        sys.exit(1)
 
     # Validate params if provided
     params_json = None
@@ -166,7 +142,7 @@ def create(node, application_id, protocol, params, verbose):
     )
 
     result = run_async_function(
-        create_context_via_admin_api, rpc_url, application_id, protocol, params_json
+        create_context_via_admin_api, rpc_url, application_id, params_json
     )
 
     if result["success"]:

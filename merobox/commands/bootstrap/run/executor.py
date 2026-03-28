@@ -26,12 +26,10 @@ from merobox.commands.bootstrap.steps import (
     CreateIdentityStep,
     ExecuteStep,
     InstallApplicationStep,
-    InviteIdentityStep,
     InviteOpenStep,
     JoinContextStep,
     JoinGroupContextStep,
     JoinGroupStep,
-    JoinOpenStep,
     ParallelStep,
     RepeatStep,
     ScriptStep,
@@ -57,12 +55,6 @@ from merobox.commands.constants import (
 )
 from merobox.commands.health import check_node_health
 from merobox.commands.manager import DockerManager
-from merobox.commands.near.contracts import (
-    CONFIG_WASM,
-    PROXY_WASM,
-    ensure_calimero_near_contracts,
-)
-from merobox.commands.near.sandbox import SandboxManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import console, get_node_rpc_url
 
@@ -86,8 +78,6 @@ class WorkflowExecutor:
         rust_backtrace: str = "0",
         e2e_mode: bool = False,
         workflow_dir: str = None,
-        near_devnet: Optional[bool] = None,
-        contracts_dir: str = None,
         auth_mode: Optional[str] = None,
         auth_username: Optional[str] = None,
         auth_password: Optional[str] = None,
@@ -96,8 +86,6 @@ class WorkflowExecutor:
         self.config = config
         self.manager = manager
         self.workflow_dir = workflow_dir or "."
-        self.sandbox = None
-        self.near_config = {}
         self.dry_run = dry_run
 
         # Embedded auth credentials
@@ -141,17 +129,6 @@ class WorkflowExecutor:
 
         # Generate unique workflow ID for test isolation (like e2e tests)
         self.workflow_id = str(uuid.uuid4())[:8]
-
-        # CLI explicit value takes precedence; None means defer to config (default True).
-        self.near_devnet = (
-            config.get("near_devnet", True) if near_devnet is None else near_devnet
-        )
-        if near_devnet is None and self.log_level == "debug":
-            mode = "local sandbox" if self.near_devnet else "relayer/testnet"
-            console.print(
-                f"[dim]Using near_devnet={self.near_devnet} from config ({mode}); use --enable-relayer for testnet or --no-enable-relayer to force sandbox.[/dim]"
-            )
-        self.contracts_dir = contracts_dir or config.get("contracts_dir", None)
 
         # Auth mode for binary mode (can be set by CLI or workflow config, CLI takes precedence)
         self.auth_mode = auth_mode or config.get("auth_mode", None)
@@ -237,43 +214,6 @@ class WorkflowExecutor:
                     )
                     await self._force_pull_workflow_images()
                     console.print("[green]✓ Image force pull completed[/green]")
-
-            # Start NEAR Devnet if requested
-            if self.near_devnet:
-                console.print(
-                    "\n[bold yellow]Step 0: Initializing NEAR Sandbox...[/bold yellow]"
-                )
-                self.sandbox = SandboxManager()
-                try:
-                    self.sandbox.start()
-
-                    self.contracts_dir, ctx_path, proxy_path = (
-                        self._resolve_contracts_dir()
-                    )
-
-                    console.print(
-                        f"[cyan]Context Config contract path: {ctx_path}[/cyan]"
-                    )
-                    console.print(
-                        f"[cyan]Context Proxy contract path: {proxy_path}[/cyan]"
-                    )
-
-                    contract_id = await self.sandbox.setup_calimero(
-                        ctx_path, proxy_path
-                    )
-
-                    # Determine RPC URL accessible from Docker containers
-                    # Not applicable in binary mode, but kept generic
-                    rpc_url = self.sandbox.get_rpc_url(
-                        for_docker=(not self.is_binary_mode)
-                    )
-
-                    self.near_config = {"contract_id": contract_id, "rpc_url": rpc_url}
-                except Exception as e:
-                    console.print(f"[red]Sandbox setup failed: {e}[/red]")
-                    if self.sandbox:
-                        await self.sandbox.stop()
-                    return False
 
             # Check if we should restart nodes at the beginning
             restart_nodes = self.config.get("restart", False)
@@ -408,9 +348,6 @@ class WorkflowExecutor:
             if stop_all_nodes:
                 self._stop_nodes_on_failure()
             return False
-        finally:
-            if self.sandbox:
-                await self.sandbox.stop()
 
     async def _execute_dry_run(self, workflow_name: str) -> bool:
         """
@@ -677,29 +614,6 @@ class WorkflowExecutor:
         else:
             console.print("[green]✓ All nodes stopped[/green]")
 
-    def _resolve_contracts_dir(self):
-        """
-        Resolve the contracts directory and WASM paths for NEAR sandbox.
-        Uses self.contracts_dir if set and valid; otherwise auto-downloads via ensure_calimero_near_contracts().
-        Updates self.contracts_dir when resolving via download. Returns (contracts_dir, ctx_path, proxy_path).
-        """
-        if self.contracts_dir:
-            ctx_path = os.path.join(self.contracts_dir, CONFIG_WASM)
-            proxy_path = os.path.join(self.contracts_dir, PROXY_WASM)
-            if os.path.exists(ctx_path) and os.path.exists(proxy_path):
-                return self.contracts_dir, ctx_path, proxy_path
-            raise RuntimeError(
-                f"Contracts directory {self.contracts_dir!r} does not contain "
-                f"{CONFIG_WASM} and {PROXY_WASM}. Fix the path or omit --contracts-dir to auto-download."
-            )
-        contracts_dir = ensure_calimero_near_contracts()
-        self.contracts_dir = contracts_dir
-        ctx_path = os.path.join(contracts_dir, CONFIG_WASM)
-        proxy_path = os.path.join(contracts_dir, PROXY_WASM)
-        if not os.path.exists(ctx_path) or not os.path.exists(proxy_path):
-            raise RuntimeError(f"Contracts not found at {ctx_path!r} or {proxy_path!r}")
-        return contracts_dir, ctx_path, proxy_path
-
     def _nuke_data(self, prefix: str = None) -> bool:
         """
         Execute nuke operation to clean all data.
@@ -830,18 +744,10 @@ class WorkflowExecutor:
         base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
         base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
 
-        chain_id = nodes_config.get("chain_id", "testnet-1")
         image = self.image if self.image is not None else nodes_config.get("image")
         prefix = nodes_config.get("prefix", "calimero-node")
         config_path = self._resolve_config_path(nodes_config.get("config_path"))
         use_image_entrypoint = nodes_config.get("use_image_entrypoint", False)
-
-        # Ensure nodes are restarted when Near Devnet is requested so wiring is fresh
-        if self.near_devnet and not restart:
-            console.print(
-                "[yellow]NEAR Devnet requested; forcing restart to wire nodes to the relayer[/yellow]"
-            )
-            restart = True
 
         # If workflow declares a count, delegate to manager to handle bulk creation
         if "count" in nodes_config:
@@ -861,28 +767,11 @@ class WorkflowExecutor:
                     f"Starting {count} nodes with prefix '{prefix}' (restart mode)..."
                 )
 
-                # NEAR Devnet Config Logic
-                node_near_config = {}
-                if self.near_devnet:
-                    console.print("[green]✓ Using Near Devnet config [/green]")
-                    for i in range(count):
-                        node_name = f"{prefix}-{i+1}"
-                        console.print(
-                            f"[green]✓ Creating account '{node_name}' using Near Devnet config [/green]"
-                        )
-                        creds = await self.sandbox.create_node_account(node_name)
-                        node_near_config[node_name] = {
-                            "rpc_url": self.near_config["rpc_url"],
-                            "contract_id": self.near_config["contract_id"],
-                            **creds,
-                        }
-
                 # Build arguments for run_multiple_nodes
                 run_multiple_kwargs = {
                     "count": count,
                     "base_port": base_port,
                     "base_rpc_port": base_rpc_port,
-                    "chain_id": chain_id,
                     "prefix": prefix,
                     "image": image,
                     "auth_service": self.auth_service,
@@ -893,7 +782,6 @@ class WorkflowExecutor:
                     "rust_backtrace": self.rust_backtrace,
                     "workflow_id": self.workflow_id,
                     "e2e_mode": self.e2e_mode,
-                    "near_devnet_config": node_near_config,
                     "bootstrap_nodes": self.bootstrap_nodes,
                 }
                 if self.is_binary_mode:
@@ -918,16 +806,6 @@ class WorkflowExecutor:
                         )
                         continue
 
-                    # NEAR Devnet Config Logic
-                    node_near_config = None
-                    if self.near_devnet:
-                        creds = await self.sandbox.create_node_account(node_name)
-                        node_near_config = {
-                            "rpc_url": self.near_config["rpc_url"],
-                            "contract_id": self.near_config["contract_id"],
-                            **creds,
-                        }
-
                     # Not running -> start (allow manager to allocate ports if base_* is None)
                     port = base_port + i if base_port is not None else None
                     rpc_port = base_rpc_port + i if base_rpc_port is not None else None
@@ -936,7 +814,6 @@ class WorkflowExecutor:
                         "node_name": node_name,
                         "port": port,
                         "rpc_port": rpc_port,
-                        "chain_id": chain_id,
                         "data_dir": None,
                         "image": image,
                         "auth_service": self.auth_service,
@@ -947,7 +824,6 @@ class WorkflowExecutor:
                         "rust_backtrace": self.rust_backtrace,
                         "workflow_id": self.workflow_id,
                         "e2e_mode": self.e2e_mode,
-                        "near_devnet_config": node_near_config,
                         "bootstrap_nodes": self.bootstrap_nodes,
                     }
                     if self.is_binary_mode:
@@ -979,7 +855,6 @@ class WorkflowExecutor:
             if isinstance(node_cfg, dict):
                 port = node_cfg.get("port", base_port)
                 rpc_port = node_cfg.get("rpc_port", base_rpc_port)
-                node_chain_id = node_cfg.get("chain_id", chain_id)
                 node_image = (
                     self.image
                     if self.image is not None
@@ -995,7 +870,6 @@ class WorkflowExecutor:
             else:
                 port = base_port
                 rpc_port = base_rpc_port
-                node_chain_id = chain_id
                 node_image = image
                 data_dir = None
                 node_config_path = config_path
@@ -1003,17 +877,6 @@ class WorkflowExecutor:
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
-
-            node_near_config = None
-            if self.near_devnet:
-                # Create unique account for this node
-                creds = await self.sandbox.create_node_account(node_name)
-
-                node_near_config = {
-                    "rpc_url": self.near_config["rpc_url"],
-                    "contract_id": self.near_config["contract_id"],
-                    **creds,
-                }
 
             if is_running:
                 if restart:
@@ -1040,7 +903,6 @@ class WorkflowExecutor:
                         "node_name": node_name,
                         "port": port,
                         "rpc_port": rpc_port,
-                        "chain_id": node_chain_id,
                         "data_dir": data_dir,
                         "image": node_image,
                         "auth_service": self.auth_service,
@@ -1052,7 +914,6 @@ class WorkflowExecutor:
                         "workflow_id": self.workflow_id,
                         "e2e_mode": self.e2e_mode,
                         "config_path": node_config_path,
-                        "near_devnet_config": node_near_config,
                         "bootstrap_nodes": self.bootstrap_nodes,
                     }
                     if self.is_binary_mode:
@@ -1077,7 +938,6 @@ class WorkflowExecutor:
                     "node_name": node_name,
                     "port": port,
                     "rpc_port": rpc_port,
-                    "chain_id": node_chain_id,
                     "data_dir": data_dir,
                     "image": node_image,
                     "auth_service": self.auth_service,
@@ -1089,7 +949,6 @@ class WorkflowExecutor:
                     "workflow_id": self.workflow_id,
                     "e2e_mode": self.e2e_mode,
                     "config_path": node_config_path,
-                    "near_devnet_config": node_near_config,
                     "bootstrap_nodes": self.bootstrap_nodes,
                 }
                 if self.is_binary_mode:
@@ -1498,14 +1357,10 @@ class WorkflowExecutor:
             return CreateContextStep(step_config, **common_kwargs)
         elif step_type == "create_identity":
             return CreateIdentityStep(step_config, **common_kwargs)
-        elif step_type == "invite_identity":
-            return InviteIdentityStep(step_config, **common_kwargs)
-        elif step_type == "join_context":
-            return JoinContextStep(step_config, **common_kwargs)
-        elif step_type == "invite_open":
+        elif step_type in ("invite", "invite_open", "invite_identity"):
             return InviteOpenStep(step_config, **common_kwargs)
-        elif step_type == "join_open":
-            return JoinOpenStep(step_config, **common_kwargs)
+        elif step_type in ("join", "join_context", "join_open"):
+            return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":

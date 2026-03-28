@@ -9,7 +9,6 @@ from rich import box
 from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import ADMIN_API_CONTEXTS_JOIN
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
@@ -19,31 +18,26 @@ from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def join_context_via_admin_api(
     rpc_url: str,
-    context_id: str,
     invitee_id: str,
-    invitation_data: str,
+    invitation_data,
     node_name: str = None,
 ) -> dict:
-    """Join a context using calimero-client-py.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        context_id: Context ID to join.
-        invitee_id: Public key of the invitee.
-        invitation_data: Invitation payload/token.
-        node_name: Optional node name for token caching (required for authenticated nodes).
-    """
+    """Join a context using calimero-client-py."""
     try:
+        import json as json_lib
+
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
+        if isinstance(invitation_data, dict):
+            invitation_json = json_lib.dumps(invitation_data)
+        else:
+            invitation_json = str(invitation_data)
+
         result = client.join_context(
-            context_id=context_id,
-            invitee_id=invitee_id,
-            invitation_payload=invitation_data,
+            invitation_json,
+            invitee_id,
         )
-        return ok(
-            result, endpoint=f"{rpc_url}{ADMIN_API_CONTEXTS_JOIN}", payload_format=0
-        )
+        return ok(result)
     except Exception as e:
         return fail("join_context failed", error=e)
 
@@ -51,34 +45,24 @@ async def join_context_via_admin_api(
 @with_retry(config=NETWORK_RETRY_CONFIG)
 async def join_context_via_open_invitation(
     rpc_url: str,
-    invitation_json: str,
+    invitation_json,
     new_member_public_key: str,
     node_name: str = None,
 ) -> dict:
-    """Join a context using an open invitation via calimero-client-py.
-
-    Args:
-        rpc_url: The RPC URL to connect to.
-        invitation_json: The SignedOpenInvitation as JSON string.
-        new_member_public_key: The public key as string.
-        node_name: Optional node name for token caching (required for authenticated nodes).
-    """
+    """Join a context using an open invitation."""
     try:
+        import json as json_lib
+
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
-        # The client expects two separate parameters:
-        # 1. invitation_json: The SignedOpenInvitation as JSON string
-        # 2. new_member_public_key: The public key as string
-        # invitation_json is already a JSON string, so we can pass it directly
+        if isinstance(invitation_json, dict):
+            invitation_json = json_lib.dumps(invitation_json)
 
-        result = client.join_context_by_open_invitation(
-            invitation_json=invitation_json, new_member_public_key=new_member_public_key
+        result = client.join_context(
+            invitation_json,
+            new_member_public_key,
         )
-        return ok(
-            result,
-            endpoint=f"{rpc_url}/admin-api/dev/contexts/join-open",
-            payload_format=0,
-        )
+        return ok(result)
     except Exception as e:
         return fail("join_context_via_open_invitation failed", error=e)
 

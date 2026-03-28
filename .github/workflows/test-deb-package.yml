@@ -88,13 +88,11 @@ jobs:
       - name: Test merobox bootstrap run workflow
         run: |
           echo "=== Testing merobox bootstrap run workflow-example.yml ==="
-          # Use --no-enable-relayer so nodes use local sandbox only (no relayer); more reliable sync in CI
           for attempt in 1 2; do
             echo "Attempt $attempt/2..."
             if merobox bootstrap run workflow-examples/workflow-example.yml \
               --no-docker \
-              --e2e-mode \
-              --no-enable-relayer; then
+              --e2e-mode; then
               echo "Workflow completed successfully"
               exit 0
             fi
