@@ -14,6 +14,9 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
+from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
+from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
+from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
@@ -669,6 +672,12 @@ class ParallelStep(BaseStep):
             return JoinInvitationStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
+        elif step_type == "create_group":
+            return CreateGroupStep(step_config, **common_kwargs)
+        elif step_type == "create_group_invitation":
+            return CreateGroupInvitationStep(step_config, **common_kwargs)
+        elif step_type == "join_group":
+            return JoinGroupStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":

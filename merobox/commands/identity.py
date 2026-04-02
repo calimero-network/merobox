@@ -90,24 +90,24 @@ async def generate_identity_via_admin_api(rpc_url: str, node_name: str = None) -
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
-async def invite_identity_via_admin_api(
+async def create_group_invitation_via_admin_api(
     rpc_url: str,
-    context_id: str,
-    inviter_id: str,
+    group_id: str,
     node_name: str = None,
-    valid_for_seconds: int = 3600,
 ) -> dict:
-    """Create an open invitation using calimero-client-py."""
+    """Create a group invitation using calimero-client-py.
+
+    Args:
+        rpc_url: The RPC URL to connect to.
+        group_id: The group ID to create an invitation for.
+        node_name: Optional node name for token caching (required for authenticated nodes).
+    """
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.invite_to_context(
-            context_id=context_id,
-            inviter_id=inviter_id,
-            valid_for_seconds=valid_for_seconds,
-        )
+        result = client.create_group_invitation(group_id=group_id)
         return ok(result)
     except Exception as e:
-        return fail("invite_to_context failed", error=e)
+        return fail("create_group_invitation failed", error=e)
 
 
 @click.group()
@@ -222,128 +222,37 @@ def generate(node, verbose=False):
         sys.exit(1)
 
 
-@identity.command()
-@click.option("--node", "-n", required=True, help="Node name to invite identity on")
-@click.option("--context-id", required=True, help="Context ID to invite identity to")
-@click.option(
-    "--inviter-id", required=True, help="Public key of the inviter (context member)"
-)
-@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def invite(node, context_id, inviter_id, verbose):
-    """Create an open invitation for a context."""
-    manager = DockerManager()
-
-    admin_url = get_node_rpc_url(node, manager)
-    console.print(
-        f"[blue]Creating invitation for context {context_id} on node {node} via {admin_url}[/blue]"
-    )
-
-    result = run_async_function(
-        invite_identity_via_admin_api,
-        admin_url,
-        context_id,
-        inviter_id,
-    )
-
-    # Show which endpoint was used if successful
-    if result["success"] and "endpoint" in result:
-        console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
-
-    if result["success"]:
-        console.print("\n[green]✓ Identity invited successfully![/green]")
-
-        # Create table
-        table = Table(title="Identity Invitation Details", box=box.ROUNDED)
-        table.add_column("Property", style="cyan")
-        table.add_column("Value", style="green")
-
-        table.add_row("Context ID", context_id)
-        table.add_row("Inviter ID", inviter_id)
-
-        console.print(table)
-
-        if verbose:
-            console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
-
-    else:
-        console.print("\n[red]✗ Failed to invite identity[/red]")
-        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
-
-        # Show detailed error information if available
-        if "errors" in result:
-            console.print("\n[yellow]Detailed errors:[/yellow]")
-            for error in result["errors"]:
-                console.print(f"[red]  {error}[/red]")
-
-        if "tried_payloads" in result:
-            console.print("\n[yellow]Tried payload formats:[/yellow]")
-            for i, payload in enumerate(result["tried_payloads"]):
-                console.print(f"[dim]  Format {i}: {payload}[/dim]")
-
-        # Provide helpful information for common errors
-        if "unable to grant privileges to non-member" in result.get("error", ""):
-            console.print(
-                "\n[yellow]Note: This error suggests the invite endpoint might not be working as expected.[/yellow]"
-            )
-            console.print(
-                "[yellow]The identity should be automatically added as a member when invited.[/yellow]"
-            )
-
-        sys.exit(1)
-
-
-@identity.command("invite-open")
+@identity.command("invite-group")
 @click.option("--node", "-n", required=True, help="Node name to create invitation on")
-@click.option("--context-id", required=True, help="Context ID to create invitation for")
-@click.option(
-    "--inviter-id", required=True, help="Public key of the inviter (context member)"
-)
-@click.option(
-    "--valid-for-seconds",
-    default=3600,
-    help="Number of seconds the invitation is valid for (default: 3600)",
-    type=int,
-)
+@click.option("--group-id", required=True, help="Group ID to create invitation for")
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def invite_open(node, context_id, inviter_id, valid_for_seconds, verbose):
-    """Create an open invitation that can be used by multiple identities."""
+def invite_group(node, group_id, verbose):
+    """Create a group invitation (replaces the old context invite flow)."""
     manager = DockerManager()
 
-    # Get admin API URL and run invitation creation
     admin_url = get_node_rpc_url(node, manager)
     console.print(
-        f"[blue]Creating open invitation for context {context_id} on node {node}[/blue]"
+        f"[blue]Creating group invitation for group {group_id} on node {node} via {admin_url}[/blue]"
     )
-    console.print(f"[blue]Valid for {valid_for_seconds}s[/blue]")
 
     result = run_async_function(
-        invite_identity_via_admin_api,
+        create_group_invitation_via_admin_api,
         admin_url,
-        context_id,
-        inviter_id,
-        valid_for_seconds=valid_for_seconds,
+        group_id,
     )
 
-    # Show which endpoint was used if successful
-    if result["success"] and "endpoint" in result:
-        console.print(f"[dim]Used endpoint: {result['endpoint']}[/dim]")
-
     if result["success"]:
-        console.print("\n[green]✓ Open invitation created successfully![/green]")
+        console.print("\n[green]✓ Group invitation created successfully![/green]")
 
-        # Create table
-        table = Table(title="Open Invitation Details", box=box.ROUNDED)
+        table = Table(title="Group Invitation Details", box=box.ROUNDED)
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
 
-        table.add_row("Context ID", context_id)
-        table.add_row("Inviter ID", inviter_id)
-        table.add_row("Valid for (seconds)", str(valid_for_seconds))
+        table.add_row("Group ID", group_id)
+        table.add_row("Node", node)
 
         console.print(table)
 
-        # Display the invitation data
         import json
 
         response_data = result.get("data", {})
@@ -352,7 +261,7 @@ def invite_open(node, context_id, inviter_id, valid_for_seconds, verbose):
             invitation_json = json.dumps(response_data, indent=2)
             console.print(f"[yellow]{invitation_json}[/yellow]")
             console.print(
-                "\n[dim]Save this invitation data to share with others who want to join.[/dim]"
+                "\n[dim]Save this invitation data to share with others who want to join the group.[/dim]"
             )
 
         if verbose:
@@ -360,10 +269,9 @@ def invite_open(node, context_id, inviter_id, valid_for_seconds, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to create open invitation[/red]")
+        console.print("\n[red]✗ Failed to create group invitation[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
-        # Show detailed error information if available
         if "errors" in result:
             console.print("\n[yellow]Detailed errors:[/yellow]")
             for error in result["errors"]:

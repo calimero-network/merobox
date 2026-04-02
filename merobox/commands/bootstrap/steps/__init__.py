@@ -39,6 +39,7 @@ __all__ = [
     "InviteOpenStep",
     "InviteIdentityStep",
     "JoinContextStep",
+    "JoinInvitationStep",
     "JoinOpenStep",
     "ExecuteStep",
     "WaitStep",

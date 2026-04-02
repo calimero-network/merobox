@@ -1,5 +1,10 @@
 """
 Create mesh step executor - Creates a context and connects multiple nodes to it.
+
+The mesh step now uses the group-based flow:
+1. Create context on the context_node (this also creates a group)
+2. For each joining node: generate identity, create group invitation, join group
+3. Contexts are joined automatically via group auto_join
 """
 
 import json as json_lib
@@ -8,10 +13,10 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.identity import (
+    create_group_invitation_via_admin_api,
     generate_identity_via_admin_api,
-    invite_identity_via_admin_api,
 )
-from merobox.commands.join import join_context_via_admin_api
+from merobox.commands.join import join_group_via_admin_api
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console, extract_nested_data
 
@@ -20,43 +25,29 @@ class CreateMeshStep(BaseStep):
     """Execute a create mesh step that creates a context and connects multiple nodes."""
 
     def _get_required_fields(self) -> list[str]:
-        """
-        Define which fields are required for this step.
-
-        Returns:
-            List of required field names
-        """
         return ["context_node", "application_id", "nodes"]
 
     def _validate_field_types(self) -> None:
-        """
-        Validate that fields have the correct types.
-        """
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
 
-        # Validate context_node is a string
         if not isinstance(self.config.get("context_node"), str):
             raise ValueError(f"Step '{step_name}': 'context_node' must be a string")
 
-        # Validate application_id is a string
         if not isinstance(self.config.get("application_id"), str):
             raise ValueError(f"Step '{step_name}': 'application_id' must be a string")
 
-        # Validate nodes is a list
         nodes = self.config.get("nodes")
         if not isinstance(nodes, list):
             raise ValueError(f"Step '{step_name}': 'nodes' must be a list")
         if len(nodes) == 0:
             raise ValueError(f"Step '{step_name}': 'nodes' must not be empty")
 
-        # Validate each node in the list is a string
         for i, node in enumerate(nodes):
             if not isinstance(node, str):
                 raise ValueError(f"Step '{step_name}': 'nodes[{i}]' must be a string")
 
-        # Validate that at least one node is different from context_node
         context_node = self.config.get("context_node")
         if context_node and isinstance(context_node, str):
             distinct_nodes = [n for n in nodes if n != context_node]
@@ -65,18 +56,10 @@ class CreateMeshStep(BaseStep):
                     f"Step '{step_name}': 'nodes' must contain at least one node different from 'context_node' ({context_node})"
                 )
 
-        # Validate params is JSON string if provided
         if "params" in self.config and not isinstance(self.config["params"], str):
             raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
 
     def _get_exportable_variables(self):
-        """
-        Define which variables this step can export.
-
-        Available variables:
-        - contextId: Context ID from the created context
-        - memberPublicKey: Public key of the context member (from context creation)
-        """
         return [
             (
                 "contextId",
@@ -98,20 +81,17 @@ class CreateMeshStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
         nodes = self.config["nodes"]
-        # capability was removed — invitations are always open now
 
         console.print(
             f"[bold cyan]Creating mesh: context on {context_node}, connecting {len(nodes)} nodes[/bold cyan]"
         )
 
-        # Validate export configuration
         if not self._validate_export_config():
             console.print(
                 "[yellow]⚠️  CreateMesh step export configuration validation failed[/yellow]"
             )
 
         console.print(f"\n[bold]Step 1: Creating context on {context_node}[/bold]")
-        # Resolve node to get URL and stable name for token caching
         try:
             context_rpc_url, client_context_node = self._resolve_node_for_client(
                 context_node
@@ -174,6 +154,7 @@ class CreateMeshStep(BaseStep):
 
         context_id = extract_nested_data(context_data, "contextId", "id", "name")
         member_public_key = extract_nested_data(context_data, "memberPublicKey")
+        group_id = extract_nested_data(context_data, "groupId")
 
         if not context_id:
             console.print("[red]Failed to extract context ID from response[/red]")
@@ -193,24 +174,17 @@ class CreateMeshStep(BaseStep):
             console.print(
                 "[red]Failed to extract member public key from context creation response[/red]"
             )
-            console.print(
-                "[red]Member public key is required to invite other nodes to the context[/red]"
-            )
             if isinstance(context_data, dict):
                 console.print(
                     f"[yellow]Available keys in response: {list(context_data.keys())}[/yellow]"
                 )
-                try:
-                    console.print(
-                        f"[yellow]Full response structure:\n{json_lib.dumps(context_data, indent=2)}[/yellow]"
-                    )
-                except Exception:
-                    pass
             return False
 
         console.print(f"[green]✓ Context created: {context_id}[/green]")
         if member_public_key:
             console.print(f"[green]✓ Member public key: {member_public_key}[/green]")
+        if group_id:
+            console.print(f"[green]✓ Group ID: {group_id}[/green]")
 
         step_key = f"context_{context_node}"
         workflow_results[step_key] = context_data
@@ -221,8 +195,16 @@ class CreateMeshStep(BaseStep):
                 dynamic_values["context_id"] = context_id
             if member_public_key and "member_public_key" not in dynamic_values:
                 dynamic_values["member_public_key"] = member_public_key
+            if group_id and "group_id" not in dynamic_values:
+                dynamic_values["group_id"] = group_id
 
-        nodes_to_process_count = len([n for n in nodes if n != context_node])
+        if not group_id:
+            console.print(
+                "[red]Failed to extract group ID from context creation response. "
+                "The group-based mesh flow requires a group ID.[/red]"
+            )
+            return False
+
         connected_nodes = [context_node]
 
         for node_name in nodes:
@@ -235,7 +217,6 @@ class CreateMeshStep(BaseStep):
             console.print(f"\n[bold]Processing node: {node_name}[/bold]")
 
             console.print(f"  [cyan]Creating identity on {node_name}...[/cyan]")
-            # Resolve node to get URL and stable name for token caching
             try:
                 node_rpc_url, client_node_name = self._resolve_node_for_client(
                     node_name
@@ -291,12 +272,6 @@ class CreateMeshStep(BaseStep):
                 console.print(
                     f"[yellow]Available keys in response: {list(identity_data_raw.keys())}[/yellow]"
                 )
-                try:
-                    console.print(
-                        f"[yellow]Full response structure:\n{json_lib.dumps(identity_data_raw, indent=2)}[/yellow]"
-                    )
-                except Exception:
-                    pass
                 return False
 
             console.print(f"  [green]✓ Identity created: {public_key}[/green]")
@@ -309,24 +284,25 @@ class CreateMeshStep(BaseStep):
             )
             workflow_results[identity_key] = actual_identity_data
 
+            nodes_to_process_count = len([n for n in nodes if n != context_node])
             if f"public_key_{node_name}" not in dynamic_values:
                 dynamic_values[f"public_key_{node_name}"] = public_key
             if nodes_to_process_count == 1 and "public_key" not in dynamic_values:
                 dynamic_values["public_key"] = public_key
 
+            # Step: Create group invitation from context node
             console.print(
-                f"  [cyan]Inviting {public_key} from {context_node}...[/cyan]"
+                f"  [cyan]Creating group invitation from {context_node}...[/cyan]"
             )
-            invite_result = await invite_identity_via_admin_api(
+            invite_result = await create_group_invitation_via_admin_api(
                 context_rpc_url,
-                context_id,
-                member_public_key,
+                group_id,
                 node_name=client_context_node,
             )
 
             if not invite_result.get("success"):
                 console.print(
-                    f"[red]Invitation failed for {node_name}: {invite_result.get('error', 'Unknown error')}[/red]"
+                    f"[red]Group invitation failed for {node_name}: {invite_result.get('error', 'Unknown error')}[/red]"
                 )
                 return False
 
@@ -346,36 +322,38 @@ class CreateMeshStep(BaseStep):
                 )
                 return False
 
-            console.print("  [green]✓ Invitation created[/green]")
+            console.print("  [green]✓ Group invitation created[/green]")
 
-            invite_key = f"invite_{context_node}_{public_key}"
+            invite_key = f"invite_{context_node}_{node_name}"
             workflow_results[invite_key] = invitation
 
-            console.print(f"  [cyan]Joining context from {node_name}...[/cyan]")
-            join_result = await join_context_via_admin_api(
+            # Step: Join group from the joining node
+            console.print(f"  [cyan]Joining group from {node_name}...[/cyan]")
+            invitation_json = json_lib.dumps(invitation) if isinstance(invitation, dict) else str(invitation)
+            join_result = await join_group_via_admin_api(
                 node_rpc_url,
-                public_key,
-                invitation,
+                invitation_json,
                 node_name=client_node_name,
             )
 
             if not join_result.get("success"):
                 console.print(
-                    f"[red]Join failed for {node_name}: {join_result.get('error', 'Unknown error')}[/red]"
+                    f"[red]Join group failed for {node_name}: {join_result.get('error', 'Unknown error')}[/red]"
                 )
                 return False
 
             if self._check_jsonrpc_error(join_result["data"]):
                 return False
 
-            console.print("  [green]✓ Joined context successfully[/green]")
+            console.print("  [green]✓ Joined group successfully[/green]")
 
-            join_key = f"join_{node_name}_{public_key}"
+            join_key = f"join_{node_name}"
             workflow_results[join_key] = join_result["data"]
             connected_nodes.append(node_name)
 
         console.print("\n[bold green]✓ Mesh created successfully![/bold green]")
         console.print(f"  Context: {context_id} on {context_node}")
+        console.print(f"  Group: {group_id}")
         console.print(f"  Connected nodes: {', '.join(connected_nodes)}")
 
         return True

@@ -148,31 +148,27 @@ class CreateIdentityStep(BaseStepConfig):
 
 
 class InviteStep(BaseStepConfig):
-    """Configuration for invite step (also handles invite_open and invite_identity)."""
+    """Configuration for invite step (group-based invitation).
+
+    The old context-based invite flow has been replaced by group invitations.
+    Step types 'invite', 'invite_open', and 'invite_identity' all require group_id.
+    """
 
     type: Literal["invite", "invite_open", "invite_identity"] = "invite"
     node: str = Field(..., description="Target node")
-    context_id: str = Field(..., description="Context ID")
-    granter_id: str = Field(..., description="Granter public key")
-    grantee_id: Optional[str] = Field(
-        None, description="Grantee public key (legacy invite_identity compat)"
-    )
-    capability: Optional[str] = Field(
-        None, description="Capability to grant (legacy invite_identity compat)"
-    )
-    valid_for_seconds: Optional[int] = Field(
-        None, description="Number of seconds the invitation is valid for"
-    )
+    group_id: str = Field(..., description="Group ID to create invitation for")
 
 
 class JoinStep(BaseStepConfig):
-    """Configuration for join step (also handles join_open)."""
+    """Configuration for join step (group-based, also handles join_open).
+
+    The old context-based join flow has been replaced by group joining.
+    The invitation data is a group invitation from create_group_invitation.
+    """
 
     type: Literal["join", "join_open"] = "join"
     node: str = Field(..., description="Target node")
-    context_id: Optional[str] = Field(None, description="Context ID")
-    invitee_id: str = Field(..., description="Invitee public key")
-    invitation: str = Field(..., description="Invitation data")
+    invitation: str = Field(..., description="Group invitation data")
 
 
 class JoinContextStepConfig(BaseStepConfig):
@@ -310,14 +306,41 @@ class UploadBlobStep(BaseStepConfig):
     context_id: Optional[str] = Field(None, description="Context ID (optional)")
 
 
+class CreateGroupStepConfig(BaseStepConfig):
+    """Configuration for create_group step."""
+
+    type: Literal["create_group"] = "create_group"
+    node: str = Field(..., description="Target node")
+    context_id: str = Field(..., description="Context ID for the group")
+
+
+class CreateGroupInvitationStepConfig(BaseStepConfig):
+    """Configuration for create_group_invitation step."""
+
+    type: Literal["create_group_invitation"] = "create_group_invitation"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to create invitation for")
+
+
+class JoinGroupStepConfig(BaseStepConfig):
+    """Configuration for join_group step."""
+
+    type: Literal["join_group"] = "join_group"
+    node: str = Field(..., description="Target node")
+    invitation: str = Field(..., description="Group invitation data")
+
+
 class CreateMeshStep(BaseStepConfig):
-    """Configuration for create_mesh step."""
+    """Configuration for create_mesh step.
+
+    Uses the group-based flow: creates a context (with auto-created group),
+    then creates group invitations and joins for each node.
+    """
 
     type: Literal["create_mesh"] = "create_mesh"
     context_node: str = Field(..., description="Node to create context on")
     application_id: str = Field(..., description="Application ID")
     nodes: list[str] = Field(..., description="List of nodes to include in mesh")
-    capability: Optional[str] = Field(None, description="Capability to grant to nodes")
     protocol: Optional[str] = Field(None, description="Protocol to use")
     params: Optional[str] = Field(None, description="Initialization params JSON string")
 
@@ -350,6 +373,9 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "join": JoinStep,
     "join_context": JoinContextStepConfig,
     "join_open": JoinStep,
+    "create_group": CreateGroupStepConfig,
+    "create_group_invitation": CreateGroupInvitationStepConfig,
+    "join_group": JoinGroupStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
@@ -788,18 +814,16 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
                 "outputs": {"public_key": "publicKey"},
             },
             {
-                "name": "Invite Identity",
-                "type": "invite",
+                "name": "Create Group Invitation",
+                "type": "create_group_invitation",
                 "node": "calimero-node-1",
-                "context_id": "{{context_id}}",
-                "granter_id": "{{member_public_key}}",
+                "group_id": "{{group_id}}",
                 "outputs": {"invitation": "invitation"},
             },
             {
-                "name": "Join Context from Node 2",
-                "type": "join",
+                "name": "Join Group from Node 2",
+                "type": "join_group",
                 "node": "calimero-node-2",
-                "invitee_id": "{{public_key}}",
                 "invitation": "{{invitation}}",
             },
             {
