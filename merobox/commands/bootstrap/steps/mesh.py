@@ -352,8 +352,18 @@ class CreateMeshStep(BaseStep):
 
             console.print("  [green]✓ Joined group successfully[/green]")
 
-            # Namespace governance: no relay needed. The joining node
-            # publishes MemberJoined directly on the namespace topic.
+            # Explicitly join the context — auto_join from group metadata
+            # may not work if the context list hasn't replicated yet.
+            console.print(f"  [cyan]Joining context {context_id} on {node_name}...[/cyan]")
+            try:
+                node_client = get_client_for_rpc_url(node_rpc_url, node_name=client_node_name)
+                join_ctx_result = node_client.join_context(context_id=context_id)
+                console.print("  [green]✓ Context joined[/green]")
+            except Exception as e:
+                console.print(
+                    f"  [yellow]⚠️  join_context failed ({e}), "
+                    f"context may sync via auto_join[/yellow]"
+                )
 
             join_key = f"join_{node_name}"
             workflow_results[join_key] = join_result["data"]
