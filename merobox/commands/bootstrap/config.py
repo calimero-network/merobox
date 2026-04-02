@@ -27,7 +27,6 @@ VALID_STEP_TYPES = frozenset(
         "join",
         "join_context",
         "join_group",
-        "join_group_context",
         "invite_open",
         "join_open",
         "call",
@@ -167,13 +166,21 @@ class InviteStep(BaseStepConfig):
 
 
 class JoinStep(BaseStepConfig):
-    """Configuration for join step (also handles join_context and join_open)."""
+    """Configuration for join step (also handles join_open)."""
 
-    type: Literal["join", "join_context", "join_open"] = "join"
+    type: Literal["join", "join_open"] = "join"
     node: str = Field(..., description="Target node")
     context_id: Optional[str] = Field(None, description="Context ID")
     invitee_id: str = Field(..., description="Invitee public key")
     invitation: str = Field(..., description="Invitation data")
+
+
+class JoinContextStepConfig(BaseStepConfig):
+    """Configuration for join_context step (join existing context via group membership)."""
+
+    type: Literal["join_context"] = "join_context"
+    node: str = Field(..., description="Target node")
+    context_id: str = Field(..., description="Context ID to join")
 
 
 class CallStep(BaseStepConfig):
@@ -341,7 +348,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "invite_identity": InviteStep,
     "invite_open": InviteStep,
     "join": JoinStep,
-    "join_context": JoinStep,
+    "join_context": JoinContextStepConfig,
     "join_open": JoinStep,
     "call": CallStep,
     "wait": WaitStep,

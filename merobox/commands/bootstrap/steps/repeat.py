@@ -11,7 +11,8 @@ from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
-from merobox.commands.bootstrap.steps.join import JoinContextStep
+from merobox.commands.bootstrap.steps.join import JoinContextStep as JoinInvitationStep
+from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
     GetProposalStep,
@@ -363,7 +364,9 @@ class RepeatStep(BaseStep):
             return CreateIdentityStep(step_config, **common_kwargs)
         elif step_type in ("invite", "invite_identity", "invite_open"):
             return InviteOpenStep(step_config, **common_kwargs)
-        elif step_type in ("join", "join_context", "join_open"):
+        elif step_type in ("join", "join_open"):
+            return JoinInvitationStep(step_config, **common_kwargs)
+        elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)

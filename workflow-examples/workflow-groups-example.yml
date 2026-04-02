@@ -68,12 +68,11 @@ steps:
     invitation: '{{group_invitation_calimero-node-1}}'
 
   # Step 6: Node 2 joins the existing context via group membership.
-  # join_group_context creates a fresh per-context identity for node 2,
+  # join_context creates a fresh per-context identity for node 2,
   # keeping its group identity and context identity separate for privacy.
   - name: Node 2 Joins Group Context
-    type: join_group_context
+    type: join_context
     node: calimero-node-2
-    group_id: '{{group_id_calimero-node-1}}'
     context_id: '{{context_id_calimero-node-1}}'
     outputs:
       context_id: contextId

@@ -385,7 +385,7 @@ def join_context(group_id, node, context_id, verbose):
     )
 
     result = run_async_function(
-        call_admin_api, rpc_url, "join_group_context", group_id, context_id
+        call_admin_api, rpc_url, "join_context", context_id
     )
 
     if result["success"]:

@@ -1,5 +1,5 @@
 """
-Join group context step executor.
+Join context step executor (via group membership).
 """
 
 from typing import Any
@@ -10,17 +10,17 @@ from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
 
-class JoinGroupContextStep(BaseStep):
-    """Execute a join group context step (join an existing context via group membership)."""
+class JoinContextStep(BaseStep):
+    """Execute a join context step (join an existing context via group membership)."""
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "group_id", "context_id"]
+        return ["node", "context_id"]
 
     def _validate_field_types(self) -> None:
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
-        for field in ("node", "group_id", "context_id"):
+        for field in ("node", "context_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
 
@@ -42,9 +42,6 @@ class JoinGroupContextStep(BaseStep):
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
-        group_id = self._resolve_dynamic_value(
-            self.config["group_id"], workflow_results, dynamic_values
-        )
         context_id = self._resolve_dynamic_value(
             self.config["context_id"], workflow_results, dynamic_values
         )
@@ -57,22 +54,19 @@ class JoinGroupContextStep(BaseStep):
 
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.join_group_context(
-                group_id=group_id, context_id=context_id
-            )
+            api_result = client.join_context(context_id=context_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("join_group_context failed", error=e)
+            result = fail("join_context failed", error=e)
 
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
                 return False
 
-            step_key = f"join_group_context_{node_name}"
+            step_key = f"join_context_{node_name}"
             workflow_results[step_key] = result["data"]
             self._export_variables(result["data"], node_name, dynamic_values)
 
-            # Fallback: ensure context_id and member_public_key are captured
             raw = result["data"]
             if isinstance(raw, dict):
                 nested = raw.get("data", raw)
@@ -89,13 +83,12 @@ class JoinGroupContextStep(BaseStep):
                             )
 
             console.print(
-                f"[green]✓ Node {node_name} joined context {context_id} "
-                f"via group {group_id}[/green]"
+                f"[green]✓ Node {node_name} joined context {context_id}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]Join group context failed on {node_name}: "
+                f"[red]Join context failed on {node_name}: "
                 f"{result.get('error', 'Unknown error')}[/red]"
             )
             self._print_node_logs_on_failure(node_name=node_name, lines=50)

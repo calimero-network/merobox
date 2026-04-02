@@ -2,7 +2,7 @@
 Join context step executor.
 
 Unified step that handles both identity-targeted joins and open invitation joins.
-Step types 'join', 'join_context', and 'join_open' all route here.
+Step types 'join' and 'join_open' route here (invitation-based join).
 """
 
 from typing import Any
@@ -13,7 +13,7 @@ from merobox.commands.utils import console
 
 
 class JoinContextStep(BaseStep):
-    """Execute a join step (unified: handles join, join_context, join_open)."""
+    """Execute a join step (unified: handles join and join_open)."""
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "invitee_id", "invitation"]

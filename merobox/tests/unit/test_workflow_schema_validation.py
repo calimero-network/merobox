@@ -521,10 +521,21 @@ class TestStepSpecificValidation:
         assert len(errors) == 0
 
     def test_join_context_all_required_fields(self, config_module):
-        """Test join_context step requires all fields."""
+        """Test join_context step (group membership) requires node and context_id."""
+        step = {
+            "name": "Join context",
+            "type": "join_context",
+            "node": "calimero-node-2",
+            "context_id": "{{context_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert len(errors) == 0
+
+    def test_join_invitation_all_required_fields(self, config_module):
+        """Test join step (invitation) requires invitee_id and invitation."""
         step = {
             "name": "Join",
-            "type": "join_context",
+            "type": "join",
             "node": "calimero-node-2",
             "context_id": "{{context_id}}",
             "invitee_id": "{{public_key}}",

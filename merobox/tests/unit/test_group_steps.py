@@ -2,7 +2,7 @@
 Unit tests for group workflow step classes.
 
 Covers: CreateGroupStep, CreateGroupInvitationStep, JoinGroupStep,
-        JoinGroupContextStep — validation logic and fallback capture.
+        JoinContextStep (join_context module) — validation logic and fallback capture.
 """
 
 import asyncio
@@ -13,7 +13,7 @@ import pytest
 from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
 from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
-from merobox.commands.bootstrap.steps.group_join_context import JoinGroupContextStep
+from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 
 # =============================================================================
 # CreateGroupStep
@@ -177,24 +177,23 @@ class TestJoinGroupStep:
 
 
 # =============================================================================
-# JoinGroupContextStep
+# JoinContextStep (group membership join_context workflow step)
 # =============================================================================
 
 
-class TestJoinGroupContextStep:
-    """Tests for JoinGroupContextStep validation and fallback capture."""
+class TestJoinContextStepGroupMembership:
+    """Tests for JoinContextStep validation and fallback capture."""
 
     def setup_method(self):
         self.base_config = {
-            "type": "join_group_context",
-            "name": "Test Join Group Context",
+            "type": "join_context",
+            "name": "Test Join Context",
             "node": "calimero-node-2",
-            "group_id": "group-abc",
             "context_id": "ctx-xyz",
         }
 
-    def _make_step(self, config: dict) -> JoinGroupContextStep:
-        return JoinGroupContextStep(config)
+    def _make_step(self, config: dict) -> JoinContextStep:
+        return JoinContextStep(config)
 
     def test_valid_config_passes_validation(self):
         self._make_step(self.base_config)
@@ -203,12 +202,6 @@ class TestJoinGroupContextStep:
         config = {**self.base_config}
         del config["node"]
         with pytest.raises(ValueError, match="node"):
-            self._make_step(config)
-
-    def test_missing_group_id_raises(self):
-        config = {**self.base_config}
-        del config["group_id"]
-        with pytest.raises(ValueError, match="group_id"):
             self._make_step(config)
 
     def test_missing_context_id_raises(self):
@@ -220,11 +213,6 @@ class TestJoinGroupContextStep:
     def test_node_not_string_raises(self):
         config = {**self.base_config, "node": True}
         with pytest.raises(ValueError, match="'node' must be a string"):
-            self._make_step(config)
-
-    def test_group_id_not_string_raises(self):
-        config = {**self.base_config, "group_id": 42}
-        with pytest.raises(ValueError, match="'group_id' must be a string"):
             self._make_step(config)
 
     def test_context_id_not_string_raises(self):
@@ -249,7 +237,7 @@ class TestJoinGroupContextStep:
 
         # Mock the client to return an API response with both fields
         mock_client = MagicMock()
-        mock_client.join_group_context.return_value = {
+        mock_client.join_context.return_value = {
             "data": {
                 "contextId": "ctx-xyz",
                 "memberPublicKey": "pk-abc123",
@@ -263,7 +251,7 @@ class TestJoinGroupContextStep:
                 return_value=("http://localhost:1234", node_name),
             ),
             patch(
-                "merobox.commands.bootstrap.steps.group_join_context.get_client_for_rpc_url",
+                "merobox.commands.bootstrap.steps.join_context.get_client_for_rpc_url",
                 return_value=mock_client,
             ),
             patch.object(
