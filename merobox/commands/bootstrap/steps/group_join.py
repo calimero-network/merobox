@@ -101,6 +101,35 @@ class JoinGroupStep(BaseStep):
                     if group_id:
                         dynamic_values[f"group_id_{node_name}"] = group_id
 
+            # Relay governance op to the inviting node if relay_to is specified.
+            relay_to = self.config.get("relay_to")
+            raw_data = result["data"]
+            gov_op = None
+            if isinstance(raw_data, dict):
+                nested = raw_data.get("data", raw_data)
+                if isinstance(nested, dict):
+                    gov_op = nested.get("governanceOp") or nested.get("governance_op")
+
+            if gov_op and relay_to:
+                try:
+                    relay_rpc_url, relay_client_name = self._resolve_node_for_client(relay_to)
+                    relay_client = get_client_for_rpc_url(
+                        relay_rpc_url, node_name=relay_client_name
+                    )
+                    relay_client.claim_group_invitation(gov_op)
+                    console.print(
+                        f"[green]✓ Governance op relayed to {relay_to}[/green]"
+                    )
+                except Exception as e:
+                    console.print(
+                        f"[yellow]⚠️  Failed to relay governance op to {relay_to}: {e}[/yellow]"
+                    )
+            elif gov_op and not relay_to:
+                console.print(
+                    "[yellow]⚠️  Governance op available but no relay_to configured, "
+                    "member registration relies on gossipsub[/yellow]"
+                )
+
             console.print(
                 f"[green]✓ Node {node_name} joined group successfully[/green]"
             )

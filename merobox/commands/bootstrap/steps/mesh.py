@@ -351,6 +351,43 @@ class CreateMeshStep(BaseStep):
 
             console.print("  [green]✓ Joined group successfully[/green]")
 
+            # Relay the governance op to the context node so it registers
+            # the new member (commit-reveal: the inviting node holds the
+            # commitment, the joining node produced the claim).
+            join_data = join_result["data"]
+            gov_op = None
+            if isinstance(join_data, dict):
+                nested = join_data.get("data", join_data)
+                if isinstance(nested, dict):
+                    gov_op = nested.get("governanceOp") or nested.get("governance_op")
+
+            if gov_op:
+                console.print(
+                    f"  [cyan]Relaying governance op to {context_node}...[/cyan]"
+                )
+                try:
+                    ctx_client = get_client_for_rpc_url(
+                        context_rpc_url, node_name=client_context_node
+                    )
+                    claim_result = ctx_client.claim_group_invitation(gov_op)
+                    if isinstance(claim_result, dict) and claim_result.get("data", {}).get("success"):
+                        console.print(
+                            "  [green]✓ Governance op relayed successfully[/green]"
+                        )
+                    else:
+                        console.print(
+                            f"  [yellow]⚠️  Governance op relay response: {claim_result}[/yellow]"
+                        )
+                except Exception as e:
+                    console.print(
+                        f"  [yellow]⚠️  Failed to relay governance op: {e}[/yellow]"
+                    )
+            else:
+                console.print(
+                    "  [yellow]⚠️  No governance op in join response, "
+                    "member registration may rely on gossipsub[/yellow]"
+                )
+
             join_key = f"join_{node_name}"
             workflow_results[join_key] = join_result["data"]
             connected_nodes.append(node_name)
