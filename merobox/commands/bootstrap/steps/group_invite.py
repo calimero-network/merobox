@@ -60,19 +60,23 @@ class CreateGroupInvitationStep(BaseStep):
             if self._check_jsonrpc_error(result["data"]):
                 return False
 
+            step_name = self.config.get("name", "")
             step_key = f"group_invitation_{node_name}"
+            if step_name:
+                step_key = f"group_invitation_{step_name}"
             workflow_results[step_key] = result["data"]
             self._export_variables(result["data"], node_name, dynamic_values)
 
-            # Fallback: extract and store the invitation object so
-            # join_group steps can reference it via {{group_invitation_<node>}}
             raw_data = result["data"]
             if isinstance(raw_data, dict):
                 nested = raw_data.get("data", raw_data)
                 if isinstance(nested, dict):
-                    # Store the full SignedGroupOpenInvitation (invitation + inviter_signature),
-                    # NOT just the inner "invitation" field (GroupInvitationFromAdmin).
-                    dynamic_values[f"group_invitation_{node_name}"] = nested
+                    # Only write the auto-keyed fallback when no custom outputs
+                    # are configured; otherwise the custom outputs handle export
+                    # and the shared key would collide when the same node creates
+                    # multiple invitations.
+                    if "outputs" not in self.config:
+                        dynamic_values[f"group_invitation_{node_name}"] = nested
                     console.print(
                         f"[green]✓ Group invitation created on {node_name}[/green]"
                     )
