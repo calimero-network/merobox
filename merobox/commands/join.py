@@ -88,18 +88,12 @@ def join_group_cmd(node, invitation, verbose):
     manager = DockerManager()
 
     admin_url = get_node_rpc_url(node, manager)
-    console.print(
-        f"[blue]Joining group on node {node} via group invitation[/blue]"
-    )
+    console.print(f"[blue]Joining group on node {node} via group invitation[/blue]")
 
-    result = run_async_function(
-        join_group_via_admin_api, admin_url, invitation
-    )
+    result = run_async_function(join_group_via_admin_api, admin_url, invitation)
 
     if result["success"]:
-        console.print(
-            "\n[green]✓ Successfully joined group![/green]"
-        )
+        console.print("\n[green]✓ Successfully joined group![/green]")
 
         response_data = result.get("data", {})
 
@@ -149,9 +143,7 @@ def join_context_cmd(node, context_id, verbose):
         f"[blue]Joining context {context_id} on node {node} via group membership[/blue]"
     )
 
-    result = run_async_function(
-        join_context_via_admin_api, admin_url, context_id
-    )
+    result = run_async_function(join_context_via_admin_api, admin_url, context_id)
 
     if result["success"]:
         console.print("\n[green]✓ Successfully joined context![/green]")

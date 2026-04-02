@@ -329,7 +329,11 @@ class CreateMeshStep(BaseStep):
 
             # Step: Join group from the joining node
             console.print(f"  [cyan]Joining group from {node_name}...[/cyan]")
-            invitation_json = json_lib.dumps(invitation) if isinstance(invitation, dict) else str(invitation)
+            invitation_json = (
+                json_lib.dumps(invitation)
+                if isinstance(invitation, dict)
+                else str(invitation)
+            )
             join_result = await join_group_via_admin_api(
                 node_rpc_url,
                 invitation_json,

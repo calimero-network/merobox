@@ -384,9 +384,7 @@ def join_context(group_id, node, context_id, verbose):
         f"[blue]Joining context {context_id} in group {group_id} on node {node}[/blue]"
     )
 
-    result = run_async_function(
-        call_admin_api, rpc_url, "join_context", context_id
-    )
+    result = run_async_function(call_admin_api, rpc_url, "join_context", context_id)
 
     if result["success"]:
         data = unwrap_api_response(result)
