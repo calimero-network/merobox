@@ -1,10 +1,11 @@
 """
 Create mesh step executor - Creates a context and connects multiple nodes to it.
 
-The mesh step now uses the group-based flow:
-1. Create context on the context_node (this also creates a group)
-2. For each joining node: generate identity, create group invitation, join group
-3. Contexts are joined automatically via group auto_join
+The mesh step uses the namespace governance flow:
+1. Create context on the context_node (this also creates a group in the namespace)
+2. For each joining node: create group invitation, join group
+3. Join publishes a MemberJoined op on the namespace topic (no relay needed)
+4. Contexts are joined automatically via group auto_join
 """
 
 import json as json_lib
@@ -351,42 +352,8 @@ class CreateMeshStep(BaseStep):
 
             console.print("  [green]✓ Joined group successfully[/green]")
 
-            # Relay the governance op to the context node so it registers
-            # the new member (commit-reveal: the inviting node holds the
-            # commitment, the joining node produced the claim).
-            join_data = join_result["data"]
-            gov_op = None
-            if isinstance(join_data, dict):
-                nested = join_data.get("data", join_data)
-                if isinstance(nested, dict):
-                    gov_op = nested.get("governanceOp") or nested.get("governance_op")
-
-            if gov_op:
-                console.print(
-                    f"  [cyan]Relaying governance op to {context_node}...[/cyan]"
-                )
-                try:
-                    ctx_client = get_client_for_rpc_url(
-                        context_rpc_url, node_name=client_context_node
-                    )
-                    claim_result = ctx_client.claim_group_invitation(gov_op)
-                    if isinstance(claim_result, dict) and claim_result.get("data", {}).get("success"):
-                        console.print(
-                            "  [green]✓ Governance op relayed successfully[/green]"
-                        )
-                    else:
-                        console.print(
-                            f"  [yellow]⚠️  Governance op relay response: {claim_result}[/yellow]"
-                        )
-                except Exception as e:
-                    console.print(
-                        f"  [yellow]⚠️  Failed to relay governance op: {e}[/yellow]"
-                    )
-            else:
-                console.print(
-                    "  [yellow]⚠️  No governance op in join response, "
-                    "member registration may rely on gossipsub[/yellow]"
-                )
+            # Namespace governance: no relay needed. The joining node
+            # publishes MemberJoined directly on the namespace topic.
 
             join_key = f"join_{node_name}"
             workflow_results[join_key] = join_result["data"]
