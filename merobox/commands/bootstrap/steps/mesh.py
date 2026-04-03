@@ -352,11 +352,29 @@ class CreateMeshStep(BaseStep):
 
             console.print("  [green]✓ Joined group successfully[/green]")
 
-            # Namespace governance: no relay needed. The joining node
-            # publishes MemberJoined directly on the namespace topic.
-
             join_key = f"join_{node_name}"
-            workflow_results[join_key] = join_result["data"]
+            join_data = join_result["data"]
+            workflow_results[join_key] = join_data
+
+            join_nested = (
+                join_data.get("data", join_data)
+                if isinstance(join_data, dict)
+                else join_data
+            )
+            member_identity = (
+                join_nested.get("memberIdentity")
+                if isinstance(join_nested, dict)
+                else None
+            )
+            if member_identity:
+                dynamic_values[f"member_identity_{node_name}"] = member_identity
+                dynamic_values[f"public_key_{node_name}"] = member_identity
+                if nodes_to_process_count == 1:
+                    dynamic_values["memberIdentity"] = member_identity
+                console.print(
+                    f"  [green]✓ Member identity: {member_identity}[/green]"
+                )
+
             connected_nodes.append(node_name)
 
         console.print("\n[bold green]✓ Mesh created successfully![/bold green]")

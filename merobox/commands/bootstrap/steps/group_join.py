@@ -46,11 +46,17 @@ class JoinGroupStep(BaseStep):
             self.config["invitation"], workflow_results, dynamic_values
         )
 
-        # invitation may be a dict (captured from create_group_invitation step)
-        # or a JSON string — normalise to a raw SignedGroupOpenInvitation JSON
-        # string for the client (the Rust binding wraps it in JoinGroupApiRequest).
+        # invitation is a SignedGroupOpenInvitation dict or JSON string from
+        # create_group_invitation. The Rust client parses invitation_json as
+        # JoinGroupApiRequest { invitation: SignedGroupOpenInvitation }, so we
+        # must wrap the invitation in {"invitation": ...}.
         if isinstance(invitation, dict):
-            invitation_json = json_lib.dumps(invitation)
+            if "inviter_signature" in invitation:
+                invitation_json = json_lib.dumps({"invitation": invitation})
+            elif "invitation" in invitation and isinstance(invitation.get("invitation"), dict):
+                invitation_json = json_lib.dumps(invitation)
+            else:
+                invitation_json = json_lib.dumps({"invitation": invitation})
         elif isinstance(invitation, str):
             # Validate it's parseable JSON
             try:
@@ -68,6 +74,8 @@ class JoinGroupStep(BaseStep):
                 f"'invitation' must be a dict or JSON string[/red]"
             )
             return False
+
+        
 
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)

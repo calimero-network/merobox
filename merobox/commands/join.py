@@ -38,7 +38,13 @@ async def join_group_via_admin_api(
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
         if isinstance(invitation_data, dict):
-            invitation_json = json_lib.dumps(invitation_data)
+            if "inviter_signature" in invitation_data:
+                invitation_json = json_lib.dumps({"invitation": invitation_data})
+            elif "invitation" in invitation_data and isinstance(invitation_data.get("invitation"), dict):
+                invitation_json = json_lib.dumps(invitation_data)
+            else:
+                invitation_json = json_lib.dumps({"invitation": invitation_data})
+
         else:
             invitation_json = str(invitation_data)
 
