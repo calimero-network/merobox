@@ -21,6 +21,8 @@ async def create_context_via_admin_api(
     rpc_url: str,
     application_id: str,
     params: str = None,
+    group_id: str = None,
+    service_name: str = None,
     node_name: str = None,
 ) -> dict:
     """Create a context using calimero-client-py.
@@ -33,7 +35,20 @@ async def create_context_via_admin_api(
     """
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        api_result = client.create_context(application_id=application_id, params=params)
+        create_kwargs = {
+            "application_id": application_id,
+            "params": params,
+            "group_id": group_id,
+        }
+        if service_name is not None:
+            create_kwargs["service_name"] = service_name
+        try:
+            api_result = client.create_context(**create_kwargs)
+        except TypeError:
+            # Backward compatibility for older client versions that don't
+            # support service_name.
+            create_kwargs.pop("service_name", None)
+            api_result = client.create_context(**create_kwargs)
         return ok(api_result)
     except Exception as e:
         return fail("create_context failed", error=e)
@@ -119,8 +134,17 @@ def context():
     "--params",
     help="Initialization parameters as JSON string (optional)",
 )
+@click.option(
+    "--group-id",
+    required=True,
+    help="Namespace/group ID for the new context",
+)
+@click.option(
+    "--service-name",
+    help="Optional service name for context creation",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def create(node, application_id, params, verbose):
+def create(node, application_id, params, group_id, service_name, verbose):
     """Create a new context for an application."""
     manager = DockerManager()
 
@@ -142,7 +166,12 @@ def create(node, application_id, params, verbose):
     )
 
     result = run_async_function(
-        create_context_via_admin_api, rpc_url, application_id, params_json
+        create_context_via_admin_api,
+        rpc_url,
+        application_id,
+        params_json,
+        group_id,
+        service_name,
     )
 
     if result["success"]:

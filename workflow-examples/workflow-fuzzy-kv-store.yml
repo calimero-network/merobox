@@ -20,78 +20,79 @@ steps:
     outputs:
       app_id: applicationId
 
-  # Step 2: Create a context for the application
+  # Step 2: Create a namespace for the application
+  - name: Create Namespace
+    type: create_namespace
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  # Step 3: Create a context for the application
   - name: Create Context
     type: create_context
     node: calimero-node-1
     application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey
 
-  # Step 3: Create identity on node 2
+  # Step 4: Create identity on node 2
   - name: Create Identity on Node 2
     type: create_identity
     node: calimero-node-2
     outputs:
       public_key_node2: publicKey
 
-  # Step 4: Create identity on node 3
+  # Step 5: Create identity on node 3
   - name: Create Identity on Node 3
     type: create_identity
     node: calimero-node-3
     outputs:
       public_key_node3: publicKey
 
-  # Step 5: Wait for identities to propagate
+  # Step 6: Wait for identities to propagate
   - name: Wait for Identity Propagation
     type: wait
     seconds: 3
 
-  # Step 6: Invite node 2 to context
+  # Step 7: Invite node 2 to namespace
   - name: Invite Node 2
-    type: invite
+    type: create_namespace_invitation
     node: calimero-node-1
-    context_id: "{{context_id}}"
-    grantee_id: "{{public_key_node2}}"
-    granter_id: "{{member_public_key}}"
-    capability: member
+    namespace_id: "{{namespace_id}}"
     outputs:
       invitation_node2: invitation
 
-  # Step 7: Join context from node 2
+  # Step 8: Join namespace from node 2
   - name: Join Context from Node 2
-    type: join
+    type: join_namespace
     node: calimero-node-2
-    context_id: "{{context_id}}"
-    invitee_id: "{{public_key_node2}}"
+    namespace_id: "{{namespace_id}}"
     invitation: "{{invitation_node2}}"
 
-  # Step 8: Invite node 3 to context
+  # Step 9: Invite node 3 to namespace
   - name: Invite Node 3
-    type: invite
+    type: create_namespace_invitation
     node: calimero-node-1
-    context_id: "{{context_id}}"
-    grantee_id: "{{public_key_node3}}"
-    granter_id: "{{member_public_key}}"
-    capability: member
+    namespace_id: "{{namespace_id}}"
     outputs:
       invitation_node3: invitation
 
-  # Step 9: Join context from node 3
+  # Step 10: Join namespace from node 3
   - name: Join Context from Node 3
-    type: join
+    type: join_namespace
     node: calimero-node-3
-    context_id: "{{context_id}}"
-    invitee_id: "{{public_key_node3}}"
+    namespace_id: "{{namespace_id}}"
     invitation: "{{invitation_node3}}"
 
-  # Step 10: Wait for context to propagate
+  # Step 11: Wait for context to propagate
   - name: Wait for Context Propagation
     type: wait
     seconds: 5
 
-  # Step 11: Run fuzzy load test for 5 minutes (for demo purposes)
+  # Step 12: Run fuzzy load test for 5 minutes (for demo purposes)
   # In production, use 30-60 minutes for comprehensive testing
   - name: Fuzzy Load Test - KV Store Operations
     type: fuzzy_test

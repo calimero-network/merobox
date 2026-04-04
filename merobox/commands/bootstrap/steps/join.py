@@ -1,27 +1,20 @@
 """
-Join group step executor (invitation-based).
+Join namespace step executor (invitation-based).
 
-Unified step that handles invitation-based group joining.
-Step types 'join' and 'join_open' route here.
-
-The old context-based join flow (POST /contexts/join) has been replaced
-by group-based joining (POST /groups/join).
+Unified step that handles invitation-based namespace joining.
+Step types 'join' and 'join_open' route here as deprecated aliases.
 """
 
 import json as json_lib
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.join import join_group_via_admin_api
+from merobox.commands.join import join_namespace_via_admin_api
 from merobox.commands.utils import console
 
 
-class JoinContextStep(BaseStep):
-    """Execute a join step via group invitation (handles 'join' and 'join_open' step types).
-
-    Despite the class name (kept for backward compatibility with imports), this now
-    joins a GROUP using an invitation, not a context directly.
-    """
+class JoinNamespaceStep(BaseStep):
+    """Execute a join step via namespace invitation."""
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "invitation"]
@@ -40,20 +33,20 @@ class JoinContextStep(BaseStep):
         """
         Define which variables this step can export.
 
-        Available variables from join_group API response:
-        - groupId: ID of the group joined
+        Available variables from join_namespace API response:
+        - namespaceId: ID of the namespace joined
         - memberIdentity: Member identity public key after joining
         """
         return [
             (
-                "groupId",
-                "join_group_id_{node_name}",
-                "ID of the group joined",
+                "namespaceId",
+                "join_namespace_id_{node_name}",
+                "ID of the namespace joined",
             ),
             (
                 "memberIdentity",
                 "join_member_identity_{node_name}",
-                "Member identity after joining the group",
+                "Member identity after joining the namespace",
             ),
         ]
 
@@ -61,6 +54,11 @@ class JoinContextStep(BaseStep):
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
+        namespace_id = self._resolve_dynamic_value(
+            self.config.get("namespace_id", self.config.get("group_id")),
+            workflow_results,
+            dynamic_values,
+        )
         invitation = self._resolve_dynamic_value(
             self.config["invitation"], workflow_results, dynamic_values
         )
@@ -89,6 +87,7 @@ class JoinContextStep(BaseStep):
             return False
 
         console.print(f"[blue]Debug: Resolved values for join step:[/blue]")
+        console.print(f"  namespace_id: {namespace_id}")
         console.print(
             f"  invitation: {invitation_json[:80] if len(invitation_json) > 80 else invitation_json}"
         )
@@ -100,13 +99,16 @@ class JoinContextStep(BaseStep):
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
-        console.print("[blue]About to call join_group function...[/blue]")
-        result = await join_group_via_admin_api(
-            rpc_url, invitation_json, node_name=client_node_name
+        console.print("[blue]About to call join_namespace function...[/blue]")
+        result = await join_namespace_via_admin_api(
+            rpc_url,
+            namespace_id,
+            invitation_json,
+            node_name=client_node_name,
         )
-        console.print(f"[blue]Join group function returned: {result}[/blue]")
+        console.print(f"[blue]Join namespace function returned: {result}[/blue]")
 
-        console.print(f"[cyan]🔍 Join Group API Response for {node_name}:[/cyan]")
+        console.print(f"[cyan]🔍 Join Namespace API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")
@@ -126,7 +128,7 @@ class JoinContextStep(BaseStep):
             if self._check_jsonrpc_error(result["data"]):
                 return False
 
-            step_key = f"join_{node_name}"
+            step_key = f"join_namespace_{node_name}"
             workflow_results[step_key] = result["data"]
 
             self._export_variables(result["data"], node_name, dynamic_values)
@@ -134,6 +136,11 @@ class JoinContextStep(BaseStep):
             return True
         else:
             console.print(
-                f"[red]Join group failed: {result.get('error', 'Unknown error')}[/red]"
+                f"[red]Join namespace failed: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
+
+
+# Deprecated aliases kept for backward compatibility.
+JoinContextStep = JoinNamespaceStep
+JoinInvitationStep = JoinNamespaceStep

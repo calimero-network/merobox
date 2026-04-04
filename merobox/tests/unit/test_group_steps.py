@@ -1,7 +1,7 @@
 """
-Unit tests for group workflow step classes.
+Unit tests for namespace/group workflow step classes.
 
-Covers: CreateGroupStep, CreateGroupInvitationStep, JoinGroupStep,
+Covers: CreateNamespaceStep, CreateNamespaceInvitationStep, JoinNamespaceStep,
         JoinContextStep (join_context module) — validation logic and fallback capture.
 """
 
@@ -10,29 +10,29 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
-from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
-from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
+from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
+from merobox.commands.bootstrap.steps.group_invite import CreateNamespaceInvitationStep
+from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 
 # =============================================================================
-# CreateGroupStep
+# CreateNamespaceStep
 # =============================================================================
 
 
-class TestCreateGroupStep:
-    """Tests for CreateGroupStep validation."""
+class TestCreateNamespaceStep:
+    """Tests for CreateNamespaceStep validation."""
 
     def setup_method(self):
         self.base_config = {
-            "type": "create_group",
-            "name": "Test Create Group",
+            "type": "create_namespace",
+            "name": "Test Create Namespace",
             "node": "calimero-node-1",
             "application_id": "app123",
         }
 
-    def _make_step(self, config: dict) -> CreateGroupStep:
-        return CreateGroupStep(config)
+    def _make_step(self, config: dict) -> CreateNamespaceStep:
+        return CreateNamespaceStep(config)
 
     def test_valid_config_passes_validation(self):
         """Valid config should not raise."""
@@ -72,23 +72,23 @@ class TestCreateGroupStep:
 
 
 # =============================================================================
-# CreateGroupInvitationStep
+# CreateNamespaceInvitationStep
 # =============================================================================
 
 
-class TestCreateGroupInvitationStep:
-    """Tests for CreateGroupInvitationStep validation."""
+class TestCreateNamespaceInvitationStep:
+    """Tests for CreateNamespaceInvitationStep validation."""
 
     def setup_method(self):
         self.base_config = {
-            "type": "create_group_invitation",
+            "type": "create_namespace_invitation",
             "name": "Test Create Invitation",
             "node": "calimero-node-1",
-            "group_id": "group-abc",
+            "namespace_id": "namespace-abc",
         }
 
-    def _make_step(self, config: dict) -> CreateGroupInvitationStep:
-        return CreateGroupInvitationStep(config)
+    def _make_step(self, config: dict) -> CreateNamespaceInvitationStep:
+        return CreateNamespaceInvitationStep(config)
 
     def test_valid_config_passes_validation(self):
         self._make_step(self.base_config)
@@ -99,10 +99,10 @@ class TestCreateGroupInvitationStep:
         with pytest.raises(ValueError, match="node"):
             self._make_step(config)
 
-    def test_missing_group_id_raises(self):
+    def test_missing_namespace_and_group_id_raises(self):
         config = {**self.base_config}
-        del config["group_id"]
-        with pytest.raises(ValueError, match="group_id"):
+        del config["namespace_id"]
+        with pytest.raises(ValueError, match="namespace_id"):
             self._make_step(config)
 
     def test_node_not_string_raises(self):
@@ -110,10 +110,19 @@ class TestCreateGroupInvitationStep:
         with pytest.raises(ValueError, match="'node' must be a string"):
             self._make_step(config)
 
-    def test_group_id_not_string_raises(self):
-        config = {**self.base_config, "group_id": ["bad"]}
-        with pytest.raises(ValueError, match="'group_id' must be a string"):
+    def test_namespace_id_not_string_raises(self):
+        config = {**self.base_config, "namespace_id": ["bad"]}
+        with pytest.raises(ValueError, match="'namespace_id'"):
             self._make_step(config)
+
+    def test_deprecated_group_id_alias_still_works(self):
+        config = {
+            "type": "create_namespace_invitation",
+            "name": "Alias test",
+            "node": "calimero-node-1",
+            "group_id": "legacy-group-id",
+        }
+        self._make_step(config)
 
     def test_node_none_raises(self):
         config = {**self.base_config, "node": None}
@@ -122,23 +131,24 @@ class TestCreateGroupInvitationStep:
 
 
 # =============================================================================
-# JoinGroupStep
+# JoinNamespaceStep
 # =============================================================================
 
 
-class TestJoinGroupStep:
-    """Tests for JoinGroupStep validation."""
+class TestJoinNamespaceStep:
+    """Tests for JoinNamespaceStep validation."""
 
     def setup_method(self):
         self.base_config = {
-            "type": "join_group",
-            "name": "Test Join Group",
+            "type": "join_namespace",
+            "name": "Test Join Namespace",
             "node": "calimero-node-2",
+            "namespace_id": "namespace-xyz",
             "invitation": '{"type": "SignedGroupOpenInvitation"}',
         }
 
-    def _make_step(self, config: dict) -> JoinGroupStep:
-        return JoinGroupStep(config)
+    def _make_step(self, config: dict) -> JoinNamespaceStep:
+        return JoinNamespaceStep(config)
 
     def test_valid_config_passes_validation(self):
         self._make_step(self.base_config)
@@ -147,6 +157,12 @@ class TestJoinGroupStep:
         config = {**self.base_config}
         del config["node"]
         with pytest.raises(ValueError, match="node"):
+            self._make_step(config)
+
+    def test_missing_namespace_and_group_id_raises(self):
+        config = {**self.base_config}
+        del config["namespace_id"]
+        with pytest.raises(ValueError, match="namespace_id"):
             self._make_step(config)
 
     def test_missing_invitation_raises(self):
@@ -174,6 +190,16 @@ class TestJoinGroupStep:
         config = {**self.base_config, "invitation": None}
         with pytest.raises(ValueError, match="invitation"):
             self._make_step(config)
+
+    def test_deprecated_group_id_alias_still_works(self):
+        config = {
+            "type": "join_namespace",
+            "name": "Alias test",
+            "node": "calimero-node-2",
+            "group_id": "legacy-group-id",
+            "invitation": '{"type": "SignedGroupOpenInvitation"}',
+        }
+        self._make_step(config)
 
 
 # =============================================================================

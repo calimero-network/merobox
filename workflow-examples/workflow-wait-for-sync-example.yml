@@ -20,70 +20,71 @@ steps:
     outputs:
       app_id: applicationId
 
-  # Step 2: Create context on first node
+  # Step 2: Create namespace on first node
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: sync-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  # Step 3: Create context on first node
   - name: Create Context on Node 1
     type: create_context
     node: sync-node-1
     application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey
 
-  # Step 3: Generate identity on node 2
+  # Step 4: Generate identity on node 2
   - name: Create Identity on Node 2
     type: create_identity
     node: sync-node-2
     outputs:
       public_key_node_2: publicKey
 
-  # Step 4: Generate identity on node 3
+  # Step 5: Generate identity on node 3
   - name: Create Identity on Node 3
     type: create_identity
     node: sync-node-3
     outputs:
       public_key_node_3: publicKey
 
-  # Step 5: Wait for identity operations to complete
+  # Step 6: Wait for identity operations to complete
   - name: Wait for Identity Operations
     type: wait
     seconds: 3
 
-  # Step 6: Invite node 2 to join
+  # Step 7: Invite node 2 to join namespace
   - name: Invite Node 2
-    type: invite
+    type: create_namespace_invitation
     node: sync-node-1
-    context_id: "{{context_id}}"
-    grantee_id: "{{public_key_node_2}}"
-    granter_id: "{{member_public_key}}"
-    capability: member
+    namespace_id: "{{namespace_id}}"
     outputs:
       invitation_node_2: invitation
 
-  # Step 7: Node 2 joins the context
-  - name: Join Context from Node 2
-    type: join
+  # Step 8: Node 2 joins the namespace
+  - name: Join Namespace from Node 2
+    type: join_namespace
     node: sync-node-2
-    context_id: "{{context_id}}"
-    invitee_id: "{{public_key_node_2}}"
+    namespace_id: "{{namespace_id}}"
     invitation: "{{invitation_node_2}}"
 
-  # Step 8: Invite node 3 to join
+  # Step 9: Invite node 3 to join namespace
   - name: Invite Node 3
-    type: invite
+    type: create_namespace_invitation
     node: sync-node-1
-    context_id: "{{context_id}}"
-    grantee_id: "{{public_key_node_3}}"
-    granter_id: "{{member_public_key}}"
-    capability: member
+    namespace_id: "{{namespace_id}}"
     outputs:
       invitation_node_3: invitation
 
-  # Step 9: Node 3 joins the context
-  - name: Join Context from Node 3
-    type: join
+  # Step 10: Node 3 joins the namespace
+  - name: Join Namespace from Node 3
+    type: join_namespace
     node: sync-node-3
-    context_id: "{{context_id}}"
-    invitee_id: "{{public_key_node_3}}"
+    namespace_id: "{{namespace_id}}"
     invitation: "{{invitation_node_3}}"
 
   # Step 10: NEW! Wait for all nodes to sync after join operations

@@ -19,11 +19,19 @@ steps:
     outputs:
       app_id: applicationId
 
-  # Step 2: Create a context using the installed application
+  # Step 2: Create namespace and context using the installed application
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
   - name: Create Context on Node 1
     type: create_context
     node: calimero-node-1
     application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey

@@ -1,5 +1,5 @@
 """
-Create group step executor.
+Create namespace step executor.
 """
 
 from typing import Any
@@ -10,8 +10,8 @@ from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
 
-class CreateGroupStep(BaseStep):
-    """Execute a create group step."""
+class CreateNamespaceStep(BaseStep):
+    """Execute a create namespace step."""
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "application_id"]
@@ -24,13 +24,15 @@ class CreateGroupStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
         if not isinstance(self.config.get("application_id"), str):
             raise ValueError(f"Step '{step_name}': 'application_id' must be a string")
+        if "alias" in self.config and not isinstance(self.config.get("alias"), str):
+            raise ValueError(f"Step '{step_name}': 'alias' must be a string")
 
     def _get_exportable_variables(self):
         return [
             (
-                "groupId",
-                "group_id_{node_name}",
-                "Group ID - primary identifier for the created group",
+                "namespaceId",
+                "namespace_id_{node_name}",
+                "Namespace ID - primary identifier for the created namespace",
             ),
         ]
 
@@ -42,10 +44,10 @@ class CreateGroupStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
 
-        parent_group_id = None
-        if "parent_group_id" in self.config:
-            parent_group_id = self._resolve_dynamic_value(
-                self.config["parent_group_id"], workflow_results, dynamic_values
+        alias = None
+        if "alias" in self.config:
+            alias = self._resolve_dynamic_value(
+                self.config["alias"], workflow_results, dynamic_values
             )
 
         try:
@@ -56,43 +58,55 @@ class CreateGroupStep(BaseStep):
 
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.create_group(
-                application_id=application_id, parent_group_id=parent_group_id
-            )
+            create_namespace = getattr(client, "create_namespace", None)
+            if callable(create_namespace):
+                api_result = create_namespace(
+                    application_id=application_id,
+                    alias=alias,
+                )
+            else:
+                # Backward compatibility for older client versions.
+                api_result = client.create_group(application_id=application_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("create_group failed", error=e)
+            result = fail("create_namespace failed", error=e)
 
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
                 return False
 
-            step_key = f"group_{node_name}"
+            step_key = f"namespace_{node_name}"
             workflow_results[step_key] = result["data"]
             self._export_variables(result["data"], node_name, dynamic_values)
 
-            # Fallback: ensure group_id is captured
-            if f"group_id_{node_name}" not in dynamic_values:
+            # Fallback: ensure namespace_id is captured
+            if f"namespace_id_{node_name}" not in dynamic_values:
                 if isinstance(result["data"], dict):
                     nested = result["data"].get("data", result["data"])
-                    group_id = (
-                        nested.get("groupId") if isinstance(nested, dict) else None
+                    namespace_id = (
+                        nested.get("namespaceId")
+                        if isinstance(nested, dict)
+                        else None
                     )
-                    if group_id:
-                        dynamic_values[f"group_id_{node_name}"] = group_id
+                    if namespace_id:
+                        dynamic_values[f"namespace_id_{node_name}"] = namespace_id
                         console.print(
-                            f"[blue]Captured group ID for {node_name}: {group_id}[/blue]"
+                            f"[blue]Captured namespace ID for {node_name}: {namespace_id}[/blue]"
                         )
 
             console.print(
-                f"[green]✓ Group created on {node_name}: "
-                f"{dynamic_values.get(f'group_id_{node_name}', 'unknown')}[/green]"
+                f"[green]✓ Namespace created on {node_name}: "
+                f"{dynamic_values.get(f'namespace_id_{node_name}', 'unknown')}[/green]"
             )
             return True
         else:
             console.print(
-                f"[red]Group creation failed on {node_name}: "
+                f"[red]Namespace creation failed on {node_name}: "
                 f"{result.get('error', 'Unknown error')}[/red]"
             )
             self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False
+
+
+# Deprecated alias kept for backward compatibility.
+CreateGroupStep = CreateNamespaceStep
