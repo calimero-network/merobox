@@ -9,16 +9,22 @@ from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
-from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
-from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
-from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
+from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
+from merobox.commands.bootstrap.steps.group_invite import CreateNamespaceInvitationStep
+from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
-from merobox.commands.bootstrap.steps.join import JoinContextStep as JoinInvitationStep
+from merobox.commands.bootstrap.steps.join import JoinNamespaceStep as JoinInvitationStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+from merobox.commands.bootstrap.steps.namespace import (
+    CreateGroupInNamespaceStep,
+    GetNamespaceIdentityStep,
+    ListNamespaceGroupsStep,
+    ListNamespacesStep,
+)
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
@@ -27,7 +33,13 @@ from merobox.commands.bootstrap.steps.proposals import (
 )
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
+from merobox.commands.bootstrap.steps.subgroup import (
+    ListSubgroupsStep,
+    NestGroupStep,
+    UnnestGroupStep,
+)
 from merobox.commands.bootstrap.steps.wait import WaitStep
+from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 
 
@@ -136,6 +148,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = ExecuteStep
         elif step_type == "wait":
             step_class = WaitStep
+        elif step_type == "wait_for_sync":
+            step_class = WaitForSyncStep
         elif step_type == "repeat":
             step_class = RepeatStep
         elif step_type == "parallel":
@@ -154,14 +168,28 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = GetProposalApproversStep
         elif step_type == "fuzzy_test":
             step_class = FuzzyTestStep
-        elif step_type == "create_group":
-            step_class = CreateGroupStep
-        elif step_type == "create_group_invitation":
-            step_class = CreateGroupInvitationStep
-        elif step_type == "join_group":
-            step_class = JoinGroupStep
+        elif step_type in ("create_namespace", "create_group"):
+            step_class = CreateNamespaceStep
+        elif step_type in ("create_namespace_invitation", "create_group_invitation"):
+            step_class = CreateNamespaceInvitationStep
+        elif step_type in ("join_namespace", "join_group"):
+            step_class = JoinNamespaceStep
         elif step_type == "join_context":
             step_class = JoinContextStep
+        elif step_type == "list_namespaces":
+            step_class = ListNamespacesStep
+        elif step_type == "get_namespace_identity":
+            step_class = GetNamespaceIdentityStep
+        elif step_type == "create_group_in_namespace":
+            step_class = CreateGroupInNamespaceStep
+        elif step_type == "list_namespace_groups":
+            step_class = ListNamespaceGroupsStep
+        elif step_type == "nest_group":
+            step_class = NestGroupStep
+        elif step_type == "unnest_group":
+            step_class = UnnestGroupStep
+        elif step_type == "list_subgroups":
+            step_class = ListSubgroupsStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

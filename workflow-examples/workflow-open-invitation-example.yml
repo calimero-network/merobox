@@ -21,11 +21,19 @@ steps:
     outputs:
       app_id: applicationId
 
-  # Create context
+  # Create namespace + context
+  - name: Create Namespace
+    type: create_namespace
+    node: open-inv-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
   - name: Create Context
     type: create_context
     node: open-inv-node-1
     application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey
@@ -72,25 +80,21 @@ steps:
 
 
 
-  # Create open invitation
+  # Create open namespace invitation
   - name: Create Open Invitation
-    type: invite
+    type: create_namespace_invitation
     node: open-inv-node-1
-    context_id: "{{context_id}}"
-    granter_id: "{{member_public_key}}"
-    valid_for_seconds: 1000
+    namespace_id: "{{namespace_id}}"
+    recursive: true
     outputs:
       open_invitation: invitation
 
-  # Join using open invitation
+  # Join using namespace invitation
   - name: Join via Open Invitation - Node 2
-    type: join
+    type: join_namespace
     node: open-inv-node-2
-    invitee_id: "{{public_key_2}}"
+    namespace_id: "{{namespace_id}}"
     invitation: "{{open_invitation}}"
-    outputs:
-      joined_context_id_2: contextId
-      joined_member_key_2: memberPublicKey
 
   # Wait for all nodes to sync after join (root hash consensus)
   - name: Wait for All Nodes to Sync After Join

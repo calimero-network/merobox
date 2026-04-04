@@ -18,10 +18,18 @@ steps:
     outputs:
       app_id: applicationId
 
+  - name: Create Namespace
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
   - name: Create Context
     type: create_context
     node: calimero-node-1
     application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey

@@ -2,10 +2,10 @@
 Create mesh step executor - Creates a context and connects multiple nodes to it.
 
 The mesh step uses the namespace governance flow:
-1. Create context on the context_node (this also creates a group in the namespace)
-2. For each joining node: create group invitation, join group
-3. Join publishes a MemberJoined op on the namespace topic (no relay needed)
-4. Contexts are joined automatically via group auto_join
+1. Create namespace on the context_node
+2. Create context in that namespace
+3. For each joining node: create namespace invitation, join namespace
+4. Contexts are joined automatically via namespace/group auto_join
 """
 
 import json as json_lib
@@ -14,10 +14,10 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.identity import (
-    create_group_invitation_via_admin_api,
+    create_namespace_invitation_via_admin_api,
     generate_identity_via_admin_api,
 )
-from merobox.commands.join import join_group_via_admin_api
+from merobox.commands.join import join_namespace_via_admin_api
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console, extract_nested_data
 
@@ -92,7 +92,7 @@ class CreateMeshStep(BaseStep):
                 "[yellow]⚠️  CreateMesh step export configuration validation failed[/yellow]"
             )
 
-        console.print(f"\n[bold]Step 1: Creating context on {context_node}[/bold]")
+        console.print(f"\n[bold]Step 1: Creating namespace on {context_node}[/bold]")
         try:
             context_rpc_url, client_context_node = self._resolve_node_for_client(
                 context_node
@@ -117,10 +117,48 @@ class CreateMeshStep(BaseStep):
             client = get_client_for_rpc_url(
                 context_rpc_url, node_name=client_context_node
             )
-            api_result = client.create_context(
-                application_id=application_id,
-                params=params_json,
+            create_namespace = getattr(client, "create_namespace", None)
+            if callable(create_namespace):
+                namespace_result = ok(
+                    create_namespace(application_id=application_id)
+                )
+            else:
+                # Backward compatibility for older client versions.
+                namespace_result = ok(
+                    client.create_group(
+                        application_id=application_id,
+                        parent_group_id=None,
+                    )
+                )
+        except Exception as e:
+            namespace_result = fail("create_namespace failed", error=e)
+
+        if not namespace_result.get("success"):
+            console.print(
+                f"[red]Namespace creation failed: {namespace_result.get('error', 'Unknown error')}[/red]"
             )
+            return False
+
+        if self._check_jsonrpc_error(namespace_result["data"]):
+            return False
+
+        namespace_data = namespace_result["data"]
+        namespace_id = extract_nested_data(namespace_data, "namespaceId", "groupId")
+        if not namespace_id:
+            console.print("[red]Failed to extract namespace ID from response[/red]")
+            return False
+
+        console.print(f"[green]✓ Namespace created: {namespace_id}[/green]")
+        dynamic_values["namespace_id"] = namespace_id
+
+        console.print(f"\n[bold]Step 2: Creating context on {context_node}[/bold]")
+        try:
+            context_kwargs = {
+                "application_id": application_id,
+                "params": params_json,
+                "group_id": namespace_id,
+            }
+            api_result = client.create_context(**context_kwargs)
             context_result = ok(api_result)
         except Exception as e:
             context_result = fail("create_context failed", error=e)
@@ -155,7 +193,6 @@ class CreateMeshStep(BaseStep):
 
         context_id = extract_nested_data(context_data, "contextId", "id", "name")
         member_public_key = extract_nested_data(context_data, "memberPublicKey")
-        group_id = extract_nested_data(context_data, "groupId")
 
         if not context_id:
             console.print("[red]Failed to extract context ID from response[/red]")
@@ -184,8 +221,7 @@ class CreateMeshStep(BaseStep):
         console.print(f"[green]✓ Context created: {context_id}[/green]")
         if member_public_key:
             console.print(f"[green]✓ Member public key: {member_public_key}[/green]")
-        if group_id:
-            console.print(f"[green]✓ Group ID: {group_id}[/green]")
+        console.print(f"[green]✓ Namespace ID: {namespace_id}[/green]")
 
         step_key = f"context_{context_node}"
         workflow_results[step_key] = context_data
@@ -196,15 +232,8 @@ class CreateMeshStep(BaseStep):
                 dynamic_values["context_id"] = context_id
             if member_public_key and "member_public_key" not in dynamic_values:
                 dynamic_values["member_public_key"] = member_public_key
-            if group_id and "group_id" not in dynamic_values:
-                dynamic_values["group_id"] = group_id
-
-        if not group_id:
-            console.print(
-                "[red]Failed to extract group ID from context creation response. "
-                "The group-based mesh flow requires a group ID.[/red]"
-            )
-            return False
+            if "group_id" not in dynamic_values:
+                dynamic_values["group_id"] = namespace_id
 
         connected_nodes = [context_node]
 
@@ -291,19 +320,19 @@ class CreateMeshStep(BaseStep):
             if nodes_to_process_count == 1 and "public_key" not in dynamic_values:
                 dynamic_values["public_key"] = public_key
 
-            # Step: Create group invitation from context node
+            # Step: Create namespace invitation from context node
             console.print(
-                f"  [cyan]Creating group invitation from {context_node}...[/cyan]"
+                f"  [cyan]Creating namespace invitation from {context_node}...[/cyan]"
             )
-            invite_result = await create_group_invitation_via_admin_api(
+            invite_result = await create_namespace_invitation_via_admin_api(
                 context_rpc_url,
-                group_id,
+                namespace_id,
                 node_name=client_context_node,
             )
 
             if not invite_result.get("success"):
                 console.print(
-                    f"[red]Group invitation failed for {node_name}: {invite_result.get('error', 'Unknown error')}[/red]"
+                    f"[red]Namespace invitation failed for {node_name}: {invite_result.get('error', 'Unknown error')}[/red]"
                 )
                 return False
 
@@ -323,34 +352,35 @@ class CreateMeshStep(BaseStep):
                 )
                 return False
 
-            console.print("  [green]✓ Group invitation created[/green]")
+            console.print("  [green]✓ Namespace invitation created[/green]")
 
             invite_key = f"invite_{context_node}_{node_name}"
             workflow_results[invite_key] = invitation
 
-            # Step: Join group from the joining node
-            console.print(f"  [cyan]Joining group from {node_name}...[/cyan]")
+            # Step: Join namespace from the joining node
+            console.print(f"  [cyan]Joining namespace from {node_name}...[/cyan]")
             invitation_json = (
                 json_lib.dumps(invitation)
                 if isinstance(invitation, dict)
                 else str(invitation)
             )
-            join_result = await join_group_via_admin_api(
+            join_result = await join_namespace_via_admin_api(
                 node_rpc_url,
+                namespace_id,
                 invitation_json,
                 node_name=client_node_name,
             )
 
             if not join_result.get("success"):
                 console.print(
-                    f"[red]Join group failed for {node_name}: {join_result.get('error', 'Unknown error')}[/red]"
+                    f"[red]Join namespace failed for {node_name}: {join_result.get('error', 'Unknown error')}[/red]"
                 )
                 return False
 
             if self._check_jsonrpc_error(join_result["data"]):
                 return False
 
-            console.print("  [green]✓ Joined group successfully[/green]")
+            console.print("  [green]✓ Joined namespace successfully[/green]")
 
             join_key = f"join_{node_name}"
             join_data = join_result["data"]
@@ -379,7 +409,7 @@ class CreateMeshStep(BaseStep):
 
         console.print("\n[bold green]✓ Mesh created successfully![/bold green]")
         console.print(f"  Context: {context_id} on {context_node}")
-        console.print(f"  Group: {group_id}")
+        console.print(f"  Namespace: {namespace_id}")
         console.print(f"  Connected nodes: {', '.join(connected_nodes)}")
 
         return True

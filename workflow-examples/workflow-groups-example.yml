@@ -25,12 +25,12 @@ steps:
   # Step 2: Create a group on node 1 tied to the installed application.
   # All contexts in this group will run the same application version,
   # enabling unified upgrade propagation.
-  - name: Create Group on Node 1
-    type: create_group
+  - name: Create Namespace on Node 1
+    type: create_namespace
     node: calimero-node-1
     application_id: '{{app_id}}'
     outputs:
-      group_id: groupId
+      group_id: namespaceId
 
   # Step 3: Create a context inside the group on node 1.
   # The group_id field registers this context with the group so that
@@ -48,10 +48,10 @@ steps:
   # The invitation uses a commit-reveal protocol to prevent front-running
   # on-chain. The CLI handles this transparently — the output is a
   # SignedGroupOpenInvitation that any joiner can use.
-  - name: Create Group Invitation on Node 1
-    type: create_group_invitation
+  - name: Create Namespace Invitation on Node 1
+    type: create_namespace_invitation
     node: calimero-node-1
-    group_id: '{{group_id_calimero-node-1}}'
+    namespace_id: '{{group_id_calimero-node-1}}'
 
   # Wait for group gossip to propagate from node 1 to node 2.
   # Node 2 needs the group metadata before it can process the join.
@@ -62,10 +62,11 @@ steps:
   # Step 5: Node 2 joins the group using the invitation from node 1.
   # After this step node 2 becomes a group member with the default
   # CAN_JOIN_OPEN_CONTEXTS capability.
-  - name: Node 2 Joins Group
-    type: join_group
+  - name: Node 2 Joins Namespace
+    type: join_namespace
     node: calimero-node-2
-    invitation: '{{group_invitation_calimero-node-1}}'
+    namespace_id: '{{group_id_calimero-node-1}}'
+    invitation: '{{namespace_invitation_calimero-node-1}}'
 
   # Step 6: Node 2 joins the existing context via group membership.
   # join_context creates a fresh per-context identity for node 2,

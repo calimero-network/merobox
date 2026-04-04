@@ -19,11 +19,20 @@ steps:
         field: applicationId
         target: app_id_{node_name}
 
-  # Step 2: Create context using custom output names
+  # Step 2: Create namespace using custom output names
+  - name: Create Namespace with Custom Names
+    type: create_namespace
+    node: calimero-node-1
+    application_id: "{{my_app_id}}"
+    outputs:
+      my_namespace_id: namespaceId
+
+  # Step 3: Create context using custom output names
   - name: Create Context with Custom Names
     type: create_context
     node: calimero-node-1
     application_id: "{{my_app_id}}" # Use custom output name
+    group_id: "{{my_namespace_id}}"
     outputs:
       my_context_id: contextId # Export 'contextId' as 'my_context_id'
       member_key: memberPublicKey # Export 'memberPublicKey' as 'member_key'
@@ -31,7 +40,7 @@ steps:
         field: contextId
         target: context_id_{node_name}
 
-  # Step 3: Generate identity with custom outputs
+  # Step 4: Generate identity with custom outputs
   - name: Create Identity with Custom Names
     type: create_identity
     node: calimero-node-2
@@ -41,31 +50,27 @@ steps:
         field: publicKey
         target: public_key_{node_name}
 
-  # Step 4: Wait for identity creation to complete
+  # Step 5: Wait for identity creation to complete
   - name: Wait for Identity Creation
     type: wait
     seconds: 5
 
-  # Step 5: Invite identity using custom output names
+  # Step 6: Invite identity using custom output names
   - name: Invite Identity with Custom Names
-    type: invite
+    type: create_namespace_invitation
     node: calimero-node-1
-    context_id: "{{my_context_id}}" # Use custom context ID
-    granter_id: "{{member_key}}" # Use custom member key
-    grantee_id: "{{my_public_key}}" # Use custom public key
-    capability: member
+    namespace_id: "{{my_namespace_id}}"
     outputs:
       my_invitation: invitation # Export 'invitation' as 'my_invitation'
 
-  # Step 6: Join context using custom output names
+  # Step 7: Join context using custom output names
   - name: Join Context with Custom Names
-    type: join
+    type: join_namespace
     node: calimero-node-2
-    context_id: "{{my_context_id}}" # Use custom context ID
-    invitee_id: "{{my_public_key}}" # Use custom public key
+    namespace_id: "{{my_namespace_id}}"
     invitation: "{{my_invitation}}" # Use custom invitation
 
-  # Step 7: Execute contract call using custom output names
+  # Step 8: Execute contract call using custom output names
   - name: Execute Contract Call with Custom Names
     type: call
     node: calimero-node-1
@@ -78,7 +83,7 @@ steps:
     outputs:
       call_result: result # Export 'result' as 'call_result'
 
-  # Step 8: Wait for the set operation to complete
+  # Step 9: Wait for the set operation to complete
   - name: Wait for Set Operation
     type: wait_for_sync
     context_id: "{{my_context_id}}"
@@ -89,7 +94,7 @@ steps:
     check_interval: 2
     trigger_sync: true
 
-  # Step 9: Execute view call using custom output names
+  # Step 10: Execute view call using custom output names
   - name: Execute View Call with Custom Names
     type: call
     node: calimero-node-2
@@ -101,7 +106,7 @@ steps:
     outputs:
       get_result: result # Export 'result' as 'get_result'
 
-  # Step 10: Execute script with custom outputs
+  # Step 11: Execute script with custom outputs
   - name: Execute Script with Custom Names
     type: script
     target: nodes
@@ -111,7 +116,7 @@ steps:
       exit_code: exit_code # Export 'exit_code' as 'exit_code'
       execution_time: execution_time # Export 'execution_time' as 'execution_time'
 
-  # Step 11: Repeat operations with custom outputs
+  # Step 12: Repeat operations with custom outputs
   - name: Repeat Operations with Custom Names
     type: repeat
     count: 3

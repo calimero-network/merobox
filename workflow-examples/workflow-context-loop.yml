@@ -17,7 +17,15 @@ steps:
     outputs:
       app_id: applicationId          # Export 'applicationId' field as 'app_id'
 
-  # Step 2: Repeat context creation 100 times
+  # Step 2: Create namespace for repeated contexts
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  # Step 3: Repeat context creation 100 times
   - name: Create Context 10 Times
     type: repeat
     count: 10
@@ -29,6 +37,7 @@ steps:
         type: create_context
         node: calimero-node-1
         application_id: '{{app_id}}'
+        group_id: '{{namespace_id}}'
         outputs:
           context_id: contextId     # Export 'contextId' field as 'context_id'
       

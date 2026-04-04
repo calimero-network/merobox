@@ -76,6 +76,7 @@ class TestValidateWorkflowStep:
             "type": "create_context",
             "node": "calimero-node-1",
             "application_id": "{{app_id}}",
+            "group_id": "{{namespace_id}}",
         }
         errors = config_module.validate_workflow_step(step, 0)
         assert len(errors) == 0
@@ -472,11 +473,27 @@ class TestValidStepTypes:
         expected_types = [
             "install_application",
             "create_context",
+            "create_namespace",
+            "create_namespace_invitation",
+            "join_namespace",
             "create_identity",
+            # Deprecated aliases kept valid
+            "create_group",
+            "create_group_invitation",
+            "join_group",
+            "invite",
             "invite_identity",
             "join_context",
             "invite_open",
+            "join",
             "join_open",
+            "list_namespaces",
+            "get_namespace_identity",
+            "create_group_in_namespace",
+            "list_namespace_groups",
+            "nest_group",
+            "unnest_group",
+            "list_subgroups",
             "call",
             "wait",
             "wait_for_sync",
@@ -508,14 +525,12 @@ class TestStepSpecificValidation:
     """Tests for step-specific validation rules."""
 
     def test_invite_identity_all_required_fields(self, config_module):
-        """Test invite_identity step requires all fields."""
+        """Test invite_identity alias validates with namespace_id."""
         step = {
             "name": "Invite",
             "type": "invite_identity",
             "node": "calimero-node-1",
-            "context_id": "{{context_id}}",
-            "grantee_id": "{{public_key}}",
-            "granter_id": "{{member_key}}",
+            "namespace_id": "{{namespace_id}}",
         }
         errors = config_module.validate_workflow_step(step, 0)
         assert len(errors) == 0
@@ -532,13 +547,12 @@ class TestStepSpecificValidation:
         assert len(errors) == 0
 
     def test_join_invitation_all_required_fields(self, config_module):
-        """Test join step (invitation) requires invitee_id and invitation."""
+        """Test join alias validates with namespace_id and invitation."""
         step = {
             "name": "Join",
             "type": "join",
             "node": "calimero-node-2",
-            "context_id": "{{context_id}}",
-            "invitee_id": "{{public_key}}",
+            "namespace_id": "{{namespace_id}}",
             "invitation": "{{invitation}}",
         }
         errors = config_module.validate_workflow_step(step, 0)

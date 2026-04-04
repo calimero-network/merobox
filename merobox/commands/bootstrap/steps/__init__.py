@@ -8,19 +8,39 @@ from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
-from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
-from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
-from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
+from merobox.commands.bootstrap.steps.group_create import (
+    CreateGroupStep,
+    CreateNamespaceStep,
+)
+from merobox.commands.bootstrap.steps.group_invite import (
+    CreateGroupInvitationStep,
+    CreateNamespaceInvitationStep,
+)
+from merobox.commands.bootstrap.steps.group_join import JoinGroupStep, JoinNamespaceStep
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
-from merobox.commands.bootstrap.steps.join import JoinContextStep as JoinInvitationStep
+from merobox.commands.bootstrap.steps.join import (
+    JoinNamespaceStep as JoinInvitationStep,
+    JoinNamespaceStep as JoinNamespaceAliasStep,
+)
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+from merobox.commands.bootstrap.steps.namespace import (
+    CreateGroupInNamespaceStep,
+    GetNamespaceIdentityStep,
+    ListNamespaceGroupsStep,
+    ListNamespacesStep,
+)
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
+from merobox.commands.bootstrap.steps.subgroup import (
+    ListSubgroupsStep,
+    NestGroupStep,
+    UnnestGroupStep,
+)
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
 
@@ -32,14 +52,25 @@ __all__ = [
     "BaseStep",
     "InstallApplicationStep",
     "CreateContextStep",
+    "CreateNamespaceStep",
+    "CreateNamespaceInvitationStep",
+    "JoinNamespaceStep",
     "CreateGroupStep",
     "CreateGroupInvitationStep",
     "JoinGroupStep",
+    "ListNamespacesStep",
+    "GetNamespaceIdentityStep",
+    "CreateGroupInNamespaceStep",
+    "ListNamespaceGroupsStep",
+    "NestGroupStep",
+    "UnnestGroupStep",
+    "ListSubgroupsStep",
     "CreateIdentityStep",
     "InviteOpenStep",
     "InviteIdentityStep",
     "JoinContextStep",
     "JoinInvitationStep",
+    "JoinNamespaceAliasStep",
     "JoinOpenStep",
     "ExecuteStep",
     "WaitStep",
