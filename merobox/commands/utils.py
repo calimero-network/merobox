@@ -89,12 +89,12 @@ def check_node_running(node: str, manager: DockerManager) -> None:
         sys.exit(1)
 
 
-def run_async_function(func, *args) -> dict[str, Any]:
+def run_async_function(func, *args, **kwargs) -> dict[str, Any]:
     """Helper to run async functions in sync context."""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(func(*args))
+        result = loop.run_until_complete(func(*args, **kwargs))
         loop.close()
         return result
     except Exception as e:
