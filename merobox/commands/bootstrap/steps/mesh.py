@@ -143,6 +143,8 @@ class CreateMeshStep(BaseStep):
             return False
 
         namespace_data = namespace_result["data"]
+        if isinstance(namespace_data, dict) and "data" in namespace_data:
+            namespace_data = namespace_data["data"]
         namespace_id = extract_nested_data(namespace_data, "namespaceId", "groupId")
         if not namespace_id:
             console.print("[red]Failed to extract namespace ID from response[/red]")

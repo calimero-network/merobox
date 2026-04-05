@@ -75,19 +75,18 @@ class CreateNamespaceStep(BaseStep):
             if self._check_jsonrpc_error(result["data"]):
                 return False
 
+            namespace_data = result["data"]
+            if isinstance(namespace_data, dict) and "data" in namespace_data:
+                namespace_data = namespace_data["data"]
+
             step_key = f"namespace_{node_name}"
-            workflow_results[step_key] = result["data"]
-            self._export_variables(result["data"], node_name, dynamic_values)
+            workflow_results[step_key] = namespace_data
+            self._export_variables(namespace_data, node_name, dynamic_values)
 
             # Fallback: ensure namespace_id is captured
             if f"namespace_id_{node_name}" not in dynamic_values:
-                if isinstance(result["data"], dict):
-                    nested = result["data"].get("data", result["data"])
-                    namespace_id = (
-                        nested.get("namespaceId")
-                        if isinstance(nested, dict)
-                        else None
-                    )
+                if isinstance(namespace_data, dict):
+                    namespace_id = namespace_data.get("namespaceId")
                     if namespace_id:
                         dynamic_values[f"namespace_id_{node_name}"] = namespace_id
                         console.print(
