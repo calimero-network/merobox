@@ -27,6 +27,7 @@ steps:
     type: create_mesh
     context_node: dag-node-1
     application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
     nodes:
       - dag-node-2
       - dag-node-3
