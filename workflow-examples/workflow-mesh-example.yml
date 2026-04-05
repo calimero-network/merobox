@@ -21,6 +21,7 @@ steps:
     type: create_mesh
     context_node: calimero-node-1
     application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
     nodes:
       - calimero-node-2
       - calimero-node-3
