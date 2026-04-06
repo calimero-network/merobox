@@ -39,11 +39,13 @@ async def _call_function_with_retry(
     client = create_client(connection)
 
     encoded_args = ensure_json_string(args or {})
+    # executor_public_key is auto-resolved by the node — no need to send it.
+    # Pass empty string for backward compat with older client bindings.
     result = client.execute_function(
         context_id=context_id,
         method=function_name,
         args=encoded_args,
-        executor_public_key=executor_public_key or "",
+        executor_public_key="",
     )
     return ok(result)
 
