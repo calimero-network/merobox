@@ -42,7 +42,9 @@ async def join_namespace_via_admin_api(
         if isinstance(invitation_data, dict):
             if "inviter_signature" in invitation_data:
                 invitation_json = json_lib.dumps({"invitation": invitation_data})
-            elif "invitation" in invitation_data and isinstance(invitation_data.get("invitation"), dict):
+            elif "invitation" in invitation_data and isinstance(
+                invitation_data.get("invitation"), dict
+            ):
                 invitation_json = json_lib.dumps(invitation_data)
             else:
                 invitation_json = json_lib.dumps({"invitation": invitation_data})
@@ -128,7 +130,9 @@ def join_namespace_cmd(node, namespace_id, invitation, verbose):
         if isinstance(response_data, dict):
             nested = response_data.get("data", response_data)
             if isinstance(nested, dict):
-                joined_namespace_id = nested.get("namespaceId", nested.get("groupId", "N/A"))
+                joined_namespace_id = nested.get(
+                    "namespaceId", nested.get("groupId", "N/A")
+                )
                 table.add_row("Namespace ID", joined_namespace_id)
 
         table.add_row("Node", node)

@@ -227,9 +227,7 @@ class CreateMeshStep(BaseStep):
             )
             create_namespace = getattr(client, "create_namespace", None)
             if callable(create_namespace):
-                namespace_result = ok(
-                    create_namespace(application_id=application_id)
-                )
+                namespace_result = ok(create_namespace(application_id=application_id))
             else:
                 # Backward compatibility for older client versions.
                 namespace_result = ok(
@@ -358,9 +356,7 @@ class CreateMeshStep(BaseStep):
                 )
                 return False
 
-            console.print(
-                "\n[bold]Pre-installing application on joining nodes[/bold]"
-            )
+            console.print("\n[bold]Pre-installing application on joining nodes[/bold]")
             for node_name in nodes:
                 if node_name == context_node:
                     continue
@@ -534,9 +530,7 @@ class CreateMeshStep(BaseStep):
                 dynamic_values[f"public_key_{node_name}"] = member_identity
                 if nodes_to_process_count == 1:
                     dynamic_values["memberIdentity"] = member_identity
-                console.print(
-                    f"  [green]✓ Member identity: {member_identity}[/green]"
-                )
+                console.print(f"  [green]✓ Member identity: {member_identity}[/green]")
 
             connected_nodes.append(node_name)
 

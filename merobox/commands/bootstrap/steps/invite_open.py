@@ -78,7 +78,9 @@ class InviteOpenStep(BaseStep):
             node_name=client_node_name,
         )
 
-        console.print(f"[cyan]🔍 Namespace Invitation API Response for {node_name}:[/cyan]")
+        console.print(
+            f"[cyan]🔍 Namespace Invitation API Response for {node_name}:[/cyan]"
+        )
         console.print(f"  Success: {result.get('success')}")
 
         data = result.get("data")

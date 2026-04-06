@@ -106,7 +106,9 @@ async def create_namespace_invitation_via_admin_api(
     """
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        create_namespace_invitation = getattr(client, "create_namespace_invitation", None)
+        create_namespace_invitation = getattr(
+            client, "create_namespace_invitation", None
+        )
         if callable(create_namespace_invitation):
             result = create_namespace_invitation(
                 namespace_id=namespace_id, recursive=recursive

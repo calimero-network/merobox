@@ -142,7 +142,9 @@ class ListSubgroupsStep(BaseStep):
                 return False
             workflow_results[f"subgroups_{node_name}"] = result["data"]
             self._export_variables(result["data"], node_name, dynamic_values)
-            console.print(f"[green]✓ Listed subgroups for {group_id} on {node_name}[/green]")
+            console.print(
+                f"[green]✓ Listed subgroups for {group_id} on {node_name}[/green]"
+            )
             return True
         console.print(
             f"[red]list_subgroups failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"

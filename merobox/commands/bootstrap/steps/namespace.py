@@ -125,7 +125,9 @@ class CreateGroupInNamespaceStep(BaseStep):
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            create_group_in_namespace = getattr(client, "create_group_in_namespace", None)
+            create_group_in_namespace = getattr(
+                client, "create_group_in_namespace", None
+            )
             if callable(create_group_in_namespace):
                 result = ok(
                     create_group_in_namespace(

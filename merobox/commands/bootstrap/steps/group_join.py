@@ -63,7 +63,9 @@ class JoinNamespaceStep(BaseStep):
         if isinstance(invitation, dict):
             if "inviter_signature" in invitation:
                 invitation_json = json_lib.dumps({"invitation": invitation})
-            elif "invitation" in invitation and isinstance(invitation.get("invitation"), dict):
+            elif "invitation" in invitation and isinstance(
+                invitation.get("invitation"), dict
+            ):
                 invitation_json = json_lib.dumps(invitation)
             else:
                 invitation_json = json_lib.dumps({"invitation": invitation})
@@ -125,7 +127,9 @@ class JoinNamespaceStep(BaseStep):
                         nested.get("namespaceId") if isinstance(nested, dict) else None
                     )
                     if joined_namespace_id:
-                        dynamic_values[f"namespace_id_{node_name}"] = joined_namespace_id
+                        dynamic_values[f"namespace_id_{node_name}"] = (
+                            joined_namespace_id
+                        )
 
             # Namespace governance model: no relay needed. The joining node
             # publishes a MemberJoined op directly on the namespace topic.

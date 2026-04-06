@@ -166,7 +166,9 @@ def create_namespace(node, application_id, alias, upgrade_policy, verbose):
         sys.exit(1)
 
     data = unwrap_api_response(result)
-    namespace_id = data.get("namespaceId", data.get("groupId")) if isinstance(data, dict) else None
+    namespace_id = (
+        data.get("namespaceId", data.get("groupId")) if isinstance(data, dict) else None
+    )
     console.print("[green]✓ Namespace created successfully![/green]")
     if namespace_id:
         console.print(f"[cyan]Namespace ID: {namespace_id}[/cyan]")
@@ -244,7 +246,9 @@ def list_namespace_groups(namespace_id, node, verbose):
     """List groups in a namespace."""
     manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
-    console.print(f"[blue]Listing groups for namespace {namespace_id} on node {node}[/blue]")
+    console.print(
+        f"[blue]Listing groups for namespace {namespace_id} on node {node}[/blue]"
+    )
 
     result = run_async_function(
         call_namespace_api,

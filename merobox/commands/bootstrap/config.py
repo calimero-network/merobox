@@ -183,7 +183,9 @@ class InviteStep(BaseStepConfig):
         if not self.namespace_id and group_id:
             self.namespace_id = group_id
         if not self.namespace_id:
-            raise ValueError("Either 'namespace_id' or deprecated alias 'group_id' is required")
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
         return self
 
 
@@ -202,7 +204,9 @@ class JoinStep(BaseStepConfig):
         if not self.namespace_id and group_id:
             self.namespace_id = group_id
         if not self.namespace_id:
-            raise ValueError("Either 'namespace_id' or deprecated alias 'group_id' is required")
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
         return self
 
 
@@ -346,7 +350,9 @@ class CreateNamespaceStepConfig(BaseStepConfig):
 
     type: Literal["create_namespace", "create_group"] = "create_namespace"
     node: str = Field(..., description="Target node")
-    application_id: str = Field(..., description="Application ID for namespace creation")
+    application_id: str = Field(
+        ..., description="Application ID for namespace creation"
+    )
     alias: Optional[str] = Field(None, description="Optional namespace alias")
 
 
@@ -367,7 +373,9 @@ class CreateNamespaceInvitationStepConfig(BaseStepConfig):
         if not self.namespace_id and group_id:
             self.namespace_id = group_id
         if not self.namespace_id:
-            raise ValueError("Either 'namespace_id' or deprecated alias 'group_id' is required")
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
         return self
 
 
@@ -386,7 +394,9 @@ class JoinNamespaceStepConfig(BaseStepConfig):
         if not self.namespace_id and group_id:
             self.namespace_id = group_id
         if not self.namespace_id:
-            raise ValueError("Either 'namespace_id' or deprecated alias 'group_id' is required")
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
         return self
 
 
