@@ -347,7 +347,10 @@ class CreateMeshStep(BaseStep):
 
         # Pre-install application on all joining nodes so context state sync works.
         # The core join protocol no longer transfers application blobs.
+        # If path not specified, auto-resolve from install_application step.
         raw_application_path = self.config.get("path")
+        if not raw_application_path:
+            raw_application_path = dynamic_values.get(f"app_path_{context_node}")
         if raw_application_path:
             application_path = self._resolve_application_path(raw_application_path)
             if not os.path.isfile(application_path):
