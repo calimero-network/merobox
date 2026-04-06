@@ -77,7 +77,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{my_context_id}}" # Use custom context ID
-    executor_public_key: "{{member_key}}"
     method: set
     args:
       key: "hello"
@@ -101,7 +100,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{my_context_id}}" # Use custom context ID
-    executor_public_key: "{{my_member_identity}}"
     method: get
     args:
       key: "hello"
@@ -130,7 +128,6 @@ steps:
         type: call
         node: calimero-node-1
         context_id: "{{my_context_id}}"
-        executor_public_key: "{{member_key}}"
         method: set
         args:
           key: "iteration_{{current_iteration}}"
@@ -152,7 +149,6 @@ steps:
         type: call
         node: calimero-node-2
         context_id: "{{my_context_id}}"
-        executor_public_key: "{{my_member_identity}}"
         method: get
         args:
           key: "iteration_{{current_iteration}}"

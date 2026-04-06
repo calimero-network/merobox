@@ -38,7 +38,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: '{{context_id}}'
-    executor_public_key: '{{member_public_key}}'
     method: set
     args:
       key: assert_key
@@ -54,7 +53,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: '{{context_id}}'
-    executor_public_key: '{{member_public_key}}'
     method: get
     args:
       key: assert_key

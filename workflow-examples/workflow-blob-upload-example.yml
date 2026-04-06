@@ -88,7 +88,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: upload_file
     args:
       name: project-proposal.pdf
@@ -123,7 +122,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: upload_file
     args:
       name: screenshot.png
@@ -148,7 +146,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: upload_file
     args:
       name: readme.txt
@@ -163,7 +160,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: list_files
     outputs:
       files_list_node1: result
@@ -183,7 +179,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_identity_node2}}"
     method: list_files
     outputs:
       files_list_node2: result
@@ -203,7 +198,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get_file
     args:
       file_id: file_0
@@ -215,7 +209,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_identity_node2}}"
     method: get_blob_id_b58
     args:
       file_id: file_0
@@ -227,7 +220,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: search_files
     args:
       query: pdf
@@ -239,7 +231,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get_stats
     outputs:
       stats: result
@@ -253,7 +244,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get_total_files_size
     outputs:
       total_files_size: result
@@ -263,7 +253,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: delete_file
     args:
       file_id: file_1
@@ -285,7 +274,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: list_files
     outputs:
       files_after_delete: result
@@ -305,7 +293,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_identity_node2}}"
     method: list_files
     outputs:
       files_node2_after_delete: result

@@ -50,7 +50,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: set
         args:
           key: "benchmark_key_{{iteration}}"
@@ -71,7 +70,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: get
         args:
           key: "benchmark_key_{{iteration}}"
@@ -93,7 +91,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: set
         args:
           key: "large_key_{{iteration}}"
@@ -114,7 +111,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: get
         args:
           key: "large_key_{{iteration}}"
@@ -136,7 +132,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: set
         args:
           key: "mixed_key_{{iteration}}"
@@ -148,7 +143,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: get
         args:
           key: "mixed_key_{{iteration}}"
@@ -170,7 +164,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: set
         args:
           key: "seq_key_{{iteration}}"
@@ -184,7 +177,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: get
         args:
           key: "seq_key_{{iteration}}"
@@ -204,7 +196,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: set
         args:
           key: "hf_key_{{iteration}}"
@@ -225,7 +216,6 @@ steps:
         type: call
         node: benchmark-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: get
         args:
           key: "hf_key_{{iteration}}"
@@ -244,7 +234,6 @@ steps:
             type: call
             node: benchmark-node-1
             context_id: "{{context_id}}"
-            executor_public_key: "{{member_public_key}}"
             method: set
             args:
               key: "parallel_set_key_{{iteration}}"
@@ -256,7 +245,6 @@ steps:
             type: call
             node: benchmark-node-1
             context_id: "{{context_id}}"
-            executor_public_key: "{{member_public_key}}"
             method: get
             args:
               key: "benchmark_key_{{iteration}}"
@@ -282,7 +270,6 @@ steps:
     type: call
     node: benchmark-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: "benchmark_key_1"

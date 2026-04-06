@@ -42,7 +42,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: invalid_method_that_does_not_exist
     args: {}
     expected_failure: true
@@ -68,7 +67,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: test_key
@@ -81,7 +79,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: invalid_public_key_12345
     method: set
     args:
       key: unauthorized_key
@@ -97,7 +94,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: test_key
@@ -109,7 +105,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: missing_value_key
@@ -124,7 +119,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: invalid_context_id_12345
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: test_key
@@ -139,7 +133,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: 12345 # Should be string, not number
@@ -154,7 +147,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args: {} # Missing 'key' argument
     expected_failure: true
@@ -167,7 +159,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: invalid_method_no_outputs
     args: {}
     expected_failure: true
@@ -178,7 +169,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: final_test_key
@@ -206,7 +196,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: test_key
@@ -247,7 +236,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: invalid_method_complex_test
     args: {}
     expected_failure: true
@@ -290,7 +278,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: test_key
@@ -323,7 +310,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: test_key

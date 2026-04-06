@@ -48,7 +48,6 @@ steps:
     type: call
     node: open-inv-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: foo
@@ -59,7 +58,6 @@ steps:
     type: call
     node: open-inv-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: foo
@@ -117,7 +115,6 @@ steps:
     type: call
     node: open-inv-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: foo
@@ -128,7 +125,6 @@ steps:
     type: call
     node: open-inv-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_identity_node2}}"
     method: get
     args:
       key: foo
@@ -148,7 +144,6 @@ steps:
     type: call
     node: open-inv-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: foo
@@ -173,7 +168,6 @@ steps:
     type: call
     node: open-inv-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: foo
@@ -184,7 +178,6 @@ steps:
     type: call
     node: open-inv-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_identity_node2}}"
     method: get
     args:
       key: foo

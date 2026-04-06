@@ -109,11 +109,8 @@ steps:
     # Configure nodes that can be used in operations
     nodes:
       - name: calimero-node-1
-        executor_key: "{{member_public_key}}"
       - name: calimero-node-2
-        executor_key: "{{member_identity_node2}}"
       - name: calimero-node-3
-        executor_key: "{{member_identity_node3}}"
 
     # Define operation patterns with weights
     operations:
@@ -126,7 +123,6 @@ steps:
           - type: call
             node: "{{random_node}}"
             context_id: "{{context_id}}"
-            executor_public_key: "{{random_executor}}"
             method: set
             args:
               key: "fuzzy_key_{{random_int(1, 10000)}}"
@@ -141,7 +137,6 @@ steps:
           - type: call
             node: "{{random_node}}"
             context_id: "{{context_id}}"
-            executor_public_key: "{{random_executor}}"
             method: get
             args:
               key: "{{fuzzy_key}}"
@@ -165,7 +160,6 @@ steps:
           - type: call
             node: calimero-node-1
             context_id: "{{context_id}}"
-            executor_public_key: "{{member_public_key}}"
             method: set
             args:
               key: "cross_{{random_int(1, 5000)}}"
@@ -179,7 +173,6 @@ steps:
           - type: call
             node: calimero-node-2
             context_id: "{{context_id}}"
-            executor_public_key: "{{member_identity_node2}}"
             method: get
             args:
               key: "{{fuzzy_key}}"
@@ -190,7 +183,6 @@ steps:
           - type: call
             node: calimero-node-3
             context_id: "{{context_id}}"
-            executor_public_key: "{{member_identity_node3}}"
             method: get
             args:
               key: "{{fuzzy_key}}"
@@ -215,7 +207,6 @@ steps:
           - type: call
             node: "{{random_node}}"
             context_id: "{{context_id}}"
-            executor_public_key: "{{random_executor}}"
             method: get
             args:
               key: "random_read_{{random_int(1, 20000)}}"
@@ -232,7 +223,6 @@ steps:
           - type: call
             node: "{{random_node}}"
             context_id: "{{context_id}}"
-            executor_public_key: "{{random_executor}}"
             method: set
             args:
               key: "burst_a_{{random_int(1, 10000)}}"
@@ -241,7 +231,6 @@ steps:
           - type: call
             node: "{{random_node}}"
             context_id: "{{context_id}}"
-            executor_public_key: "{{random_executor}}"
             method: set
             args:
               key: "burst_b_{{random_int(1, 10000)}}"
@@ -250,7 +239,6 @@ steps:
           - type: call
             node: "{{random_node}}"
             context_id: "{{context_id}}"
-            executor_public_key: "{{random_executor}}"
             method: set
             args:
               key: "burst_c_{{random_int(1, 10000)}}"

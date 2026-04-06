@@ -42,7 +42,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: '{{ctx_id}}'
-    executor_public_key: '{{member_key}}'
     method: set
     args:
       key: example_key
@@ -55,7 +54,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: '{{ctx_id}}'
-    executor_public_key: '{{member_key}}'
     method: get
     args:
       key: example_key
