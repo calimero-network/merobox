@@ -86,7 +86,7 @@ class JoinNamespaceStep(BaseStep):
             )
             return False
 
-        console.print(f"[blue]Debug: Resolved values for join step:[/blue]")
+        console.print("[blue]Debug: Resolved values for join step:[/blue]")
         console.print(f"  namespace_id: {namespace_id}")
         console.print(
             f"  invitation: {invitation_json[:80] if len(invitation_json) > 80 else invitation_json}"

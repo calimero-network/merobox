@@ -14,9 +14,6 @@ from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
-from merobox.commands.bootstrap.steps.join import (
-    JoinNamespaceStep as JoinInvitationStep,
-)
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.namespace import (
     CreateGroupInNamespaceStep,

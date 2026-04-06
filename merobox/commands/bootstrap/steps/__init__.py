@@ -17,14 +17,16 @@ from merobox.commands.bootstrap.steps.group_invite import (
     CreateNamespaceInvitationStep,
 )
 from merobox.commands.bootstrap.steps.group_join import JoinGroupStep, JoinNamespaceStep
-from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
 from merobox.commands.bootstrap.steps.join import (
     JoinNamespaceStep as JoinInvitationStep,
+)
+from merobox.commands.bootstrap.steps.join import (
     JoinNamespaceStep as JoinNamespaceAliasStep,
 )
+from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.namespace import (
