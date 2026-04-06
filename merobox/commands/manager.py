@@ -1263,11 +1263,25 @@ class DockerManager(CleanupMixin):
             )
             time.sleep(drain_timeout)
 
-        # Phase 3: Stop and remove all containers
+        # Phase 3: Capture logs, then stop and remove all containers
         success_count = 0
         failed_names = []
 
         for container_name, container in containers:
+            # Capture container logs before stopping so they survive removal.
+            # Written to ./data/container-logs/ which is included in CI artifacts.
+            try:
+                log_dir = os.path.join("data", "container-logs")
+                os.makedirs(log_dir, exist_ok=True)
+                log_content = container.logs(timestamps=True).decode(
+                    "utf-8", errors="replace"
+                )
+                log_file = os.path.join(log_dir, f"{container_name}.log")
+                with open(log_file, "w") as f:
+                    f.write(log_content)
+            except Exception:
+                pass
+
             try:
                 container.stop(timeout=stop_timeout)
                 container.remove()
