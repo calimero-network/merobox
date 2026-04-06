@@ -69,6 +69,8 @@ steps:
     node: calimero-node-2
     namespace_id: "{{my_namespace_id}}"
     invitation: "{{my_invitation}}" # Use custom invitation
+    outputs:
+      my_member_identity: memberIdentity
 
   # Step 8: Execute contract call using custom output names
   - name: Execute Contract Call with Custom Names
@@ -99,7 +101,7 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{my_context_id}}" # Use custom context ID
-    executor_public_key: "{{my_public_key}}"
+    executor_public_key: "{{my_member_identity}}"
     method: get
     args:
       key: "hello"
@@ -150,7 +152,7 @@ steps:
         type: call
         node: calimero-node-2
         context_id: "{{my_context_id}}"
-        executor_public_key: "{{my_public_key}}"
+        executor_public_key: "{{my_member_identity}}"
         method: get
         args:
           key: "iteration_{{current_iteration}}"

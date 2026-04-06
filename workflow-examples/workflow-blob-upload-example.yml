@@ -67,6 +67,8 @@ steps:
     node: calimero-node-2
     namespace_id: "{{namespace_id}}"
     invitation: "{{invitation}}"
+    outputs:
+      member_identity_node2: memberIdentity
 
   # BLOB API DEMONSTRATION STARTS HERE
   # TRUE END-TO-END TESTING: Upload real files to blob storage, then register in contract
@@ -181,7 +183,7 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key}}"
+    executor_public_key: "{{member_identity_node2}}"
     method: list_files
     outputs:
       files_list_node2: result
@@ -213,7 +215,7 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key}}"
+    executor_public_key: "{{member_identity_node2}}"
     method: get_blob_id_b58
     args:
       file_id: file_0
@@ -303,7 +305,7 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key}}"
+    executor_public_key: "{{member_identity_node2}}"
     method: list_files
     outputs:
       files_node2_after_delete: result

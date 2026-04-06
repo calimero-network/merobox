@@ -95,6 +95,8 @@ steps:
     node: open-inv-node-2
     namespace_id: "{{namespace_id}}"
     invitation: "{{open_invitation}}"
+    outputs:
+      member_identity_node2: memberIdentity
 
   # Wait for all nodes to sync after join (root hash consensus)
   - name: Wait for All Nodes to Sync After Join
@@ -126,7 +128,7 @@ steps:
     type: call
     node: open-inv-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_2}}"
+    executor_public_key: "{{member_identity_node2}}"
     method: get
     args:
       key: foo
@@ -182,7 +184,7 @@ steps:
     type: call
     node: open-inv-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_2}}"
+    executor_public_key: "{{member_identity_node2}}"
     method: get
     args:
       key: foo

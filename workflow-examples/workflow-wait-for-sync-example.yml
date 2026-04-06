@@ -71,6 +71,8 @@ steps:
     node: sync-node-2
     namespace_id: "{{namespace_id}}"
     invitation: "{{invitation_node_2}}"
+    outputs:
+      member_identity_node_2: memberIdentity
 
   # Step 9: Invite node 3 to join namespace
   - name: Invite Node 3
@@ -86,6 +88,8 @@ steps:
     node: sync-node-3
     namespace_id: "{{namespace_id}}"
     invitation: "{{invitation_node_3}}"
+    outputs:
+      member_identity_node_3: memberIdentity
 
   # Step 10: NEW! Wait for all nodes to sync after join operations
   - name: Wait for All Nodes to Sync After Join
@@ -136,7 +140,7 @@ steps:
     type: call
     node: sync-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_node_2}}"
+    executor_public_key: "{{member_identity_node_2}}"
     method: get
     args:
       key: demo_key
@@ -147,7 +151,7 @@ steps:
     type: call
     node: sync-node-3
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_node_3}}"
+    executor_public_key: "{{member_identity_node_3}}"
     method: get
     args:
       key: demo_key
