@@ -115,43 +115,6 @@ def list_groups(node, verbose):
 
 
 @group.command()
-@click.option("--node", "-n", required=True, help="Node name")
-@click.option(
-    "--application-id", "-a", required=True, help="Application ID for the group"
-)
-@click.option(
-    "--parent-group-id",
-    "-p",
-    default=None,
-    help="Parent group ID to create this as a subgroup",
-)
-@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def create(node, application_id, parent_group_id, verbose):
-    """Create a new group."""
-    manager = DockerManager()
-    rpc_url = get_node_rpc_url(node, manager)
-    console.print(
-        f"[blue]Creating group for application {application_id} on node {node}[/blue]"
-    )
-
-    result = run_async_function(
-        call_admin_api, rpc_url, "create_group", application_id, parent_group_id
-    )
-
-    if result["success"]:
-        data = unwrap_api_response(result)
-        group_id = data.get("groupId") if isinstance(data, dict) else None
-        console.print("[green]✓ Group created successfully![/green]")
-        if group_id:
-            console.print(f"[cyan]Group ID: {group_id}[/cyan]")
-        if verbose:
-            console.print(json_lib.dumps(result, indent=2))
-    else:
-        console.print(f"[red]✗ Failed to create group: {result.get('error')}[/red]")
-        sys.exit(1)
-
-
-@group.command()
 @click.argument("group_id")
 @click.option("--node", "-n", required=True, help="Node name")
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
@@ -194,72 +157,6 @@ def delete(group_id, node):
         console.print("[green]✓ Group deleted successfully![/green]")
     else:
         console.print(f"[red]✗ Failed to delete group: {result.get('error')}[/red]")
-        sys.exit(1)
-
-
-@group.command()
-@click.argument("group_id")
-@click.option("--node", "-n", required=True, help="Node name")
-def invite(group_id, node):
-    """Create a group invitation (prints invitation JSON for sharing)."""
-    manager = DockerManager()
-    rpc_url = get_node_rpc_url(node, manager)
-    console.print(
-        f"[blue]Creating invitation for group {group_id} on node {node}[/blue]"
-    )
-
-    result = run_async_function(
-        call_admin_api, rpc_url, "create_group_invitation", group_id
-    )
-
-    if result["success"]:
-        data = unwrap_api_response(result)
-
-        # Print the full SignedGroupOpenInvitation (invitation + inviter_signature),
-        # not just the inner GroupInvitationFromAdmin, so the joiner has complete data.
-        console.print(
-            "[green]✓ Invitation created. Share this JSON with the joiner:[/green]"
-        )
-        console.print(json_lib.dumps(data, indent=2))
-    else:
-        console.print(
-            f"[red]✗ Failed to create invitation: {result.get('error')}[/red]"
-        )
-        sys.exit(1)
-
-
-@group.command(name="join")
-@click.argument("invitation_json")
-@click.option("--node", "-n", required=True, help="Node name")
-@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def join_group_cmd(invitation_json, node, verbose):
-    """Join a group using an invitation JSON string."""
-    manager = DockerManager()
-    rpc_url = get_node_rpc_url(node, manager)
-
-    # Validate JSON before sending
-    try:
-        json_lib.loads(invitation_json)
-    except json_lib.JSONDecodeError as e:
-        console.print(f"[red]✗ Invalid invitation JSON: {e}[/red]")
-        sys.exit(1)
-
-    console.print(f"[blue]Joining group on node {node}[/blue]")
-
-    result = run_async_function(call_admin_api, rpc_url, "join_group", invitation_json)
-
-    if result["success"]:
-        data = unwrap_api_response(result)
-        console.print("[green]✓ Joined group successfully![/green]")
-        if isinstance(data, dict):
-            if "groupId" in data:
-                console.print(f"[cyan]Group ID: {data['groupId']}[/cyan]")
-            if "memberIdentity" in data:
-                console.print(f"[cyan]Member Identity: {data['memberIdentity']}[/cyan]")
-        if verbose:
-            console.print(json_lib.dumps(result, indent=2))
-    else:
-        console.print(f"[red]✗ Failed to join group: {result.get('error')}[/red]")
         sys.exit(1)
 
 
@@ -402,4 +299,98 @@ def join_context(group_id, node, context_id, verbose):
         console.print(
             f"[red]✗ Failed to join group context: {result.get('error')}[/red]"
         )
+        sys.exit(1)
+
+
+@group.command(name="subgroups")
+@click.argument("group_id")
+@click.option("--node", "-n", required=True, help="Node name")
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
+def list_subgroups(group_id, node, verbose):
+    """List subgroups for a group."""
+    manager = DockerManager()
+    rpc_url = get_node_rpc_url(node, manager)
+    console.print(f"[blue]Listing subgroups of {group_id} on node {node}[/blue]")
+
+    result = run_async_function(call_admin_api, rpc_url, "list_subgroups", group_id)
+
+    if result["success"]:
+        data = unwrap_api_response(result)
+        subgroups = []
+        if isinstance(data, dict) and "subgroups" in data:
+            subgroups = data["subgroups"] if isinstance(data["subgroups"], list) else []
+        elif isinstance(data, list):
+            subgroups = data
+
+        if not subgroups:
+            console.print(f"[yellow]No subgroups found for group {group_id}[/yellow]")
+            return
+
+        table = Table(title="Group Subgroups", box=box.ROUNDED)
+        table.add_column("Group ID", style="cyan")
+        table.add_column("Alias", style="yellow")
+        for subgroup in subgroups:
+            if isinstance(subgroup, dict):
+                table.add_row(
+                    subgroup.get("groupId", subgroup.get("id", "Unknown")),
+                    subgroup.get("alias", "N/A"),
+                )
+            else:
+                table.add_row(str(subgroup), "N/A")
+        console.print(table)
+
+        if verbose:
+            console.print(json_lib.dumps(result, indent=2))
+    else:
+        console.print(f"[red]✗ Failed to list subgroups: {result.get('error')}[/red]")
+        sys.exit(1)
+
+
+@group.command(name="nest")
+@click.argument("parent_id")
+@click.argument("child_id")
+@click.option("--node", "-n", required=True, help="Node name")
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
+def nest_group(parent_id, child_id, node, verbose):
+    """Nest child group under parent group."""
+    manager = DockerManager()
+    rpc_url = get_node_rpc_url(node, manager)
+    console.print(
+        f"[blue]Nesting child group {child_id} under {parent_id} on node {node}[/blue]"
+    )
+
+    result = run_async_function(
+        call_admin_api, rpc_url, "nest_group", parent_id, child_id
+    )
+    if result["success"]:
+        console.print("[green]✓ Group nested successfully![/green]")
+        if verbose:
+            console.print(json_lib.dumps(result, indent=2))
+    else:
+        console.print(f"[red]✗ Failed to nest group: {result.get('error')}[/red]")
+        sys.exit(1)
+
+
+@group.command(name="unnest")
+@click.argument("parent_id")
+@click.argument("child_id")
+@click.option("--node", "-n", required=True, help="Node name")
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
+def unnest_group(parent_id, child_id, node, verbose):
+    """Remove child group from parent group."""
+    manager = DockerManager()
+    rpc_url = get_node_rpc_url(node, manager)
+    console.print(
+        f"[blue]Unnesting child group {child_id} from {parent_id} on node {node}[/blue]"
+    )
+
+    result = run_async_function(
+        call_admin_api, rpc_url, "unnest_group", parent_id, child_id
+    )
+    if result["success"]:
+        console.print("[green]✓ Group un-nested successfully![/green]")
+        if verbose:
+            console.print(json_lib.dumps(result, indent=2))
+    else:
+        console.print(f"[red]✗ Failed to unnest group: {result.get('error')}[/red]")
         sys.exit(1)

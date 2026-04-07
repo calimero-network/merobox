@@ -7,7 +7,7 @@ name = "merobox"
 dynamic = ["version"]
 description = "A Python CLI tool for managing Calimero nodes in Docker containers"
 readme = "README.md"
-requires-python = ">=3.9,<3.12"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Calimero Ltd.", email = "engineering@calimero.network"}

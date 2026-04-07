@@ -14,9 +14,7 @@ Example usage:
       context_id: '{{context_id}}'
       nodes:
         - name: calimero-node-1
-          executor_key: '{{member_public_key}}'
         - name: calimero-node-2
-          executor_key: '{{public_key_node2}}'
       operations:
         - name: "set_and_verify"
           weight: 40
@@ -90,12 +88,10 @@ class FuzzyTestStep(BaseStep):
         for idx, node in enumerate(nodes):
             if not isinstance(node, dict):
                 raise ValueError(
-                    f"Step '{step_name}': 'nodes[{idx}]' must be a dictionary with 'name' and 'executor_key'"
+                    f"Step '{step_name}': 'nodes[{idx}]' must be a dictionary with 'name'"
                 )
-            if "name" not in node or "executor_key" not in node:
-                raise ValueError(
-                    f"Step '{step_name}': 'nodes[{idx}]' must have 'name' and 'executor_key'"
-                )
+            if "name" not in node:
+                raise ValueError(f"Step '{step_name}': 'nodes[{idx}]' must have 'name'")
 
         # Validate operations
         operations = self.config.get("operations", [])
@@ -204,9 +200,6 @@ class FuzzyTestStep(BaseStep):
             resolved_node = {
                 "name": self._resolve_dynamic_value(
                     node_config["name"], workflow_results, dynamic_values
-                ),
-                "executor_key": self._resolve_dynamic_value(
-                    node_config["executor_key"], workflow_results, dynamic_values
                 ),
             }
             nodes.append(resolved_node)
@@ -348,7 +341,6 @@ class FuzzyTestStep(BaseStep):
         # Select random node for this pattern
         random_node = random.choice(self._nodes)
         pattern_dynamic_values["random_node"] = random_node["name"]
-        pattern_dynamic_values["random_executor"] = random_node["executor_key"]
 
         for step_idx, step_config in enumerate(steps):
             # Validate step is a dict (extra safety check)

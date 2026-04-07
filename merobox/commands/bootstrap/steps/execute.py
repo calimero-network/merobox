@@ -47,14 +47,6 @@ class ExecuteStep(BaseStep):
         if "args" in self.config and not isinstance(self.config["args"], dict):
             raise ValueError(f"Step '{step_name}': 'args' must be a dictionary")
 
-        # Validate executor_public_key is a string if provided
-        if "executor_public_key" in self.config and not isinstance(
-            self.config["executor_public_key"], str
-        ):
-            raise ValueError(
-                f"Step '{step_name}': 'executor_public_key' must be a string"
-            )
-
         # Validate exec_type is a string if provided
         if "exec_type" in self.config and not isinstance(self.config["exec_type"], str):
             raise ValueError(f"Step '{step_name}': 'exec_type' must be a string")
@@ -102,54 +94,12 @@ class ExecuteStep(BaseStep):
                 "[yellow]⚠️  Execute step export configuration validation failed[/yellow]"
             )
 
-        # Get executor public key from config or extract from context
-        executor_public_key = (
-            self._resolve_dynamic_value(
-                self.config.get("executor_public_key"), workflow_results, dynamic_values
-            )
-            if self.config.get("executor_public_key")
-            else None
-        )
-
-        # If not provided in config, try to extract from context data (fallback)
-        if not executor_public_key:
-            # Extract node name from the original context_id placeholder (e.g., {{context.calimero-node-1}})
-            original_context_id = self.config["context_id"]
-            if "{{context." in original_context_id and "}}" in original_context_id:
-                context_node = original_context_id.split("{{context.")[1].split("}}")[0]
-                context_key = f"context_{context_node}"
-                console.print(
-                    f"[blue]Debug: Looking for context key: {context_key}[/blue]"
-                )
-                if context_key in workflow_results:
-                    context_data = workflow_results[context_key]
-                    console.print(f"[blue]Debug: Context data: {context_data}[/blue]")
-                    if isinstance(context_data, dict) and "data" in context_data:
-                        executor_public_key = context_data["data"].get(
-                            "memberPublicKey"
-                        )
-                        console.print(
-                            f"[blue]Debug: Found executor public key: {executor_public_key}[/blue]"
-                        )
-                    else:
-                        console.print(
-                            f"[blue]Debug: Context data structure: {type(context_data)}[/blue]"
-                        )
-                else:
-                    console.print(
-                        f"[blue]Debug: Context key {context_key} not found in workflow_results[/blue]"
-                    )
-                    console.print(
-                        f"[blue]Debug: Available keys: {list(workflow_results.keys())}[/blue]"
-                    )
-
         # Debug: Show resolved values
         console.print("[blue]Debug: Resolved values for execute step:[/blue]")
         console.print(f"  context_id: {context_id}")
         console.print(f"  exec_type: {exec_type}")
         console.print(f"  method: {method}")
         console.print(f"  args: {resolved_args}")
-        console.print(f"  executor_public_key: {executor_public_key}")
 
         # Resolve node (gets URL and ensures authentication)
         try:
@@ -182,7 +132,6 @@ class ExecuteStep(BaseStep):
                         context_id,
                         method,
                         resolved_args,
-                        executor_public_key,
                         node_name=client_node_name,
                     )
                 else:

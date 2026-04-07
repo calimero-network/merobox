@@ -1,9 +1,9 @@
 """
-Join command - Join Calimero groups and contexts via admin API.
+Join command - Join Calimero namespaces and contexts via admin API.
 
-The new flow uses groups instead of direct context invitations:
-- join_group_via_admin_api: Join a group using a group invitation (POST /groups/join)
-- join_context_via_admin_api: Join a specific context via group membership (POST /contexts/:id/join)
+The new flow uses namespaces instead of direct context invitations:
+- join_namespace_via_admin_api: Join a namespace using a namespace invitation
+- join_context_via_admin_api: Join a specific context via namespace/group membership
 """
 
 import sys
@@ -20,16 +20,18 @@ from merobox.commands.utils import console, get_node_rpc_url, run_async_function
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
-async def join_group_via_admin_api(
+async def join_namespace_via_admin_api(
     rpc_url: str,
+    namespace_id: str,
     invitation_data,
     node_name: str = None,
 ) -> dict:
-    """Join a group using a group invitation via calimero-client-py.
+    """Join a namespace using an invitation via calimero-client-py.
 
     Args:
         rpc_url: The RPC URL to connect to.
-        invitation_data: Invitation JSON (dict or string) from create_group_invitation.
+        namespace_id: Namespace ID to join.
+        invitation_data: Invitation JSON (dict or string) from create_namespace_invitation.
         node_name: Optional node name for token caching (required for authenticated nodes).
     """
     try:
@@ -38,14 +40,33 @@ async def join_group_via_admin_api(
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
         if isinstance(invitation_data, dict):
-            invitation_json = json_lib.dumps(invitation_data)
+            if "inviter_signature" in invitation_data:
+                invitation_json = json_lib.dumps({"invitation": invitation_data})
+            elif "invitation" in invitation_data and isinstance(
+                invitation_data.get("invitation"), dict
+            ):
+                invitation_json = json_lib.dumps(invitation_data)
+            else:
+                invitation_json = json_lib.dumps({"invitation": invitation_data})
+
         else:
             invitation_json = str(invitation_data)
 
-        result = client.join_group(invitation_json=invitation_json)
+        join_namespace = getattr(client, "join_namespace", None)
+        if callable(join_namespace):
+            result = join_namespace(
+                namespace_id=namespace_id, invitation_json=invitation_json
+            )
+        else:
+            # Backward compatibility for older client versions.
+            result = client.join_group(invitation_json=invitation_json)
         return ok(result)
     except Exception as e:
-        return fail("join_group failed", error=e)
+        return fail("join_namespace failed", error=e)
+
+
+# Deprecated alias kept for backward compatibility.
+join_group_via_admin_api = join_namespace_via_admin_api
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
@@ -71,41 +92,48 @@ async def join_context_via_admin_api(
 
 @click.group()
 def join():
-    """Join Calimero groups and contexts."""
+    """Join Calimero namespaces and contexts."""
     pass
 
 
-@join.command("group")
-@click.option("--node", "-n", required=True, help="Node name to join group on")
+@join.command("namespace")
+@click.option("--node", "-n", required=True, help="Node name to join namespace on")
+@click.option("--namespace-id", required=True, help="Namespace ID to join")
 @click.option(
     "--invitation",
     required=True,
-    help="Group invitation JSON data (from create-group-invitation command)",
+    help="Namespace invitation JSON data (from namespace invite command)",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def join_group_cmd(node, invitation, verbose):
-    """Join a group using a group invitation."""
+def join_namespace_cmd(node, namespace_id, invitation, verbose):
+    """Join a namespace using an invitation."""
     manager = DockerManager()
 
     admin_url = get_node_rpc_url(node, manager)
-    console.print(f"[blue]Joining group on node {node} via group invitation[/blue]")
+    console.print(
+        f"[blue]Joining namespace {namespace_id} on node {node} via invitation[/blue]"
+    )
 
-    result = run_async_function(join_group_via_admin_api, admin_url, invitation)
+    result = run_async_function(
+        join_namespace_via_admin_api, admin_url, namespace_id, invitation, node
+    )
 
     if result["success"]:
-        console.print("\n[green]✓ Successfully joined group![/green]")
+        console.print("\n[green]✓ Successfully joined namespace![/green]")
 
         response_data = result.get("data", {})
 
-        table = Table(title="Group Join Details", box=box.ROUNDED)
+        table = Table(title="Namespace Join Details", box=box.ROUNDED)
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
 
         if isinstance(response_data, dict):
             nested = response_data.get("data", response_data)
             if isinstance(nested, dict):
-                group_id = nested.get("groupId", "N/A")
-                table.add_row("Group ID", group_id)
+                joined_namespace_id = nested.get(
+                    "namespaceId", nested.get("groupId", "N/A")
+                )
+                table.add_row("Namespace ID", joined_namespace_id)
 
         table.add_row("Node", node)
         console.print(table)
@@ -115,7 +143,7 @@ def join_group_cmd(node, invitation, verbose):
             console.print(f"{result}")
 
     else:
-        console.print("\n[red]✗ Failed to join group[/red]")
+        console.print("\n[red]✗ Failed to join namespace[/red]")
         console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
 
         if "errors" in result:
@@ -135,12 +163,12 @@ def join_group_cmd(node, invitation, verbose):
 @click.option("--context-id", required=True, help="Context ID to join")
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
 def join_context_cmd(node, context_id, verbose):
-    """Join a context via group membership."""
+    """Join a context via namespace/group membership."""
     manager = DockerManager()
 
     admin_url = get_node_rpc_url(node, manager)
     console.print(
-        f"[blue]Joining context {context_id} on node {node} via group membership[/blue]"
+        f"[blue]Joining context {context_id} on node {node} via namespace/group membership[/blue]"
     )
 
     result = run_async_function(join_context_via_admin_api, admin_url, context_id)

@@ -21,18 +21,25 @@ from rich.progress import (
 from merobox.commands.auth import AUTH_METHOD_NONE, AuthenticationError, AuthManager
 from merobox.commands.bootstrap.steps import (
     CreateContextStep,
-    CreateGroupInvitationStep,
-    CreateGroupStep,
+    CreateGroupInNamespaceStep,
     CreateIdentityStep,
+    CreateNamespaceInvitationStep,
+    CreateNamespaceStep,
     ExecuteStep,
+    GetNamespaceIdentityStep,
     InstallApplicationStep,
     InviteOpenStep,
     JoinContextStep,
+    JoinNamespaceStep,
     JoinOpenStep,
-    JoinGroupStep,
+    ListNamespaceGroupsStep,
+    ListNamespacesStep,
+    ListSubgroupsStep,
+    NestGroupStep,
     ParallelStep,
     RepeatStep,
     ScriptStep,
+    UnnestGroupStep,
     UploadBlobStep,
     WaitForSyncStep,
     WaitStep,
@@ -1389,12 +1396,29 @@ class WorkflowExecutor:
             return CreateMeshStep(step_config, **common_kwargs)
         elif step_type == "fuzzy_test":
             return FuzzyTestStep(step_config, **common_kwargs)
-        elif step_type == "create_group":
-            return CreateGroupStep(step_config, **common_kwargs)
-        elif step_type == "create_group_invitation":
-            return CreateGroupInvitationStep(step_config, **common_kwargs)
-        elif step_type == "join_group":
-            return JoinGroupStep(step_config, **common_kwargs)
+        elif step_type in ("create_namespace", "create_group"):
+            # 'create_group' kept as deprecated alias.
+            return CreateNamespaceStep(step_config, **common_kwargs)
+        elif step_type in ("create_namespace_invitation", "create_group_invitation"):
+            # 'create_group_invitation' kept as deprecated alias.
+            return CreateNamespaceInvitationStep(step_config, **common_kwargs)
+        elif step_type in ("join_namespace", "join_group"):
+            # 'join_group' kept as deprecated alias.
+            return JoinNamespaceStep(step_config, **common_kwargs)
+        elif step_type == "list_namespaces":
+            return ListNamespacesStep(step_config, **common_kwargs)
+        elif step_type == "get_namespace_identity":
+            return GetNamespaceIdentityStep(step_config, **common_kwargs)
+        elif step_type == "create_group_in_namespace":
+            return CreateGroupInNamespaceStep(step_config, **common_kwargs)
+        elif step_type == "list_namespace_groups":
+            return ListNamespaceGroupsStep(step_config, **common_kwargs)
+        elif step_type == "nest_group":
+            return NestGroupStep(step_config, **common_kwargs)
+        elif step_type == "unnest_group":
+            return UnnestGroupStep(step_config, **common_kwargs)
+        elif step_type == "list_subgroups":
+            return ListSubgroupsStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
         else:

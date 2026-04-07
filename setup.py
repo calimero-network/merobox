@@ -44,7 +44,7 @@ setup(
         "Topic :: System :: Systems Administration",
         "Topic :: Utilities",
     ],
-    python_requires=">=3.9,<3.12",
+    python_requires=">=3.9",
     install_requires=[
         "click>=8.0.0",
         "docker>=6.0.0",

@@ -27,6 +27,7 @@ steps:
     type: create_mesh
     context_node: dag-node-1
     application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
     nodes:
       - dag-node-2
       - dag-node-3
@@ -56,7 +57,6 @@ steps:
     type: call
     node: dag-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: setup_verification_key
@@ -70,7 +70,6 @@ steps:
     type: call
     node: dag-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-2}}"
     method: get
     args:
       key: setup_verification_key
@@ -81,7 +80,6 @@ steps:
     type: call
     node: dag-node-3
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-3}}"
     method: get
     args:
       key: setup_verification_key
@@ -92,7 +90,6 @@ steps:
     type: call
     node: dag-node-4
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-4}}"
     method: get
     args:
       key: setup_verification_key
@@ -103,7 +100,6 @@ steps:
     type: call
     node: dag-node-5
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-5}}"
     method: get
     args:
       key: setup_verification_key
@@ -138,7 +134,6 @@ steps:
         type: call
         node: dag-node-1
         context_id: "{{context_id}}"
-        executor_public_key: "{{member_public_key}}"
         method: set
         args:
           key: "propagation_key_{{iteration}}"
@@ -154,7 +149,6 @@ steps:
         type: call
         node: dag-node-2
         context_id: "{{context_id}}"
-        executor_public_key: "{{public_key_dag-node-2}}"
         method: get
         args:
           key: "propagation_key_{{iteration}}"
@@ -168,7 +162,6 @@ steps:
         type: call
         node: dag-node-3
         context_id: "{{context_id}}"
-        executor_public_key: "{{public_key_dag-node-3}}"
         method: get
         args:
           key: "propagation_key_{{iteration}}"
@@ -182,7 +175,6 @@ steps:
         type: call
         node: dag-node-4
         context_id: "{{context_id}}"
-        executor_public_key: "{{public_key_dag-node-4}}"
         method: get
         args:
           key: "propagation_key_{{iteration}}"
@@ -196,7 +188,6 @@ steps:
         type: call
         node: dag-node-5
         context_id: "{{context_id}}"
-        executor_public_key: "{{public_key_dag-node-5}}"
         method: get
         args:
           key: "propagation_key_{{iteration}}"
@@ -215,7 +206,6 @@ steps:
     type: call
     node: dag-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-2}}"
     method: get
     args:
       key: "propagation_key_15"
@@ -226,7 +216,6 @@ steps:
     type: call
     node: dag-node-3
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-3}}"
     method: get
     args:
       key: "propagation_key_15"
@@ -237,7 +226,6 @@ steps:
     type: call
     node: dag-node-4
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-4}}"
     method: get
     args:
       key: "propagation_key_15"
@@ -248,7 +236,6 @@ steps:
     type: call
     node: dag-node-5
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_dag-node-5}}"
     method: get
     args:
       key: "propagation_key_15"

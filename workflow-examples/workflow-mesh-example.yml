@@ -21,6 +21,7 @@ steps:
     type: create_mesh
     context_node: calimero-node-1
     application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
     nodes:
       - calimero-node-2
       - calimero-node-3
@@ -33,7 +34,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "{{member_public_key}}"
     method: set
     args:
       key: mesh_test
@@ -56,7 +56,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_calimero-node-2}}"
     method: get
     args:
       key: mesh_test
@@ -67,7 +66,6 @@ steps:
     type: call
     node: calimero-node-3
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_calimero-node-3}}"
     method: get
     args:
       key: mesh_test
@@ -78,7 +76,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_calimero-node-2}}"
     method: set
     args:
       key: mesh_test
@@ -101,7 +98,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: "{{context_id}}"
-    executor_public_key: "{{public_key_calimero-node-2}}"
     method: get
     args:
       key: mesh_test

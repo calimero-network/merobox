@@ -15,10 +15,18 @@ steps:
     outputs:
       app_id: applicationId
 
+  - name: Create Namespace
+    type: create_namespace
+    node: test-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
   - name: Create Context
     type: create_context
     node: test-node-1
     application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
     outputs:
       ctx_id: contextId
       member_key: memberPublicKey
@@ -28,7 +36,6 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{ctx_id}}"
-    executor_public_key: "{{member_key}}"
     method: set
     args:
       key: simple
@@ -42,7 +49,6 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{ctx_id}}"
-    executor_public_key: "{{member_key}}"
     method: set
     args:
       key: complex
@@ -54,7 +60,6 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{ctx_id}}"
-    executor_public_key: "{{member_key}}"
     method: get
     args:
       key: complex
@@ -71,7 +76,6 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{ctx_id}}"
-    executor_public_key: "{{member_key}}"
     method: set
     args:
       key: array_data
@@ -83,7 +87,6 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{ctx_id}}"
-    executor_public_key: "{{member_key}}"
     method: get
     args:
       key: array_data
@@ -101,7 +104,6 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{ctx_id}}"
-    executor_public_key: "{{member_key}}"
     method: set
     args:
       key: mixed
@@ -113,7 +115,6 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{ctx_id}}"
-    executor_public_key: "{{member_key}}"
     method: get
     args:
       key: mixed

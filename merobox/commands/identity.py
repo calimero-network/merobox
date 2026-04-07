@@ -90,24 +90,39 @@ async def generate_identity_via_admin_api(rpc_url: str, node_name: str = None) -
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
-async def create_group_invitation_via_admin_api(
+async def create_namespace_invitation_via_admin_api(
     rpc_url: str,
-    group_id: str,
+    namespace_id: str,
+    recursive: bool = False,
     node_name: str = None,
 ) -> dict:
-    """Create a group invitation using calimero-client-py.
+    """Create a namespace invitation using calimero-client-py.
 
     Args:
         rpc_url: The RPC URL to connect to.
-        group_id: The group ID to create an invitation for.
+        namespace_id: The namespace ID to create an invitation for.
+        recursive: Whether to create a recursive invitation.
         node_name: Optional node name for token caching (required for authenticated nodes).
     """
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
-        result = client.create_group_invitation(group_id=group_id)
+        create_namespace_invitation = getattr(
+            client, "create_namespace_invitation", None
+        )
+        if callable(create_namespace_invitation):
+            result = create_namespace_invitation(
+                namespace_id=namespace_id, recursive=recursive
+            )
+        else:
+            # Backward compatibility for older client versions.
+            result = client.create_group_invitation(namespace_id)
         return ok(result)
     except Exception as e:
-        return fail("create_group_invitation failed", error=e)
+        return fail("create_namespace_invitation failed", error=e)
+
+
+# Deprecated alias kept for backward compatibility.
+create_group_invitation_via_admin_api = create_namespace_invitation_via_admin_api
 
 
 @click.group()

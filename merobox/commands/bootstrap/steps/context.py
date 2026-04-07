@@ -20,7 +20,7 @@ class CreateContextStep(BaseStep):
         Returns:
             List of required field names
         """
-        return ["node", "application_id"]
+        return ["node", "application_id", "group_id"]
 
     def _validate_field_types(self) -> None:
         """
@@ -42,9 +42,15 @@ class CreateContextStep(BaseStep):
         if "params" in self.config and not isinstance(self.config["params"], str):
             raise ValueError(f"Step '{step_name}': 'params' must be a JSON string")
 
-        # Validate group_id is a string if provided
-        if "group_id" in self.config and not isinstance(self.config["group_id"], str):
+        # Validate group_id is a string
+        if not isinstance(self.config.get("group_id"), str):
             raise ValueError(f"Step '{step_name}': 'group_id' must be a string")
+
+        # Validate service_name is a string if provided
+        if "service_name" in self.config and not isinstance(
+            self.config["service_name"], str
+        ):
+            raise ValueError(f"Step '{step_name}': 'service_name' must be a string")
 
     def _get_exportable_variables(self):
         """
@@ -107,10 +113,13 @@ class CreateContextStep(BaseStep):
                 console.print(f"[red]Failed to parse params JSON: {str(e)}[/red]")
                 return False
 
-        group_id: str | None = None
-        if "group_id" in self.config:
-            group_id = self._resolve_dynamic_value(
-                self.config["group_id"], workflow_results, dynamic_values
+        group_id = self._resolve_dynamic_value(
+            self.config["group_id"], workflow_results, dynamic_values
+        )
+        service_name = None
+        if "service_name" in self.config:
+            service_name = self._resolve_dynamic_value(
+                self.config["service_name"], workflow_results, dynamic_values
             )
 
         # Resolve node (gets URL and ensures authentication)
@@ -124,11 +133,20 @@ class CreateContextStep(BaseStep):
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-            api_result = client.create_context(
-                application_id=application_id,
-                params=params_json,
-                group_id=group_id,
-            )
+            create_context_kwargs = {
+                "application_id": application_id,
+                "params": params_json,
+                "group_id": group_id,
+            }
+            if service_name is not None:
+                create_context_kwargs["service_name"] = service_name
+            try:
+                api_result = client.create_context(**create_context_kwargs)
+            except TypeError:
+                # Backward compatibility for older client versions that don't
+                # yet support service_name.
+                create_context_kwargs.pop("service_name", None)
+                api_result = client.create_context(**create_context_kwargs)
 
             result = ok(api_result)
         except Exception as e:

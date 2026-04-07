@@ -8,20 +8,30 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
-from merobox.commands.bootstrap.steps.group_create import CreateGroupStep
-from merobox.commands.bootstrap.steps.group_invite import CreateGroupInvitationStep
-from merobox.commands.bootstrap.steps.group_join import JoinGroupStep
+from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
+from merobox.commands.bootstrap.steps.group_invite import CreateNamespaceInvitationStep
+from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
-from merobox.commands.bootstrap.steps.join import JoinContextStep as JoinInvitationStep
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
+from merobox.commands.bootstrap.steps.namespace import (
+    CreateGroupInNamespaceStep,
+    GetNamespaceIdentityStep,
+    ListNamespaceGroupsStep,
+    ListNamespacesStep,
+)
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
     GetProposalStep,
     ListProposalsStep,
 )
 from merobox.commands.bootstrap.steps.script import ScriptStep
+from merobox.commands.bootstrap.steps.subgroup import (
+    ListSubgroupsStep,
+    NestGroupStep,
+    UnnestGroupStep,
+)
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.utils import console
 
@@ -368,15 +378,29 @@ class RepeatStep(BaseStep):
         elif step_type in ("invite", "invite_identity", "invite_open"):
             return InviteOpenStep(step_config, **common_kwargs)
         elif step_type in ("join", "join_open"):
-            return JoinInvitationStep(step_config, **common_kwargs)
+            return JoinNamespaceStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
-        elif step_type == "create_group":
-            return CreateGroupStep(step_config, **common_kwargs)
-        elif step_type == "create_group_invitation":
-            return CreateGroupInvitationStep(step_config, **common_kwargs)
-        elif step_type == "join_group":
-            return JoinGroupStep(step_config, **common_kwargs)
+        elif step_type in ("create_namespace", "create_group"):
+            return CreateNamespaceStep(step_config, **common_kwargs)
+        elif step_type in ("create_namespace_invitation", "create_group_invitation"):
+            return CreateNamespaceInvitationStep(step_config, **common_kwargs)
+        elif step_type in ("join_namespace", "join_group"):
+            return JoinNamespaceStep(step_config, **common_kwargs)
+        elif step_type == "list_namespaces":
+            return ListNamespacesStep(step_config, **common_kwargs)
+        elif step_type == "get_namespace_identity":
+            return GetNamespaceIdentityStep(step_config, **common_kwargs)
+        elif step_type == "create_group_in_namespace":
+            return CreateGroupInNamespaceStep(step_config, **common_kwargs)
+        elif step_type == "list_namespace_groups":
+            return ListNamespaceGroupsStep(step_config, **common_kwargs)
+        elif step_type == "nest_group":
+            return NestGroupStep(step_config, **common_kwargs)
+        elif step_type == "unnest_group":
+            return UnnestGroupStep(step_config, **common_kwargs)
+        elif step_type == "list_subgroups":
+            return ListSubgroupsStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":

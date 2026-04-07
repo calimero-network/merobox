@@ -12,6 +12,7 @@ from merobox.commands import (
     group,
     health,
     logs,
+    namespace,
     nuke,
     remote,
     run,
@@ -31,6 +32,7 @@ cli.add_command(bootstrap)
 cli.add_command(group)
 cli.add_command(health)
 cli.add_command(logs)
+cli.add_command(namespace)
 cli.add_command(nuke)
 cli.add_command(remote)
 cli.add_command(run)

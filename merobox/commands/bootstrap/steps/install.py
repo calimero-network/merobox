@@ -244,6 +244,11 @@ class InstallApplicationStep(BaseStep):
             step_key = f"install_{node_name}"
             workflow_results[step_key] = result["data"]
 
+            # Store the application path so create_mesh can auto-install
+            # on joining nodes without requiring path in the workflow YAML.
+            if application_path:
+                dynamic_values[f"app_path_{node_name}"] = application_path
+
             # Debug: Show what we actually received
             console.print(f"[blue]📝 Install result data: {result['data']}[/blue]")
 

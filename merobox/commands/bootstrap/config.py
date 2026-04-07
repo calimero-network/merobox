@@ -19,16 +19,27 @@ VALID_STEP_TYPES = frozenset(
     {
         "install_application",
         "create_context",
+        "create_namespace",
+        "create_namespace_invitation",
+        "join_namespace",
+        # Deprecated aliases (kept for backward compatibility)
         "create_group",
         "create_group_invitation",
-        "create_identity",
+        "join_group",
         "invite",
+        "invite_open",
         "invite_identity",
         "join",
-        "join_context",
-        "join_group",
-        "invite_open",
         "join_open",
+        "create_identity",
+        "join_context",
+        "list_namespaces",
+        "get_namespace_identity",
+        "create_group_in_namespace",
+        "list_namespace_groups",
+        "nest_group",
+        "unnest_group",
+        "list_subgroups",
         "call",
         "wait",
         "wait_for_sync",
@@ -137,6 +148,10 @@ class CreateContextStep(BaseStepConfig):
     type: Literal["create_context"] = "create_context"
     node: str = Field(..., description="Target node")
     application_id: str = Field(..., description="Application ID to use")
+    group_id: str = Field(..., description="Namespace/group ID for the context")
+    service_name: Optional[str] = Field(
+        None, description="Optional service name for context creation"
+    )
     protocol: Optional[str] = Field(None, description="Protocol to use (e.g., near)")
 
 
@@ -148,27 +163,51 @@ class CreateIdentityStep(BaseStepConfig):
 
 
 class InviteStep(BaseStepConfig):
-    """Configuration for invite step (group-based invitation).
+    """Configuration for deprecated invite aliases.
 
-    The old context-based invite flow has been replaced by group invitations.
-    Step types 'invite', 'invite_open', and 'invite_identity' all require group_id.
+    Legacy step types 'invite', 'invite_open', and 'invite_identity' map to
+    namespace invitation creation.
     """
 
     type: Literal["invite", "invite_open", "invite_identity"] = "invite"
     node: str = Field(..., description="Target node")
-    group_id: str = Field(..., description="Group ID to create invitation for")
+    namespace_id: Optional[str] = Field(
+        None, description="Namespace ID to create invitation for"
+    )
+    recursive: Optional[bool] = Field(False, description="Create recursive invitation")
+
+    @model_validator(mode="after")
+    def normalize_namespace_id(self) -> "InviteStep":
+        # Backward compatibility: accept group_id as alias of namespace_id.
+        group_id = getattr(self, "group_id", None)
+        if not self.namespace_id and group_id:
+            self.namespace_id = group_id
+        if not self.namespace_id:
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
+        return self
 
 
 class JoinStep(BaseStepConfig):
-    """Configuration for join step (group-based, also handles join_open).
-
-    The old context-based join flow has been replaced by group joining.
-    The invitation data is a group invitation from create_group_invitation.
-    """
+    """Configuration for deprecated join aliases."""
 
     type: Literal["join", "join_open"] = "join"
     node: str = Field(..., description="Target node")
-    invitation: str = Field(..., description="Group invitation data")
+    namespace_id: Optional[str] = Field(None, description="Namespace ID to join")
+    invitation: str = Field(..., description="Namespace invitation data")
+
+    @model_validator(mode="after")
+    def normalize_namespace_id(self) -> "JoinStep":
+        # Backward compatibility: accept group_id as alias of namespace_id.
+        group_id = getattr(self, "group_id", None)
+        if not self.namespace_id and group_id:
+            self.namespace_id = group_id
+        if not self.namespace_id:
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
+        return self
 
 
 class JoinContextStepConfig(BaseStepConfig):
@@ -306,28 +345,117 @@ class UploadBlobStep(BaseStepConfig):
     context_id: Optional[str] = Field(None, description="Context ID (optional)")
 
 
-class CreateGroupStepConfig(BaseStepConfig):
-    """Configuration for create_group step."""
+class CreateNamespaceStepConfig(BaseStepConfig):
+    """Configuration for create_namespace step."""
 
-    type: Literal["create_group"] = "create_group"
+    type: Literal["create_namespace", "create_group"] = "create_namespace"
     node: str = Field(..., description="Target node")
-    context_id: str = Field(..., description="Context ID for the group")
+    application_id: str = Field(
+        ..., description="Application ID for namespace creation"
+    )
+    alias: Optional[str] = Field(None, description="Optional namespace alias")
 
 
-class CreateGroupInvitationStepConfig(BaseStepConfig):
-    """Configuration for create_group_invitation step."""
+class CreateNamespaceInvitationStepConfig(BaseStepConfig):
+    """Configuration for create_namespace_invitation step."""
 
-    type: Literal["create_group_invitation"] = "create_group_invitation"
+    type: Literal["create_namespace_invitation", "create_group_invitation"] = (
+        "create_namespace_invitation"
+    )
     node: str = Field(..., description="Target node")
-    group_id: str = Field(..., description="Group ID to create invitation for")
+    namespace_id: Optional[str] = Field(None, description="Namespace ID to invite to")
+    recursive: Optional[bool] = Field(False, description="Create recursive invitation")
+
+    @model_validator(mode="after")
+    def normalize_namespace_id(self) -> "CreateNamespaceInvitationStepConfig":
+        # Backward compatibility: accept group_id as alias of namespace_id.
+        group_id = getattr(self, "group_id", None)
+        if not self.namespace_id and group_id:
+            self.namespace_id = group_id
+        if not self.namespace_id:
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
+        return self
 
 
-class JoinGroupStepConfig(BaseStepConfig):
-    """Configuration for join_group step."""
+class JoinNamespaceStepConfig(BaseStepConfig):
+    """Configuration for join_namespace step."""
 
-    type: Literal["join_group"] = "join_group"
+    type: Literal["join_namespace", "join_group"] = "join_namespace"
     node: str = Field(..., description="Target node")
-    invitation: str = Field(..., description="Group invitation data")
+    namespace_id: Optional[str] = Field(None, description="Namespace ID to join")
+    invitation: str = Field(..., description="Namespace invitation data")
+
+    @model_validator(mode="after")
+    def normalize_namespace_id(self) -> "JoinNamespaceStepConfig":
+        # Backward compatibility: accept group_id as alias of namespace_id.
+        group_id = getattr(self, "group_id", None)
+        if not self.namespace_id and group_id:
+            self.namespace_id = group_id
+        if not self.namespace_id:
+            raise ValueError(
+                "Either 'namespace_id' or deprecated alias 'group_id' is required"
+            )
+        return self
+
+
+class ListNamespacesStepConfig(BaseStepConfig):
+    """Configuration for list_namespaces step."""
+
+    type: Literal["list_namespaces"] = "list_namespaces"
+    node: str = Field(..., description="Target node")
+
+
+class GetNamespaceIdentityStepConfig(BaseStepConfig):
+    """Configuration for get_namespace_identity step."""
+
+    type: Literal["get_namespace_identity"] = "get_namespace_identity"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(..., description="Namespace ID")
+
+
+class CreateGroupInNamespaceStepConfig(BaseStepConfig):
+    """Configuration for create_group_in_namespace step."""
+
+    type: Literal["create_group_in_namespace"] = "create_group_in_namespace"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(..., description="Namespace ID")
+    group_alias: str = Field(..., description="Group alias")
+
+
+class ListNamespaceGroupsStepConfig(BaseStepConfig):
+    """Configuration for list_namespace_groups step."""
+
+    type: Literal["list_namespace_groups"] = "list_namespace_groups"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(..., description="Namespace ID")
+
+
+class NestGroupStepConfig(BaseStepConfig):
+    """Configuration for nest_group step."""
+
+    type: Literal["nest_group"] = "nest_group"
+    node: str = Field(..., description="Target node")
+    parent_group_id: str = Field(..., description="Parent group ID")
+    child_group_id: str = Field(..., description="Child group ID")
+
+
+class UnnestGroupStepConfig(BaseStepConfig):
+    """Configuration for unnest_group step."""
+
+    type: Literal["unnest_group"] = "unnest_group"
+    node: str = Field(..., description="Target node")
+    parent_group_id: str = Field(..., description="Parent group ID")
+    child_group_id: str = Field(..., description="Child group ID")
+
+
+class ListSubgroupsStepConfig(BaseStepConfig):
+    """Configuration for list_subgroups step."""
+
+    type: Literal["list_subgroups"] = "list_subgroups"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
 
 
 class CreateMeshStep(BaseStepConfig):
@@ -367,15 +495,26 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "install_application": InstallApplicationStep,
     "create_context": CreateContextStep,
     "create_identity": CreateIdentityStep,
+    "create_namespace": CreateNamespaceStepConfig,
+    "create_namespace_invitation": CreateNamespaceInvitationStepConfig,
+    "join_namespace": JoinNamespaceStepConfig,
+    # Deprecated aliases
+    "create_group": CreateNamespaceStepConfig,
+    "create_group_invitation": CreateNamespaceInvitationStepConfig,
+    "join_group": JoinNamespaceStepConfig,
     "invite": InviteStep,
     "invite_identity": InviteStep,
     "invite_open": InviteStep,
     "join": JoinStep,
     "join_context": JoinContextStepConfig,
     "join_open": JoinStep,
-    "create_group": CreateGroupStepConfig,
-    "create_group_invitation": CreateGroupInvitationStepConfig,
-    "join_group": JoinGroupStepConfig,
+    "list_namespaces": ListNamespacesStepConfig,
+    "get_namespace_identity": GetNamespaceIdentityStepConfig,
+    "create_group_in_namespace": CreateGroupInNamespaceStepConfig,
+    "list_namespace_groups": ListNamespaceGroupsStepConfig,
+    "nest_group": NestGroupStepConfig,
+    "unnest_group": UnnestGroupStepConfig,
+    "list_subgroups": ListSubgroupsStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
@@ -801,10 +940,18 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
                 "outputs": {"app_id": "id"},
             },
             {
+                "name": "Create Namespace on Node 1",
+                "type": "create_namespace",
+                "node": "calimero-node-1",
+                "application_id": "{{app_id}}",
+                "outputs": {"namespace_id": "namespaceId"},
+            },
+            {
                 "name": "Create Context on Node 1",
                 "type": "create_context",
                 "node": "calimero-node-1",
                 "application_id": "{{app_id}}",
+                "group_id": "{{namespace_id}}",
                 "outputs": {"context_id": "id", "member_public_key": "memberPublicKey"},
             },
             {
@@ -814,16 +961,17 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
                 "outputs": {"public_key": "publicKey"},
             },
             {
-                "name": "Create Group Invitation",
-                "type": "create_group_invitation",
+                "name": "Create Namespace Invitation",
+                "type": "create_namespace_invitation",
                 "node": "calimero-node-1",
-                "group_id": "{{group_id}}",
+                "namespace_id": "{{namespace_id}}",
                 "outputs": {"invitation": "invitation"},
             },
             {
-                "name": "Join Group from Node 2",
-                "type": "join_group",
+                "name": "Join Namespace from Node 2",
+                "type": "join_namespace",
                 "node": "calimero-node-2",
+                "namespace_id": "{{namespace_id}}",
                 "invitation": "{{invitation}}",
             },
             {

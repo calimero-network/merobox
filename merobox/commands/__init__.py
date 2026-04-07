@@ -27,6 +27,7 @@ from merobox.commands.join import join
 from merobox.commands.list import list
 from merobox.commands.logs import logs
 from merobox.commands.manager import DockerManager
+from merobox.commands.namespace import namespace
 from merobox.commands.nuke import nuke
 from merobox.commands.proposals import proposals
 from merobox.commands.remote import remote
@@ -53,6 +54,7 @@ __all__ = [
     "join",
     "proposals",
     "remote",
+    "namespace",
     # Error classes
     "MeroboxError",
     "NodeResolutionError",

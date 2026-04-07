@@ -22,10 +22,18 @@ steps:
 
   # Step 2: Create a context using the installed application
   # Uses the captured application ID from step 1
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
   - name: Create Context on Node 1
     type: create_context
     node: calimero-node-1
     application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
     outputs:
       context_id: contextId          # Export 'contextId' field as 'context_id'
       member_public_key: memberPublicKey  # Export 'memberPublicKey' as 'member_public_key'
@@ -54,44 +62,38 @@ steps:
   # Step 6: Invite the second node to join the context
   # Uses captured values: context ID, member public key, and identity public key
   - name: Invite Node 2 from Node 1
-    type: invite
+    type: create_namespace_invitation
     node: calimero-node-1
-    context_id: '{{context_id}}'
-    grantee_id: '{{public_key_node2}}'
-    granter_id: '{{member_public_key}}'
-    capability: member
+    namespace_id: '{{namespace_id}}'
     outputs:
       invitation_node2: invitation         # Export 'invitation' as 'invitation_node2'
 
   # Step 7: Join the context from the second node
   # Uses captured values: context ID, invitee identity, and invitation data
-  - name: Join Context from Node 2
-    type: join
+  - name: Join Namespace from Node 2
+    type: join_namespace
     node: calimero-node-2
-    context_id: '{{context_id}}'
-    invitee_id: '{{public_key_node2}}'
+    namespace_id: '{{namespace_id}}'
     invitation: '{{invitation_node2}}'
+    outputs:
+      member_identity_node2: memberIdentity
 
   # Step 8: Invite the third node to join the context
-  # Uses captured values: context ID, member public key, and identity public key
   - name: Invite Node 3 from Node 1
-    type: invite
+    type: create_namespace_invitation
     node: calimero-node-1
-    context_id: '{{context_id}}'
-    grantee_id: '{{public_key_node3}}'
-    granter_id: '{{member_public_key}}'
-    capability: member
+    namespace_id: '{{namespace_id}}'
     outputs:
-      invitation_node3: invitation         # Export 'invitation' as 'invitation_node3'
+      invitation_node3: invitation
 
   # Step 9: Join the context from the third node
-  # Uses captured values: context ID, invitee identity, and invitation data
-  - name: Join Context from Node 3
-    type: join
+  - name: Join Namespace from Node 3
+    type: join_namespace
     node: calimero-node-3
-    context_id: '{{context_id}}'
-    invitee_id: '{{public_key_node3}}'
+    namespace_id: '{{namespace_id}}'
     invitation: '{{invitation_node3}}'
+    outputs:
+      member_identity_node3: memberIdentity
 
   # Step 10: Execute a contract call to set a key-value pair
   # Uses the member public key from the context as the executor
@@ -99,7 +101,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: '{{context_id}}'
-    executor_public_key: '{{member_public_key}}'
     method: set
     args:
       key: hello
@@ -125,7 +126,6 @@ steps:
     type: call
     node: calimero-node-2
     context_id: '{{context_id}}'
-    executor_public_key: '{{public_key_node2}}'
     method: get
     args:
       key: hello
@@ -138,7 +138,6 @@ steps:
     type: call
     node: calimero-node-3
     context_id: '{{context_id}}'
-    executor_public_key: '{{public_key_node3}}'
     method: get
     args:
       key: hello
@@ -150,7 +149,6 @@ steps:
     type: call
     node: calimero-node-3
     context_id: '{{context_id}}'
-    executor_public_key: '{{public_key_node3}}'
     method: set
     args:
       key: node3_key
@@ -175,7 +173,6 @@ steps:
     type: call
     node: calimero-node-1
     context_id: '{{context_id}}'
-    executor_public_key: '{{member_public_key}}'
     method: get
     args:
       key: node3_key
@@ -194,7 +191,6 @@ steps:
         type: call
         node: calimero-node-1
         context_id: '{{context_id}}'
-        executor_public_key: '{{member_public_key}}'
         method: set
         args:
           key: "iteration_{{current_iteration}}"
@@ -217,7 +213,6 @@ steps:
         type: call
         node: calimero-node-2
         context_id: '{{context_id}}'
-        executor_public_key: '{{public_key_node2}}'
         method: get
         args:
           key: "iteration_{{current_iteration}}"
@@ -228,7 +223,6 @@ steps:
         type: call
         node: calimero-node-3
         context_id: '{{context_id}}'
-        executor_public_key: '{{public_key_node3}}'
         method: get
         args:
           key: "iteration_{{current_iteration}}"
