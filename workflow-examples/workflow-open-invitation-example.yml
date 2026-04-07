@@ -78,14 +78,14 @@ steps:
 
 
 
-  # Create open namespace invitation
+  # Create open namespace invitation (recursive returns an array of invitations)
   - name: Create Open Invitation
     type: create_namespace_invitation
     node: open-inv-node-1
     namespace_id: "{{namespace_id}}"
     recursive: true
     outputs:
-      open_invitation: invitation
+      open_invitation: invitations.0.invitation
 
   # Join using namespace invitation
   - name: Join via Open Invitation - Node 2

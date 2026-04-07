@@ -16,7 +16,15 @@ steps:
     outputs:
       app_id: applicationId         # Export 'applicationId' field as 'app_id'
 
-  # Step 2: Create a context using the installed application
+  # Step 2: Create a namespace
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  # Step 3: Create a context in the namespace
   - name: Create Context on Node 1
     type: create_context
     node: calimero-node-1
