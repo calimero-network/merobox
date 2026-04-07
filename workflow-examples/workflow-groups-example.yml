@@ -1,7 +1,7 @@
 description: >
-  Demonstrates Context Group Management — creates a group on node 1,
-  invites node 2 to join the group, creates a shared context inside the
-  group, has node 2 join that context via group membership, then verifies
+  Demonstrates Context Group Management — creates a namespace on node 1,
+  invites node 2 to join the namespace, creates a shared context inside the
+  namespace, has node 2 join that context via group membership, then verifies
   state propagates correctly between both nodes.
 name: Context Group Management Example
 
@@ -22,68 +22,60 @@ steps:
     outputs:
       app_id: applicationId
 
-  # Step 2: Create a group on node 1 tied to the installed application.
-  # All contexts in this group will run the same application version,
-  # enabling unified upgrade propagation.
+  # Step 2: Create a namespace on node 1 tied to the installed application.
   - name: Create Namespace on Node 1
     type: create_namespace
     node: calimero-node-1
     application_id: '{{app_id}}'
     outputs:
-      group_id: namespaceId
+      namespace_id: namespaceId
 
-  # Step 3: Create a context inside the group on node 1.
-  # The group_id field registers this context with the group so that
-  # group membership controls who can join it.
+  # Step 3: Create a context inside the namespace on node 1.
   - name: Create Group Context on Node 1
     type: create_context
     node: calimero-node-1
     application_id: '{{app_id}}'
-    group_id: '{{group_id_calimero-node-1}}'
+    group_id: '{{namespace_id}}'
     outputs:
       context_id: contextId
       member_key_node1: memberPublicKey
 
-  # Step 4: Create an invitation on node 1.
-  # The invitation uses a commit-reveal protocol to prevent front-running
-  # on-chain. The CLI handles this transparently — the output is a
-  # SignedGroupOpenInvitation that any joiner can use.
+  # Step 4: Create a namespace invitation on node 1.
   - name: Create Namespace Invitation on Node 1
     type: create_namespace_invitation
     node: calimero-node-1
-    namespace_id: '{{group_id_calimero-node-1}}'
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
 
-  # Wait for group gossip to propagate from node 1 to node 2.
-  # Node 2 needs the group metadata before it can process the join.
-  - name: Wait for Group Gossip Propagation
+  # Wait for namespace gossip to propagate from node 1 to node 2.
+  - name: Wait for Namespace Gossip Propagation
     type: wait
     seconds: 5
 
-  # Step 5: Node 2 joins the group using the invitation from node 1.
-  # After this step node 2 becomes a group member with the default
-  # CAN_JOIN_OPEN_CONTEXTS capability.
+  # Step 5: Node 2 joins the namespace using the invitation from node 1.
   - name: Node 2 Joins Namespace
     type: join_namespace
     node: calimero-node-2
-    namespace_id: '{{group_id_calimero-node-1}}'
-    invitation: '{{namespace_invitation_calimero-node-1}}'
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+    outputs:
+      member_identity_node2: memberIdentity
 
   # Step 6: Node 2 joins the existing context via group membership.
-  # join_context creates a fresh per-context identity for node 2,
-  # keeping its group identity and context identity separate for privacy.
   - name: Node 2 Joins Group Context
     type: join_context
     node: calimero-node-2
-    context_id: '{{context_id_calimero-node-1}}'
+    context_id: '{{context_id}}'
     outputs:
-      context_id: contextId
+      context_id_node2: contextId
       member_key_node2: memberPublicKey
 
   # Step 7: Write a value on node 1 to produce a state change.
   - name: Write Value on Node 1
     type: call
     node: calimero-node-1
-    context_id: '{{context_id_calimero-node-1}}'
+    context_id: '{{context_id}}'
     method: set
     args:
       key: hello
@@ -95,7 +87,7 @@ steps:
     nodes:
       - calimero-node-1
       - calimero-node-2
-    context_id: '{{context_id_calimero-node-1}}'
+    context_id: '{{context_id}}'
     timeout: 30
 
 stop_all_nodes: false

@@ -74,22 +74,7 @@ steps:
     outputs:
       set_result: result
 
-  # Step 6: Expected failure - wrong executor public key
-  - name: Expected Failure - Unauthorized Access
-    type: call
-    node: calimero-node-1
-    context_id: "{{context_id}}"
-    method: set
-    args:
-      key: unauthorized_key
-      value: unauthorized_value
-    expected_failure: true
-    outputs:
-      auth_error_code: error_code
-      auth_error_type: error_type
-      auth_error_message: error_message
-
-  # Step 7: Verify successful call still works
+  # Step 6: Verify successful call still works
   - name: Successful Call - Get Key
     type: call
     node: calimero-node-1
@@ -176,15 +161,13 @@ steps:
     outputs:
       final_set_result: result
 
-  # Step 14: Assert on multiple error types captured
+  # Step 13: Assert on multiple error types captured
   # Note: Some errors may be network-level (no error_code/error_type) or JSON-RPC level
   - name: Assert Multiple Error Types
     type: assert
     statements:
       - statement: "is_set({{error_type}})"
         message: "First error (invalid method) should have error_type set"
-      - statement: "is_set({{auth_error_message}})"
-        message: "Auth error should have error_message set (may be network or JSON-RPC error)"
       - statement: "is_set({{invalid_args_error_type}})"
         message: "Invalid args error should have error_type set"
       - statement: "is_set({{invalid_context_error_message}})"
