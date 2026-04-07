@@ -15,7 +15,6 @@ steps:
     outputs:
       app_id: applicationId
 
-  - name: Create Context
   - name: Create Namespace
     type: create_namespace
     node: test-node-1
