@@ -105,7 +105,11 @@ class CreateContextStep(BaseStep):
             try:
                 import json
 
-                params_json = self.config["params"]
+                raw_params = self.config["params"]
+                # Resolve dynamic placeholders in params before JSON validation
+                params_json = self._resolve_dynamic_value(
+                    raw_params, workflow_results, dynamic_values
+                )
                 # Validate JSON
                 json.loads(params_json)
                 console.print("[blue]Using initialization params JSON[/blue]")
