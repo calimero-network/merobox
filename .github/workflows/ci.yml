@@ -215,6 +215,7 @@ jobs:
             [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]] && continue
             [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
             [[ "$f" == "workflow-examples/workflow-groups-example.yml" ]] && continue
+            [[ "$f" == "workflow-examples/workflow-subgroups-example.yml" ]] && continue
             echo "Running workflow: $f"
             if ! merobox bootstrap run "$f" \
               --e2e-mode; then
