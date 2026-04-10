@@ -153,9 +153,7 @@ class CreateGroupInNamespaceStep(BaseStep):
             return False
         workflow_results[f"group_in_namespace_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
-        console.print(
-            f"[green]✓ Created group in namespace on {node_name}[/green]"
-        )
+        console.print(f"[green]✓ Created group in namespace on {node_name}[/green]")
         return True
 
 
