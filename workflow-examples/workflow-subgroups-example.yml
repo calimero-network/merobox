@@ -1,0 +1,142 @@
+name: Subgroup Management Example
+description: >
+  Demonstrates subgroup management — creates a namespace on node 1,
+  creates a subgroup within the namespace, adds node 2 as a member
+  of the subgroup, creates a context inside the subgroup, and verifies
+  both nodes can sync state through the subgroup context.
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Phase 1: Bootstrap — Install app, create namespace
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Namespace Invitation
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - name: Wait for Namespace Gossip Propagation
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins Namespace
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+    outputs:
+      p2_identity: memberIdentity
+
+  - name: Assert Node 2 Joined
+    type: assert
+    statements:
+      - 'is_set({{p2_identity}})'
+
+  # Phase 2: Create subgroup and add members
+  - name: Create Subgroup in Namespace
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    group_alias: 'test-subgroup'
+    outputs:
+      subgroup_id: groupId
+
+  - name: Assert Subgroup Created
+    type: assert
+    statements:
+      - 'is_set({{subgroup_id}})'
+
+  - name: Wait for Subgroup Governance Propagation
+    type: wait
+    seconds: 5
+
+  - name: Add Node 2 to Subgroup
+    type: add_group_members
+    node: calimero-node-1
+    group_id: '{{subgroup_id}}'
+    members:
+      - identity: '{{p2_identity}}'
+        role: Member
+
+  # Phase 3: Create context in subgroup and verify sync
+  - name: Create Context in Subgroup
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{subgroup_id}}'
+    outputs:
+      ctx_id: contextId
+      p1_key: memberPublicKey
+
+  - name: Assert Context Created
+    type: assert
+    statements:
+      - 'is_set({{ctx_id}})'
+
+  - name: Wait for Context Propagation
+    type: wait
+    seconds: 10
+
+  - name: Node 2 Joins Subgroup Context
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{ctx_id}}'
+    outputs:
+      ctx_id_node2: contextId
+      p2_key: memberPublicKey
+
+  - name: Write Value on Node 1
+    type: call
+    node: calimero-node-1
+    context_id: '{{ctx_id}}'
+    method: set
+    args:
+      key: subgroup_test
+      value: working
+
+  - name: Wait for State Sync
+    type: wait_for_sync
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    context_id: '{{ctx_id}}'
+    timeout: 30
+
+  - name: Verify Value on Node 2
+    type: call
+    node: calimero-node-2
+    context_id: '{{ctx_id}}'
+    method: get
+    executor_public_key: '{{p2_key}}'
+    args:
+      key: subgroup_test
+    outputs:
+      read_result: result.output
+
+  - name: Assert Value Synced
+    type: assert
+    statements:
+      - 'is_set({{read_result}})'
+
+stop_all_nodes: false

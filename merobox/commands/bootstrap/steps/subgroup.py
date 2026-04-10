@@ -2,6 +2,7 @@
 Subgroup workflow step executors.
 """
 
+import json
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -150,3 +151,70 @@ class ListSubgroupsStep(BaseStep):
             f"[red]list_subgroups failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
         )
         return False
+
+
+class AddGroupMembersStep(BaseStep):
+    """Add members to a group."""
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "group_id", "members"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        if not isinstance(self.config.get("node"), str):
+            raise ValueError(f"Step '{step_name}': 'node' must be a string")
+        if not isinstance(self.config.get("group_id"), str):
+            raise ValueError(f"Step '{step_name}': 'group_id' must be a string")
+        if not isinstance(self.config.get("members"), list):
+            raise ValueError(f"Step '{step_name}': 'members' must be a list")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        group_id = self._resolve_dynamic_value(
+            self.config["group_id"], workflow_results, dynamic_values
+        )
+        members = self.config["members"]
+
+        # Resolve dynamic values in each member entry
+        resolved_members = []
+        for member in members:
+            resolved = {}
+            for key, value in member.items():
+                if isinstance(value, str):
+                    resolved[key] = self._resolve_dynamic_value(
+                        value, workflow_results, dynamic_values
+                    )
+                else:
+                    resolved[key] = value
+            resolved_members.append(resolved)
+
+        members_json = json.dumps(resolved_members)
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.add_group_members(
+                group_id=group_id,
+                members_json=members_json,
+            )
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("add_group_members failed", error=e)
+
+        if not result["success"]:
+            console.print(
+                f"[red]Failed to add group members on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        if self._check_jsonrpc_error(result["data"]):
+            return False
+        workflow_results[f"add_group_members_{node_name}"] = result["data"]
+        console.print(
+            f"[green]✓ Added {len(resolved_members)} member(s) to group {group_id} on {node_name}[/green]"
+        )
+        return True

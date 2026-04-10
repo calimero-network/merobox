@@ -494,6 +494,7 @@ class TestValidStepTypes:
             "nest_group",
             "unnest_group",
             "list_subgroups",
+            "add_group_members",
             "call",
             "wait",
             "wait_for_sync",
