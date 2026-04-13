@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-04-13
+
+### Added
+- New `add_group_members` workflow step for adding members to a subgroup.
+- `create_group_in_namespace` step now exports its `group_id` for downstream steps.
+- `workflow-subgroups-example.yml` demonstrating the full subgroup flow
+  (create namespace → create subgroup → add members → create context in subgroup).
+
+### Changed
+- Docker CI now runs the groups and subgroups example workflows
+  (previously skipped because the edge image lagged behind core master;
+  fixes from core PR #2127 are now in edge).
+
+### Fixed
+- `add_group_members` step is now wired into the main executor dispatch.
+- Pin `rich<14.3.4` to avoid lazy-import breakage on Linux.
+- Install `merobox` in dev mode for the `test-unit` CI job.
+
 ### Breaking
 - **NEAR blockchain removed**: All NEAR Sandbox, relayer, and blockchain functionality has been removed. Context management is now fully local (P2P gossip).
 - **`--enable-relayer` / `--no-enable-relayer` CLI flags**: Removed.
