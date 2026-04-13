@@ -1,6 +1,6 @@
 click>=8.0.0
 docker>=6.0.0
-rich>=13.0.0
+rich>=13.0.0,<15.0.0
 PyYAML>=6.0.0
 calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py.git@master
 aiohttp>=3.9.0
