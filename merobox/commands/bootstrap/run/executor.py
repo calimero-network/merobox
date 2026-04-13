@@ -20,6 +20,7 @@ from rich.progress import (
 
 from merobox.commands.auth import AUTH_METHOD_NONE, AuthenticationError, AuthManager
 from merobox.commands.bootstrap.steps import (
+    AddGroupMembersStep,
     CreateContextStep,
     CreateGroupInNamespaceStep,
     CreateIdentityStep,
@@ -1419,6 +1420,8 @@ class WorkflowExecutor:
             return UnnestGroupStep(step_config, **common_kwargs)
         elif step_type == "list_subgroups":
             return ListSubgroupsStep(step_config, **common_kwargs)
+        elif step_type == "add_group_members":
+            return AddGroupMembersStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
         else:
