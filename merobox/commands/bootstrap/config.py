@@ -40,6 +40,7 @@ VALID_STEP_TYPES = frozenset(
         "nest_group",
         "unnest_group",
         "list_subgroups",
+        "add_group_members",
         "call",
         "wait",
         "wait_for_sync",
@@ -458,6 +459,17 @@ class ListSubgroupsStepConfig(BaseStepConfig):
     group_id: str = Field(..., description="Group ID")
 
 
+class AddGroupMembersStepConfig(BaseStepConfig):
+    """Configuration for add_group_members step."""
+
+    type: Literal["add_group_members"] = "add_group_members"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to add members to")
+    members: list[dict[str, str]] = Field(
+        ..., description="List of members with identity and role"
+    )
+
+
 class CreateMeshStep(BaseStepConfig):
     """Configuration for create_mesh step.
 
@@ -515,6 +527,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "nest_group": NestGroupStepConfig,
     "unnest_group": UnnestGroupStepConfig,
     "list_subgroups": ListSubgroupsStepConfig,
+    "add_group_members": AddGroupMembersStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,

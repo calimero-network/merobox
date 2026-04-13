@@ -39,6 +39,7 @@ from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.subgroup import (
+    AddGroupMembersStep,
     ListSubgroupsStep,
     NestGroupStep,
     UnnestGroupStep,
@@ -66,6 +67,7 @@ __all__ = [
     "ListNamespaceGroupsStep",
     "NestGroupStep",
     "UnnestGroupStep",
+    "AddGroupMembersStep",
     "ListSubgroupsStep",
     "CreateIdentityStep",
     "InviteOpenStep",

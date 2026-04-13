@@ -152,6 +152,8 @@ class CreateGroupInNamespaceStep(BaseStep):
         if self._check_jsonrpc_error(result["data"]):
             return False
         workflow_results[f"group_in_namespace_{node_name}"] = result["data"]
+        self._export_variables(result["data"], node_name, dynamic_values)
+        console.print(f"[green]✓ Created group in namespace on {node_name}[/green]")
         return True
 
 

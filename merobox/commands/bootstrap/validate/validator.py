@@ -36,6 +36,7 @@ from merobox.commands.bootstrap.steps.proposals import (
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.subgroup import (
+    AddGroupMembersStep,
     ListSubgroupsStep,
     NestGroupStep,
     UnnestGroupStep,
@@ -192,6 +193,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = UnnestGroupStep
         elif step_type == "list_subgroups":
             step_class = ListSubgroupsStep
+        elif step_type == "add_group_members":
+            step_class = AddGroupMembersStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

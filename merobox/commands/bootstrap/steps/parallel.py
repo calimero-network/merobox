@@ -37,6 +37,7 @@ from merobox.commands.bootstrap.steps.proposals import (
 )
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.subgroup import (
+    AddGroupMembersStep,
     ListSubgroupsStep,
     NestGroupStep,
     UnnestGroupStep,
@@ -705,6 +706,8 @@ class ParallelStep(BaseStep):
             return UnnestGroupStep(step_config, **common_kwargs)
         elif step_type == "list_subgroups":
             return ListSubgroupsStep(step_config, **common_kwargs)
+        elif step_type == "add_group_members":
+            return AddGroupMembersStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)
         elif step_type == "wait":
