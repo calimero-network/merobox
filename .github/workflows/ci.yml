@@ -72,12 +72,16 @@ jobs:
       - uses: actions/checkout@v4
       - id: set
         run: |
-          # Binary mode: all workflows except fuzzy and auth-related
+          # Binary mode: all workflows except fuzzy, auth-related, and subgroups
+          # Note: subgroups-example requires the signing key hierarchy fix
+          # (calimero-network/core#2148) in the merod binary. Re-enable once
+          # the edge image / cached binary includes that fix.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
             grep -v cached-frontends | \
+            grep -v subgroups-example | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
 
@@ -88,6 +92,7 @@ jobs:
             grep -v auth-image | \
             grep -v cached-frontends | \
             grep -v example-binary | \
+            grep -v subgroups-example | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT
 
