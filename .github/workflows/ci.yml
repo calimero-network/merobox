@@ -7,7 +7,6 @@ on:
     branches: [master]
 
 env:
-  # Or you can use 'prerelease-{PR-NUMBER}'
   CALIMERO_CONTRACTS_VERSION: "latest"
 
 jobs:
@@ -62,28 +61,18 @@ jobs:
         run: |
           python -m pytest merobox/tests/unit -v --tb=short
 
-  test-merobox:
+  # ── Build phase: compile merod + WASM apps, upload as artifacts ──
+  build-binary:
+    name: Build (binary mode)
     runs-on: ubuntu-latest
     needs: format
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Install merobox in development mode
-        run: |
-          pip install -e .
-
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Cache merod build
         uses: actions/cache@v4
@@ -102,73 +91,179 @@ jobs:
           cd /tmp/core-build/src
           git fetch origin master && git checkout master && git pull --ff-only
           CARGO_TARGET_DIR=/tmp/core-build/target cargo build --release -p merod
-          sudo cp /tmp/core-build/target/release/merod /usr/local/bin/
-          merod --version
-          echo "merod built and installed successfully!"
+          cp /tmp/core-build/target/release/merod /tmp/merod
+          /tmp/merod --version
 
-      - name: Set up Rust (wasm32 target for workflow apps)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Build workflow WASM apps (kv_store, blobs from calimero-network/core)
+      - name: Build workflow WASM apps
         run: |
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh
 
-      - name: Test merobox CLI and workflow (All workflows)
+      - name: Upload merod binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: merod-binary
+          path: /tmp/merod
+          retention-days: 1
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-apps
+          path: workflow-examples/res/
+          retention-days: 1
+
+  # ── Test phase (binary): run each workflow in parallel ──
+  test-merobox:
+    name: Binary (${{ matrix.workflow_name }})
+    runs-on: ubuntu-latest
+    needs: build-binary
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workflow_name: example
+            file: workflow-examples/workflow-example.yml
+          - workflow_name: mesh
+            file: workflow-examples/workflow-mesh-example.yml
+          - workflow_name: groups
+            file: workflow-examples/workflow-groups-example.yml
+          - workflow_name: subgroups
+            file: workflow-examples/workflow-subgroups-example.yml
+          - workflow_name: assert
+            file: workflow-examples/workflow-assert-example.yml
+          - workflow_name: blob-upload
+            file: workflow-examples/workflow-blob-upload-example.yml
+          - workflow_name: context-loop
+            file: workflow-examples/workflow-context-loop.yml
+          - workflow_name: custom-outputs
+            file: workflow-examples/workflow-custom-outputs-example.yml
+          - workflow_name: execute-variables
+            file: workflow-examples/workflow-execute-variables-example.yml
+          - workflow_name: nested-json
+            file: workflow-examples/workflow-nested-json-parsing-example.yml
+          - workflow_name: nuke
+            file: workflow-examples/workflow-nuke-example.yml
+          - workflow_name: open-invitation
+            file: workflow-examples/workflow-open-invitation-example.yml
+          - workflow_name: propagation
+            file: workflow-examples/workflow-propagation-monitoring.yml
+          - workflow_name: repeat
+            file: workflow-examples/workflow-repeat-example.yml
+          - workflow_name: restart
+            file: workflow-examples/workflow-restart-example.yml
+          - workflow_name: script
+            file: workflow-examples/workflow-script-test.yml
+          - workflow_name: wait-for-sync
+            file: workflow-examples/workflow-wait-for-sync-example.yml
+          - workflow_name: negative-testing
+            file: workflow-examples/workflow-negative-testing-example.yml
+          - workflow_name: benchmark
+            file: workflow-examples/kv-store-benchmark.yml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
         run: |
-          merobox --version
-          merobox --help
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
 
-          # Binary mode: do not pass --binary-path; merod is installed to /usr/local/bin (PATH).
-          # Workflow YAMLs must not set binary_path to a path that doesn't exist in CI.
+      - name: Download merod binary
+        uses: actions/download-artifact@v4
+        with:
+          name: merod-binary
+          path: /tmp
 
-          failed_workflows=()
+      - name: Install merod
+        run: |
+          chmod +x /tmp/merod
+          sudo cp /tmp/merod /usr/local/bin/
+          merod --version
 
-          # Run all workflows (exclude fuzzy-kv-store)
-          for f in workflow-examples/*.yml; do
-            [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
-            echo "Running workflow: $f"
-            if ! merobox bootstrap run "$f" \
-              --no-docker \
-              --e2e-mode; then
-              failed_workflows+=("$f")
-            fi
-            merobox stop --all --no-docker || true
-            merobox nuke -f || true
-          done
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-apps
+          path: workflow-examples/res/
 
-          # Retry failed workflows (max 2 retries); use same args as first run (merod from PATH)
-          for retry in 1 2; do
-            [ ${#failed_workflows[@]} -eq 0 ] && break
-            echo "Retry $retry for ${#failed_workflows[@]} failed workflow(s)..."
-            sleep 2
-
-            still_failed=()
-            for f in "${failed_workflows[@]}"; do
-              if ! merobox bootstrap run "$f" \
-                --no-docker \
-                --e2e-mode; then
-                still_failed+=("$f")
+      - name: Run ${{ matrix.workflow_name }}
+        run: |
+          max_attempts=3
+          attempt=1
+          while [ $attempt -le $max_attempts ]; do
+              if [ $attempt -gt 1 ]; then
+                  merobox stop --all --no-docker || true
+                  merobox nuke -f || true
+                  sleep 2
               fi
-              merobox stop --all --no-docker || true
-              merobox nuke -f || true
-              sleep 2
-            done
-            failed_workflows=("${still_failed[@]}")
+              if merobox bootstrap run "${{ matrix.file }}" \
+                  --no-docker \
+                  --e2e-mode; then
+                  echo "✅ ${{ matrix.workflow_name }} passed"
+                  exit 0
+              fi
+              attempt=$((attempt + 1))
           done
+          merobox stop --all --no-docker || true
+          merobox nuke -f || true
+          echo "❌ ${{ matrix.workflow_name }} failed after $max_attempts attempts"
+          exit 1
 
-          # Exit if any workflows still failed
-          if [ ${#failed_workflows[@]} -gt 0 ]; then
-            echo "Failed workflows: ${failed_workflows[*]}"
-            exit 1
-          fi
-          echo "All workflows passed!"
-
+  # ── Test phase (Docker): run each workflow in parallel ──
   test-merobox-docker:
+    name: Docker (${{ matrix.workflow_name }})
     runs-on: ubuntu-latest
     needs: format
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workflow_name: example
+            file: workflow-examples/workflow-example.yml
+          - workflow_name: mesh
+            file: workflow-examples/workflow-mesh-example.yml
+          - workflow_name: groups
+            file: workflow-examples/workflow-groups-example.yml
+          - workflow_name: subgroups
+            file: workflow-examples/workflow-subgroups-example.yml
+          - workflow_name: assert
+            file: workflow-examples/workflow-assert-example.yml
+          - workflow_name: blob-upload
+            file: workflow-examples/workflow-blob-upload-example.yml
+          - workflow_name: context-loop
+            file: workflow-examples/workflow-context-loop.yml
+          - workflow_name: custom-outputs
+            file: workflow-examples/workflow-custom-outputs-example.yml
+          - workflow_name: execute-variables
+            file: workflow-examples/workflow-execute-variables-example.yml
+          - workflow_name: nested-json
+            file: workflow-examples/workflow-nested-json-parsing-example.yml
+          - workflow_name: nuke
+            file: workflow-examples/workflow-nuke-example.yml
+          - workflow_name: open-invitation
+            file: workflow-examples/workflow-open-invitation-example.yml
+          - workflow_name: propagation
+            file: workflow-examples/workflow-propagation-monitoring.yml
+          - workflow_name: repeat
+            file: workflow-examples/workflow-repeat-example.yml
+          - workflow_name: restart
+            file: workflow-examples/workflow-restart-example.yml
+          - workflow_name: script
+            file: workflow-examples/workflow-script-test.yml
+          - workflow_name: wait-for-sync
+            file: workflow-examples/workflow-wait-for-sync-example.yml
+          - workflow_name: negative-testing
+            file: workflow-examples/workflow-negative-testing-example.yml
+          - workflow_name: force-pull
+            file: workflow-examples/workflow-force-pull-test.yml
+          - workflow_name: benchmark
+            file: workflow-examples/kv-store-benchmark.yml
     steps:
       - uses: actions/checkout@v4
 
@@ -189,9 +284,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Install merobox in development mode
-        run: |
           pip install -e .
 
       - name: Set up Rust (wasm32 target for workflow apps)
@@ -199,56 +291,32 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Build workflow WASM apps (kv_store, blobs from calimero-network/core)
+      - name: Build workflow WASM apps
         run: |
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh
 
-      - name: Test merobox CLI and workflow with Docker (All workflows)
+      - name: Run ${{ matrix.workflow_name }}
         run: |
-          merobox --version
-          merobox --help
-
-          failed_workflows=()
-
-          # Run all workflows with Docker (skip binary-only, fuzzy-kv-store)
-          for f in workflow-examples/*.yml; do
-            [[ "$f" == "workflow-examples/workflow-example-binary.yml" ]] && continue
-            [[ "$f" == "workflow-examples/workflow-fuzzy-kv-store.yml" ]] && continue
-            echo "Running workflow: $f"
-            if ! merobox bootstrap run "$f" \
-              --e2e-mode; then
-              failed_workflows+=("$f")
-            fi
-            merobox stop --all || true
-            merobox nuke -f || true
-          done
-
-          # Retry failed workflows (max 2 retries)
-          for retry in 1 2; do
-            [ ${#failed_workflows[@]} -eq 0 ] && break
-            echo "Retry $retry for ${#failed_workflows[@]} failed workflow(s)..."
-            sleep 2
-
-            still_failed=()
-            for f in "${failed_workflows[@]}"; do
-              if ! merobox bootstrap run "$f" \
-                --e2e-mode; then
-                still_failed+=("$f")
+          max_attempts=3
+          attempt=1
+          while [ $attempt -le $max_attempts ]; do
+              if [ $attempt -gt 1 ]; then
+                  merobox stop --all || true
+                  merobox nuke -f || true
+                  sleep 2
               fi
-              merobox stop --all || true
-              merobox nuke -f || true
-              sleep 2
-            done
-            failed_workflows=("${still_failed[@]}")
+              if merobox bootstrap run "${{ matrix.file }}" \
+                  --e2e-mode; then
+                  echo "✅ ${{ matrix.workflow_name }} passed"
+                  exit 0
+              fi
+              attempt=$((attempt + 1))
           done
-
-          # Exit if any workflows still failed
-          if [ ${#failed_workflows[@]} -gt 0 ]; then
-            echo "Failed workflows: ${failed_workflows[*]}"
-            exit 1
-          fi
-          echo "All workflows passed!"
+          merobox stop --all || true
+          merobox nuke -f || true
+          echo "❌ ${{ matrix.workflow_name }} failed after $max_attempts attempts"
+          exit 1
 
   test-merobox-integration:
     runs-on: ubuntu-latest
@@ -285,7 +353,6 @@ jobs:
 
       - name: Run merobox integration tests
         run: |
-          # Initial cleanup to ensure no containers from previous runs
           echo "Performing initial cleanup..."
           merobox stop --all || true
           merobox nuke -f || true
