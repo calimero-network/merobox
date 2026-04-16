@@ -38,9 +38,11 @@ class RemoveGroupMembersStep(BaseStep):
             self.config["group_id"], workflow_results, dynamic_values
         )
         members = [
-            self._resolve_dynamic_value(m, workflow_results, dynamic_values)
-            if isinstance(m, str)
-            else m
+            (
+                self._resolve_dynamic_value(m, workflow_results, dynamic_values)
+                if isinstance(m, str)
+                else m
+            )
             for m in self.config["members"]
         ]
         members_json = json.dumps(members)
@@ -410,9 +412,7 @@ class GetGroupInfoStep(BaseStep):
             return False
         workflow_results[f"group_info_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
-        console.print(
-            f"[green]✓ Got info for group {group_id} on {node_name}[/green]"
-        )
+        console.print(f"[green]✓ Got info for group {group_id} on {node_name}[/green]")
         return True
 
 
@@ -500,9 +500,7 @@ class DeleteGroupStep(BaseStep):
         if self._check_jsonrpc_error(result["data"]):
             return False
         workflow_results[f"delete_group_{node_name}"] = result["data"]
-        console.print(
-            f"[green]✓ Deleted group {group_id} on {node_name}[/green]"
-        )
+        console.print(f"[green]✓ Deleted group {group_id} on {node_name}[/green]")
         return True
 
 
@@ -586,9 +584,7 @@ class DeleteContextStep(BaseStep):
         if self._check_jsonrpc_error(result["data"]):
             return False
         workflow_results[f"delete_context_{node_name}"] = result["data"]
-        console.print(
-            f"[green]✓ Deleted context {context_id} on {node_name}[/green]"
-        )
+        console.print(f"[green]✓ Deleted context {context_id} on {node_name}[/green]")
         return True
 
 
