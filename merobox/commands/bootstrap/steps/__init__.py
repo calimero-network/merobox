@@ -8,6 +8,21 @@ from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.group_management import (
+    DeleteContextStep,
+    DeleteGroupStep,
+    DeleteNamespaceStep,
+    GetGroupInfoStep,
+    GetMemberCapabilitiesStep,
+    ListGroupContextsStep,
+    ListGroupMembersStep,
+    RemoveGroupMembersStep,
+    SetDefaultCapabilitiesStep,
+    SetDefaultVisibilityStep,
+    SetMemberCapabilitiesStep,
+    UninstallApplicationStep,
+    UpdateMemberRoleStep,
+)
 from merobox.commands.bootstrap.steps.group_create import (
     CreateGroupStep,
     CreateNamespaceStep,
@@ -87,4 +102,17 @@ __all__ = [
     "UploadBlobStep",
     "CreateMeshStep",
     "FuzzyTestStep",
+    "RemoveGroupMembersStep",
+    "ListGroupMembersStep",
+    "UpdateMemberRoleStep",
+    "SetMemberCapabilitiesStep",
+    "GetMemberCapabilitiesStep",
+    "SetDefaultCapabilitiesStep",
+    "SetDefaultVisibilityStep",
+    "GetGroupInfoStep",
+    "ListGroupContextsStep",
+    "DeleteGroupStep",
+    "DeleteNamespaceStep",
+    "DeleteContextStep",
+    "UninstallApplicationStep",
 ]
