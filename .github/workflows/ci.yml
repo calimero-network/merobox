@@ -61,7 +61,37 @@ jobs:
         run: |
           python -m pytest merobox/tests/unit -v --tb=short
 
-  # ── Build phase: compile merod + WASM apps, upload as artifacts ──
+  # ── Discover workflow files for matrix ──
+  list-workflows:
+    name: Discover workflows
+    runs-on: ubuntu-latest
+    outputs:
+      binary: ${{ steps.set.outputs.binary }}
+      docker: ${{ steps.set.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set
+        run: |
+          # Binary mode: all workflows except fuzzy and auth-related
+          BINARY=$(ls workflow-examples/*.yml | \
+            grep -v fuzzy-kv-store | \
+            grep -v auth-example | \
+            grep -v auth-image | \
+            grep -v cached-frontends | \
+            jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
+          echo "binary=$BINARY" >> $GITHUB_OUTPUT
+
+          # Docker mode: same but also exclude binary-only workflow
+          DOCKER=$(ls workflow-examples/*.yml | \
+            grep -v fuzzy-kv-store | \
+            grep -v auth-example | \
+            grep -v auth-image | \
+            grep -v cached-frontends | \
+            grep -v example-binary | \
+            jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
+          echo "docker=$DOCKER" >> $GITHUB_OUTPUT
+
+  # ── Build phase: compile merod + WASM apps ──
   build-binary:
     name: Build (binary mode)
     runs-on: ubuntu-latest
@@ -115,51 +145,13 @@ jobs:
 
   # ── Test phase (binary): run each workflow in parallel ──
   test-merobox:
-    name: Binary (${{ matrix.workflow_name }})
+    name: Binary (${{ matrix.name }})
     runs-on: ubuntu-latest
-    needs: build-binary
+    needs: [build-binary, list-workflows]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - workflow_name: example
-            file: workflow-examples/workflow-example.yml
-          - workflow_name: mesh
-            file: workflow-examples/workflow-mesh-example.yml
-          - workflow_name: groups
-            file: workflow-examples/workflow-groups-example.yml
-          - workflow_name: subgroups
-            file: workflow-examples/workflow-subgroups-example.yml
-          - workflow_name: assert
-            file: workflow-examples/workflow-assert-example.yml
-          - workflow_name: blob-upload
-            file: workflow-examples/workflow-blob-upload-example.yml
-          - workflow_name: context-loop
-            file: workflow-examples/workflow-context-loop.yml
-          - workflow_name: custom-outputs
-            file: workflow-examples/workflow-custom-outputs-example.yml
-          - workflow_name: execute-variables
-            file: workflow-examples/workflow-execute-variables-example.yml
-          - workflow_name: nested-json
-            file: workflow-examples/workflow-nested-json-parsing-example.yml
-          - workflow_name: nuke
-            file: workflow-examples/workflow-nuke-example.yml
-          - workflow_name: open-invitation
-            file: workflow-examples/workflow-open-invitation-example.yml
-          - workflow_name: propagation
-            file: workflow-examples/workflow-propagation-monitoring.yml
-          - workflow_name: repeat
-            file: workflow-examples/workflow-repeat-example.yml
-          - workflow_name: restart
-            file: workflow-examples/workflow-restart-example.yml
-          - workflow_name: script
-            file: workflow-examples/workflow-script-test.yml
-          - workflow_name: wait-for-sync
-            file: workflow-examples/workflow-wait-for-sync-example.yml
-          - workflow_name: negative-testing
-            file: workflow-examples/workflow-negative-testing-example.yml
-          - workflow_name: benchmark
-            file: workflow-examples/kv-store-benchmark.yml
+        include: ${{ fromJson(needs.list-workflows.outputs.binary) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -192,78 +184,20 @@ jobs:
           name: wasm-apps
           path: workflow-examples/res/
 
-      - name: Run ${{ matrix.workflow_name }}
+      - name: Run ${{ matrix.name }}
         run: |
-          max_attempts=3
-          attempt=1
-          while [ $attempt -le $max_attempts ]; do
-              if [ $attempt -gt 1 ]; then
-                  merobox stop --all --no-docker || true
-                  merobox nuke -f || true
-                  sleep 2
-              fi
-              if merobox bootstrap run "${{ matrix.file }}" \
-                  --no-docker \
-                  --e2e-mode; then
-                  echo "✅ ${{ matrix.workflow_name }} passed"
-                  exit 0
-              fi
-              attempt=$((attempt + 1))
-          done
-          merobox stop --all --no-docker || true
-          merobox nuke -f || true
-          echo "❌ ${{ matrix.workflow_name }} failed after $max_attempts attempts"
-          exit 1
+          chmod +x workflow-examples/scripts/run_with_retry.sh
+          ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}" --no-docker
 
   # ── Test phase (Docker): run each workflow in parallel ──
   test-merobox-docker:
-    name: Docker (${{ matrix.workflow_name }})
+    name: Docker (${{ matrix.name }})
     runs-on: ubuntu-latest
-    needs: format
+    needs: [format, list-workflows]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - workflow_name: example
-            file: workflow-examples/workflow-example.yml
-          - workflow_name: mesh
-            file: workflow-examples/workflow-mesh-example.yml
-          - workflow_name: groups
-            file: workflow-examples/workflow-groups-example.yml
-          - workflow_name: subgroups
-            file: workflow-examples/workflow-subgroups-example.yml
-          - workflow_name: assert
-            file: workflow-examples/workflow-assert-example.yml
-          - workflow_name: blob-upload
-            file: workflow-examples/workflow-blob-upload-example.yml
-          - workflow_name: context-loop
-            file: workflow-examples/workflow-context-loop.yml
-          - workflow_name: custom-outputs
-            file: workflow-examples/workflow-custom-outputs-example.yml
-          - workflow_name: execute-variables
-            file: workflow-examples/workflow-execute-variables-example.yml
-          - workflow_name: nested-json
-            file: workflow-examples/workflow-nested-json-parsing-example.yml
-          - workflow_name: nuke
-            file: workflow-examples/workflow-nuke-example.yml
-          - workflow_name: open-invitation
-            file: workflow-examples/workflow-open-invitation-example.yml
-          - workflow_name: propagation
-            file: workflow-examples/workflow-propagation-monitoring.yml
-          - workflow_name: repeat
-            file: workflow-examples/workflow-repeat-example.yml
-          - workflow_name: restart
-            file: workflow-examples/workflow-restart-example.yml
-          - workflow_name: script
-            file: workflow-examples/workflow-script-test.yml
-          - workflow_name: wait-for-sync
-            file: workflow-examples/workflow-wait-for-sync-example.yml
-          - workflow_name: negative-testing
-            file: workflow-examples/workflow-negative-testing-example.yml
-          - workflow_name: force-pull
-            file: workflow-examples/workflow-force-pull-test.yml
-          - workflow_name: benchmark
-            file: workflow-examples/kv-store-benchmark.yml
+        include: ${{ fromJson(needs.list-workflows.outputs.docker) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -296,27 +230,10 @@ jobs:
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh
 
-      - name: Run ${{ matrix.workflow_name }}
+      - name: Run ${{ matrix.name }}
         run: |
-          max_attempts=3
-          attempt=1
-          while [ $attempt -le $max_attempts ]; do
-              if [ $attempt -gt 1 ]; then
-                  merobox stop --all || true
-                  merobox nuke -f || true
-                  sleep 2
-              fi
-              if merobox bootstrap run "${{ matrix.file }}" \
-                  --e2e-mode; then
-                  echo "✅ ${{ matrix.workflow_name }} passed"
-                  exit 0
-              fi
-              attempt=$((attempt + 1))
-          done
-          merobox stop --all || true
-          merobox nuke -f || true
-          echo "❌ ${{ matrix.workflow_name }} failed after $max_attempts attempts"
-          exit 1
+          chmod +x workflow-examples/scripts/run_with_retry.sh
+          ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}"
 
   test-merobox-integration:
     runs-on: ubuntu-latest
