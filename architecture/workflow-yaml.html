@@ -24,7 +24,7 @@
 <div class="g4" style="margin-bottom:36px;">
   <div class="stat"><div class="v">YAML</div><div class="l">format</div></div>
   <div class="stat"><div class="v">{{}}</div><div class="l">dynamic vars</div></div>
-  <div class="stat"><div class="v">16</div><div class="l">step types</div></div>
+  <div class="stat"><div class="v">36</div><div class="l">step types</div></div>
   <div class="stat"><div class="v">2</div><div class="l">node modes</div></div>
 </div>
 
@@ -757,6 +757,398 @@
     </div>
   </div>
 </details>
+
+<!-- ── Namespace & Group Steps ── -->
+<h3 style="margin-top:32px;margin-bottom:12px;color:var(--accent);">Namespace &amp; Group Steps</h3>
+
+<!-- ── create_namespace ── -->
+<details>
+  <summary>create_namespace</summary>
+  <div class="detail-body">
+    <p>Creates a new namespace (root group) with an application binding. A namespace is the top-level governance unit that contains groups, contexts, and members.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">create_namespace</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">namespaceId</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Created namespace (root group) ID</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Create namespace</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">create_namespace</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">e2e-node-1</span><br>
+&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">'{{app_id}}'</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">namespaceId</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── create_namespace_invitation ── -->
+<details>
+  <summary>create_namespace_invitation</summary>
+  <div class="detail-body">
+    <p>Creates an invitation for another node to join a namespace. The invitation payload is used in a subsequent <span class="code">join_namespace</span> step.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">create_namespace_invitation</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">invitation</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Invitation payload (JSON)</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── join_namespace ── -->
+<details>
+  <summary>join_namespace</summary>
+  <div class="detail-body">
+    <p>Joins a namespace using an invitation from <span class="code">create_namespace_invitation</span>.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">join_namespace</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">invitation</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">memberIdentity</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;<span class="comment"># Joined member's public key</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── join_context ── -->
+<details>
+  <summary>join_context</summary>
+  <div class="detail-body">
+    <p>Joins an existing context. The node must already be a member of the namespace/group that owns the context.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">join_context</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">memberPublicKey</span>: <span class="ty">string</span>&nbsp;&nbsp;<span class="comment"># Member's context public key</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── list_namespaces ── -->
+<details>
+  <summary>list_namespaces</summary>
+  <div class="detail-body">
+    <p>Lists all namespaces known to a node.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">list_namespaces</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">namespaces</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># List of namespace objects</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── get_namespace_identity ── -->
+<details>
+  <summary>get_namespace_identity</summary>
+  <div class="detail-body">
+    <p>Gets the node's signing identity for a namespace.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">get_namespace_identity</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">publicKey</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Namespace signing public key</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── create_group_in_namespace ── -->
+<details>
+  <summary>create_group_in_namespace</summary>
+  <div class="detail-body">
+    <p>Creates a subgroup inside a namespace. The subgroup inherits the namespace's application binding.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">create_group_in_namespace</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_alias</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Optional display name</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">groupId</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Created subgroup ID</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── list_subgroups ── -->
+<details>
+  <summary>list_subgroups</summary>
+  <div class="detail-body">
+    <p>Lists child groups (subgroups) of a parent group.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">list_subgroups</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">subgroups</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of {groupId, alias} objects</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── list_namespace_groups ── -->
+<details>
+  <summary>list_namespace_groups</summary>
+  <div class="detail-body">
+    <p>Lists all groups in a namespace (root + subgroups).</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">list_namespace_groups</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">groups</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of group objects</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── nest_group / unnest_group ── -->
+<details>
+  <summary>nest_group / unnest_group</summary>
+  <div class="detail-body">
+    <p>Manually nest or unnest a group under a parent. Typically <span class="code">create_group_in_namespace</span> handles nesting automatically.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">nest_group</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># or unnest_group</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">parent_group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">child_group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<h3 style="margin-top:32px;margin-bottom:12px;color:var(--accent);">Group Membership Steps</h3>
+
+<!-- ── add_group_members ── -->
+<details>
+  <summary>add_group_members</summary>
+  <div class="detail-body">
+    <p>Adds members to a group. Each member entry is an object with an <span class="code">identity</span> field (public key) and an optional <span class="code">role</span>.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">add_group_members</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">members</span>: <span class="ty">list[object]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># [{identity, role?}, ...]</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Add node-2 to group</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">add_group_members</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">e2e-node-1</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">'{{namespace_id}}'</span><br>
+&nbsp;&nbsp;<span class="field">members</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="field">identity</span>: <span class="ty">'{{member_identity_node2}}'</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">role</span>: <span class="ty">Member</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── remove_group_members ── -->
+<details>
+  <summary>remove_group_members</summary>
+  <div class="detail-body">
+    <p>Removes members from a group by their public key identities.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">remove_group_members</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">members</span>: <span class="ty">list[string]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Public key identities to remove</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+    <h4>Example</h4>
+    <div class="typedef">
+- <span class="field">name</span>: <span class="ty">Remove node-2 from group</span><br>
+&nbsp;&nbsp;<span class="field">type</span>: <span class="ty">remove_group_members</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">e2e-node-1</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">'{{namespace_id}}'</span><br>
+&nbsp;&nbsp;<span class="field">members</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;- <span class="ty">'{{member_identity_node2}}'</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── list_group_members ── -->
+<details>
+  <summary>list_group_members</summary>
+  <div class="detail-body">
+    <p>Lists all members of a group with their roles.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">list_group_members</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">members</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of {identity, role} objects</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── update_member_role ── -->
+<details>
+  <summary>update_member_role</summary>
+  <div class="detail-body">
+    <p>Changes a member's role in a group. Valid roles: <span class="code">Admin</span>, <span class="code">Member</span>.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">update_member_role</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">member_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Member's public key</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">role</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Admin | Member</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<h3 style="margin-top:32px;margin-bottom:12px;color:var(--accent);">Capabilities &amp; Permissions Steps</h3>
+
+<!-- ── set_member_capabilities ── -->
+<details>
+  <summary>set_member_capabilities</summary>
+  <div class="detail-body">
+    <p>Sets capability flags for a specific member. Capabilities are a bitmask: bit 0 = CAN_CREATE_CONTEXT, bit 1 = CAN_INVITE_MEMBERS, bit 2 = CAN_JOIN_OPEN_CONTEXTS.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">set_member_capabilities</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">member_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">capabilities</span>: <span class="ty">integer</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Bitmask (e.g. 7 = all capabilities)</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── get_member_capabilities ── -->
+<details>
+  <summary>get_member_capabilities</summary>
+  <div class="detail-body">
+    <p>Queries a member's current capability flags.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">get_member_capabilities</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">member_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">capabilities</span>: <span class="ty">integer</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Current capability bitmask</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── set_default_capabilities ── -->
+<details>
+  <summary>set_default_capabilities</summary>
+  <div class="detail-body">
+    <p>Sets the default capability flags assigned to new members when they join the group.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">set_default_capabilities</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">capabilities</span>: <span class="ty">integer</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Default bitmask for new members</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── set_default_visibility ── -->
+<details>
+  <summary>set_default_visibility</summary>
+  <div class="detail-body">
+    <p>Sets the default context visibility mode for a group.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">set_default_visibility</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">visibility</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Visibility mode</span>&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<h3 style="margin-top:32px;margin-bottom:12px;color:var(--accent);">Group Info &amp; Query Steps</h3>
+
+<!-- ── get_group_info ── -->
+<details>
+  <summary>get_group_info</summary>
+  <div class="detail-body">
+    <p>Gets detailed information about a group including member count, context count, application ID, and upgrade status.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">get_group_info</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">data.groupId</span>: <span class="ty">string</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">data.memberCount</span>: <span class="ty">integer</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">data.contextCount</span>: <span class="ty">integer</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">data.targetApplicationId</span>: <span class="ty">string</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── list_group_contexts ── -->
+<details>
+  <summary>list_group_contexts</summary>
+  <div class="detail-body">
+    <p>Lists all contexts that belong to a group.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">list_group_contexts</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">contexts</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of {contextId, alias} objects</span>
+    </div>
+  </div>
+</details>
+
+<h3 style="margin-top:32px;margin-bottom:12px;color:var(--accent);">Lifecycle &amp; Cleanup Steps</h3>
+
+<!-- ── delete_group ── -->
+<details>
+  <summary>delete_group</summary>
+  <div class="detail-body">
+    <p>Deletes a group and all its associated data.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">delete_group</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── delete_namespace ── -->
+<details>
+  <summary>delete_namespace</summary>
+  <div class="detail-body">
+    <p>Deletes a namespace and all its groups.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">delete_namespace</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── delete_context ── -->
+<details>
+  <summary>delete_context</summary>
+  <div class="detail-body">
+    <p>Deletes a context.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">delete_context</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── uninstall_application ── -->
+<details>
+  <summary>uninstall_application</summary>
+  <div class="detail-body">
+    <p>Uninstalls an application from a node.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">uninstall_application</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
 </div>
 
 <!-- ─────────────────────────────────────────────── -->

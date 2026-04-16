@@ -26,21 +26,34 @@ from merobox.commands.bootstrap.steps import (
     CreateIdentityStep,
     CreateNamespaceInvitationStep,
     CreateNamespaceStep,
+    DeleteContextStep,
+    DeleteGroupStep,
+    DeleteNamespaceStep,
     ExecuteStep,
+    GetGroupInfoStep,
+    GetMemberCapabilitiesStep,
     GetNamespaceIdentityStep,
     InstallApplicationStep,
     InviteOpenStep,
     JoinContextStep,
     JoinNamespaceStep,
     JoinOpenStep,
+    ListGroupContextsStep,
+    ListGroupMembersStep,
     ListNamespaceGroupsStep,
     ListNamespacesStep,
     ListSubgroupsStep,
     NestGroupStep,
     ParallelStep,
+    RemoveGroupMembersStep,
     RepeatStep,
     ScriptStep,
+    SetDefaultCapabilitiesStep,
+    SetDefaultVisibilityStep,
+    SetMemberCapabilitiesStep,
+    UninstallApplicationStep,
     UnnestGroupStep,
+    UpdateMemberRoleStep,
     UploadBlobStep,
     WaitForSyncStep,
     WaitStep,
@@ -1422,6 +1435,32 @@ class WorkflowExecutor:
             return ListSubgroupsStep(step_config, **common_kwargs)
         elif step_type == "add_group_members":
             return AddGroupMembersStep(step_config, **common_kwargs)
+        elif step_type == "remove_group_members":
+            return RemoveGroupMembersStep(step_config, **common_kwargs)
+        elif step_type == "list_group_members":
+            return ListGroupMembersStep(step_config, **common_kwargs)
+        elif step_type == "update_member_role":
+            return UpdateMemberRoleStep(step_config, **common_kwargs)
+        elif step_type == "set_member_capabilities":
+            return SetMemberCapabilitiesStep(step_config, **common_kwargs)
+        elif step_type == "get_member_capabilities":
+            return GetMemberCapabilitiesStep(step_config, **common_kwargs)
+        elif step_type == "set_default_capabilities":
+            return SetDefaultCapabilitiesStep(step_config, **common_kwargs)
+        elif step_type == "set_default_visibility":
+            return SetDefaultVisibilityStep(step_config, **common_kwargs)
+        elif step_type == "get_group_info":
+            return GetGroupInfoStep(step_config, **common_kwargs)
+        elif step_type == "list_group_contexts":
+            return ListGroupContextsStep(step_config, **common_kwargs)
+        elif step_type == "delete_group":
+            return DeleteGroupStep(step_config, **common_kwargs)
+        elif step_type == "delete_namespace":
+            return DeleteNamespaceStep(step_config, **common_kwargs)
+        elif step_type == "delete_context":
+            return DeleteContextStep(step_config, **common_kwargs)
+        elif step_type == "uninstall_application":
+            return UninstallApplicationStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
         else:

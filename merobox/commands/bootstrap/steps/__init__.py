@@ -17,6 +17,21 @@ from merobox.commands.bootstrap.steps.group_invite import (
     CreateNamespaceInvitationStep,
 )
 from merobox.commands.bootstrap.steps.group_join import JoinGroupStep, JoinNamespaceStep
+from merobox.commands.bootstrap.steps.group_management import (
+    DeleteContextStep,
+    DeleteGroupStep,
+    DeleteNamespaceStep,
+    GetGroupInfoStep,
+    GetMemberCapabilitiesStep,
+    ListGroupContextsStep,
+    ListGroupMembersStep,
+    RemoveGroupMembersStep,
+    SetDefaultCapabilitiesStep,
+    SetDefaultVisibilityStep,
+    SetMemberCapabilitiesStep,
+    UninstallApplicationStep,
+    UpdateMemberRoleStep,
+)
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
@@ -87,4 +102,17 @@ __all__ = [
     "UploadBlobStep",
     "CreateMeshStep",
     "FuzzyTestStep",
+    "RemoveGroupMembersStep",
+    "ListGroupMembersStep",
+    "UpdateMemberRoleStep",
+    "SetMemberCapabilitiesStep",
+    "GetMemberCapabilitiesStep",
+    "SetDefaultCapabilitiesStep",
+    "SetDefaultVisibilityStep",
+    "GetGroupInfoStep",
+    "ListGroupContextsStep",
+    "DeleteGroupStep",
+    "DeleteNamespaceStep",
+    "DeleteContextStep",
+    "UninstallApplicationStep",
 ]
