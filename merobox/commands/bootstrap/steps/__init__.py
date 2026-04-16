@@ -8,6 +8,15 @@ from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.group_create import (
+    CreateGroupStep,
+    CreateNamespaceStep,
+)
+from merobox.commands.bootstrap.steps.group_invite import (
+    CreateGroupInvitationStep,
+    CreateNamespaceInvitationStep,
+)
+from merobox.commands.bootstrap.steps.group_join import JoinGroupStep, JoinNamespaceStep
 from merobox.commands.bootstrap.steps.group_management import (
     DeleteContextStep,
     DeleteGroupStep,
@@ -23,15 +32,6 @@ from merobox.commands.bootstrap.steps.group_management import (
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
-from merobox.commands.bootstrap.steps.group_create import (
-    CreateGroupStep,
-    CreateNamespaceStep,
-)
-from merobox.commands.bootstrap.steps.group_invite import (
-    CreateGroupInvitationStep,
-    CreateNamespaceInvitationStep,
-)
-from merobox.commands.bootstrap.steps.group_join import JoinGroupStep, JoinNamespaceStep
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
