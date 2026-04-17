@@ -111,24 +111,34 @@ class JoinNamespaceStep(BaseStep):
             self.config["invitation"], workflow_results, dynamic_values
         )
 
-        # invitation is a SignedGroupOpenInvitation dict or JSON string from
-        # create_group_invitation. The Rust client parses invitation_json as
-        # JoinGroupApiRequest { invitation: SignedGroupOpenInvitation }, so we
-        # must wrap the invitation in {"invitation": ...}.
+        # The calimero-client-py join_namespace() expects invitation_json to be
+        # a SignedGroupOpenInvitation (the inner invitation object). The client
+        # wraps it in JoinGroupApiRequest { invitation, group_alias } internally.
+        #
+        # The invitation may be nested multiple levels deep:
+        # {"invitation": {"invitation": {<SignedGroupOpenInvitation>}}}
+        # Keep unwrapping until we reach the actual invitation (has inviter_signature).
         if isinstance(invitation, dict):
-            if "inviter_signature" in invitation:
-                invitation_json = json_lib.dumps({"invitation": invitation})
-            elif "invitation" in invitation and isinstance(
-                invitation.get("invitation"), dict
+            while (
+                "invitation" in invitation
+                and isinstance(invitation["invitation"], dict)
+                and "inviter_signature" not in invitation
             ):
-                invitation_json = json_lib.dumps(invitation)
-            else:
-                invitation_json = json_lib.dumps({"invitation": invitation})
+                invitation = invitation["invitation"]
+            invitation_json = json_lib.dumps(invitation)
         elif isinstance(invitation, str):
-            # Validate it's parseable JSON
             try:
-                json_lib.loads(invitation)
-                invitation_json = invitation
+                parsed = json_lib.loads(invitation)
+                if isinstance(parsed, dict):
+                    while (
+                        "invitation" in parsed
+                        and isinstance(parsed["invitation"], dict)
+                        and "inviter_signature" not in parsed
+                    ):
+                        parsed = parsed["invitation"]
+                    invitation_json = json_lib.dumps(parsed)
+                else:
+                    invitation_json = invitation
             except json_lib.JSONDecodeError as e:
                 console.print(
                     f"[red]Step 'join_namespace' on {node_name}: "
