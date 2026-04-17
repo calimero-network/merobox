@@ -524,14 +524,28 @@ class BinaryManager(CleanupMixin):
 
         console.print(f"[bold]Stopping {len(running_nodes)} Calimero nodes...[/bold]")
 
-        # Stop each running node
+        # Phase 1: Send SIGTERM to all nodes first (fast, non-blocking)
         for node_name in running_nodes:
             try:
-                # Try tracked process first
+                if node_name in self.processes:
+                    self.processes[node_name].terminate()
+                else:
+                    pid = self._load_pid(node_name)
+                    if pid and self._is_process_running(pid):
+                        os.kill(pid, signal.SIGTERM)
+            except Exception:
+                pass
+
+        # Phase 2: Wait once for all to drain (instead of per-node sleep)
+        time.sleep(2)
+
+        # Phase 3: Collect results and clean up (SIGTERM already sent)
+        for node_name in running_nodes:
+            try:
                 if node_name in self.processes:
                     process = self.processes[node_name]
                     try:
-                        process.terminate()
+                        # SIGTERM already sent in Phase 1, just wait
                         process.wait(timeout=PROCESS_WAIT_TIMEOUT)
                         console.print(f"[green]✓ Stopped node {node_name}[/green]")
                     except subprocess.TimeoutExpired:
@@ -546,18 +560,13 @@ class BinaryManager(CleanupMixin):
                     self.node_rpc_ports.pop(node_name, None)
                     stopped += 1
                 else:
-                    # Stop by PID file
                     pid = self._load_pid(node_name)
                     if pid and self._is_process_running(pid):
-                        os.kill(pid, signal.SIGTERM)
-                        time.sleep(2)
-
-                        # Check if still running
-                        if self._is_process_running(pid):
-                            console.print(
-                                f"[yellow]Force killing node {node_name}...[/yellow]"
-                            )
-                            os.kill(pid, signal.SIGKILL)
+                        # SIGTERM already sent in Phase 1, force-kill if needed
+                        console.print(
+                            f"[yellow]Force killing node {node_name}...[/yellow]"
+                        )
+                        os.kill(pid, signal.SIGKILL)
 
                         console.print(f"[green]✓ Stopped node {node_name}[/green]")
                     else:
@@ -809,19 +818,24 @@ class BinaryManager(CleanupMixin):
                 base_rpc_port = DEFAULT_RPC_PORT
             allocated_ports = []
 
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Pre-compute ports for all nodes before starting threads
+        node_configs = []
         for i in range(count):
             node_name = f"{prefix}-{i+1}"
             if e2e_mode:
-                # Use dynamically allocated ports
-                port = allocated_ports[i * 2]  # P2P port
-                rpc_port = allocated_ports[i * 2 + 1]  # RPC port
+                port = allocated_ports[i * 2]
+                rpc_port = allocated_ports[i * 2 + 1]
             else:
-                # Use fixed port ranges (legacy behavior)
                 port = base_port + i
                 rpc_port = base_rpc_port + i
+            node_configs.append((node_name, port, rpc_port))
 
-            if self.run_node(
-                node_name=node_name,
+        def start_one(cfg):
+            name, port, rpc_port = cfg
+            return name, self.run_node(
+                node_name=name,
                 port=port,
                 rpc_port=rpc_port,
                 log_level=log_level,
@@ -830,11 +844,19 @@ class BinaryManager(CleanupMixin):
                 e2e_mode=e2e_mode,
                 bootstrap_nodes=bootstrap_nodes,
                 auth_mode=auth_mode,
-            ):
-                success_count += 1
-            else:
-                console.print(f"[red]✗ Failed to start node {node_name}[/red]")
-                return False
+            )
+
+        with ThreadPoolExecutor(max_workers=count) as pool:
+            futures = [pool.submit(start_one, cfg) for cfg in node_configs]
+            for future in as_completed(futures):
+                name, ok = future.result()
+                if ok:
+                    success_count += 1
+                else:
+                    console.print(f"[red]✗ Failed to start node {name}[/red]")
+
+        if success_count < count:
+            return False
 
         console.print(
             f"\n[bold green]✓ Successfully started all {success_count} node(s)[/bold green]"
