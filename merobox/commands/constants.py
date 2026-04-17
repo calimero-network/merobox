@@ -72,7 +72,7 @@ PERSISTENT_READ_TIMEOUT = 60.0  # seconds
 CONTAINER_STOP_TIMEOUT = 10  # seconds
 SCRIPT_CONTAINER_STOP_TIMEOUT = 5  # seconds
 PROCESS_WAIT_TIMEOUT = 5  # seconds
-NODE_STARTUP_DELAY = 3  # seconds
+NODE_STARTUP_DELAY = 1  # seconds (health check handles actual readiness)
 SOCKET_CONNECTION_TIMEOUT = 1.5  # seconds
 NUKE_STOP_TIMEOUT = 30  # seconds
 

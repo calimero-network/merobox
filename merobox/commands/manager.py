@@ -1157,16 +1157,14 @@ class DockerManager(CleanupMixin):
         else:
             rpc_ports = [base_rpc_port + i for i in range(count)]
 
-        success_count = 0
-        for i in range(count):
-            node_name = f"{prefix}-{i + 1}"
-            port = p2p_ports[i]
-            rpc_port = rpc_ports[i]
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            if self.run_node(
+        def start_one(i):
+            node_name = f"{prefix}-{i + 1}"
+            return node_name, self.run_node(
                 node_name,
-                port,
-                rpc_port,
+                p2p_ports[i],
+                rpc_ports[i],
                 image=image,
                 auth_service=auth_service,
                 auth_image=auth_image,
@@ -1179,13 +1177,17 @@ class DockerManager(CleanupMixin):
                 bootstrap_nodes=bootstrap_nodes,
                 use_image_entrypoint=use_image_entrypoint,
                 cors_allowed_origins=cors_allowed_origins,
-            ):
-                success_count += 1
-            else:
-                console.print(
-                    f"[red]Failed to start node {node_name}, stopping deployment[/red]"
-                )
-                break
+            )
+
+        success_count = 0
+        with ThreadPoolExecutor(max_workers=count) as pool:
+            futures = [pool.submit(start_one, i) for i in range(count)]
+            for future in as_completed(futures):
+                node_name, ok = future.result()
+                if ok:
+                    success_count += 1
+                else:
+                    console.print(f"[red]Failed to start node {node_name}[/red]")
 
         console.print(
             f"\n[bold]Deployment Summary: {success_count}/{count} nodes started successfully[/bold]"
@@ -1263,16 +1265,15 @@ class DockerManager(CleanupMixin):
             )
             time.sleep(drain_timeout)
 
-        # Phase 3: Capture logs, then stop and remove all containers
-        success_count = 0
-        failed_names = []
+        # Phase 3: Capture logs, then stop and remove all containers in parallel
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        for container_name, container in containers:
-            # Capture container logs before stopping so they survive removal.
-            # Written to ./data/container-logs/ which is included in CI artifacts.
+        log_dir = os.path.join("data", "container-logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+        def stop_one(container_name, container):
+            # Capture logs before stopping
             try:
-                log_dir = os.path.join("data", "container-logs")
-                os.makedirs(log_dir, exist_ok=True)
                 log_content = container.logs(timestamps=True).decode(
                     "utf-8", errors="replace"
                 )
@@ -1288,10 +1289,22 @@ class DockerManager(CleanupMixin):
                 console.print(
                     f"[green]✓ Gracefully stopped and removed {container_name}[/green]"
                 )
-                success_count += 1
+                return container_name, True
             except Exception as e:
                 console.print(f"[red]✗ Failed to stop {container_name}: {str(e)}[/red]")
-                failed_names.append(container_name)
+                return container_name, False
+
+        success_count = 0
+        failed_names = []
+
+        with ThreadPoolExecutor(max_workers=len(containers)) as pool:
+            futures = [pool.submit(stop_one, name, ctr) for name, ctr in containers]
+            for future in as_completed(futures):
+                name, ok = future.result()
+                if ok:
+                    success_count += 1
+                else:
+                    failed_names.append(name)
 
         return success_count, failed_names
 
