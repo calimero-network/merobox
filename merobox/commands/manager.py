@@ -1157,8 +1157,6 @@ class DockerManager(CleanupMixin):
         else:
             rpc_ports = [base_rpc_port + i for i in range(count)]
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         def start_one(i):
             node_name = f"{prefix}-{i + 1}"
             return node_name, self.run_node(
@@ -1180,14 +1178,29 @@ class DockerManager(CleanupMixin):
             )
 
         success_count = 0
-        with ThreadPoolExecutor(max_workers=count) as pool:
-            futures = [pool.submit(start_one, i) for i in range(count)]
-            for future in as_completed(futures):
-                node_name, ok = future.result()
+
+        if auth_service:
+            # Sequential startup when auth service is enabled to avoid
+            # races on shared Traefik/auth containers.
+            for i in range(count):
+                node_name, ok = start_one(i)
                 if ok:
                     success_count += 1
                 else:
                     console.print(f"[red]Failed to start node {node_name}[/red]")
+                    break
+        else:
+            # Parallel startup for the common non-auth case.
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            with ThreadPoolExecutor(max_workers=count) as pool:
+                futures = [pool.submit(start_one, i) for i in range(count)]
+                for future in as_completed(futures):
+                    node_name, ok = future.result()
+                    if ok:
+                        success_count += 1
+                    else:
+                        console.print(f"[red]Failed to start node {node_name}[/red]")
 
         console.print(
             f"\n[bold]Deployment Summary: {success_count}/{count} nodes started successfully[/bold]"
