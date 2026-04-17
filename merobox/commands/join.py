@@ -39,16 +39,32 @@ async def join_namespace_via_admin_api(
 
         client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
+        # The calimero-client-py join_namespace() expects the raw
+        # SignedGroupOpenInvitation JSON. Unwrap nested {"invitation": ...}
+        # layers until we reach the actual invitation (has inviter_signature).
         if isinstance(invitation_data, dict):
-            if "inviter_signature" in invitation_data:
-                invitation_json = json_lib.dumps({"invitation": invitation_data})
-            elif "invitation" in invitation_data and isinstance(
-                invitation_data.get("invitation"), dict
+            while (
+                "invitation" in invitation_data
+                and isinstance(invitation_data["invitation"], dict)
+                and "inviter_signature" not in invitation_data
             ):
-                invitation_json = json_lib.dumps(invitation_data)
-            else:
-                invitation_json = json_lib.dumps({"invitation": invitation_data})
-
+                invitation_data = invitation_data["invitation"]
+            invitation_json = json_lib.dumps(invitation_data)
+        elif isinstance(invitation_data, str):
+            try:
+                parsed = json_lib.loads(invitation_data)
+                if isinstance(parsed, dict):
+                    while (
+                        "invitation" in parsed
+                        and isinstance(parsed["invitation"], dict)
+                        and "inviter_signature" not in parsed
+                    ):
+                        parsed = parsed["invitation"]
+                    invitation_json = json_lib.dumps(parsed)
+                else:
+                    invitation_json = invitation_data
+            except (json_lib.JSONDecodeError, ValueError):
+                invitation_json = invitation_data
         else:
             invitation_json = str(invitation_data)
 
