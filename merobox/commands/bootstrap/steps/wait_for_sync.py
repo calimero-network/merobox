@@ -356,7 +356,7 @@ class WaitForSyncStep(BaseStep):
         )
         nodes = self.config["nodes"]
         timeout = self.config.get("timeout", 30)
-        check_interval = self.config.get("check_interval", 1.0)
+        check_interval = self.config.get("check_interval", 0.5)
         retry_attempts = self.config.get("retry_attempts")
         # Default: enabled - uses sync_context(context_id) for targeted sync
         trigger_sync = self.config.get("trigger_sync", True)

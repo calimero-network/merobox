@@ -82,7 +82,7 @@ RPC_WAIT_TIMEOUT = 10  # seconds to wait for RPC to be ready
 RPC_POLL_INTERVAL = 0.1  # seconds between RPC readiness checks
 RPC_INITIAL_DELAY = 1.0  # seconds initial delay before polling
 CLEANUP_DELAY = 0.5  # seconds after process cleanup
-ASYNC_POLL_INTERVAL = 2  # seconds between async checks
+ASYNC_POLL_INTERVAL = 0.5  # seconds between async checks (node readiness, etc.)
 
 # State sync retry configuration
 STATE_RETRY_ATTEMPTS = 5
