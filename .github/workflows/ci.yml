@@ -91,7 +91,7 @@ jobs:
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT
 
-  # ── Build phase: compile merod + WASM apps ──
+  # ── Build phase: download merod + build WASM apps ──
   build-binary:
     name: Build (binary mode)
     runs-on: ubuntu-latest
@@ -99,30 +99,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download pre-built merod from latest core release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get the latest release tag (including pre-releases / RCs)
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          echo "Downloading merod from calimero-network/core release: $TAG"
+          gh release download "$TAG" --repo calimero-network/core \
+            --pattern "merod_x86_64-unknown-linux-gnu.tar.gz" \
+            --output /tmp/merod.tar.gz --clobber
+          tar -xzf /tmp/merod.tar.gz -C /tmp
+          chmod +x /tmp/merod
+          /tmp/merod --version
+          echo "✓ merod $TAG downloaded"
+
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-      - name: Cache merod build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            /tmp/core-build/target
-          key: merod-build-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: merod-build-${{ runner.os }}-
-
-      - name: Build merod from core master
-        run: |
-          echo "Building merod from calimero-network/core master..."
-          git clone --depth 1 https://github.com/calimero-network/core.git /tmp/core-build/src || true
-          cd /tmp/core-build/src
-          git fetch origin master && git checkout master && git pull --ff-only
-          CARGO_TARGET_DIR=/tmp/core-build/target cargo build --release -p merod
-          cp /tmp/core-build/target/release/merod /tmp/merod
-          /tmp/merod --version
 
       - name: Build workflow WASM apps
         run: |
