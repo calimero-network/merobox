@@ -1278,14 +1278,17 @@ class DockerManager(CleanupMixin):
             )
             time.sleep(drain_timeout)
 
-        # Phase 3: Capture logs, then stop and remove all containers in parallel
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        # Phase 3: Capture logs, then stop and remove containers.
+        # Sequential here is fine — containers already received SIGTERM in
+        # Phase 1 and had drain_timeout to stop, so container.stop() returns
+        # almost immediately for already-stopped containers.
+        success_count = 0
+        failed_names = []
 
         log_dir = os.path.join("data", "container-logs")
         os.makedirs(log_dir, exist_ok=True)
 
-        def stop_one(container_name, container):
-            # Capture logs before stopping
+        for container_name, container in containers:
             try:
                 log_content = container.logs(timestamps=True).decode(
                     "utf-8", errors="replace"
@@ -1302,22 +1305,10 @@ class DockerManager(CleanupMixin):
                 console.print(
                     f"[green]✓ Gracefully stopped and removed {container_name}[/green]"
                 )
-                return container_name, True
+                success_count += 1
             except Exception as e:
                 console.print(f"[red]✗ Failed to stop {container_name}: {str(e)}[/red]")
-                return container_name, False
-
-        success_count = 0
-        failed_names = []
-
-        with ThreadPoolExecutor(max_workers=len(containers)) as pool:
-            futures = [pool.submit(stop_one, name, ctr) for name, ctr in containers]
-            for future in as_completed(futures):
-                name, ok = future.result()
-                if ok:
-                    success_count += 1
-                else:
-                    failed_names.append(name)
+                failed_names.append(container_name)
 
         return success_count, failed_names
 
