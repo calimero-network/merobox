@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-04-20
+
+### Fixed
+- Graceful shutdown no longer crashes with `RuntimeError: cannot schedule new
+  futures after interpreter shutdown` when cleanup runs from the `atexit`
+  path. `_graceful_stop_containers_batch` now catches the error raised by
+  `ThreadPoolExecutor.submit()` during interpreter finalization and falls
+  back to a sequential stop, so containers are properly torn down instead of
+  being left running between workflow runs (regression from #198).
+
 ## [0.4.4] - 2026-04-13
 
 ### Added

@@ -164,9 +164,7 @@ class DockerManager(CleanupMixin):
             console.print(
                 "[cyan]Stopping managed containers with graceful shutdown...[/cyan]"
             )
-            containers_to_stop = [
-                (name, container) for name, container in self.nodes.items()
-            ]
+            containers_to_stop = list(self.nodes.items())
             self._graceful_stop_containers_batch(
                 containers_to_stop, drain_timeout, stop_timeout
             )
@@ -1307,19 +1305,36 @@ class DockerManager(CleanupMixin):
                 console.print(f"[red]✗ Failed to stop {container_name}: {str(e)}[/red]")
                 return container_name, False
 
-        success_count = 0
-        failed_names = []
-
-        with ThreadPoolExecutor(max_workers=len(containers)) as pool:
-            futures = [pool.submit(stop_one, name, ctr) for name, ctr in containers]
-            for future in as_completed(futures):
-                name, ok = future.result()
+        def run_sequential():
+            success = 0
+            failed = []
+            for name, ctr in containers:
+                name_out, ok = stop_one(name, ctr)
                 if ok:
-                    success_count += 1
+                    success += 1
                 else:
-                    failed_names.append(name)
+                    failed.append(name_out)
+            return success, failed
 
-        return success_count, failed_names
+        # When cleanup runs from the atexit path, concurrent.futures.thread's
+        # own shutdown handler has already flipped its internal _shutdown flag,
+        # so ThreadPoolExecutor.submit() raises "cannot schedule new futures
+        # after interpreter shutdown". Fall back to sequential stop in that
+        # case so cleanup still completes instead of leaving containers behind.
+        try:
+            success_count = 0
+            failed_names = []
+            with ThreadPoolExecutor(max_workers=len(containers)) as pool:
+                futures = [pool.submit(stop_one, name, ctr) for name, ctr in containers]
+                for future in as_completed(futures):
+                    name, ok = future.result()
+                    if ok:
+                        success_count += 1
+                    else:
+                        failed_names.append(name)
+            return success_count, failed_names
+        except RuntimeError:
+            return run_sequential()
 
     def stop_node(
         self,
