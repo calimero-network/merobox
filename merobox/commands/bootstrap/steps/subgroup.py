@@ -209,7 +209,7 @@ class AddGroupMembersStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error")))
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
                 f"[red]Failed to add group members on {node_name}: {result.get('error')}[/red]"
