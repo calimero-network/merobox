@@ -89,18 +89,6 @@ steps:
     context_id: nonexistent-context-id-for-negative-test
     expected_failure: true
 
-  # install_application with a nonexistent WASM path — validated client-side
-  # AFTER our expected_failure path, so this still fails the workflow. The
-  # failure we're covering is the API-level one: point it at a valid file,
-  # but the node rejects it. We simulate that by pointing at a file that
-  # exists but is not a valid WASM module.
-  - name: install_application with non-wasm payload is rejected
-    type: install_application
-    node: calimero-node-1
-    path: workflow-examples/scripts/build_res_wasm.sh
-    dev: true
-    expected_failure: true
-
   # create_group_in_namespace against an unknown namespace.
   - name: create_group_in_namespace against unknown namespace is rejected
     type: create_group_in_namespace
@@ -109,15 +97,18 @@ steps:
     group_alias: negative-test-child
     expected_failure: true
 
-  # add_group_members against an unknown group id.
-  - name: add_group_members against unknown group is rejected
-    type: add_group_members
-    node: calimero-node-1
-    group_id: nonexistent-group-id-for-negative-test
-    members:
-      - identity: nonexistent-identity
-        role: Member
-    expected_failure: true
+  # Two more step types — install_application and add_group_members — were
+  # also wired for expected_failure, but exercising them end-to-end in this
+  # example isn't reliable:
+  #   - install_application with a non-wasm file SUCCEEDS on merod (it
+  #     doesn't validate WASM magic bytes at install time), so we'd need a
+  #     larger harness to make it fail cleanly.
+  #   - add_group_members with a malformed identity string panics the Rust
+  #     client (InvalidPublicKey decode), which aborts the whole process
+  #     before Python can catch the error — an upstream bug, not something
+  #     the merobox flag can handle.
+  # Both step types still receive the flag via the shared BaseStep helpers
+  # and are covered by unit tests in test_expected_failure.py.
 
   # --- Happy-path confirmation after the negative block ------------------
   #
