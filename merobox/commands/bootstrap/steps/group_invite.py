@@ -90,6 +90,7 @@ class CreateNamespaceInvitationStep(BaseStep):
             self._export_variables(result["data"], node_name, dynamic_values)
 
             raw_data = result["data"]
+            extracted = False
             if isinstance(raw_data, dict):
                 nested = raw_data.get("data", raw_data)
                 if isinstance(nested, dict):
@@ -102,14 +103,23 @@ class CreateNamespaceInvitationStep(BaseStep):
                     console.print(
                         f"[green]✓ Namespace invitation created on {node_name}[/green]"
                     )
-                    if expected_failure:
-                        self._report_unexpected_success()
-                    return True
+                    extracted = True
 
-            console.print(
-                f"[yellow]⚠️  Could not extract invitation from response on {node_name}[/yellow]"
-            )
-            return False
+            if not extracted:
+                console.print(
+                    f"[yellow]⚠️  Could not extract invitation from response on {node_name}[/yellow]"
+                )
+                # The API call itself succeeded (just with an unusable shape);
+                # honor expected_failure the same way the normal success path
+                # does — warn and pass rather than silently failing the step.
+                if expected_failure:
+                    self._report_unexpected_success()
+                    return True
+                return False
+
+            if expected_failure:
+                self._report_unexpected_success()
+            return True
         else:
             if expected_failure:
                 self._report_expected_failure(str(result.get("error", "Unknown error")))

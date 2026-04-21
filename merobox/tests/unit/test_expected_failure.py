@@ -136,6 +136,53 @@ class TestJoinContextExpectedFailure:
         assert self._run_with_mock_client(step, mock_client) is True
 
 
+class TestCreateNamespaceInvitationUnexpectedShape:
+    """Regression test for Cursor Bugbot review on PR #206: the success
+    branch of CreateNamespaceInvitationStep has a secondary `return False`
+    for responses whose shape isn't a nested dict. That path was not
+    consulting expected_failure, so a successful-but-weird API response
+    still failed the step."""
+
+    def _exec(self, step, api_return_value):
+        mock_client = MagicMock()
+        mock_client.create_namespace_invitation.return_value = api_return_value
+        with (
+            patch(
+                "merobox.commands.bootstrap.steps.group_invite.get_client_for_rpc_url",
+                return_value=mock_client,
+            ),
+            patch.object(
+                step,
+                "_resolve_node_for_client",
+                return_value=("http://localhost:1234", "n1"),
+            ),
+            patch.object(step, "_resolve_dynamic_value", side_effect=lambda v, *_: v),
+            patch.object(step, "_print_node_logs_on_failure"),
+        ):
+            return _run(step.execute({}, {}))
+
+    def _step(self, expected_failure):
+        return CreateNamespaceInvitationStep(
+            {
+                "type": "create_namespace_invitation",
+                "name": "t",
+                "node": "n1",
+                "namespace_id": "ns",
+                "expected_failure": expected_failure,
+            }
+        )
+
+    def test_unusable_shape_with_expected_failure_passes(self):
+        # Client returns a string instead of a dict → ok(api_result) wraps it
+        # as {"success": True, "data": "not-a-dict"} and the shape-extraction
+        # block can't find the nested invitation. That path used to hit
+        # return False unconditionally, ignoring expected_failure.
+        assert self._exec(self._step(expected_failure=True), "not-a-dict") is True
+
+    def test_unusable_shape_without_flag_still_fails(self):
+        assert self._exec(self._step(expected_failure=False), "not-a-dict") is False
+
+
 # =============================================================================
 # Per-step smoke tests — each updated step must honor the flag on its
 # exception branch. We don't duplicate the JSON-RPC / success-path coverage
