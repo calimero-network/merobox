@@ -185,8 +185,13 @@ class JoinNamespaceStep(BaseStep):
         except Exception as e:
             result = fail("join_namespace failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
+                if expected_failure:
+                    self._report_expected_failure("JSON-RPC error returned")
+                    return True
                 return False
 
             step_key = f"join_namespace_{node_name}"
@@ -212,10 +217,15 @@ class JoinNamespaceStep(BaseStep):
             console.print(
                 f"[green]✓ Node {node_name} joined namespace successfully[/green]"
             )
+            if expected_failure:
+                self._report_unexpected_success()
             return True
         else:
             exception = result.get("exception", {})
             detail = exception.get("message", result.get("error", "Unknown error"))
+            if expected_failure:
+                self._report_expected_failure(str(detail))
+                return True
             console.print(f"[red]Join namespace failed on {node_name}: {detail}[/red]")
             self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False

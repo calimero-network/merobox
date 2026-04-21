@@ -196,9 +196,14 @@ class CreateContextStep(BaseStep):
                         else:
                             console.print(f"  Traceback:\n{traceback_str}")
 
+        expected_failure = self._is_expected_failure()
+
         if result["success"]:
             # Check if the JSON-RPC response contains an error
             if self._check_jsonrpc_error(result["data"]):
+                if expected_failure:
+                    self._report_expected_failure("JSON-RPC error returned")
+                    return True
                 return False
 
             # Store result for later use
@@ -241,8 +246,13 @@ class CreateContextStep(BaseStep):
                         f"[yellow]⚠️  Context result is not a dict: {type(result['data'])}[/yellow]"
                     )
 
+            if expected_failure:
+                self._report_unexpected_success()
             return True
         else:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]Context creation failed: {result.get('error', 'Unknown error')}[/red]"
             )

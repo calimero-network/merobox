@@ -1,0 +1,130 @@
+description: >
+  Demonstrates `expected_failure: true` on non-`call` step types. Previously
+  only the `call` step honored this flag — every other step type silently
+  treated it as a hard failure. This workflow exercises the path for each
+  step type that was updated and is wired into CI so the behaviour stays
+  verified on every PR.
+name: Expected Failure on Non-Call Steps Example
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # --- Happy-path bootstrap we can then exercise negative paths against ----
+  - name: Install application on node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace on node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create context on node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+      alice_key: memberPublicKey
+
+  # --- Negative paths using expected_failure: true ------------------------
+  #
+  # Each of the following steps MUST fail at the merod/client layer. Before
+  # this fix these would fail the workflow; with expected_failure honored
+  # they're accepted as passing. The workflow as a whole therefore only
+  # passes when the flag is plumbed through correctly.
+
+  # create_context against a nonexistent application id — the client/merod
+  # rejects it, and expected_failure turns that rejection into a pass.
+  - name: create_context against nonexistent app_id is rejected
+    type: create_context
+    node: calimero-node-1
+    application_id: nonexistent-app-id-for-negative-test
+    group_id: '{{namespace_id}}'
+    expected_failure: true
+
+  # create_namespace against a nonexistent application id.
+  - name: create_namespace against nonexistent app_id is rejected
+    type: create_namespace
+    node: calimero-node-1
+    application_id: nonexistent-app-id-for-negative-test
+    expected_failure: true
+
+  # create_namespace_invitation on a made-up namespace id.
+  - name: create_namespace_invitation against unknown namespace is rejected
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: nonexistent-namespace-id-for-negative-test
+    expected_failure: true
+
+  # join_namespace with a garbage invitation payload — this is the closest
+  # analogue to the original mero-drive bug (join rejected as "context does
+  # not belong to any group"), just on the namespace side for a simpler
+  # reproduction.
+  - name: join_namespace with a garbage invitation is rejected
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{"not": "a real SignedGroupOpenInvitation"}'
+    expected_failure: true
+
+  # join_context against a nonexistent context id — the original failing
+  # step shape from the mero-drive workflow. This is the step that
+  # motivated the whole change.
+  - name: join_context against unknown context is rejected
+    type: join_context
+    node: calimero-node-2
+    context_id: nonexistent-context-id-for-negative-test
+    expected_failure: true
+
+  # create_group_in_namespace against an unknown namespace.
+  - name: create_group_in_namespace against unknown namespace is rejected
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: nonexistent-namespace-id-for-negative-test
+    group_alias: negative-test-child
+    expected_failure: true
+
+  # Two more step types — install_application and add_group_members — were
+  # also wired for expected_failure, but exercising them end-to-end in this
+  # example isn't reliable:
+  #   - install_application with a non-wasm file SUCCEEDS on merod (it
+  #     doesn't validate WASM magic bytes at install time), so we'd need a
+  #     larger harness to make it fail cleanly.
+  #   - add_group_members with a malformed identity string panics the Rust
+  #     client (InvalidPublicKey decode), which aborts the whole process
+  #     before Python can catch the error — an upstream bug, not something
+  #     the merobox flag can handle.
+  # Both step types still receive the flag via the shared BaseStep helpers
+  # and are covered by unit tests in test_expected_failure.py.
+
+  # --- Happy-path confirmation after the negative block ------------------
+  #
+  # If expected_failure short-circuited the step-runner or corrupted shared
+  # state, this final step would fail. It's here to prove that the workflow
+  # can continue to execute real work after a batch of expected failures.
+  - name: Real call after negative-test block still succeeds
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    method: set
+    args:
+      key: after_negative_tests
+      value: ok
+    executor_public_key: '{{alice_key}}'
+
+stop_all_nodes: false
+restart: false
+wait_timeout: 60

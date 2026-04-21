@@ -59,8 +59,13 @@ class JoinContextStep(BaseStep):
         except Exception as e:
             result = fail("join_context failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
+                if expected_failure:
+                    self._report_expected_failure("JSON-RPC error returned")
+                    return True
                 return False
 
             step_key = f"join_context_{node_name}"
@@ -85,8 +90,13 @@ class JoinContextStep(BaseStep):
             console.print(
                 f"[green]✓ Node {node_name} joined context {context_id}[/green]"
             )
+            if expected_failure:
+                self._report_unexpected_success()
             return True
         else:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]Join context failed on {node_name}: "
                 f"{result.get('error', 'Unknown error')}[/red]"

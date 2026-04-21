@@ -93,29 +93,33 @@ class InviteOpenStep(BaseStep):
         else:
             console.print(f"  Data: {data}")
 
+        expected_failure = self._is_expected_failure()
+
         if not result.get("success"):
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(f"  Error: {result.get('error')}")
             console.print(
                 f"[red]Namespace invitation creation failed: {result.get('error', 'Unknown error')}[/red]"
             )
             return False
 
-        if result["success"]:
-            if self._check_jsonrpc_error(result["data"]):
-                return False
-
-            step_key = f"invite_{node_name}_{namespace_id}"
-            workflow_results[step_key] = result["data"]
-
-            # The response contains the full invitation.
-            # Export it so join_namespace steps can reference it.
-            actual_data = result["data"].get("data", result["data"])
-            synthetic_response = {"invitation": actual_data}
-            self._export_variables(synthetic_response, node_name, dynamic_values)
-
-            return True
-        else:
-            console.print(
-                f"[red]Namespace invitation creation failed: {result.get('error', 'Unknown error')}[/red]"
-            )
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
+
+        step_key = f"invite_{node_name}_{namespace_id}"
+        workflow_results[step_key] = result["data"]
+
+        # The response contains the full invitation.
+        # Export it so join_namespace steps can reference it.
+        actual_data = result["data"].get("data", result["data"])
+        synthetic_response = {"invitation": actual_data}
+        self._export_variables(synthetic_response, node_name, dynamic_values)
+
+        if expected_failure:
+            self._report_unexpected_success()
+        return True

@@ -233,9 +233,14 @@ class InstallApplicationStep(BaseStep):
         if not result.get("success"):
             console.print(f"  Error: {result.get('error')}")
 
+        expected_failure = self._is_expected_failure()
+
         if result["success"]:
             # Check if the JSON-RPC response contains an error
             if self._check_jsonrpc_error(result["data"]):
+                if expected_failure:
+                    self._report_expected_failure("JSON-RPC error returned")
+                    return True
                 # Print node logs to help with debugging
                 self._print_node_logs_on_failure(node_name=node_name, lines=50)
                 return False
@@ -277,8 +282,13 @@ class InstallApplicationStep(BaseStep):
                         f"[yellow]⚠️  Install result is not a dict: {type(result['data'])}[/yellow]"
                     )
 
+            if expected_failure:
+                self._report_unexpected_success()
             return True
         else:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]Installation failed: {result.get('error', 'Unknown error')}[/red]"
             )
