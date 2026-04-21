@@ -73,8 +73,13 @@ class CreateNamespaceInvitationStep(BaseStep):
         except Exception as e:
             result = fail("create_namespace_invitation failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
+                if expected_failure:
+                    self._report_expected_failure("JSON-RPC error returned")
+                    return True
                 return False
 
             step_name = self.config.get("name", "")
@@ -97,6 +102,8 @@ class CreateNamespaceInvitationStep(BaseStep):
                     console.print(
                         f"[green]✓ Namespace invitation created on {node_name}[/green]"
                     )
+                    if expected_failure:
+                        self._report_unexpected_success()
                     return True
 
             console.print(
@@ -104,6 +111,9 @@ class CreateNamespaceInvitationStep(BaseStep):
             )
             return False
         else:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]Namespace invitation creation failed on {node_name}: "
                 f"{result.get('error', 'Unknown error')}[/red]"

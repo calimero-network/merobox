@@ -1224,6 +1224,34 @@ class BaseStep:
         """Execute the step. Must be implemented by subclasses."""
         raise NotImplementedError
 
+    def _is_expected_failure(self) -> bool:
+        """Return True if the step is configured with `expected_failure: true`.
+
+        Raises ValueError if the flag is present but not a boolean — caught at
+        validation time so negative-path workflows fail fast on bad config.
+        """
+        value = self.config.get("expected_failure", False)
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"Step '{self._get_step_name()}': 'expected_failure' must be a boolean"
+            )
+        return value
+
+    def _report_expected_failure(self, error_message: str) -> None:
+        """Log the standard yellow message when an expected failure occurred."""
+        console.print(f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]")
+
+    def _report_unexpected_success(self) -> None:
+        """Log a warning when `expected_failure: true` was set but the step succeeded.
+
+        Matches the semantic of the `call` step: we warn rather than flip the
+        step to a hard failure, so an over-eager `expected_failure` flag never
+        silently turns a passing workflow into a failing one on refactor.
+        """
+        console.print(
+            "[yellow]⚠️  Warning: expected_failure was set but the step succeeded[/yellow]"
+        )
+
     def _check_jsonrpc_error(self, result_data: Any) -> bool:
         """
         Check if the API response contains a JSON-RPC error.

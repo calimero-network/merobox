@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-04-21
+
+### Added
+- `expected_failure: true` is now honored on non-`call` step types. Previously
+  only the `call` step consulted the flag; every other step type silently
+  treated any API error as a hard workflow failure, making negative-path
+  assertions impossible for things like joining the wrong context, creating
+  against a nonexistent namespace, or installing a bad payload. Updated step
+  types: `join_context`, `join_namespace`, `create_context`, `create_namespace`,
+  `create_namespace_invitation`, `install_application`, `create_group_in_namespace`,
+  `add_group_members`. Matches the existing `call` semantic: a real failure is
+  treated as success; an unexpected success warns but does not fail the step.
+- New BaseStep helpers `_is_expected_failure()`, `_report_expected_failure()`,
+  and `_report_unexpected_success()` so future step types can opt into the
+  same behaviour in two lines.
+- New `workflow-expected-failure-steps-example.yml` under `workflow-examples/`,
+  auto-picked up by the CI matrix so the behaviour stays verified on every PR.
+
 ## [0.4.5] - 2026-04-20
 
 ### Fixed

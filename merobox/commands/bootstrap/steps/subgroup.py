@@ -205,16 +205,26 @@ class AddGroupMembersStep(BaseStep):
         except Exception as e:
             result = fail("add_group_members failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error")))
+                return True
             console.print(
                 f"[red]Failed to add group members on {node_name}: {result.get('error')}[/red]"
             )
             return False
 
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"add_group_members_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Added {len(resolved_members)} member(s) to group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
