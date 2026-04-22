@@ -37,8 +37,7 @@ VALID_STEP_TYPES = frozenset(
         "get_namespace_identity",
         "create_group_in_namespace",
         "list_namespace_groups",
-        "nest_group",
-        "unnest_group",
+        "reparent_group",
         "list_subgroups",
         "add_group_members",
         "remove_group_members",
@@ -446,22 +445,19 @@ class ListNamespaceGroupsStepConfig(BaseStepConfig):
     namespace_id: str = Field(..., description="Namespace ID")
 
 
-class NestGroupStepConfig(BaseStepConfig):
-    """Configuration for nest_group step."""
+class ReparentGroupStepConfig(BaseStepConfig):
+    """Configuration for reparent_group step.
 
-    type: Literal["nest_group"] = "nest_group"
+    Replaces NestGroupStepConfig + UnnestGroupStepConfig in the strict
+    group-tree refactor. Atomically moves `child_group_id` to a new
+    parent within the same namespace; orphan state is no longer
+    expressible.
+    """
+
+    type: Literal["reparent_group"] = "reparent_group"
     node: str = Field(..., description="Target node")
-    parent_group_id: str = Field(..., description="Parent group ID")
-    child_group_id: str = Field(..., description="Child group ID")
-
-
-class UnnestGroupStepConfig(BaseStepConfig):
-    """Configuration for unnest_group step."""
-
-    type: Literal["unnest_group"] = "unnest_group"
-    node: str = Field(..., description="Target node")
-    parent_group_id: str = Field(..., description="Parent group ID")
-    child_group_id: str = Field(..., description="Child group ID")
+    child_group_id: str = Field(..., description="Group to move")
+    new_parent_id: str = Field(..., description="New parent group ID")
 
 
 class ListSubgroupsStepConfig(BaseStepConfig):
@@ -537,8 +533,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "get_namespace_identity": GetNamespaceIdentityStepConfig,
     "create_group_in_namespace": CreateGroupInNamespaceStepConfig,
     "list_namespace_groups": ListNamespaceGroupsStepConfig,
-    "nest_group": NestGroupStepConfig,
-    "unnest_group": UnnestGroupStepConfig,
+    "reparent_group": ReparentGroupStepConfig,
     "list_subgroups": ListSubgroupsStepConfig,
     "add_group_members": AddGroupMembersStepConfig,
     "call": CallStep,

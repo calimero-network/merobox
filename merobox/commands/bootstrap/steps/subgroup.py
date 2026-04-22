@@ -11,17 +11,22 @@ from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
 
-class NestGroupStep(BaseStep):
-    """Execute a nest_group step."""
+class ReparentGroupStep(BaseStep):
+    """Atomically move `child_group_id` to a new parent within the same namespace.
+
+    Replaces the old NestGroupStep + UnnestGroupStep pair. The underlying
+    server emits a single GroupReparented governance op; orphan group state
+    is structurally impossible.
+    """
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "parent_group_id", "child_group_id"]
+        return ["node", "child_group_id", "new_parent_id"]
 
     def _validate_field_types(self) -> None:
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
-        for field in ("node", "parent_group_id", "child_group_id"):
+        for field in ("node", "child_group_id", "new_parent_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
 
@@ -29,82 +34,47 @@ class NestGroupStep(BaseStep):
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
-        parent_group_id = self._resolve_dynamic_value(
-            self.config["parent_group_id"], workflow_results, dynamic_values
-        )
         child_group_id = self._resolve_dynamic_value(
             self.config["child_group_id"], workflow_results, dynamic_values
+        )
+        new_parent_id = self._resolve_dynamic_value(
+            self.config["new_parent_id"], workflow_results, dynamic_values
         )
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.nest_group(
-                parent_group_id=parent_group_id,
-                child_group_id=child_group_id,
+            api_result = client.reparent_group(
+                group_id=child_group_id,
+                new_parent_id=new_parent_id,
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("nest_group failed", error=e)
-        if result["success"]:
-            if self._check_jsonrpc_error(result["data"]):
-                return False
-            workflow_results[f"nest_group_{node_name}"] = result["data"]
+            result = fail("reparent_group failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
-                f"[green]✓ Nested group {child_group_id} under {parent_group_id} on {node_name}[/green]"
+                f"[red]reparent_group failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
-            return True
+            return False
+
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        workflow_results[f"reparent_group_{node_name}"] = result["data"]
         console.print(
-            f"[red]nest_group failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+            f"[green]✓ Reparented group {child_group_id} to {new_parent_id} on {node_name}[/green]"
         )
-        return False
-
-
-class UnnestGroupStep(BaseStep):
-    """Execute an unnest_group step."""
-
-    def _get_required_fields(self) -> list[str]:
-        return ["node", "parent_group_id", "child_group_id"]
-
-    def _validate_field_types(self) -> None:
-        step_name = self.config.get(
-            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
-        )
-        for field in ("node", "parent_group_id", "child_group_id"):
-            if not isinstance(self.config.get(field), str):
-                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
-
-    async def execute(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
-    ) -> bool:
-        node_name = self.config["node"]
-        parent_group_id = self._resolve_dynamic_value(
-            self.config["parent_group_id"], workflow_results, dynamic_values
-        )
-        child_group_id = self._resolve_dynamic_value(
-            self.config["child_group_id"], workflow_results, dynamic_values
-        )
-        try:
-            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
-            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.unnest_group(
-                parent_group_id=parent_group_id,
-                child_group_id=child_group_id,
-            )
-            result = ok(api_result)
-        except Exception as e:
-            result = fail("unnest_group failed", error=e)
-        if result["success"]:
-            if self._check_jsonrpc_error(result["data"]):
-                return False
-            workflow_results[f"unnest_group_{node_name}"] = result["data"]
-            console.print(
-                f"[green]✓ Unnested group {child_group_id} from {parent_group_id} on {node_name}[/green]"
-            )
-            return True
-        console.print(
-            f"[red]unnest_group failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
-        )
-        return False
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
 
 
 class ListSubgroupsStep(BaseStep):

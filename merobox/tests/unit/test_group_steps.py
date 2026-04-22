@@ -297,3 +297,135 @@ class TestJoinContextStepGroupMembership:
         assert (
             dynamic_values.get(f"context_member_public_key_{node_name}") == "pk-abc123"
         )
+
+
+# =============================================================================
+# ReparentGroupStep
+#
+# Strict-tree refactor (calimero-network/core PR #2200) replaces the
+# nest_group + unnest_group two-step pattern with a single atomic
+# reparent_group primitive. Orphan group state is no longer expressible.
+# =============================================================================
+
+
+class TestReparentGroupStep:
+    """Validation tests for ReparentGroupStep."""
+
+    def setup_method(self):
+        self.base_config = {
+            "type": "reparent_group",
+            "name": "Test Reparent",
+            "node": "calimero-node-1",
+            "child_group_id": "abcd1234",
+            "new_parent_id": "ef567890",
+        }
+
+    def _make_step(self, config: dict):
+        from merobox.commands.bootstrap.steps.subgroup import ReparentGroupStep
+
+        return ReparentGroupStep(config)
+
+    def test_valid_config_passes_validation(self):
+        self._make_step(self.base_config)
+
+    def test_missing_node_raises(self):
+        config = {**self.base_config}
+        del config["node"]
+        with pytest.raises(ValueError, match="node"):
+            self._make_step(config)
+
+    def test_missing_child_group_id_raises(self):
+        config = {**self.base_config}
+        del config["child_group_id"]
+        with pytest.raises(ValueError, match="child_group_id"):
+            self._make_step(config)
+
+    def test_missing_new_parent_id_raises(self):
+        config = {**self.base_config}
+        del config["new_parent_id"]
+        with pytest.raises(ValueError, match="new_parent_id"):
+            self._make_step(config)
+
+    def test_node_not_string_raises(self):
+        config = {**self.base_config, "node": 123}
+        with pytest.raises(ValueError, match="'node' must be a string"):
+            self._make_step(config)
+
+    def test_child_group_id_not_string_raises(self):
+        config = {**self.base_config, "child_group_id": 123}
+        with pytest.raises(ValueError, match="'child_group_id' must be a string"):
+            self._make_step(config)
+
+    def test_new_parent_id_not_string_raises(self):
+        config = {**self.base_config, "new_parent_id": 456}
+        with pytest.raises(ValueError, match="'new_parent_id' must be a string"):
+            self._make_step(config)
+
+
+class TestNestUnnestRemoved:
+    """The old NestGroupStep / UnnestGroupStep classes must not exist."""
+
+    def test_nest_group_step_removed(self):
+        from merobox.commands.bootstrap.steps import subgroup
+
+        assert not hasattr(
+            subgroup, "NestGroupStep"
+        ), "NestGroupStep should be removed in the strict-tree refactor"
+
+    def test_unnest_group_step_removed(self):
+        from merobox.commands.bootstrap.steps import subgroup
+
+        assert not hasattr(
+            subgroup, "UnnestGroupStep"
+        ), "UnnestGroupStep should be removed in the strict-tree refactor"
+
+    def test_nest_group_config_removed(self):
+        from merobox.commands.bootstrap import config
+
+        assert not hasattr(config, "NestGroupStepConfig")
+
+    def test_unnest_group_config_removed(self):
+        from merobox.commands.bootstrap import config
+
+        assert not hasattr(config, "UnnestGroupStepConfig")
+
+
+class TestReparentGroupStepConfigSchema:
+    """Pydantic schema validation for the new step type."""
+
+    def test_pydantic_schema_accepts_valid(self):
+        from merobox.commands.bootstrap.config import ReparentGroupStepConfig
+
+        cfg = ReparentGroupStepConfig(
+            name="test",
+            node="n1",
+            child_group_id="abc",
+            new_parent_id="def",
+        )
+        assert cfg.type == "reparent_group"
+        assert cfg.child_group_id == "abc"
+        assert cfg.new_parent_id == "def"
+
+    def test_pydantic_schema_rejects_missing_new_parent_id(self):
+        from pydantic import ValidationError
+
+        from merobox.commands.bootstrap.config import ReparentGroupStepConfig
+
+        with pytest.raises(ValidationError):
+            ReparentGroupStepConfig(
+                name="test",
+                node="n1",
+                child_group_id="abc",
+            )
+
+    def test_pydantic_schema_rejects_missing_child_group_id(self):
+        from pydantic import ValidationError
+
+        from merobox.commands.bootstrap.config import ReparentGroupStepConfig
+
+        with pytest.raises(ValidationError):
+            ReparentGroupStepConfig(
+                name="test",
+                node="n1",
+                new_parent_id="def",
+            )
