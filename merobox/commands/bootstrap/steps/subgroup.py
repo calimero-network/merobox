@@ -50,18 +50,31 @@ class ReparentGroupStep(BaseStep):
             result = ok(api_result)
         except Exception as e:
             result = fail("reparent_group failed", error=e)
-        if result["success"]:
-            if self._check_jsonrpc_error(result["data"]):
-                return False
-            workflow_results[f"reparent_group_{node_name}"] = result["data"]
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
-                f"[green]✓ Reparented group {child_group_id} to {new_parent_id} on {node_name}[/green]"
+                f"[red]reparent_group failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
             )
-            return True
+            return False
+
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        workflow_results[f"reparent_group_{node_name}"] = result["data"]
         console.print(
-            f"[red]reparent_group failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+            f"[green]✓ Reparented group {child_group_id} to {new_parent_id} on {node_name}[/green]"
         )
-        return False
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
 
 
 class ListSubgroupsStep(BaseStep):
