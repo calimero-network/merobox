@@ -43,16 +43,15 @@ from merobox.commands.bootstrap.steps import (
     ListNamespaceGroupsStep,
     ListNamespacesStep,
     ListSubgroupsStep,
-    NestGroupStep,
     ParallelStep,
     RemoveGroupMembersStep,
+    ReparentGroupStep,
     RepeatStep,
     ScriptStep,
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
     SetMemberCapabilitiesStep,
     UninstallApplicationStep,
-    UnnestGroupStep,
     UpdateMemberRoleStep,
     UploadBlobStep,
     WaitForSyncStep,
@@ -1427,10 +1426,8 @@ class WorkflowExecutor:
             return CreateGroupInNamespaceStep(step_config, **common_kwargs)
         elif step_type == "list_namespace_groups":
             return ListNamespaceGroupsStep(step_config, **common_kwargs)
-        elif step_type == "nest_group":
-            return NestGroupStep(step_config, **common_kwargs)
-        elif step_type == "unnest_group":
-            return UnnestGroupStep(step_config, **common_kwargs)
+        elif step_type == "reparent_group":
+            return ReparentGroupStep(step_config, **common_kwargs)
         elif step_type == "list_subgroups":
             return ListSubgroupsStep(step_config, **common_kwargs)
         elif step_type == "add_group_members":

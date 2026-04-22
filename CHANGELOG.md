@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-22
+
+### Breaking changes
+
+- Removed `nest_group` and `unnest_group` workflow step types and the
+  matching `merobox group nest` / `merobox group unnest` CLI commands.
+  These primitives produced orphan group state, which is no longer
+  expressible in the upstream calimero-network/core API
+  ([core PR #2200](https://github.com/calimero-network/core/pull/2200)).
+- Removed `NestGroupStepConfig` and `UnnestGroupStepConfig` pydantic
+  schemas and their entries in `SUPPORTED_STEP_TYPES`.
+
+### Added
+
+- `reparent_group` workflow step type — atomically moves
+  `child_group_id` to `new_parent_id` within the same namespace.
+  Replaces the old nest+unnest two-step pattern. Required fields:
+  `node`, `child_group_id`, `new_parent_id`.
+- `merobox group reparent <group_id> <new_parent_id>` CLI command.
+- 12 new unit tests in `test_group_steps.py` covering validation,
+  pydantic schema, and absence assertions for the removed step types.
+
+### Migration
+
+Replace this old YAML pattern:
+
+```yaml
+- type: unnest_group
+  parent_group_id: '{{old_parent}}'
+  child_group_id: '{{child}}'
+- type: nest_group
+  parent_group_id: '{{new_parent}}'
+  child_group_id: '{{child}}'
+```
+
+With:
+
+```yaml
+- type: reparent_group
+  child_group_id: '{{child}}'
+  new_parent_id: '{{new_parent}}'
+```
+
+Note that `delete_group` now cascades upstream — it will delete the
+target group, all descendants, and every context registered in the
+subtree. To preserve a context before deletion, use
+`detach_context_from_group` first.
+
 ## [0.4.6] - 2026-04-21
 
 ### Added

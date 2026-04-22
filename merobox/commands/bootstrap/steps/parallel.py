@@ -39,8 +39,7 @@ from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.subgroup import (
     AddGroupMembersStep,
     ListSubgroupsStep,
-    NestGroupStep,
-    UnnestGroupStep,
+    ReparentGroupStep,
 )
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.utils import console
@@ -700,10 +699,8 @@ class ParallelStep(BaseStep):
             return CreateGroupInNamespaceStep(step_config, **common_kwargs)
         elif step_type == "list_namespace_groups":
             return ListNamespaceGroupsStep(step_config, **common_kwargs)
-        elif step_type == "nest_group":
-            return NestGroupStep(step_config, **common_kwargs)
-        elif step_type == "unnest_group":
-            return UnnestGroupStep(step_config, **common_kwargs)
+        elif step_type == "reparent_group":
+            return ReparentGroupStep(step_config, **common_kwargs)
         elif step_type == "list_subgroups":
             return ListSubgroupsStep(step_config, **common_kwargs)
         elif step_type == "add_group_members":

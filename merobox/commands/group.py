@@ -346,51 +346,26 @@ def list_subgroups(group_id, node, verbose):
         sys.exit(1)
 
 
-@group.command(name="nest")
-@click.argument("parent_id")
-@click.argument("child_id")
+@group.command(name="reparent")
+@click.argument("group_id")
+@click.argument("new_parent_id")
 @click.option("--node", "-n", required=True, help="Node name")
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def nest_group(parent_id, child_id, node, verbose):
-    """Nest child group under parent group."""
+def reparent_group(group_id, new_parent_id, node, verbose):
+    """Atomically move group_id to a new parent (replaces nest/unnest)."""
     manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
     console.print(
-        f"[blue]Nesting child group {child_id} under {parent_id} on node {node}[/blue]"
+        f"[blue]Reparenting group {group_id} to {new_parent_id} on node {node}[/blue]"
     )
 
     result = run_async_function(
-        call_admin_api, rpc_url, "nest_group", parent_id, child_id
+        call_admin_api, rpc_url, "reparent_group", group_id, new_parent_id
     )
     if result["success"]:
-        console.print("[green]✓ Group nested successfully![/green]")
+        console.print("[green]✓ Group reparented successfully![/green]")
         if verbose:
             console.print(json_lib.dumps(result, indent=2))
     else:
-        console.print(f"[red]✗ Failed to nest group: {result.get('error')}[/red]")
-        sys.exit(1)
-
-
-@group.command(name="unnest")
-@click.argument("parent_id")
-@click.argument("child_id")
-@click.option("--node", "-n", required=True, help="Node name")
-@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def unnest_group(parent_id, child_id, node, verbose):
-    """Remove child group from parent group."""
-    manager = DockerManager()
-    rpc_url = get_node_rpc_url(node, manager)
-    console.print(
-        f"[blue]Unnesting child group {child_id} from {parent_id} on node {node}[/blue]"
-    )
-
-    result = run_async_function(
-        call_admin_api, rpc_url, "unnest_group", parent_id, child_id
-    )
-    if result["success"]:
-        console.print("[green]✓ Group un-nested successfully![/green]")
-        if verbose:
-            console.print(json_lib.dumps(result, indent=2))
-    else:
-        console.print(f"[red]✗ Failed to unnest group: {result.get('error')}[/red]")
+        console.print(f"[red]✗ Failed to reparent group: {result.get('error')}[/red]")
         sys.exit(1)

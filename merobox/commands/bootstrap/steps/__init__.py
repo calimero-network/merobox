@@ -56,8 +56,7 @@ from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.subgroup import (
     AddGroupMembersStep,
     ListSubgroupsStep,
-    NestGroupStep,
-    UnnestGroupStep,
+    ReparentGroupStep,
 )
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
@@ -80,8 +79,7 @@ __all__ = [
     "GetNamespaceIdentityStep",
     "CreateGroupInNamespaceStep",
     "ListNamespaceGroupsStep",
-    "NestGroupStep",
-    "UnnestGroupStep",
+    "ReparentGroupStep",
     "AddGroupMembersStep",
     "ListSubgroupsStep",
     "CreateIdentityStep",

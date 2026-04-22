@@ -38,8 +38,7 @@ from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.subgroup import (
     AddGroupMembersStep,
     ListSubgroupsStep,
-    NestGroupStep,
-    UnnestGroupStep,
+    ReparentGroupStep,
 )
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
@@ -187,10 +186,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = CreateGroupInNamespaceStep
         elif step_type == "list_namespace_groups":
             step_class = ListNamespaceGroupsStep
-        elif step_type == "nest_group":
-            step_class = NestGroupStep
-        elif step_type == "unnest_group":
-            step_class = UnnestGroupStep
+        elif step_type == "reparent_group":
+            step_class = ReparentGroupStep
         elif step_type == "list_subgroups":
             step_class = ListSubgroupsStep
         elif step_type == "add_group_members":
