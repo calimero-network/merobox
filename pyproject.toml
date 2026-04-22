@@ -26,11 +26,7 @@ dependencies = [
     "docker>=6.0.0",
     "rich>=13.0.0,<14.3.4",
     "PyYAML>=6.0.0",
-    # Strict-tree refactor coordination — the reparent_group method
-    # only exists on the calimero-client-py feature branch (PR #34).
-    # Revert to "calimero-client-py>=0.6.0" once that PR merges and
-    # publishes a release.
-    "calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py.git@feat/reparent-group-bindings",
+    "calimero-client-py>=0.6.0",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",
