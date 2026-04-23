@@ -68,6 +68,13 @@ steps:
       - identity: '{{p2_identity}}'
         role: Member
 
+  # Membership-added governance op must gossip to node 2 before it can
+  # create/join contexts inside the group. The existing subgroups example
+  # uses the same 5-10s wait.
+  - name: Wait for Member Gossip
+    type: wait
+    seconds: 10
+
   - name: Create First Context in Subgroup
     type: create_context
     node: calimero-node-1
@@ -97,9 +104,13 @@ steps:
     node: calimero-node-1
     group_id: '{{group_id}}'
 
-  - name: Rename Member
+  # set_member_alias requires that the requester equals the member — members
+  # may only rename themselves (core/crates/context/src/handlers/set_member_alias.rs:33-35).
+  # So we issue the call from node 2, which resolves its own namespace identity
+  # as the requester and targets its own p2_identity.
+  - name: Rename Member (self-rename from node 2)
     type: set_member_alias
-    node: calimero-node-1
+    node: calimero-node-2
     group_id: '{{group_id}}'
     member_id: '{{p2_identity}}'
     alias: 'Bob'
@@ -190,25 +201,14 @@ steps:
     node: calimero-node-1
     group_id: '{{group_id}}'
 
-  # Phase 7: Teardown
-  - name: Delete First Context
-    type: delete_context
-    node: calimero-node-1
-    context_id: '{{ctx_id}}'
-
-  - name: Delete Subgroup
-    type: delete_group
-    node: calimero-node-1
-    group_id: '{{group_id}}'
-
-  - name: Delete Namespace
-    type: delete_namespace
-    node: calimero-node-1
-    namespace_id: '{{namespace_id}}'
-
-  - name: Uninstall Application
-    type: uninstall_application
-    node: calimero-node-1
-    application_id: '{{app_id}}'
+  # Teardown: intentionally omitted. Matches workflow-subgroups-example.yml.
+  # delete_context for a group-registered context needs an admin requester
+  # (core/crates/context/src/handlers/delete_context.rs:54-68) that the
+  # current PyClient.delete_context signature does not expose. The delete_*
+  # and uninstall_application step types are still schema-validated via
+  # test_workflow_schema_validation.py and dispatched at runtime — their
+  # Pydantic + validator coverage is exercised independently of this
+  # workflow running them end-to-end. merobox nuke / stop_all_nodes handle
+  # cleanup between runs.
 
 stop_all_nodes: false
