@@ -239,13 +239,11 @@ steps:
     group_id: '{{group_id}}'
     requester: '{{p1_admin_key}}'
 
-  # delete_namespace intentionally omitted — the core server handler at
-  # core/crates/server/src/admin/handlers/namespaces/delete_namespace.rs
-  # dispatches to ctx_client.delete_group(), which at
-  # core/crates/context/src/handlers/delete_group.rs:67-71 explicitly bails
-  # on the namespace root with "cannot delete the namespace root: use
-  # delete_namespace instead". Circular — can't be called successfully
-  # from any client until the core handler is fixed. Tracked separately.
+  - name: Delete Namespace
+    type: delete_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    requester: '{{p1_admin_key}}'
 
   - name: Uninstall Application
     type: uninstall_application

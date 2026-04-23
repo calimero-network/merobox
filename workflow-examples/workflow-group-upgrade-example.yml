@@ -122,8 +122,11 @@ steps:
     group_id: '{{group_id}}'
     requester: '{{p1_admin_key}}'
 
-  # delete_namespace intentionally omitted — see workflow-group-admin-example.yml
-  # for the core server bug details (namespace root delete path is circular).
+  - name: Delete Namespace
+    type: delete_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    requester: '{{p1_admin_key}}'
 
   - name: Uninstall v1
     type: uninstall_application
