@@ -79,12 +79,20 @@ steps:
       - identity: '{{p2_identity}}'
         role: Member
 
-  # Membership-added governance op must gossip to node 2 before it can
-  # create/join contexts inside the group. The existing subgroups example
-  # uses the same 5-10s wait.
+  # The membership-added governance op needs to gossip from node 1 to node 2
+  # before node 2 can join any context in the subgroup (the server's
+  # join_context admin-check runs against node 2's local view of membership).
+  # Explicit sync_group on node 1 publishes the op immediately instead of
+  # waiting for the next gossip heartbeat, and the 20s wait absorbs any
+  # delta-gossip backpressure (see merobox memory obs #143 / governance race).
+  - name: Force Governance Push on Node 1
+    type: sync_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
   - name: Wait for Member Gossip
     type: wait
-    seconds: 10
+    seconds: 20
 
   - name: Create First Context in Subgroup
     type: create_context
