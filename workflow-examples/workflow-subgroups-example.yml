@@ -94,9 +94,14 @@ steps:
     statements:
       - 'is_set({{ctx_id}})'
 
+  # Bumped 10 -> 45 to match the timing budget core's own e2e suite uses
+  # for the same governance-propagation race (see core commit 84e3092
+  # "fix(e2e): bump subgroup-queued-deltas governance wait 15s -> 45s").
+  # The original 10s was no longer enough for current merod's delta-gossip
+  # backpressure and was flaking in CI.
   - name: Wait for Context Propagation
     type: wait
-    seconds: 10
+    seconds: 45
 
   - name: Node 2 Joins Subgroup Context
     type: join_context

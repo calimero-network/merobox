@@ -90,9 +90,13 @@ steps:
     node: calimero-node-1
     group_id: '{{group_id}}'
 
+  # Previously 20s, but the race still bites in Binary mode. Core's own
+  # e2e suite hit the same problem and bumped its wait to 45s (see
+  # `fix(e2e): bump subgroup-queued-deltas governance wait 15s -> 45s`
+  # in calimero-network/core, commit 84e3092). Matching that budget.
   - name: Wait for Member Gossip
     type: wait
-    seconds: 20
+    seconds: 45
 
   - name: Create First Context in Subgroup
     type: create_context
