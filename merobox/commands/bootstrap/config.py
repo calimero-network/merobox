@@ -685,7 +685,13 @@ class RegisterGroupSigningKeyStepConfig(BaseStepConfig):
     type: Literal["register_group_signing_key"] = "register_group_signing_key"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
-    signing_key: str = Field(..., description="Signing key (hex-encoded)")
+    # Hex-only: catches typos and malformed keys at YAML-load instead of
+    # leaking garbage values into server error responses.
+    signing_key: str = Field(
+        ...,
+        pattern=r"^[0-9a-fA-F]+$",
+        description="Signing key (hex-encoded, hex characters only)",
+    )
 
 
 class UpgradeGroupStepConfig(BaseStepConfig):

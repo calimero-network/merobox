@@ -48,6 +48,14 @@ steps:
     outputs:
       namespace_id: namespaceId
 
+  # Capture node 1's namespace-scoped public key (= subgroup admin) for teardown.
+  - name: Get Node 1 Namespace Identity
+    type: get_namespace_identity
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      p1_admin_key: publicKey
+
   - name: Create Subgroup
     type: create_group_in_namespace
     node: calimero-node-1
@@ -63,9 +71,6 @@ steps:
     group_id: '{{group_id}}'
     outputs:
       ctx_id: contextId
-      # p1_key is node 1's member public key in the group — used as the
-      # admin `requester` for teardown steps below.
-      p1_key: memberPublicKey
 
   - name: Wait for Context Propagation
     type: wait
@@ -109,19 +114,19 @@ steps:
     type: delete_context
     node: calimero-node-1
     context_id: '{{ctx_id}}'
-    requester: '{{p1_key}}'
+    requester: '{{p1_admin_key}}'
 
   - name: Delete Subgroup
     type: delete_group
     node: calimero-node-1
     group_id: '{{group_id}}'
-    requester: '{{p1_key}}'
+    requester: '{{p1_admin_key}}'
 
   - name: Delete Namespace
     type: delete_namespace
     node: calimero-node-1
     namespace_id: '{{namespace_id}}'
-    requester: '{{p1_key}}'
+    requester: '{{p1_admin_key}}'
 
   - name: Uninstall v1
     type: uninstall_application

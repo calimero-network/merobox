@@ -947,6 +947,16 @@ class TestGroupUpgradeStepSchemas:
         errors = config_module.validate_workflow_step(step, 0)
         assert any("signing_key" in e for e in errors)
 
+    def test_invalid_register_group_signing_key_non_hex(self, config_module):
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "not-hex-at-all-zzz",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("signing_key" in e for e in errors)
+
     def test_valid_upgrade_group_minimal(self, config_module):
         step = {
             "type": "upgrade_group",
