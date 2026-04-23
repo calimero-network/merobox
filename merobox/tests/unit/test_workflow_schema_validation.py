@@ -590,3 +590,204 @@ class TestStepSpecificValidation:
         }
         errors = config_module.validate_workflow_step(step, 0)
         assert len(errors) > 0
+
+
+class TestBucketBStepSchemas:
+    """Schema validation for step types that had Step classes but no Pydantic schemas.
+
+    Before this change, these step types passed the VALID_STEP_TYPES name check
+    but skipped Pydantic validation because STEP_TYPE_MODELS.get(type) returned
+    None. That allowed invalid YAML to reach runtime with confusing errors.
+    """
+
+    def test_valid_remove_group_members(self, config_module):
+        step = {
+            "name": "Remove members",
+            "type": "remove_group_members",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "members": ["{{p2_identity}}"],
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_remove_group_members_missing_members(self, config_module):
+        step = {
+            "type": "remove_group_members",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("members" in e for e in errors)
+
+    def test_valid_list_group_members(self, config_module):
+        step = {
+            "type": "list_group_members",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_list_group_members_missing_group_id(self, config_module):
+        step = {"type": "list_group_members", "node": "calimero-node-1"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("group_id" in e for e in errors)
+
+    def test_valid_list_group_contexts(self, config_module):
+        step = {
+            "type": "list_group_contexts",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_list_group_contexts_missing_group_id(self, config_module):
+        step = {"type": "list_group_contexts", "node": "calimero-node-1"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("group_id" in e for e in errors)
+
+    def test_valid_update_member_role_admin(self, config_module):
+        step = {
+            "type": "update_member_role",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "role": "Admin",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_update_member_role_lowercase(self, config_module):
+        step = {
+            "type": "update_member_role",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "role": "read-only",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_update_member_role_bad_value(self, config_module):
+        step = {
+            "type": "update_member_role",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "role": "SuperAdmin",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("role" in e.lower() for e in errors)
+
+    def test_valid_set_member_capabilities(self, config_module):
+        step = {
+            "type": "set_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "capabilities": 15,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_member_capabilities_wrong_type(self, config_module):
+        step = {
+            "type": "set_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "capabilities": "fifteen",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("capabilities" in e for e in errors)
+
+    def test_valid_get_member_capabilities(self, config_module):
+        step = {
+            "type": "get_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_get_member_capabilities_missing_member(self, config_module):
+        step = {
+            "type": "get_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("member_id" in e for e in errors)
+
+    def test_valid_set_default_capabilities(self, config_module):
+        step = {
+            "type": "set_default_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "capabilities": 7,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_set_default_visibility_open(self, config_module):
+        step = {
+            "type": "set_default_visibility",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "visibility": "open",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_set_default_visibility_restricted(self, config_module):
+        step = {
+            "type": "set_default_visibility",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "visibility": "restricted",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_default_visibility_bad_value(self, config_module):
+        step = {
+            "type": "set_default_visibility",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "visibility": "private",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("visibility" in e.lower() for e in errors)
+
+    def test_valid_get_group_info(self, config_module):
+        step = {
+            "type": "get_group_info",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_group(self, config_module):
+        step = {
+            "type": "delete_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_namespace(self, config_module):
+        step = {
+            "type": "delete_namespace",
+            "node": "calimero-node-1",
+            "namespace_id": "{{namespace_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_context(self, config_module):
+        step = {
+            "type": "delete_context",
+            "node": "calimero-node-1",
+            "context_id": "{{context_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_uninstall_application(self, config_module):
+        step = {
+            "type": "uninstall_application",
+            "node": "calimero-node-1",
+            "application_id": "{{app_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []

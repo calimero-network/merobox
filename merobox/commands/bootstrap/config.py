@@ -479,6 +479,133 @@ class AddGroupMembersStepConfig(BaseStepConfig):
     )
 
 
+class RemoveGroupMembersStepConfig(BaseStepConfig):
+    """Configuration for remove_group_members step."""
+
+    type: Literal["remove_group_members"] = "remove_group_members"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to remove members from")
+    members: list[str] = Field(..., description="List of member public keys to remove")
+
+
+class ListGroupMembersStepConfig(BaseStepConfig):
+    """Configuration for list_group_members step."""
+
+    type: Literal["list_group_members"] = "list_group_members"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class ListGroupContextsStepConfig(BaseStepConfig):
+    """Configuration for list_group_contexts step."""
+
+    type: Literal["list_group_contexts"] = "list_group_contexts"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class UpdateMemberRoleStepConfig(BaseStepConfig):
+    """Configuration for update_member_role step."""
+
+    type: Literal["update_member_role"] = "update_member_role"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+    role: Literal[
+        "Admin",
+        "Member",
+        "ReadOnly",
+        "admin",
+        "member",
+        "read-only",
+        "read_only",
+        "readonly",
+    ] = Field(..., description="New role for the member")
+
+
+class SetMemberCapabilitiesStepConfig(BaseStepConfig):
+    """Configuration for set_member_capabilities step."""
+
+    type: Literal["set_member_capabilities"] = "set_member_capabilities"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+    capabilities: int = Field(
+        ..., ge=0, lt=2**32, description="Capability bitmask (u32)"
+    )
+
+
+class GetMemberCapabilitiesStepConfig(BaseStepConfig):
+    """Configuration for get_member_capabilities step."""
+
+    type: Literal["get_member_capabilities"] = "get_member_capabilities"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+
+
+class SetDefaultCapabilitiesStepConfig(BaseStepConfig):
+    """Configuration for set_default_capabilities step."""
+
+    type: Literal["set_default_capabilities"] = "set_default_capabilities"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    capabilities: int = Field(
+        ..., ge=0, lt=2**32, description="Default capability bitmask (u32)"
+    )
+
+
+class SetDefaultVisibilityStepConfig(BaseStepConfig):
+    """Configuration for set_default_visibility step."""
+
+    type: Literal["set_default_visibility"] = "set_default_visibility"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    visibility: Literal["open", "restricted", "Open", "Restricted"] = Field(
+        ..., description="Default visibility mode for new contexts"
+    )
+
+
+class GetGroupInfoStepConfig(BaseStepConfig):
+    """Configuration for get_group_info step."""
+
+    type: Literal["get_group_info"] = "get_group_info"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class DeleteGroupStepConfig(BaseStepConfig):
+    """Configuration for delete_group step."""
+
+    type: Literal["delete_group"] = "delete_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to delete")
+
+
+class DeleteNamespaceStepConfig(BaseStepConfig):
+    """Configuration for delete_namespace step."""
+
+    type: Literal["delete_namespace"] = "delete_namespace"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(..., description="Namespace ID to delete")
+
+
+class DeleteContextStepConfig(BaseStepConfig):
+    """Configuration for delete_context step."""
+
+    type: Literal["delete_context"] = "delete_context"
+    node: str = Field(..., description="Target node")
+    context_id: str = Field(..., description="Context ID to delete")
+
+
+class UninstallApplicationStepConfig(BaseStepConfig):
+    """Configuration for uninstall_application step."""
+
+    type: Literal["uninstall_application"] = "uninstall_application"
+    node: str = Field(..., description="Target node")
+    application_id: str = Field(..., description="Application ID to uninstall")
+
+
 class CreateMeshStep(BaseStepConfig):
     """Configuration for create_mesh step.
 
@@ -536,6 +663,19 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "reparent_group": ReparentGroupStepConfig,
     "list_subgroups": ListSubgroupsStepConfig,
     "add_group_members": AddGroupMembersStepConfig,
+    "remove_group_members": RemoveGroupMembersStepConfig,
+    "list_group_members": ListGroupMembersStepConfig,
+    "list_group_contexts": ListGroupContextsStepConfig,
+    "update_member_role": UpdateMemberRoleStepConfig,
+    "set_member_capabilities": SetMemberCapabilitiesStepConfig,
+    "get_member_capabilities": GetMemberCapabilitiesStepConfig,
+    "set_default_capabilities": SetDefaultCapabilitiesStepConfig,
+    "set_default_visibility": SetDefaultVisibilityStepConfig,
+    "get_group_info": GetGroupInfoStepConfig,
+    "delete_group": DeleteGroupStepConfig,
+    "delete_namespace": DeleteNamespaceStepConfig,
+    "delete_context": DeleteContextStepConfig,
+    "uninstall_application": UninstallApplicationStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
