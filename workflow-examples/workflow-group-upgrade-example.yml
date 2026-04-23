@@ -63,6 +63,9 @@ steps:
     group_id: '{{group_id}}'
     outputs:
       ctx_id: contextId
+      # p1_key is node 1's member public key in the group — used as the
+      # admin `requester` for teardown steps below.
+      p1_key: memberPublicKey
 
   - name: Wait for Context Propagation
     type: wait
@@ -99,12 +102,35 @@ steps:
     group_id: '{{group_id}}'
     expected_failure: true
 
-  # Teardown: intentionally omitted. Matches workflow-subgroups-example.yml.
-  # delete_context for a group-registered context needs an admin requester
-  # (core/crates/context/src/handlers/delete_context.rs:54-68) that the
-  # current PyClient.delete_context signature does not expose. The delete_*
-  # and uninstall_application step types are still schema-validated via
-  # test_workflow_schema_validation.py — their coverage is exercised
-  # independently of this workflow running them end-to-end.
+  # Phase 6: Teardown
+  # Unlocked by calimero-client-py 0.6.2+ (requester field on
+  # delete_context/delete_group/delete_namespace).
+  - name: Delete Context
+    type: delete_context
+    node: calimero-node-1
+    context_id: '{{ctx_id}}'
+    requester: '{{p1_key}}'
+
+  - name: Delete Subgroup
+    type: delete_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    requester: '{{p1_key}}'
+
+  - name: Delete Namespace
+    type: delete_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    requester: '{{p1_key}}'
+
+  - name: Uninstall v1
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_v1}}'
+
+  - name: Uninstall v2
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_v2}}'
 
 stop_all_nodes: false

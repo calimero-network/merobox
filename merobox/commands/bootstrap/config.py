@@ -589,6 +589,10 @@ class DeleteGroupStepConfig(BaseStepConfig):
     type: Literal["delete_group"] = "delete_group"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID to delete")
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key, required when deleting a group with admin-guarded state",
+    )
 
 
 class DeleteNamespaceStepConfig(BaseStepConfig):
@@ -597,6 +601,10 @@ class DeleteNamespaceStepConfig(BaseStepConfig):
     type: Literal["delete_namespace"] = "delete_namespace"
     node: str = Field(..., description="Target node")
     namespace_id: str = Field(..., description="Namespace ID to delete")
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key, required when deleting a namespace with admin-guarded state",
+    )
 
 
 class DeleteContextStepConfig(BaseStepConfig):
@@ -605,6 +613,10 @@ class DeleteContextStepConfig(BaseStepConfig):
     type: Literal["delete_context"] = "delete_context"
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID to delete")
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key, required when deleting a context registered in a group",
+    )
 
 
 class UninstallApplicationStepConfig(BaseStepConfig):

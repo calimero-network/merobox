@@ -792,6 +792,33 @@ class TestBucketBStepSchemas:
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
+    def test_valid_delete_context_with_requester(self, config_module):
+        step = {
+            "type": "delete_context",
+            "node": "calimero-node-1",
+            "context_id": "{{context_id}}",
+            "requester": "{{admin_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_group_with_requester(self, config_module):
+        step = {
+            "type": "delete_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "requester": "{{admin_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_namespace_with_requester(self, config_module):
+        step = {
+            "type": "delete_namespace",
+            "node": "calimero-node-1",
+            "namespace_id": "{{namespace_id}}",
+            "requester": "{{admin_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
 
 class TestGroupAliasStepSchemas:
     """Schema validation for set_group_alias and set_member_alias."""

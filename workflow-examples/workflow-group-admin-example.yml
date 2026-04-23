@@ -82,6 +82,9 @@ steps:
     group_id: '{{group_id}}'
     outputs:
       ctx_id: contextId
+      # p1_key is node 1's member public key in this group — needed as
+      # the admin `requester` for teardown steps below.
+      p1_key: memberPublicKey
 
   - name: Wait for Context Propagation
     type: wait
@@ -201,14 +204,34 @@ steps:
     node: calimero-node-1
     group_id: '{{group_id}}'
 
-  # Teardown: intentionally omitted. Matches workflow-subgroups-example.yml.
-  # delete_context for a group-registered context needs an admin requester
-  # (core/crates/context/src/handlers/delete_context.rs:54-68) that the
-  # current PyClient.delete_context signature does not expose. The delete_*
-  # and uninstall_application step types are still schema-validated via
-  # test_workflow_schema_validation.py and dispatched at runtime — their
-  # Pydantic + validator coverage is exercised independently of this
-  # workflow running them end-to-end. merobox nuke / stop_all_nodes handle
-  # cleanup between runs.
+  # Phase 7: Teardown
+  # Unlocked by calimero-client-py 0.6.2+, which exposes a `requester` field on
+  # delete_context/delete_group/delete_namespace. The server requires an admin
+  # requester to delete group-registered contexts and admin-guarded groups
+  # (core/crates/context/src/handlers/delete_context.rs:54-68). We pass p1_key,
+  # the public key node 1 holds in this subgroup — node 1 is the group admin
+  # because it created the subgroup.
+  - name: Delete First Context
+    type: delete_context
+    node: calimero-node-1
+    context_id: '{{ctx_id}}'
+    requester: '{{p1_key}}'
+
+  - name: Delete Subgroup
+    type: delete_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    requester: '{{p1_key}}'
+
+  - name: Delete Namespace
+    type: delete_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    requester: '{{p1_key}}'
+
+  - name: Uninstall Application
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_id}}'
 
 stop_all_nodes: false
