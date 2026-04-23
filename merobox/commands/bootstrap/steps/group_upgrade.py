@@ -64,7 +64,14 @@ class RegisterGroupSigningKeyStep(BaseStep):
                 return True
             return False
 
-        workflow_results[f"register_group_signing_key_{node_name}"] = result["data"]
+        # Deliberately do NOT store the raw API response: if the server ever
+        # echoes back the signing key, or if a future change makes the step
+        # configure outputs that pull sensitive fields out, we don't want that
+        # key material landing in workflow_results (which executor.py dumps in
+        # verbose mode). Record only a redacted success marker.
+        workflow_results[f"register_group_signing_key_{node_name}"] = {
+            "registered": True
+        }
         console.print(
             f"[green]✓ Registered signing key for group {group_id} on {node_name}[/green]"
         )

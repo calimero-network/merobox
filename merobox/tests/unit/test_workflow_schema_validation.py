@@ -1000,3 +1000,13 @@ class TestGroupUpgradeStepSchemas:
             "group_id": "{{group_id}}",
         }
         assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_register_group_signing_key_templated(self, config_module):
+        """`{{placeholder}}` templates pass — dynamic values resolve at runtime."""
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "{{some_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []

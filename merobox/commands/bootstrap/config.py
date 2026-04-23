@@ -685,12 +685,14 @@ class RegisterGroupSigningKeyStepConfig(BaseStepConfig):
     type: Literal["register_group_signing_key"] = "register_group_signing_key"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
-    # Hex-only: catches typos and malformed keys at YAML-load instead of
-    # leaking garbage values into server error responses.
+    # Accepts either a hex literal or a `{{placeholder}}` template that will
+    # be resolved to hex at runtime. Catches typos like "deadbeaf" vs valid
+    # hex at YAML-load, without breaking workflows that inject the key via
+    # outputs from a prior step.
     signing_key: str = Field(
         ...,
-        pattern=r"^[0-9a-fA-F]+$",
-        description="Signing key (hex-encoded, hex characters only)",
+        pattern=r"^(\{\{[^}]+\}\}|[0-9a-fA-F]+)$",
+        description="Signing key (hex-encoded) or `{{placeholder}}` template",
     )
 
 
