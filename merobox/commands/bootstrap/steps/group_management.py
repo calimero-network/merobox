@@ -510,9 +510,10 @@ class DeleteGroupStep(BaseStep):
             result = fail("delete_group failed", error=e)
 
         if not result["success"]:
-            console.print(
-                f"[red]delete_group failed on {node_name}: {result.get('error')}[/red]"
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
             )
+            console.print(f"[red]delete_group failed on {node_name}: {exc_msg}[/red]")
             return False
         if self._check_jsonrpc_error(result["data"]):
             return False
@@ -569,8 +570,11 @@ class DeleteNamespaceStep(BaseStep):
             result = fail("delete_namespace failed", error=e)
 
         if not result["success"]:
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
+            )
             console.print(
-                f"[red]delete_namespace failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]delete_namespace failed on {node_name}: {exc_msg}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -631,9 +635,13 @@ class DeleteContextStep(BaseStep):
             result = fail("delete_context failed", error=e)
 
         if not result["success"]:
-            console.print(
-                f"[red]delete_context failed on {node_name}: {result.get('error')}[/red]"
+            # Surface the underlying exception message, not just the wrapper —
+            # result["error"] is the hardcoded "delete_context failed" wrapper,
+            # while the real cause lives in result["exception"]["message"].
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
             )
+            console.print(f"[red]delete_context failed on {node_name}: {exc_msg}[/red]")
             return False
         if self._check_jsonrpc_error(result["data"]):
             return False
