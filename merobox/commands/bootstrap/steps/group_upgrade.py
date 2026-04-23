@@ -54,6 +54,13 @@ class RegisterGroupSigningKeyStep(BaseStep):
             result = fail(
                 f"register_group_signing_key failed (exception type: {type(e).__name__})"
             )
+        finally:
+            # Drop the local reference to the resolved key. Python strings are
+            # immutable so this doesn't zero the underlying buffer, but it
+            # does remove this frame's reference so the GC can reclaim the
+            # string as soon as any other holder releases it. Defense-in-depth
+            # against a crash/debugger inspecting this stack frame.
+            del signing_key
 
         expected_failure = self._is_expected_failure()
 

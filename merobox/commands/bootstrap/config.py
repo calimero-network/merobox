@@ -697,6 +697,14 @@ class RegisterGroupSigningKeyStepConfig(BaseStepConfig):
     # history — that's a credential leak. Capture the key from a prior
     # step's `outputs:`, or inject via `${ENV_VAR}` expansion, and refer
     # to it here as `{{key_name}}`.
+    #
+    # Note on `${ENV_VAR}` expansion: merobox's env-var substitution runs
+    # BEFORE this Pydantic pattern is evaluated (see
+    # `expand_env_vars` above, which walks the parsed YAML before
+    # `validate_workflow_config`). So `signing_key: ${MY_KEY}` resolves
+    # to the hex value at load-time and then passes the `[0-9a-fA-F]{64}`
+    # alternative of this pattern — there's no need for the regex itself
+    # to match `${...}` syntax.
     signing_key: str = Field(
         ...,
         pattern=r"^(\{\{[^}]+\}\}|[0-9a-fA-F]{64})$",
