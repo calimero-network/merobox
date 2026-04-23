@@ -690,10 +690,21 @@ class RegisterGroupSigningKeyStepConfig(BaseStepConfig):
     # matches calimero_primitives::identity::PrivateKey's 32-byte size;
     # catches typos and trivially short values at YAML-load time, without
     # breaking workflows that inject the key via outputs from a prior step.
+    #
+    # SECURITY: prefer the `{{placeholder}}` form whenever the YAML is
+    # committed to version control. Hardcoding a raw hex signing key in a
+    # committed workflow file checks the actual key material into git
+    # history — that's a credential leak. Capture the key from a prior
+    # step's `outputs:`, or inject via `${ENV_VAR}` expansion, and refer
+    # to it here as `{{key_name}}`.
     signing_key: str = Field(
         ...,
         pattern=r"^(\{\{[^}]+\}\}|[0-9a-fA-F]{64})$",
-        description="Signing key as 64 hex chars (32-byte PrivateKey) or `{{placeholder}}` template",
+        description=(
+            "Signing key as 64 hex chars (32-byte PrivateKey) or `{{placeholder}}` "
+            "template. Prefer the template form — raw hex in committed YAML leaks "
+            "key material via git history."
+        ),
     )
 
 
