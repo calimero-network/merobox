@@ -32,6 +32,7 @@ from merobox.commands.bootstrap.steps import (
     DetachContextFromGroupStep,
     ExecuteStep,
     GetGroupInfoStep,
+    GetGroupUpgradeStatusStep,
     GetMemberCapabilitiesStep,
     GetNamespaceIdentityStep,
     InstallApplicationStep,
@@ -45,9 +46,11 @@ from merobox.commands.bootstrap.steps import (
     ListNamespacesStep,
     ListSubgroupsStep,
     ParallelStep,
+    RegisterGroupSigningKeyStep,
     RemoveGroupMembersStep,
     ReparentGroupStep,
     RepeatStep,
+    RetryGroupUpgradeStep,
     ScriptStep,
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
@@ -58,6 +61,7 @@ from merobox.commands.bootstrap.steps import (
     UninstallApplicationStep,
     UpdateGroupSettingsStep,
     UpdateMemberRoleStep,
+    UpgradeGroupStep,
     UploadBlobStep,
     WaitForSyncStep,
     WaitStep,
@@ -1473,6 +1477,14 @@ class WorkflowExecutor:
             return DetachContextFromGroupStep(step_config, **common_kwargs)
         elif step_type == "sync_group":
             return SyncGroupStep(step_config, **common_kwargs)
+        elif step_type == "register_group_signing_key":
+            return RegisterGroupSigningKeyStep(step_config, **common_kwargs)
+        elif step_type == "upgrade_group":
+            return UpgradeGroupStep(step_config, **common_kwargs)
+        elif step_type == "get_group_upgrade_status":
+            return GetGroupUpgradeStatusStep(step_config, **common_kwargs)
+        elif step_type == "retry_group_upgrade":
+            return RetryGroupUpgradeStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
         else:

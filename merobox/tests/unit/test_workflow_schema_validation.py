@@ -897,3 +897,69 @@ class TestGroupGovernanceStepSchemas:
         step = {"type": "sync_group", "node": "calimero-node-1"}
         errors = config_module.validate_workflow_step(step, 0)
         assert any("group_id" in e for e in errors)
+
+
+class TestGroupUpgradeStepSchemas:
+    """Schema validation for group upgrade-lifecycle step types."""
+
+    def test_valid_register_group_signing_key(self, config_module):
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "deadbeef" * 8,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_register_group_signing_key_missing_key(self, config_module):
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("signing_key" in e for e in errors)
+
+    def test_valid_upgrade_group_minimal(self, config_module):
+        step = {
+            "type": "upgrade_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "target_application_id": "{{app_v2}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_upgrade_group_with_migrate(self, config_module):
+        step = {
+            "type": "upgrade_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "target_application_id": "{{app_v2}}",
+            "migrate_method": "migrate_v1_to_v2",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_upgrade_group_missing_target(self, config_module):
+        step = {
+            "type": "upgrade_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("target_application_id" in e for e in errors)
+
+    def test_valid_get_group_upgrade_status(self, config_module):
+        step = {
+            "type": "get_group_upgrade_status",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_retry_group_upgrade(self, config_module):
+        step = {
+            "type": "retry_group_upgrade",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []

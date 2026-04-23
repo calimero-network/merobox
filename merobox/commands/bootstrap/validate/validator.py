@@ -36,6 +36,12 @@ from merobox.commands.bootstrap.steps.group_management import (
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
+from merobox.commands.bootstrap.steps.group_upgrade import (
+    GetGroupUpgradeStatusStep,
+    RegisterGroupSigningKeyStep,
+    RetryGroupUpgradeStep,
+    UpgradeGroupStep,
+)
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
@@ -252,6 +258,14 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = DetachContextFromGroupStep
         elif step_type == "sync_group":
             step_class = SyncGroupStep
+        elif step_type == "register_group_signing_key":
+            step_class = RegisterGroupSigningKeyStep
+        elif step_type == "upgrade_group":
+            step_class = UpgradeGroupStep
+        elif step_type == "get_group_upgrade_status":
+            step_class = GetGroupUpgradeStatusStep
+        elif step_type == "retry_group_upgrade":
+            step_class = RetryGroupUpgradeStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

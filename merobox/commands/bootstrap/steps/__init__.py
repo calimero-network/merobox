@@ -41,6 +41,12 @@ from merobox.commands.bootstrap.steps.group_management import (
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
+from merobox.commands.bootstrap.steps.group_upgrade import (
+    GetGroupUpgradeStatusStep,
+    RegisterGroupSigningKeyStep,
+    RetryGroupUpgradeStep,
+    UpgradeGroupStep,
+)
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
@@ -127,4 +133,8 @@ __all__ = [
     "UpdateGroupSettingsStep",
     "DetachContextFromGroupStep",
     "SyncGroupStep",
+    "RegisterGroupSigningKeyStep",
+    "UpgradeGroupStep",
+    "GetGroupUpgradeStatusStep",
+    "RetryGroupUpgradeStep",
 ]

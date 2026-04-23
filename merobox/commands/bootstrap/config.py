@@ -58,6 +58,10 @@ VALID_STEP_TYPES = frozenset(
         "update_group_settings",
         "detach_context_from_group",
         "sync_group",
+        "register_group_signing_key",
+        "upgrade_group",
+        "get_group_upgrade_status",
+        "retry_group_upgrade",
         "call",
         "wait",
         "wait_for_sync",
@@ -663,6 +667,45 @@ class SyncGroupStepConfig(BaseStepConfig):
     group_id: str = Field(..., description="Group ID to trigger governance sync for")
 
 
+class RegisterGroupSigningKeyStepConfig(BaseStepConfig):
+    """Configuration for register_group_signing_key step."""
+
+    type: Literal["register_group_signing_key"] = "register_group_signing_key"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    signing_key: str = Field(..., description="Signing key (hex-encoded)")
+
+
+class UpgradeGroupStepConfig(BaseStepConfig):
+    """Configuration for upgrade_group step."""
+
+    type: Literal["upgrade_group"] = "upgrade_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    target_application_id: str = Field(
+        ..., description="Application ID to upgrade the group to"
+    )
+    migrate_method: Optional[str] = Field(
+        None, description="Optional migration export to invoke during upgrade"
+    )
+
+
+class GetGroupUpgradeStatusStepConfig(BaseStepConfig):
+    """Configuration for get_group_upgrade_status step."""
+
+    type: Literal["get_group_upgrade_status"] = "get_group_upgrade_status"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class RetryGroupUpgradeStepConfig(BaseStepConfig):
+    """Configuration for retry_group_upgrade step."""
+
+    type: Literal["retry_group_upgrade"] = "retry_group_upgrade"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
 class CreateMeshStep(BaseStepConfig):
     """Configuration for create_mesh step.
 
@@ -738,6 +781,10 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "update_group_settings": UpdateGroupSettingsStepConfig,
     "detach_context_from_group": DetachContextFromGroupStepConfig,
     "sync_group": SyncGroupStepConfig,
+    "register_group_signing_key": RegisterGroupSigningKeyStepConfig,
+    "upgrade_group": UpgradeGroupStepConfig,
+    "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
+    "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
