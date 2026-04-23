@@ -53,6 +53,8 @@ VALID_STEP_TYPES = frozenset(
         "delete_namespace",
         "delete_context",
         "uninstall_application",
+        "set_group_alias",
+        "set_member_alias",
         "call",
         "wait",
         "wait_for_sync",
@@ -606,6 +608,25 @@ class UninstallApplicationStepConfig(BaseStepConfig):
     application_id: str = Field(..., description="Application ID to uninstall")
 
 
+class SetGroupAliasStepConfig(BaseStepConfig):
+    """Configuration for set_group_alias step (admin-API group rename)."""
+
+    type: Literal["set_group_alias"] = "set_group_alias"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to rename")
+    alias: str = Field(..., description="New human-friendly alias for the group")
+
+
+class SetMemberAliasStepConfig(BaseStepConfig):
+    """Configuration for set_member_alias step (admin-API member display-name)."""
+
+    type: Literal["set_member_alias"] = "set_member_alias"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+    alias: str = Field(..., description="New human-friendly alias for the member")
+
+
 class CreateMeshStep(BaseStepConfig):
     """Configuration for create_mesh step.
 
@@ -676,6 +697,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "delete_namespace": DeleteNamespaceStepConfig,
     "delete_context": DeleteContextStepConfig,
     "uninstall_application": UninstallApplicationStepConfig,
+    "set_group_alias": SetGroupAliasStepConfig,
+    "set_member_alias": SetMemberAliasStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,

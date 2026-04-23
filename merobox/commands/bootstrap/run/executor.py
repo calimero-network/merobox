@@ -50,6 +50,8 @@ from merobox.commands.bootstrap.steps import (
     ScriptStep,
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
+    SetGroupAliasStep,
+    SetMemberAliasStep,
     SetMemberCapabilitiesStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
@@ -1458,6 +1460,10 @@ class WorkflowExecutor:
             return DeleteContextStep(step_config, **common_kwargs)
         elif step_type == "uninstall_application":
             return UninstallApplicationStep(step_config, **common_kwargs)
+        elif step_type == "set_group_alias":
+            return SetGroupAliasStep(step_config, **common_kwargs)
+        elif step_type == "set_member_alias":
+            return SetMemberAliasStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
         else:

@@ -791,3 +791,45 @@ class TestBucketBStepSchemas:
             "application_id": "{{app_id}}",
         }
         assert config_module.validate_workflow_step(step, 0) == []
+
+
+class TestGroupAliasStepSchemas:
+    """Schema validation for set_group_alias and set_member_alias."""
+
+    def test_valid_set_group_alias(self, config_module):
+        step = {
+            "type": "set_group_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "alias": "folder-renamed",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_group_alias_missing_alias(self, config_module):
+        step = {
+            "type": "set_group_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("alias" in e for e in errors)
+
+    def test_valid_set_member_alias(self, config_module):
+        step = {
+            "type": "set_member_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "alias": "Bob",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_member_alias_missing_member(self, config_module):
+        step = {
+            "type": "set_member_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "alias": "Bob",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("member_id" in e for e in errors)
