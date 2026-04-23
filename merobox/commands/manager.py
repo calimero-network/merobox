@@ -459,9 +459,22 @@ class DockerManager(CleanupMixin):
                 "image": image_to_use,
                 "detach": True,
                 "user": "root",  # Override the default user in the image
-                # Use specific capabilities instead of privileged mode for security
-                # These capabilities are needed for file permission handling with volumes
-                "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
+                # Use specific capabilities instead of privileged mode for security.
+                # CHOWN/DAC_OVERRIDE/FOWNER/SETGID/SETUID handle file permissions
+                # across bind-mounted volumes. PERFMON is required for `perf
+                # record` (sys_perf_event_open) inside the container; without it
+                # the profiling image's entrypoint fails with EPERM even when
+                # linux-tools is correctly installed. CAP_PERFMON is the narrow
+                # capability added in kernel 5.8 specifically for perf_events —
+                # preferred over CAP_SYS_ADMIN.
+                "cap_add": [
+                    "CHOWN",
+                    "DAC_OVERRIDE",
+                    "FOWNER",
+                    "SETGID",
+                    "SETUID",
+                    "PERFMON",
+                ],
                 "environment": node_env,
                 "ports": {
                     # Map external P2P port to internal P2P port

@@ -63,7 +63,16 @@ def test_docker_container_uses_cap_add_not_privileged(mock_docker):
         "cap_add" in main_config
     ), "Container should use cap_add for specific capabilities"
 
-    expected_caps = ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+    # File-permission caps (bind mount handling) + PERFMON (required for
+    # `perf record` / sys_perf_event_open inside the profiling image).
+    expected_caps = [
+        "CHOWN",
+        "DAC_OVERRIDE",
+        "FOWNER",
+        "SETGID",
+        "SETUID",
+        "PERFMON",
+    ]
     for cap in expected_caps:
         assert (
             cap in main_config["cap_add"]
