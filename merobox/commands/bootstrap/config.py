@@ -685,14 +685,15 @@ class RegisterGroupSigningKeyStepConfig(BaseStepConfig):
     type: Literal["register_group_signing_key"] = "register_group_signing_key"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
-    # Accepts either a hex literal or a `{{placeholder}}` template that will
-    # be resolved to hex at runtime. Catches typos like "deadbeaf" vs valid
-    # hex at YAML-load, without breaking workflows that inject the key via
-    # outputs from a prior step.
+    # Accepts either a 64-hex-char literal (32-byte PrivateKey) or a
+    # `{{placeholder}}` template resolved at runtime. The {64} constraint
+    # matches calimero_primitives::identity::PrivateKey's 32-byte size;
+    # catches typos and trivially short values at YAML-load time, without
+    # breaking workflows that inject the key via outputs from a prior step.
     signing_key: str = Field(
         ...,
-        pattern=r"^(\{\{[^}]+\}\}|[0-9a-fA-F]+)$",
-        description="Signing key (hex-encoded) or `{{placeholder}}` template",
+        pattern=r"^(\{\{[^}]+\}\}|[0-9a-fA-F]{64})$",
+        description="Signing key as 64 hex chars (32-byte PrivateKey) or `{{placeholder}}` template",
     )
 
 

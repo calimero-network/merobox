@@ -45,7 +45,15 @@ class RegisterGroupSigningKeyStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("register_group_signing_key failed", error=e)
+            # Redact exception details. The Rust FFI may format errors that
+            # include the signing_key value (e.g., "Invalid key 'abcdef...'"),
+            # and some server error paths echo request parameters. Capturing
+            # the raw exception in result["exception"] would land that key
+            # material in workflow artifacts and verbose logs. Record only
+            # the exception type — no message, no traceback.
+            result = fail(
+                f"register_group_signing_key failed (exception type: {type(e).__name__})"
+            )
 
         expected_failure = self._is_expected_failure()
 

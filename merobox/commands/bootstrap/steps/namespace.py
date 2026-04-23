@@ -109,7 +109,12 @@ class GetNamespaceIdentityStep(BaseStep):
         if self._check_jsonrpc_error(result["data"]):
             return False
         workflow_results[f"namespace_identity_{node_name}"] = result["data"]
-        self._export_variables(result["data"], node_name, dynamic_values)
+        # Only call _export_variables when outputs are configured. Without this
+        # guard, the base class prints a "No outputs configured" warning for
+        # every pre-existing workflow using get_namespace_identity without an
+        # outputs: section.
+        if "outputs" in self.config:
+            self._export_variables(result["data"], node_name, dynamic_values)
         return True
 
 

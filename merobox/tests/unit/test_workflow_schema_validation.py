@@ -1010,3 +1010,14 @@ class TestGroupUpgradeStepSchemas:
             "signing_key": "{{some_key}}",
         }
         assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_register_group_signing_key_too_short(self, config_module):
+        """Hex shorter than 64 chars (32-byte PrivateKey) is rejected at YAML-load."""
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "deadbeef",  # 8 hex chars, too short for 32-byte key
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("signing_key" in e for e in errors)
