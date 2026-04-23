@@ -16,6 +16,11 @@ from merobox.commands.bootstrap.steps.group_create import (
     CreateGroupStep,
     CreateNamespaceStep,
 )
+from merobox.commands.bootstrap.steps.group_governance import (
+    DetachContextFromGroupStep,
+    SyncGroupStep,
+    UpdateGroupSettingsStep,
+)
 from merobox.commands.bootstrap.steps.group_invite import (
     CreateGroupInvitationStep,
     CreateNamespaceInvitationStep,
@@ -119,4 +124,7 @@ __all__ = [
     "UninstallApplicationStep",
     "SetGroupAliasStep",
     "SetMemberAliasStep",
+    "UpdateGroupSettingsStep",
+    "DetachContextFromGroupStep",
+    "SyncGroupStep",
 ]

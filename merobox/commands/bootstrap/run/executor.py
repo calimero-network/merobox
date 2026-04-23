@@ -29,6 +29,7 @@ from merobox.commands.bootstrap.steps import (
     DeleteContextStep,
     DeleteGroupStep,
     DeleteNamespaceStep,
+    DetachContextFromGroupStep,
     ExecuteStep,
     GetGroupInfoStep,
     GetMemberCapabilitiesStep,
@@ -53,7 +54,9 @@ from merobox.commands.bootstrap.steps import (
     SetGroupAliasStep,
     SetMemberAliasStep,
     SetMemberCapabilitiesStep,
+    SyncGroupStep,
     UninstallApplicationStep,
+    UpdateGroupSettingsStep,
     UpdateMemberRoleStep,
     UploadBlobStep,
     WaitForSyncStep,
@@ -1464,6 +1467,12 @@ class WorkflowExecutor:
             return SetGroupAliasStep(step_config, **common_kwargs)
         elif step_type == "set_member_alias":
             return SetMemberAliasStep(step_config, **common_kwargs)
+        elif step_type == "update_group_settings":
+            return UpdateGroupSettingsStep(step_config, **common_kwargs)
+        elif step_type == "detach_context_from_group":
+            return DetachContextFromGroupStep(step_config, **common_kwargs)
+        elif step_type == "sync_group":
+            return SyncGroupStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
         else:

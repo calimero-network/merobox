@@ -833,3 +833,67 @@ class TestGroupAliasStepSchemas:
         }
         errors = config_module.validate_workflow_step(step, 0)
         assert any("member_id" in e for e in errors)
+
+
+class TestGroupGovernanceStepSchemas:
+    """Schema validation for update_group_settings / detach_context_from_group / sync_group."""
+
+    def test_valid_update_group_settings(self, config_module):
+        step = {
+            "type": "update_group_settings",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "upgrade_policy": "coordinated",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_update_group_settings_lazy_variants(self, config_module):
+        for policy in ("lazy", "lazy-on-access", "lazy_on_access", "lazyonaccess"):
+            step = {
+                "type": "update_group_settings",
+                "node": "calimero-node-1",
+                "group_id": "{{group_id}}",
+                "upgrade_policy": policy,
+            }
+            assert config_module.validate_workflow_step(step, 0) == [], policy
+
+    def test_invalid_update_group_settings_bad_policy(self, config_module):
+        step = {
+            "type": "update_group_settings",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "upgrade_policy": "eager",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("upgrade_policy" in e.lower() for e in errors)
+
+    def test_valid_detach_context_from_group(self, config_module):
+        step = {
+            "type": "detach_context_from_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "context_id": "{{context_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_detach_context_missing_context(self, config_module):
+        step = {
+            "type": "detach_context_from_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("context_id" in e for e in errors)
+
+    def test_valid_sync_group(self, config_module):
+        step = {
+            "type": "sync_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_sync_group_missing_group_id(self, config_module):
+        step = {"type": "sync_group", "node": "calimero-node-1"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("group_id" in e for e in errors)

@@ -14,6 +14,11 @@ from merobox.commands.bootstrap.steps.group_alias import (
     SetMemberAliasStep,
 )
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
+from merobox.commands.bootstrap.steps.group_governance import (
+    DetachContextFromGroupStep,
+    SyncGroupStep,
+    UpdateGroupSettingsStep,
+)
 from merobox.commands.bootstrap.steps.group_invite import CreateNamespaceInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
 from merobox.commands.bootstrap.steps.group_management import (
@@ -241,6 +246,12 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = SetGroupAliasStep
         elif step_type == "set_member_alias":
             step_class = SetMemberAliasStep
+        elif step_type == "update_group_settings":
+            step_class = UpdateGroupSettingsStep
+        elif step_type == "detach_context_from_group":
+            step_class = DetachContextFromGroupStep
+        elif step_type == "sync_group":
+            step_class = SyncGroupStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

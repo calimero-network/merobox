@@ -55,6 +55,9 @@ VALID_STEP_TYPES = frozenset(
         "uninstall_application",
         "set_group_alias",
         "set_member_alias",
+        "update_group_settings",
+        "detach_context_from_group",
+        "sync_group",
         "call",
         "wait",
         "wait_for_sync",
@@ -627,6 +630,39 @@ class SetMemberAliasStepConfig(BaseStepConfig):
     alias: str = Field(..., description="New human-friendly alias for the member")
 
 
+class UpdateGroupSettingsStepConfig(BaseStepConfig):
+    """Configuration for update_group_settings step (currently exposes upgrade_policy)."""
+
+    type: Literal["update_group_settings"] = "update_group_settings"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    upgrade_policy: Literal[
+        "automatic",
+        "coordinated",
+        "lazy",
+        "lazy-on-access",
+        "lazy_on_access",
+        "lazyonaccess",
+    ] = Field(..., description="Group upgrade policy")
+
+
+class DetachContextFromGroupStepConfig(BaseStepConfig):
+    """Configuration for detach_context_from_group step."""
+
+    type: Literal["detach_context_from_group"] = "detach_context_from_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID the context is currently in")
+    context_id: str = Field(..., description="Context ID to detach from the group")
+
+
+class SyncGroupStepConfig(BaseStepConfig):
+    """Configuration for sync_group step (diagnostic governance sync trigger)."""
+
+    type: Literal["sync_group"] = "sync_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to trigger governance sync for")
+
+
 class CreateMeshStep(BaseStepConfig):
     """Configuration for create_mesh step.
 
@@ -699,6 +735,9 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "uninstall_application": UninstallApplicationStepConfig,
     "set_group_alias": SetGroupAliasStepConfig,
     "set_member_alias": SetMemberAliasStepConfig,
+    "update_group_settings": UpdateGroupSettingsStepConfig,
+    "detach_context_from_group": DetachContextFromGroupStepConfig,
+    "sync_group": SyncGroupStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
