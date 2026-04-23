@@ -188,18 +188,30 @@ class GetGroupUpgradeStatusStep(BaseStep):
         except Exception as e:
             result = fail("get_group_upgrade_status failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]get_group_upgrade_status failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
+
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
+
         workflow_results[f"upgrade_status_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
         console.print(
             f"[green]✓ Read upgrade status for group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
