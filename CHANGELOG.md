@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-23
+
+### Fixed
+
+- Add `CAP_PERFMON` to the container capability list so `perf record`
+  works inside Docker containers running the profiling image. Without
+  it, `sys_perf_event_open()` fails with `EPERM` even when `linux-tools`
+  is correctly installed, which blocks CPU-profile collection in
+  calimero-network/core's fuzzy-load-test. `CAP_PERFMON` is the narrow
+  Linux 5.8+ capability specifically for `perf_events` — preferred over
+  `CAP_SYS_ADMIN`. File-permission caps are unchanged.
+
 ## [0.5.0] - 2026-04-22
 
 ### Breaking changes
