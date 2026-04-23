@@ -590,3 +590,434 @@ class TestStepSpecificValidation:
         }
         errors = config_module.validate_workflow_step(step, 0)
         assert len(errors) > 0
+
+
+class TestBucketBStepSchemas:
+    """Schema validation for step types that had Step classes but no Pydantic schemas.
+
+    Before this change, these step types passed the VALID_STEP_TYPES name check
+    but skipped Pydantic validation because STEP_TYPE_MODELS.get(type) returned
+    None. That allowed invalid YAML to reach runtime with confusing errors.
+    """
+
+    def test_valid_remove_group_members(self, config_module):
+        step = {
+            "name": "Remove members",
+            "type": "remove_group_members",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "members": ["{{p2_identity}}"],
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_remove_group_members_missing_members(self, config_module):
+        step = {
+            "type": "remove_group_members",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("members" in e for e in errors)
+
+    def test_valid_list_group_members(self, config_module):
+        step = {
+            "type": "list_group_members",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_list_group_members_missing_group_id(self, config_module):
+        step = {"type": "list_group_members", "node": "calimero-node-1"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("group_id" in e for e in errors)
+
+    def test_valid_list_group_contexts(self, config_module):
+        step = {
+            "type": "list_group_contexts",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_list_group_contexts_missing_group_id(self, config_module):
+        step = {"type": "list_group_contexts", "node": "calimero-node-1"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("group_id" in e for e in errors)
+
+    def test_valid_update_member_role_admin(self, config_module):
+        step = {
+            "type": "update_member_role",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "role": "Admin",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_update_member_role_lowercase(self, config_module):
+        step = {
+            "type": "update_member_role",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "role": "read-only",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_update_member_role_bad_value(self, config_module):
+        step = {
+            "type": "update_member_role",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "role": "SuperAdmin",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("role" in e.lower() for e in errors)
+
+    def test_valid_set_member_capabilities(self, config_module):
+        step = {
+            "type": "set_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "capabilities": 15,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_member_capabilities_wrong_type(self, config_module):
+        step = {
+            "type": "set_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "capabilities": "fifteen",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("capabilities" in e for e in errors)
+
+    def test_valid_get_member_capabilities(self, config_module):
+        step = {
+            "type": "get_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_get_member_capabilities_missing_member(self, config_module):
+        step = {
+            "type": "get_member_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("member_id" in e for e in errors)
+
+    def test_valid_set_default_capabilities(self, config_module):
+        step = {
+            "type": "set_default_capabilities",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "capabilities": 7,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_set_default_visibility_open(self, config_module):
+        step = {
+            "type": "set_default_visibility",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "visibility": "open",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_set_default_visibility_restricted(self, config_module):
+        step = {
+            "type": "set_default_visibility",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "visibility": "restricted",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_default_visibility_bad_value(self, config_module):
+        step = {
+            "type": "set_default_visibility",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "visibility": "private",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("visibility" in e.lower() for e in errors)
+
+    def test_valid_get_group_info(self, config_module):
+        step = {
+            "type": "get_group_info",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_group(self, config_module):
+        step = {
+            "type": "delete_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_namespace(self, config_module):
+        step = {
+            "type": "delete_namespace",
+            "node": "calimero-node-1",
+            "namespace_id": "{{namespace_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_context(self, config_module):
+        step = {
+            "type": "delete_context",
+            "node": "calimero-node-1",
+            "context_id": "{{context_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_uninstall_application(self, config_module):
+        step = {
+            "type": "uninstall_application",
+            "node": "calimero-node-1",
+            "application_id": "{{app_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_context_with_requester(self, config_module):
+        step = {
+            "type": "delete_context",
+            "node": "calimero-node-1",
+            "context_id": "{{context_id}}",
+            "requester": "{{admin_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_group_with_requester(self, config_module):
+        step = {
+            "type": "delete_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "requester": "{{admin_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_namespace_with_requester(self, config_module):
+        step = {
+            "type": "delete_namespace",
+            "node": "calimero-node-1",
+            "namespace_id": "{{namespace_id}}",
+            "requester": "{{admin_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+
+class TestGroupAliasStepSchemas:
+    """Schema validation for set_group_alias and set_member_alias."""
+
+    def test_valid_set_group_alias(self, config_module):
+        step = {
+            "type": "set_group_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "alias": "folder-renamed",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_group_alias_missing_alias(self, config_module):
+        step = {
+            "type": "set_group_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("alias" in e for e in errors)
+
+    def test_valid_set_member_alias(self, config_module):
+        step = {
+            "type": "set_member_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "alias": "Bob",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_member_alias_missing_member(self, config_module):
+        step = {
+            "type": "set_member_alias",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "alias": "Bob",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("member_id" in e for e in errors)
+
+
+class TestGroupGovernanceStepSchemas:
+    """Schema validation for update_group_settings / detach_context_from_group / sync_group."""
+
+    def test_valid_update_group_settings(self, config_module):
+        step = {
+            "type": "update_group_settings",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "upgrade_policy": "coordinated",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_update_group_settings_lazy_variants(self, config_module):
+        for policy in ("lazy", "lazy-on-access", "lazy_on_access", "lazyonaccess"):
+            step = {
+                "type": "update_group_settings",
+                "node": "calimero-node-1",
+                "group_id": "{{group_id}}",
+                "upgrade_policy": policy,
+            }
+            assert config_module.validate_workflow_step(step, 0) == [], policy
+
+    def test_invalid_update_group_settings_bad_policy(self, config_module):
+        step = {
+            "type": "update_group_settings",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "upgrade_policy": "eager",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("upgrade_policy" in e.lower() for e in errors)
+
+    def test_valid_detach_context_from_group(self, config_module):
+        step = {
+            "type": "detach_context_from_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "context_id": "{{context_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_detach_context_missing_context(self, config_module):
+        step = {
+            "type": "detach_context_from_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("context_id" in e for e in errors)
+
+    def test_valid_sync_group(self, config_module):
+        step = {
+            "type": "sync_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_sync_group_missing_group_id(self, config_module):
+        step = {"type": "sync_group", "node": "calimero-node-1"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("group_id" in e for e in errors)
+
+
+class TestGroupUpgradeStepSchemas:
+    """Schema validation for group upgrade-lifecycle step types."""
+
+    def test_valid_register_group_signing_key(self, config_module):
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "deadbeef" * 8,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_register_group_signing_key_missing_key(self, config_module):
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("signing_key" in e for e in errors)
+
+    def test_invalid_register_group_signing_key_non_hex(self, config_module):
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "not-hex-at-all-zzz",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("signing_key" in e for e in errors)
+
+    def test_valid_upgrade_group_minimal(self, config_module):
+        step = {
+            "type": "upgrade_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "target_application_id": "{{app_v2}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_upgrade_group_with_migrate(self, config_module):
+        step = {
+            "type": "upgrade_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "target_application_id": "{{app_v2}}",
+            "migrate_method": "migrate_v1_to_v2",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_upgrade_group_missing_target(self, config_module):
+        step = {
+            "type": "upgrade_group",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("target_application_id" in e for e in errors)
+
+    def test_valid_get_group_upgrade_status(self, config_module):
+        step = {
+            "type": "get_group_upgrade_status",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_retry_group_upgrade(self, config_module):
+        step = {
+            "type": "retry_group_upgrade",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_register_group_signing_key_templated(self, config_module):
+        """`{{placeholder}}` templates pass — dynamic values resolve at runtime."""
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "{{some_key}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_register_group_signing_key_too_short(self, config_module):
+        """Hex shorter than 64 chars (32-byte PrivateKey) is rejected at YAML-load."""
+        step = {
+            "type": "register_group_signing_key",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "signing_key": "deadbeef",  # 8 hex chars, too short for 32-byte key
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("signing_key" in e for e in errors)

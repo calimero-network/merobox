@@ -9,9 +9,39 @@ from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.group_alias import (
+    SetGroupAliasStep,
+    SetMemberAliasStep,
+)
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
+from merobox.commands.bootstrap.steps.group_governance import (
+    DetachContextFromGroupStep,
+    SyncGroupStep,
+    UpdateGroupSettingsStep,
+)
 from merobox.commands.bootstrap.steps.group_invite import CreateNamespaceInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
+from merobox.commands.bootstrap.steps.group_management import (
+    DeleteContextStep,
+    DeleteGroupStep,
+    DeleteNamespaceStep,
+    GetGroupInfoStep,
+    GetMemberCapabilitiesStep,
+    ListGroupContextsStep,
+    ListGroupMembersStep,
+    RemoveGroupMembersStep,
+    SetDefaultCapabilitiesStep,
+    SetDefaultVisibilityStep,
+    SetMemberCapabilitiesStep,
+    UninstallApplicationStep,
+    UpdateMemberRoleStep,
+)
+from merobox.commands.bootstrap.steps.group_upgrade import (
+    GetGroupUpgradeStatusStep,
+    RegisterGroupSigningKeyStep,
+    RetryGroupUpgradeStep,
+    UpgradeGroupStep,
+)
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.invite_open import InviteOpenStep
@@ -192,6 +222,50 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = ListSubgroupsStep
         elif step_type == "add_group_members":
             step_class = AddGroupMembersStep
+        elif step_type == "remove_group_members":
+            step_class = RemoveGroupMembersStep
+        elif step_type == "list_group_members":
+            step_class = ListGroupMembersStep
+        elif step_type == "list_group_contexts":
+            step_class = ListGroupContextsStep
+        elif step_type == "update_member_role":
+            step_class = UpdateMemberRoleStep
+        elif step_type == "set_member_capabilities":
+            step_class = SetMemberCapabilitiesStep
+        elif step_type == "get_member_capabilities":
+            step_class = GetMemberCapabilitiesStep
+        elif step_type == "set_default_capabilities":
+            step_class = SetDefaultCapabilitiesStep
+        elif step_type == "set_default_visibility":
+            step_class = SetDefaultVisibilityStep
+        elif step_type == "get_group_info":
+            step_class = GetGroupInfoStep
+        elif step_type == "delete_group":
+            step_class = DeleteGroupStep
+        elif step_type == "delete_namespace":
+            step_class = DeleteNamespaceStep
+        elif step_type == "delete_context":
+            step_class = DeleteContextStep
+        elif step_type == "uninstall_application":
+            step_class = UninstallApplicationStep
+        elif step_type == "set_group_alias":
+            step_class = SetGroupAliasStep
+        elif step_type == "set_member_alias":
+            step_class = SetMemberAliasStep
+        elif step_type == "update_group_settings":
+            step_class = UpdateGroupSettingsStep
+        elif step_type == "detach_context_from_group":
+            step_class = DetachContextFromGroupStep
+        elif step_type == "sync_group":
+            step_class = SyncGroupStep
+        elif step_type == "register_group_signing_key":
+            step_class = RegisterGroupSigningKeyStep
+        elif step_type == "upgrade_group":
+            step_class = UpgradeGroupStep
+        elif step_type == "get_group_upgrade_status":
+            step_class = GetGroupUpgradeStatusStep
+        elif step_type == "retry_group_upgrade":
+            step_class = RetryGroupUpgradeStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

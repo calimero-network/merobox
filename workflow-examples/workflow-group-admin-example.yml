@@ -1,0 +1,261 @@
+name: Group Admin API Example
+description: >
+  Demonstrates the full group admin-API surface: aliasing, default policy,
+  member roles and capabilities, context detach, membership removal, and
+  explicit governance sync. Exercises every new step type from issue #205
+  except the upgrade lifecycle (see workflow-group-upgrade-example.yml).
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Phase 1: Bootstrap namespace + subgroup + two-node membership
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  # Capture node 1's namespace-scoped public key. This is the admin
+  # identity for any subgroup created by node 1 inside this namespace,
+  # and the admin requester needed by delete_context / delete_group /
+  # delete_namespace during teardown.
+  - name: Get Node 1 Namespace Identity
+    type: get_namespace_identity
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      p1_admin_key: publicKey
+
+  - name: Create Namespace Invitation
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - name: Wait for Namespace Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins Namespace
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+    outputs:
+      p2_identity: memberIdentity
+
+  - name: Create Subgroup
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    group_alias: 'folder-v1'
+    outputs:
+      group_id: groupId
+
+  - name: Wait for Subgroup Governance
+    type: wait
+    seconds: 5
+
+  - name: Add Node 2 to Subgroup
+    type: add_group_members
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    members:
+      - identity: '{{p2_identity}}'
+        role: Member
+
+  # The membership-added governance op needs to gossip from node 1 to node 2
+  # before node 2 can join any context in the subgroup (the server's
+  # join_context admin-check runs against node 2's local view of membership).
+  # Explicit sync_group on node 1 publishes the op immediately instead of
+  # waiting for the next gossip heartbeat, and the 20s wait absorbs any
+  # delta-gossip backpressure (see merobox memory obs #143 / governance race).
+  - name: Force Governance Push on Node 1
+    type: sync_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  - name: Wait for Member Gossip
+    type: wait
+    seconds: 20
+
+  - name: Create First Context in Subgroup
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{group_id}}'
+    outputs:
+      ctx_id: contextId
+
+  - name: Wait for Context Propagation
+    type: wait
+    seconds: 10
+
+  - name: Node 2 Joins Context
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{ctx_id}}'
+
+  # Phase 2: Aliasing
+  - name: Rename Subgroup
+    type: set_group_alias
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    alias: 'folder-renamed'
+
+  - name: Read Group Info After Rename
+    type: get_group_info
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  # set_member_alias requires that the requester equals the member — members
+  # may only rename themselves (core/crates/context/src/handlers/set_member_alias.rs:33-35).
+  # So we issue the call from node 2, which resolves its own namespace identity
+  # as the requester and targets its own p2_identity.
+  - name: Rename Member (self-rename from node 2)
+    type: set_member_alias
+    node: calimero-node-2
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+    alias: 'Bob'
+
+  # Phase 3: Default policy
+  - name: Set Default Capabilities (create context + invite)
+    type: set_default_capabilities
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    capabilities: 3
+
+  - name: Set Default Visibility to Restricted
+    type: set_default_visibility
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    visibility: restricted
+
+  # Phase 4: Member capabilities + role transitions
+  - name: Read Member Capabilities
+    type: get_member_capabilities
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+
+  - name: Grant Node 2 Full Manage Capabilities
+    type: set_member_capabilities
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+    capabilities: 15
+
+  - name: Promote Node 2 to Admin
+    type: update_member_role
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+    role: Admin
+
+  - name: List Members After Role Change
+    type: list_group_members
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  - name: List Contexts Owned by Subgroup
+    type: list_group_contexts
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  # Phase 5: Detach a second context
+  - name: Create Second Context
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{group_id}}'
+    outputs:
+      ctx2_id: contextId
+
+  - name: Wait for Second Context Propagation
+    type: wait
+    seconds: 5
+
+  - name: Detach Second Context from Subgroup
+    type: detach_context_from_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    context_id: '{{ctx2_id}}'
+
+  - name: List Contexts After Detach
+    type: list_group_contexts
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  # Phase 6: Remove member, then sync
+  - name: Remove Node 2 from Subgroup
+    type: remove_group_members
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    members:
+      - '{{p2_identity}}'
+
+  - name: List Members After Removal
+    type: list_group_members
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  - name: Explicit Governance Sync
+    type: sync_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  # Allow time for remove_group_members + sync_group governance ops to
+  # fully settle. Without this, delete_context occasionally races with
+  # an in-flight MemberRemoved op and sees the group in an inconsistent
+  # state where the caller's admin claim isn't recognized.
+  - name: Wait for Teardown Governance Settlement
+    type: wait
+    seconds: 10
+
+  # Phase 7: Teardown
+  # Unlocked by calimero-client-py 0.6.2+, which exposes a `requester` field on
+  # delete_context/delete_group/delete_namespace. The server requires an admin
+  # requester to delete group-registered contexts and admin-guarded groups
+  # (core/crates/context/src/handlers/delete_context.rs:54-68). We pass p1_key,
+  # the public key node 1 holds in this subgroup — node 1 is the group admin
+  # because it created the subgroup.
+  - name: Delete First Context
+    type: delete_context
+    node: calimero-node-1
+    context_id: '{{ctx_id}}'
+    requester: '{{p1_admin_key}}'
+
+  - name: Delete Subgroup
+    type: delete_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    requester: '{{p1_admin_key}}'
+
+  - name: Delete Namespace
+    type: delete_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    requester: '{{p1_admin_key}}'
+
+  - name: Uninstall Application
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+
+stop_all_nodes: false

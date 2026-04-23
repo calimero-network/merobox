@@ -8,9 +8,18 @@ from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.group_alias import (
+    SetGroupAliasStep,
+    SetMemberAliasStep,
+)
 from merobox.commands.bootstrap.steps.group_create import (
     CreateGroupStep,
     CreateNamespaceStep,
+)
+from merobox.commands.bootstrap.steps.group_governance import (
+    DetachContextFromGroupStep,
+    SyncGroupStep,
+    UpdateGroupSettingsStep,
 )
 from merobox.commands.bootstrap.steps.group_invite import (
     CreateGroupInvitationStep,
@@ -31,6 +40,12 @@ from merobox.commands.bootstrap.steps.group_management import (
     SetMemberCapabilitiesStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
+)
+from merobox.commands.bootstrap.steps.group_upgrade import (
+    GetGroupUpgradeStatusStep,
+    RegisterGroupSigningKeyStep,
+    RetryGroupUpgradeStep,
+    UpgradeGroupStep,
 )
 from merobox.commands.bootstrap.steps.identity import CreateIdentityStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
@@ -113,4 +128,13 @@ __all__ = [
     "DeleteNamespaceStep",
     "DeleteContextStep",
     "UninstallApplicationStep",
+    "SetGroupAliasStep",
+    "SetMemberAliasStep",
+    "UpdateGroupSettingsStep",
+    "DetachContextFromGroupStep",
+    "SyncGroupStep",
+    "RegisterGroupSigningKeyStep",
+    "UpgradeGroupStep",
+    "GetGroupUpgradeStatusStep",
+    "RetryGroupUpgradeStep",
 ]

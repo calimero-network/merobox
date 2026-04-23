@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 9 new workflow step types wrapping admin-API methods that
+  `calimero-client-py` exposes but merobox didn't previously surface:
+  `set_group_alias`, `set_member_alias` (new file `steps/group_alias.py`);
+  `update_group_settings`, `detach_context_from_group`, `sync_group`
+  (new file `steps/group_governance.py`); `register_group_signing_key`,
+  `upgrade_group`, `get_group_upgrade_status`, `retry_group_upgrade`
+  (new file `steps/group_upgrade.py`). Closes
+  [#205](https://github.com/calimero-network/merobox/issues/205).
+- Optional `requester` field on `delete_context`, `delete_group`,
+  `delete_namespace` steps. The server requires an admin requester to
+  delete group-registered contexts and admin-guarded groups; the step
+  accepts a public-key string and forwards it to the client.
+- Two runnable example workflows exercising the full surface:
+  `workflow-examples/workflow-group-admin-example.yml` (aliasing +
+  policy + member roles + detach + remove + sync + teardown) and
+  `workflow-examples/workflow-group-upgrade-example.yml` (register
+  signing key + upgrade + status + retry + teardown, using the new
+  `workflow-examples/res/kv_store_v2.wasm` bundle).
+
+### Fixed
+
+- 13 existing step types (`remove_group_members`, `list_group_members`,
+  `list_group_contexts`, `update_member_role`, `set_member_capabilities`,
+  `get_member_capabilities`, `set_default_capabilities`,
+  `set_default_visibility`, `get_group_info`, `delete_group`,
+  `delete_namespace`, `delete_context`, `uninstall_application`) had
+  working `Step` classes and dispatcher entries but missing entries in
+  `STEP_TYPE_MODELS`, so `validate_workflow_step` silently skipped
+  Pydantic validation for them. Bad YAML for these step types now fails
+  at YAML-load with a clear error instead of reaching runtime.
+- CLI `bootstrap validate` command (`validate/validator.py`) was missing
+  all 13 Bucket-B step types too — it had its own step-class dispatch
+  chain that stopped at `add_group_members`. Now covers all 22.
+- `GetNamespaceIdentityStep` and `GetGroupUpgradeStatusStep` no longer
+  emit "No outputs configured" warnings for callers that don't use the
+  `outputs:` mapping — the `_export_variables` call is now gated on
+  `"outputs" in self.config`.
+
+### Dependencies
+
+- Bumps `calimero-client-py` lower bound from `>=0.6.0` to `>=0.6.3`
+  in `pyproject.toml`. 0.6.3 introduces the `requester` parameter on
+  `delete_context` / `delete_group` / `delete_namespace` PyClient
+  methods (upstream PR
+  [calimero-client-py#36](https://github.com/calimero-network/calimero-client-py/pull/36))
+  and routes `delete_namespace` through the correct
+  `/admin-api/namespaces/:id` HTTP endpoint. Requires core
+  `0.10.1-rc.31+` to expose the dedicated `delete_namespace` actor
+  handler (upstream PRs
+  [core#2227](https://github.com/calimero-network/core/pull/2227)
+  and [core#2232](https://github.com/calimero-network/core/pull/2232)).
+
 ## [0.5.2] - 2026-04-23
 
 ### Fixed

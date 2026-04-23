@@ -53,6 +53,15 @@ VALID_STEP_TYPES = frozenset(
         "delete_namespace",
         "delete_context",
         "uninstall_application",
+        "set_group_alias",
+        "set_member_alias",
+        "update_group_settings",
+        "detach_context_from_group",
+        "sync_group",
+        "register_group_signing_key",
+        "upgrade_group",
+        "get_group_upgrade_status",
+        "retry_group_upgrade",
         "call",
         "wait",
         "wait_for_sync",
@@ -479,6 +488,264 @@ class AddGroupMembersStepConfig(BaseStepConfig):
     )
 
 
+class RemoveGroupMembersStepConfig(BaseStepConfig):
+    """Configuration for remove_group_members step."""
+
+    type: Literal["remove_group_members"] = "remove_group_members"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to remove members from")
+    members: list[str] = Field(..., description="List of member public keys to remove")
+
+
+class ListGroupMembersStepConfig(BaseStepConfig):
+    """Configuration for list_group_members step."""
+
+    type: Literal["list_group_members"] = "list_group_members"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class ListGroupContextsStepConfig(BaseStepConfig):
+    """Configuration for list_group_contexts step."""
+
+    type: Literal["list_group_contexts"] = "list_group_contexts"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class UpdateMemberRoleStepConfig(BaseStepConfig):
+    """Configuration for update_member_role step."""
+
+    type: Literal["update_member_role"] = "update_member_role"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+    role: Literal[
+        "Admin",
+        "Member",
+        "ReadOnly",
+        "admin",
+        "member",
+        "read-only",
+        "read_only",
+        "readonly",
+    ] = Field(..., description="New role for the member")
+
+
+class SetMemberCapabilitiesStepConfig(BaseStepConfig):
+    """Configuration for set_member_capabilities step."""
+
+    type: Literal["set_member_capabilities"] = "set_member_capabilities"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+    capabilities: int = Field(
+        ..., ge=0, lt=2**32, description="Capability bitmask (u32)"
+    )
+
+
+class GetMemberCapabilitiesStepConfig(BaseStepConfig):
+    """Configuration for get_member_capabilities step."""
+
+    type: Literal["get_member_capabilities"] = "get_member_capabilities"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+
+
+class SetDefaultCapabilitiesStepConfig(BaseStepConfig):
+    """Configuration for set_default_capabilities step."""
+
+    type: Literal["set_default_capabilities"] = "set_default_capabilities"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    capabilities: int = Field(
+        ..., ge=0, lt=2**32, description="Default capability bitmask (u32)"
+    )
+
+
+class SetDefaultVisibilityStepConfig(BaseStepConfig):
+    """Configuration for set_default_visibility step."""
+
+    type: Literal["set_default_visibility"] = "set_default_visibility"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    visibility: Literal["open", "restricted", "Open", "Restricted"] = Field(
+        ..., description="Default visibility mode for new contexts"
+    )
+
+
+class GetGroupInfoStepConfig(BaseStepConfig):
+    """Configuration for get_group_info step."""
+
+    type: Literal["get_group_info"] = "get_group_info"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class DeleteGroupStepConfig(BaseStepConfig):
+    """Configuration for delete_group step."""
+
+    type: Literal["delete_group"] = "delete_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to delete")
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key, required when deleting a group with admin-guarded state",
+    )
+
+
+class DeleteNamespaceStepConfig(BaseStepConfig):
+    """Configuration for delete_namespace step."""
+
+    type: Literal["delete_namespace"] = "delete_namespace"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(..., description="Namespace ID to delete")
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key, required when deleting a namespace with admin-guarded state",
+    )
+
+
+class DeleteContextStepConfig(BaseStepConfig):
+    """Configuration for delete_context step."""
+
+    type: Literal["delete_context"] = "delete_context"
+    node: str = Field(..., description="Target node")
+    context_id: str = Field(..., description="Context ID to delete")
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key, required when deleting a context registered in a group",
+    )
+
+
+class UninstallApplicationStepConfig(BaseStepConfig):
+    """Configuration for uninstall_application step."""
+
+    type: Literal["uninstall_application"] = "uninstall_application"
+    node: str = Field(..., description="Target node")
+    application_id: str = Field(..., description="Application ID to uninstall")
+
+
+class SetGroupAliasStepConfig(BaseStepConfig):
+    """Configuration for set_group_alias step (admin-API group rename)."""
+
+    type: Literal["set_group_alias"] = "set_group_alias"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to rename")
+    alias: str = Field(..., description="New human-friendly alias for the group")
+
+
+class SetMemberAliasStepConfig(BaseStepConfig):
+    """Configuration for set_member_alias step (admin-API member display-name)."""
+
+    type: Literal["set_member_alias"] = "set_member_alias"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+    alias: str = Field(..., description="New human-friendly alias for the member")
+
+
+class UpdateGroupSettingsStepConfig(BaseStepConfig):
+    """Configuration for update_group_settings step (currently exposes upgrade_policy)."""
+
+    type: Literal["update_group_settings"] = "update_group_settings"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    upgrade_policy: Literal[
+        "automatic",
+        "coordinated",
+        "lazy",
+        "lazy-on-access",
+        "lazy_on_access",
+        "lazyonaccess",
+    ] = Field(..., description="Group upgrade policy")
+
+
+class DetachContextFromGroupStepConfig(BaseStepConfig):
+    """Configuration for detach_context_from_group step."""
+
+    type: Literal["detach_context_from_group"] = "detach_context_from_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID the context is currently in")
+    context_id: str = Field(..., description="Context ID to detach from the group")
+
+
+class SyncGroupStepConfig(BaseStepConfig):
+    """Configuration for sync_group step (diagnostic governance sync trigger)."""
+
+    type: Literal["sync_group"] = "sync_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID to trigger governance sync for")
+
+
+class RegisterGroupSigningKeyStepConfig(BaseStepConfig):
+    """Configuration for register_group_signing_key step."""
+
+    type: Literal["register_group_signing_key"] = "register_group_signing_key"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    # Accepts either a 64-hex-char literal (32-byte PrivateKey) or a
+    # `{{placeholder}}` template resolved at runtime. The {64} constraint
+    # matches calimero_primitives::identity::PrivateKey's 32-byte size;
+    # catches typos and trivially short values at YAML-load time, without
+    # breaking workflows that inject the key via outputs from a prior step.
+    #
+    # SECURITY: prefer the `{{placeholder}}` form whenever the YAML is
+    # committed to version control. Hardcoding a raw hex signing key in a
+    # committed workflow file checks the actual key material into git
+    # history — that's a credential leak. Capture the key from a prior
+    # step's `outputs:`, or inject via `${ENV_VAR}` expansion, and refer
+    # to it here as `{{key_name}}`.
+    #
+    # Note on `${ENV_VAR}` expansion: merobox's env-var substitution runs
+    # BEFORE this Pydantic pattern is evaluated (see
+    # `expand_env_vars` above, which walks the parsed YAML before
+    # `validate_workflow_config`). So `signing_key: ${MY_KEY}` resolves
+    # to the hex value at load-time and then passes the `[0-9a-fA-F]{64}`
+    # alternative of this pattern — there's no need for the regex itself
+    # to match `${...}` syntax.
+    signing_key: str = Field(
+        ...,
+        pattern=r"^(\{\{[^}]+\}\}|[0-9a-fA-F]{64})$",
+        description=(
+            "Signing key as 64 hex chars (32-byte PrivateKey) or `{{placeholder}}` "
+            "template. Prefer the template form — raw hex in committed YAML leaks "
+            "key material via git history."
+        ),
+    )
+
+
+class UpgradeGroupStepConfig(BaseStepConfig):
+    """Configuration for upgrade_group step."""
+
+    type: Literal["upgrade_group"] = "upgrade_group"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    target_application_id: str = Field(
+        ..., description="Application ID to upgrade the group to"
+    )
+    migrate_method: Optional[str] = Field(
+        None, description="Optional migration export to invoke during upgrade"
+    )
+
+
+class GetGroupUpgradeStatusStepConfig(BaseStepConfig):
+    """Configuration for get_group_upgrade_status step."""
+
+    type: Literal["get_group_upgrade_status"] = "get_group_upgrade_status"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class RetryGroupUpgradeStepConfig(BaseStepConfig):
+    """Configuration for retry_group_upgrade step."""
+
+    type: Literal["retry_group_upgrade"] = "retry_group_upgrade"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
 class CreateMeshStep(BaseStepConfig):
     """Configuration for create_mesh step.
 
@@ -536,6 +803,28 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "reparent_group": ReparentGroupStepConfig,
     "list_subgroups": ListSubgroupsStepConfig,
     "add_group_members": AddGroupMembersStepConfig,
+    "remove_group_members": RemoveGroupMembersStepConfig,
+    "list_group_members": ListGroupMembersStepConfig,
+    "list_group_contexts": ListGroupContextsStepConfig,
+    "update_member_role": UpdateMemberRoleStepConfig,
+    "set_member_capabilities": SetMemberCapabilitiesStepConfig,
+    "get_member_capabilities": GetMemberCapabilitiesStepConfig,
+    "set_default_capabilities": SetDefaultCapabilitiesStepConfig,
+    "set_default_visibility": SetDefaultVisibilityStepConfig,
+    "get_group_info": GetGroupInfoStepConfig,
+    "delete_group": DeleteGroupStepConfig,
+    "delete_namespace": DeleteNamespaceStepConfig,
+    "delete_context": DeleteContextStepConfig,
+    "uninstall_application": UninstallApplicationStepConfig,
+    "set_group_alias": SetGroupAliasStepConfig,
+    "set_member_alias": SetMemberAliasStepConfig,
+    "update_group_settings": UpdateGroupSettingsStepConfig,
+    "detach_context_from_group": DetachContextFromGroupStepConfig,
+    "sync_group": SyncGroupStepConfig,
+    "register_group_signing_key": RegisterGroupSigningKeyStepConfig,
+    "upgrade_group": UpgradeGroupStepConfig,
+    "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
+    "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,

@@ -65,6 +65,20 @@ class GetNamespaceIdentityStep(BaseStep):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
 
+    def _get_exportable_variables(self):
+        return [
+            (
+                "publicKey",
+                "namespace_public_key_{node_name}",
+                "Namespace-scoped public key for this node (group admin)",
+            ),
+            (
+                "namespaceId",
+                "namespace_id_echo_{node_name}",
+                "Namespace ID echoed back by the server",
+            ),
+        ]
+
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
@@ -95,6 +109,12 @@ class GetNamespaceIdentityStep(BaseStep):
         if self._check_jsonrpc_error(result["data"]):
             return False
         workflow_results[f"namespace_identity_{node_name}"] = result["data"]
+        # Only call _export_variables when outputs are configured. Without this
+        # guard, the base class prints a "No outputs configured" warning for
+        # every pre-existing workflow using get_namespace_identity without an
+        # outputs: section.
+        if "outputs" in self.config:
+            self._export_variables(result["data"], node_name, dynamic_values)
         return True
 
 

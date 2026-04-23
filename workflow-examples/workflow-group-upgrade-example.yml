@@ -1,0 +1,141 @@
+name: Group Upgrade Lifecycle Example
+description: >
+  Demonstrates the group-application upgrade lifecycle: install two distinct
+  application binaries, set upgrade policy, initiate upgrade from v1 to v2,
+  poll upgrade status, and attempt retry (which is expected to fail once the
+  upgrade has completed — exercising the expected_failure flag).
+
+  Requires kv_store_v2.wasm in workflow-examples/res/, which is a purpose-
+  built v2 of kv-store copied from core/apps/kv-store-v2. The server rejects
+  same-app upgrades without a migration method, so two distinct binaries
+  are needed to exercise the upgrade path.
+
+  This workflow does not exercise register_group_signing_key because the
+  server auto-stores the node-held signing key when the requester is the
+  node's own identity. That step type is still schema-validated and
+  dispatched; a future key-rotation workflow can cover it end-to-end.
+
+force_pull_image: true
+
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Phase 1: Install two distinct application binaries
+  - name: Install v1 Application
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_v1: applicationId
+
+  - name: Install v2 Application
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_v2: applicationId
+
+  # Phase 2: Namespace + subgroup + context with v1
+  - name: Create Namespace with v1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_v1}}'
+    outputs:
+      namespace_id: namespaceId
+
+  # Capture node 1's namespace-scoped public key (= subgroup admin) for teardown.
+  - name: Get Node 1 Namespace Identity
+    type: get_namespace_identity
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      p1_admin_key: publicKey
+
+  - name: Create Subgroup
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    group_alias: 'upgrade-test-group'
+    outputs:
+      group_id: groupId
+
+  - name: Create Context in Subgroup
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_v1}}'
+    group_id: '{{group_id}}'
+    outputs:
+      ctx_id: contextId
+
+  - name: Wait for Context Propagation
+    type: wait
+    seconds: 5
+
+  # Phase 3: Set upgrade policy to coordinated (synchronous upgrade)
+  - name: Set Upgrade Policy to Coordinated
+    type: update_group_settings
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    upgrade_policy: coordinated
+
+  # Phase 4: Initiate upgrade v1 -> v2
+  - name: Upgrade Subgroup Application to v2
+    type: upgrade_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    target_application_id: '{{app_v2}}'
+
+  - name: Wait for Upgrade Propagation
+    type: wait
+    seconds: 10
+
+  - name: Read Upgrade Status
+    type: get_group_upgrade_status
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+
+  # Phase 5: Retry is expected to fail once the upgrade completed
+  # (the server rejects retry when there is no active in-progress upgrade).
+  - name: Attempt Retry on Completed Upgrade
+    type: retry_group_upgrade
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    expected_failure: true
+
+  # Phase 6: Teardown
+  # Unlocked by calimero-client-py 0.6.2+ (requester field on
+  # delete_context/delete_group/delete_namespace).
+  - name: Delete Context
+    type: delete_context
+    node: calimero-node-1
+    context_id: '{{ctx_id}}'
+    requester: '{{p1_admin_key}}'
+
+  - name: Delete Subgroup
+    type: delete_group
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    requester: '{{p1_admin_key}}'
+
+  - name: Delete Namespace
+    type: delete_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    requester: '{{p1_admin_key}}'
+
+  - name: Uninstall v1
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_v1}}'
+
+  - name: Uninstall v2
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_v2}}'
+
+stop_all_nodes: false

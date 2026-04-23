@@ -464,7 +464,13 @@ class ListGroupContextsStep(BaseStep):
 
 
 class DeleteGroupStep(BaseStep):
-    """Delete a group."""
+    """Delete a group.
+
+    The optional `requester` field takes an admin public key. When deleting a
+    group that has members (or is in an admin-guarded state), the server
+    requires an explicit admin requester. Omit `requester` for groups that
+    don't require one.
+    """
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "group_id"]
@@ -476,6 +482,11 @@ class DeleteGroupStep(BaseStep):
         for field in ("node", "group_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        requester = self.config.get("requester")
+        if requester is not None and not isinstance(requester, str):
+            raise ValueError(
+                f"Step '{step_name}': 'requester' must be a string if provided"
+            )
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -484,18 +495,25 @@ class DeleteGroupStep(BaseStep):
         group_id = self._resolve_dynamic_value(
             self.config["group_id"], workflow_results, dynamic_values
         )
+        requester_raw = self.config.get("requester")
+        requester = (
+            self._resolve_dynamic_value(requester_raw, workflow_results, dynamic_values)
+            if requester_raw is not None
+            else None
+        )
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.delete_group(group_id=group_id)
+            api_result = client.delete_group(group_id=group_id, requester=requester)
             result = ok(api_result)
         except Exception as e:
             result = fail("delete_group failed", error=e)
 
         if not result["success"]:
-            console.print(
-                f"[red]delete_group failed on {node_name}: {result.get('error')}[/red]"
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
             )
+            console.print(f"[red]delete_group failed on {node_name}: {exc_msg}[/red]")
             return False
         if self._check_jsonrpc_error(result["data"]):
             return False
@@ -505,7 +523,12 @@ class DeleteGroupStep(BaseStep):
 
 
 class DeleteNamespaceStep(BaseStep):
-    """Delete a namespace."""
+    """Delete a namespace.
+
+    The optional `requester` field takes an admin public key. When deleting a
+    namespace with admin-guarded state, the server requires an explicit admin
+    requester.
+    """
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "namespace_id"]
@@ -517,6 +540,11 @@ class DeleteNamespaceStep(BaseStep):
         for field in ("node", "namespace_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        requester = self.config.get("requester")
+        if requester is not None and not isinstance(requester, str):
+            raise ValueError(
+                f"Step '{step_name}': 'requester' must be a string if provided"
+            )
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -525,17 +553,28 @@ class DeleteNamespaceStep(BaseStep):
         namespace_id = self._resolve_dynamic_value(
             self.config["namespace_id"], workflow_results, dynamic_values
         )
+        requester_raw = self.config.get("requester")
+        requester = (
+            self._resolve_dynamic_value(requester_raw, workflow_results, dynamic_values)
+            if requester_raw is not None
+            else None
+        )
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.delete_namespace(namespace_id=namespace_id)
+            api_result = client.delete_namespace(
+                namespace_id=namespace_id, requester=requester
+            )
             result = ok(api_result)
         except Exception as e:
             result = fail("delete_namespace failed", error=e)
 
         if not result["success"]:
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
+            )
             console.print(
-                f"[red]delete_namespace failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]delete_namespace failed on {node_name}: {exc_msg}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -548,7 +587,13 @@ class DeleteNamespaceStep(BaseStep):
 
 
 class DeleteContextStep(BaseStep):
-    """Delete a context."""
+    """Delete a context.
+
+    The optional `requester` field takes an admin public key. Deleting a
+    context that is registered in a group requires an admin requester
+    (core/crates/context/src/handlers/delete_context.rs:54-68). Contexts
+    not attached to a group can be deleted without a requester.
+    """
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "context_id"]
@@ -560,6 +605,11 @@ class DeleteContextStep(BaseStep):
         for field in ("node", "context_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        requester = self.config.get("requester")
+        if requester is not None and not isinstance(requester, str):
+            raise ValueError(
+                f"Step '{step_name}': 'requester' must be a string if provided"
+            )
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -568,18 +618,30 @@ class DeleteContextStep(BaseStep):
         context_id = self._resolve_dynamic_value(
             self.config["context_id"], workflow_results, dynamic_values
         )
+        requester_raw = self.config.get("requester")
+        requester = (
+            self._resolve_dynamic_value(requester_raw, workflow_results, dynamic_values)
+            if requester_raw is not None
+            else None
+        )
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.delete_context(context_id=context_id)
+            api_result = client.delete_context(
+                context_id=context_id, requester=requester
+            )
             result = ok(api_result)
         except Exception as e:
             result = fail("delete_context failed", error=e)
 
         if not result["success"]:
-            console.print(
-                f"[red]delete_context failed on {node_name}: {result.get('error')}[/red]"
+            # Surface the underlying exception message, not just the wrapper —
+            # result["error"] is the hardcoded "delete_context failed" wrapper,
+            # while the real cause lives in result["exception"]["message"].
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
             )
+            console.print(f"[red]delete_context failed on {node_name}: {exc_msg}[/red]")
             return False
         if self._check_jsonrpc_error(result["data"]):
             return False
