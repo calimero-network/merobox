@@ -4,6 +4,7 @@ Script execution step for bootstrap workflow.
 
 import io
 import os
+import re
 import subprocess
 import tarfile
 import time
@@ -12,6 +13,147 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import SCRIPT_CONTAINER_STOP_TIMEOUT
 from merobox.commands.utils import console
+
+# Constants for environment variable sanitization
+MAX_ENV_VAR_NAME_LENGTH = 256
+MAX_ENV_VAR_VALUE_LENGTH = 131072  # 128KB max value length
+
+# Pre-compiled regex patterns for performance
+# Valid environment variable name pattern: alphanumeric and underscore, not starting with digit
+ENV_VAR_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Pattern to remove invalid characters from variable names
+INVALID_NAME_CHARS_PATTERN = re.compile(r"[^A-Z0-9_]")
+# Pattern to remove control characters (ASCII 0-31) except tab (\x09) and newline (\x0a)
+CONTROL_CHARS_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f]")
+
+# Blocklist of sensitive environment variable names that should not be overwritten
+# These could be used for privilege escalation or code execution if modified
+SENSITIVE_ENV_VARS = frozenset(
+    {
+        # Path manipulation
+        "PATH",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        # Python-specific
+        "PYTHONPATH",
+        "PYTHONHOME",
+        "PYTHONSTARTUP",
+        # User/system identity
+        "HOME",
+        "USER",
+        "SHELL",
+        "LOGNAME",
+        # Locale that could affect parsing
+        "IFS",
+        # Proxy settings (potential for MITM)
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "FTP_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        # Other security-sensitive
+        "LD_AUDIT",
+        "LD_DEBUG",
+        "LD_PROFILE",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+    }
+)
+
+
+def _sanitize_env_var_name(name: str | None) -> tuple[str | None, str | None]:
+    """
+    Sanitize and validate an environment variable name.
+
+    Args:
+        name: The raw variable name to sanitize (can be None).
+
+    Returns:
+        A tuple of (sanitized_name, rejection_reason).
+        If sanitized_name is None, rejection_reason explains why.
+
+    Environment variable names must:
+    - Only contain alphanumeric characters and underscores
+    - Not start with a digit
+    - Not be empty
+    - Not exceed maximum length
+    - Not be in the sensitive variables blocklist
+    """
+    if not name or not isinstance(name, str):
+        return None, "empty or non-string input"
+
+    # Convert to uppercase and replace common special characters
+    sanitized = name.upper().replace("-", "_").replace(".", "_")
+
+    # Remove any remaining invalid characters using pre-compiled pattern
+    sanitized = INVALID_NAME_CHARS_PATTERN.sub("", sanitized)
+
+    # Ensure it doesn't start with a digit
+    if sanitized and sanitized[0].isdigit():
+        sanitized = "_" + sanitized
+
+    # Check if empty after sanitization
+    if not sanitized:
+        return None, "no valid characters remaining after sanitization"
+
+    # Enforce length limit
+    if len(sanitized) > MAX_ENV_VAR_NAME_LENGTH:
+        sanitized = sanitized[:MAX_ENV_VAR_NAME_LENGTH]
+
+    # Final validation
+    if not ENV_VAR_NAME_PATTERN.match(sanitized):
+        return None, "does not match valid name pattern"
+
+    # Check against blocklist of sensitive variables
+    if sanitized in SENSITIVE_ENV_VARS:
+        return None, f"'{sanitized}' is a protected system variable"
+
+    return sanitized, None
+
+
+def _sanitize_env_var_value(value: Any) -> str:
+    """
+    Sanitize an environment variable value.
+
+    Args:
+        value: The value to sanitize (will be converted to string).
+
+    Returns:
+        The sanitized string value.
+
+    Sanitization includes:
+    - Converting to string
+    - Removing null bytes (which can cause issues in C-based programs)
+    - Removing control characters (ASCII 0-31 except tab and newline) to prevent
+      terminal/log injection attacks
+    - Truncating to maximum length to prevent DoS
+
+    Note:
+        Shell metacharacters (;, |, $, etc.) are intentionally preserved as they
+        may be needed for legitimate use cases. Scripts consuming these values
+        should properly quote variables (e.g., "$VAR" instead of $VAR) to prevent
+        command injection.
+    """
+    if value is None:
+        return ""
+
+    # Convert to string
+    str_value = str(value)
+
+    # Remove null bytes which can cause issues
+    str_value = str_value.replace("\x00", "")
+
+    # Remove control characters (except tab and newline) to prevent log injection
+    str_value = CONTROL_CHARS_PATTERN.sub("", str_value)
+
+    # Truncate to maximum length
+    if len(str_value) > MAX_ENV_VAR_VALUE_LENGTH:
+        str_value = str_value[:MAX_ENV_VAR_VALUE_LENGTH]
+
+    return str_value
 
 
 class ScriptStep(BaseStep):
@@ -263,11 +405,20 @@ class ScriptStep(BaseStep):
             # This allows scripts to access workflow variables via $VAR_NAME
             env = os.environ.copy()
 
-            # Add dynamic values as environment variables (with uppercase conversion)
+            # Add dynamic values as environment variables with proper sanitization
+            # to prevent environment variable injection attacks.
+            # Note: Scripts should properly quote variables (e.g., "$VAR") to prevent
+            # command injection from shell metacharacters in values.
             for key, value in dynamic_values.items():
-                # Convert to uppercase and replace special chars with underscores
-                env_key = key.upper().replace("-", "_").replace(".", "_")
-                env[env_key] = str(value) if value is not None else ""
+                # Sanitize the environment variable name
+                env_key, rejection_reason = _sanitize_env_var_name(key)
+                if env_key is None:
+                    console.print(
+                        f"[yellow]⚠️  Skipping env var '{key}': {rejection_reason}[/yellow]"
+                    )
+                    continue
+                # Sanitize the value to prevent injection attacks
+                env[env_key] = _sanitize_env_var_value(value)
 
             # Run the script using /bin/sh
             start_time = time.time()
