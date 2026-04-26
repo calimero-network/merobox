@@ -33,6 +33,7 @@ from merobox.commands.bootstrap.steps.group_management import (
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
     SetMemberCapabilitiesStep,
+    SetSubgroupVisibilityStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
@@ -236,7 +237,11 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = GetMemberCapabilitiesStep
         elif step_type == "set_default_capabilities":
             step_class = SetDefaultCapabilitiesStep
+        elif step_type == "set_subgroup_visibility":
+            step_class = SetSubgroupVisibilityStep
         elif step_type == "set_default_visibility":
+            # Deprecated alias retained for backward compat with workflows
+            # written before calimero-network/core#2256.
             step_class = SetDefaultVisibilityStep
         elif step_type == "get_group_info":
             step_class = GetGroupInfoStep
