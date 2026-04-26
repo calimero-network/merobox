@@ -578,7 +578,8 @@ class SetSubgroupVisibilityStepConfig(BaseStepConfig):
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
     visibility: Literal["open", "restricted", "Open", "Restricted"] = Field(
-        ..., description="Subgroup visibility: open (inherits) or restricted (explicit only)"
+        ...,
+        description="Subgroup visibility: open (inherits) or restricted (explicit only)",
     )
 
 
@@ -594,7 +595,8 @@ class SetDefaultVisibilityStepConfig(BaseStepConfig):
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
     visibility: Literal["open", "restricted", "Open", "Restricted"] = Field(
-        ..., description="Subgroup visibility: open (inherits) or restricted (explicit only)"
+        ...,
+        description="Subgroup visibility: open (inherits) or restricted (explicit only)",
     )
 
 
