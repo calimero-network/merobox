@@ -32,8 +32,8 @@ from merobox.commands.bootstrap.steps.group_management import (
     RemoveGroupMembersStep,
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
-    SetSubgroupVisibilityStep,
     SetMemberCapabilitiesStep,
+    SetSubgroupVisibilityStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
