@@ -26,7 +26,11 @@ dependencies = [
     "docker>=6.0.0",
     "rich>=13.0.0,<14.3.4",
     "PyYAML>=6.0.0",
-    "calimero-client-py>=0.6.3",
+    # 0.6.4 is the first release that exposes
+    # `client.set_subgroup_visibility` (calimero-network/calimero-client-py#40,
+    # mirroring calimero-network/core#2256). Bump if py-client picks a
+    # different version number when publishing.
+    "calimero-client-py>=0.6.4",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",

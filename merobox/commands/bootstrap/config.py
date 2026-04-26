@@ -47,6 +47,7 @@ VALID_STEP_TYPES = frozenset(
         "get_member_capabilities",
         "set_default_capabilities",
         "set_default_visibility",
+        "set_subgroup_visibility",
         "get_group_info",
         "list_group_contexts",
         "delete_group",
@@ -564,14 +565,36 @@ class SetDefaultCapabilitiesStepConfig(BaseStepConfig):
     )
 
 
+class SetSubgroupVisibilityStepConfig(BaseStepConfig):
+    """Configuration for set_subgroup_visibility step.
+
+    Sets a subgroup's visibility (`open` / `restricted`). When `open`,
+    parent-group members holding `CAN_JOIN_OPEN_SUBGROUPS` are inherited
+    as members of this subgroup. When `restricted`, membership requires
+    explicit `add_group_members` (calimero-network/core#2256).
+    """
+
+    type: Literal["set_subgroup_visibility"] = "set_subgroup_visibility"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    visibility: Literal["open", "restricted", "Open", "Restricted"] = Field(
+        ..., description="Subgroup visibility: open (inherits) or restricted (explicit only)"
+    )
+
+
 class SetDefaultVisibilityStepConfig(BaseStepConfig):
-    """Configuration for set_default_visibility step."""
+    """Configuration for the deprecated `set_default_visibility` step.
+
+    Kept so workflows pinned to the pre-#2256 step name keep validating.
+    Accepts the same fields as `SetSubgroupVisibilityStepConfig` and is
+    dispatched to the same executor class.
+    """
 
     type: Literal["set_default_visibility"] = "set_default_visibility"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
     visibility: Literal["open", "restricted", "Open", "Restricted"] = Field(
-        ..., description="Default visibility mode for new contexts"
+        ..., description="Subgroup visibility: open (inherits) or restricted (explicit only)"
     )
 
 
@@ -811,6 +834,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "get_member_capabilities": GetMemberCapabilitiesStepConfig,
     "set_default_capabilities": SetDefaultCapabilitiesStepConfig,
     "set_default_visibility": SetDefaultVisibilityStepConfig,
+    "set_subgroup_visibility": SetSubgroupVisibilityStepConfig,
     "get_group_info": GetGroupInfoStepConfig,
     "delete_group": DeleteGroupStepConfig,
     "delete_namespace": DeleteNamespaceStepConfig,

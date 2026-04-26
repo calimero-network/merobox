@@ -54,6 +54,7 @@ from merobox.commands.bootstrap.steps import (
     ScriptStep,
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
+    SetSubgroupVisibilityStep,
     SetGroupAliasStep,
     SetMemberAliasStep,
     SetMemberCapabilitiesStep,
@@ -1453,8 +1454,9 @@ class WorkflowExecutor:
             return GetMemberCapabilitiesStep(step_config, **common_kwargs)
         elif step_type == "set_default_capabilities":
             return SetDefaultCapabilitiesStep(step_config, **common_kwargs)
-        elif step_type == "set_default_visibility":
-            return SetDefaultVisibilityStep(step_config, **common_kwargs)
+        elif step_type in ("set_subgroup_visibility", "set_default_visibility"):
+            # 'set_default_visibility' kept as deprecated alias.
+            return SetSubgroupVisibilityStep(step_config, **common_kwargs)
         elif step_type == "get_group_info":
             return GetGroupInfoStep(step_config, **common_kwargs)
         elif step_type == "list_group_contexts":

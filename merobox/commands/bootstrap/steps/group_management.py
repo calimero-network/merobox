@@ -323,8 +323,18 @@ class SetDefaultCapabilitiesStep(BaseStep):
         return True
 
 
-class SetDefaultVisibilityStep(BaseStep):
-    """Set default context visibility for a group."""
+class SetSubgroupVisibilityStep(BaseStep):
+    """Set the visibility (`open` / `restricted`) of a subgroup.
+
+    Backs the ``set_subgroup_visibility`` workflow step. ``Open`` lets
+    parent-group members holding ``CAN_JOIN_OPEN_SUBGROUPS`` be inherited
+    as members of this subgroup; ``Restricted`` requires explicit
+    ``add_group_members`` (calimero-network/core#2256).
+
+    The legacy ``set_default_visibility`` step name still maps to this
+    class so existing workflows keep running unchanged during the
+    transition.
+    """
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "group_id", "visibility"]
@@ -350,25 +360,30 @@ class SetDefaultVisibilityStep(BaseStep):
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.set_default_visibility(
+            api_result = client.set_subgroup_visibility(
                 group_id=group_id, visibility=visibility
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("set_default_visibility failed", error=e)
+            result = fail("set_subgroup_visibility failed", error=e)
 
         if not result["success"]:
             console.print(
-                f"[red]set_default_visibility failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_subgroup_visibility failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
             return False
-        workflow_results[f"set_default_visibility_{node_name}"] = result["data"]
+        workflow_results[f"set_subgroup_visibility_{node_name}"] = result["data"]
         console.print(
-            f"[green]✓ Set default visibility to '{visibility}' for group {group_id} on {node_name}[/green]"
+            f"[green]✓ Set subgroup visibility to '{visibility}' for group {group_id} on {node_name}[/green]"
         )
         return True
+
+
+# Deprecated alias kept so workflows pinned to the old class name (or any
+# external imports) keep resolving while the ecosystem rolls forward.
+SetDefaultVisibilityStep = SetSubgroupVisibilityStep
 
 
 class GetGroupInfoStep(BaseStep):

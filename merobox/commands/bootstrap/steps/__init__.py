@@ -38,6 +38,7 @@ from merobox.commands.bootstrap.steps.group_management import (
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
     SetMemberCapabilitiesStep,
+    SetSubgroupVisibilityStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
@@ -122,6 +123,7 @@ __all__ = [
     "GetMemberCapabilitiesStep",
     "SetDefaultCapabilitiesStep",
     "SetDefaultVisibilityStep",
+    "SetSubgroupVisibilityStep",
     "GetGroupInfoStep",
     "ListGroupContextsStep",
     "DeleteGroupStep",
