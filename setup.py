@@ -50,8 +50,7 @@ setup(
         "docker>=6.0.0",
         "rich>=13.0.0",
         "PyYAML>=6.0.0",
-        # See pyproject.toml for the rationale on the version floor.
-        "calimero-client-py>=0.6.3",
+        "calimero-client-py>=0.6.4",
         "aiohttp>=3.8.0",
         "toml>=0.10.2",
         "base58>=2.1.0",

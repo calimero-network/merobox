@@ -26,14 +26,7 @@ dependencies = [
     "docker>=6.0.0",
     "rich>=13.0.0,<14.3.4",
     "PyYAML>=6.0.0",
-    # `client.set_subgroup_visibility` ships in the next published
-    # py-client release (post-merge of calimero-network/calimero-client-py#40,
-    # mirroring calimero-network/core#2256). Until that PyPI release lands,
-    # CI installs py-client from the git ref in requirements.txt, which
-    # satisfies this floor under the repo's source-pinned 0.6.3 version.
-    # Bump this floor once py-client publishes a release that bumps its
-    # source version (e.g. >=0.6.4 / >=0.7.0).
-    "calimero-client-py>=0.6.3",
+    "calimero-client-py>=0.6.4",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",
