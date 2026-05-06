@@ -238,6 +238,48 @@ def join_namespace(namespace_id, invitation_json, node, verbose):
         console.print(json_lib.dumps(result, indent=2))
 
 
+@namespace.command(name="leave")
+@click.argument("namespace_id")
+@click.option("--node", "-n", required=True, help="Node name")
+@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
+def leave_namespace(namespace_id, node, verbose):
+    """Voluntarily leave a namespace (cascades through descendant groups).
+
+    Publishes MemberLeft at the namespace root; the apply path cascades
+    through every descendant group where this node has a direct row.
+    Multi-scope owner + last-admin checks run upfront — rejected with
+    `MustTransferOwnership` if the leaver owns any group in the subtree.
+    """
+    manager = DockerManager()
+    rpc_url = get_node_rpc_url(node, manager)
+    console.print(f"[blue]Leaving namespace {namespace_id} on node {node}[/blue]")
+
+    result = run_async_function(
+        call_namespace_api,
+        rpc_url,
+        "leave_namespace",
+        namespace_id,
+        node_name=node,
+    )
+    if not result["success"]:
+        console.print(f"[red]✗ Failed to leave namespace: {result.get('error')}[/red]")
+        sys.exit(1)
+
+    console.print(
+        "[green]✓ Left namespace (cascade through descendants complete)![/green]"
+    )
+    data = unwrap_api_response(result)
+    if isinstance(data, dict):
+        if "namespaceId" in data:
+            console.print(f"[cyan]Namespace ID: {data['namespaceId']}[/cyan]")
+        if "memberPublicKey" in data:
+            console.print(
+                f"[cyan]Member Public Key: {data['memberPublicKey']}[/cyan]"
+            )
+    if verbose:
+        console.print(json_lib.dumps(result, indent=2))
+
+
 @namespace.command(name="groups")
 @click.argument("namespace_id")
 @click.option("--node", "-n", required=True, help="Node name")
