@@ -314,9 +314,7 @@ def leave_context(context_id, node, verbose):
     """
     manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
-    console.print(
-        f"[blue]Leaving context {context_id} locally on node {node}[/blue]"
-    )
+    console.print(f"[blue]Leaving context {context_id} locally on node {node}[/blue]")
 
     result = run_async_function(call_admin_api, rpc_url, "leave_context", context_id)
 
@@ -335,9 +333,7 @@ def leave_context(context_id, node, verbose):
         if verbose:
             console.print(json_lib.dumps(result, indent=2))
     else:
-        console.print(
-            f"[red]✗ Failed to leave context: {result.get('error')}[/red]"
-        )
+        console.print(f"[red]✗ Failed to leave context: {result.get('error')}[/red]")
         sys.exit(1)
 
 

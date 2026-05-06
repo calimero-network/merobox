@@ -273,9 +273,7 @@ def leave_namespace(namespace_id, node, verbose):
         if "namespaceId" in data:
             console.print(f"[cyan]Namespace ID: {data['namespaceId']}[/cyan]")
         if "memberPublicKey" in data:
-            console.print(
-                f"[cyan]Member Public Key: {data['memberPublicKey']}[/cyan]"
-            )
+            console.print(f"[cyan]Member Public Key: {data['memberPublicKey']}[/cyan]")
     if verbose:
         console.print(json_lib.dumps(result, indent=2))
 
