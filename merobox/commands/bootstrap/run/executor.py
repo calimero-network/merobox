@@ -40,6 +40,9 @@ from merobox.commands.bootstrap.steps import (
     JoinContextStep,
     JoinNamespaceStep,
     JoinOpenStep,
+    LeaveContextStep,
+    LeaveGroupStep,
+    LeaveNamespaceStep,
     ListGroupContextsStep,
     ListGroupMembersStep,
     ListNamespaceGroupsStep,
@@ -1488,6 +1491,12 @@ class WorkflowExecutor:
             return RetryGroupUpgradeStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
+        elif step_type == "leave_context":
+            return LeaveContextStep(step_config, **common_kwargs)
+        elif step_type == "leave_group":
+            return LeaveGroupStep(step_config, **common_kwargs)
+        elif step_type == "leave_namespace":
+            return LeaveNamespaceStep(step_config, **common_kwargs)
         else:
             console.print(f"[red]Unknown step type: {step_type}[/red]")
             return None

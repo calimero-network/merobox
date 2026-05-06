@@ -665,6 +665,185 @@ class DeleteContextStep(BaseStep):
         return True
 
 
+class LeaveContextStep(BaseStep):
+    """Locally opt out of a context on this node (no DAG op, no broadcast).
+
+    Stops sync and disarms auto-follow on this node only — peers do not
+    observe the leave. Reverse with `join_context`.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "context_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "context_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        context_id = self._resolve_dynamic_value(
+            self.config["context_id"], workflow_results, dynamic_values
+        )
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.leave_context(context_id=context_id)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("leave_context failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
+            )
+            console.print(f"[red]leave_context failed on {node_name}: {exc_msg}[/red]")
+            return False
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+        workflow_results[f"leave_context_{node_name}"] = result["data"]
+        console.print(
+            f"[green]✓ Node {node_name} left context {context_id} locally[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
+class LeaveGroupStep(BaseStep):
+    """Voluntarily leave a group (publishes MemberLeft).
+
+    Subject to apply-side checks: must be a direct member, not the
+    Owner, not the only admin. Use `leave_namespace` to leave a
+    namespace root (this step rejects namespace IDs).
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "group_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "group_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        group_id = self._resolve_dynamic_value(
+            self.config["group_id"], workflow_results, dynamic_values
+        )
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.leave_group(group_id=group_id)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("leave_group failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
+            )
+            console.print(f"[red]leave_group failed on {node_name}: {exc_msg}[/red]")
+            return False
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+        workflow_results[f"leave_group_{node_name}"] = result["data"]
+        console.print(
+            f"[green]✓ Node {node_name} left group {group_id} (MemberLeft published)[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
+class LeaveNamespaceStep(BaseStep):
+    """Voluntarily leave a namespace (cascades through descendants).
+
+    Publishes MemberLeft at the namespace root; the apply path cascades
+    through every descendant group where this node has a direct row.
+    Rejected with `MustTransferOwnership` if the leaver owns any group
+    in the subtree.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "namespace_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "namespace_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.leave_namespace(namespace_id=namespace_id)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("leave_namespace failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            exc_msg = (result.get("exception") or {}).get("message") or result.get(
+                "error"
+            )
+            console.print(
+                f"[red]leave_namespace failed on {node_name}: {exc_msg}[/red]"
+            )
+            return False
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+        workflow_results[f"leave_namespace_{node_name}"] = result["data"]
+        console.print(
+            f"[green]✓ Node {node_name} left namespace {namespace_id} (cascade complete)[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
 class UninstallApplicationStep(BaseStep):
     """Uninstall an application."""
 
