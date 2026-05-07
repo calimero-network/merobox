@@ -296,6 +296,16 @@ class WaitForSyncStep(BaseStepConfig):
         False, description="Trigger sync before waiting"
     )
 
+    @model_validator(mode="after")
+    def _at_least_one_id(self) -> "WaitForSyncStep":
+        """Surface the "context_id or group_id required" rule at schema-validation
+        time so `merobox validate` catches misconfigured workflows before run."""
+        if self.context_id is None and self.group_id is None:
+            raise ValueError(
+                "wait_for_sync: at least one of 'context_id' or 'group_id' must be specified"
+            )
+        return self
+
 
 class RepeatStep(BaseStepConfig):
     """Configuration for repeat step."""

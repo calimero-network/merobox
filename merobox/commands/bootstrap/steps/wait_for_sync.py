@@ -74,8 +74,11 @@ class WaitForSyncStep(BaseStep):
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
 
-        has_context_id = "context_id" in self.config
-        has_group_id = "group_id" in self.config
+        # `key in dict` is True for `key: null` too — treat None values as
+        # equivalent to "not specified" so the "at least one" guard
+        # properly catches `context_id: null` configs.
+        has_context_id = self.config.get("context_id") is not None
+        has_group_id = self.config.get("group_id") is not None
 
         if not has_context_id and not has_group_id:
             raise ValueError(
@@ -177,6 +180,12 @@ class WaitForSyncStep(BaseStep):
         kind = target["kind"]
         target_id = target["id"]
         field = target["field"]
+
+        if kind not in ("context", "group"):
+            console.print(
+                f"[red]Internal error: unknown wait_for_sync target kind '{kind}'[/red]"
+            )
+            return node_name, None
 
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
@@ -459,9 +468,7 @@ class WaitForSyncStep(BaseStep):
             group_id = self._resolve_dynamic_value(
                 self.config["group_id"], workflow_results, dynamic_values
             )
-            targets.append(
-                {"kind": "group", "id": group_id, "field": "groupStateHash"}
-            )
+            targets.append({"kind": "group", "id": group_id, "field": "groupStateHash"})
 
         nodes = self.config["nodes"]
         timeout = self.config.get("timeout", 30)
