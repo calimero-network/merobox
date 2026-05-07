@@ -266,10 +266,27 @@ class WaitStep(BaseStepConfig):
 
 
 class WaitForSyncStep(BaseStepConfig):
-    """Configuration for wait_for_sync step."""
+    """Configuration for wait_for_sync step.
+
+    At least one of ``context_id`` / ``group_id`` is required (validated at
+    runtime by the step executor — Pydantic can't express "one or both").
+
+    * ``context_id`` — wait for ``contextStateHash`` (storage state) to
+      converge across nodes.
+    * ``group_id`` — wait for ``groupStateHash`` (governance state) to
+      converge across nodes.
+    * Both — wait for both. Useful for tests that change governance and
+      expect state effects (e.g. removed member, verify their writes
+      don't leak).
+    """
 
     type: Literal["wait_for_sync"] = "wait_for_sync"
-    context_id: str = Field(..., description="Context ID to sync")
+    context_id: Optional[str] = Field(
+        None, description="Context ID to sync (poll contextStateHash)"
+    )
+    group_id: Optional[str] = Field(
+        None, description="Group ID to sync (poll groupStateHash)"
+    )
     nodes: list[str] = Field(..., description="Nodes to wait for sync")
     timeout: Optional[int] = Field(60, ge=1, description="Timeout in seconds")
     check_interval: Optional[int] = Field(

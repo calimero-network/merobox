@@ -1,5 +1,6 @@
 """
-Wait for sync step executor - Waits for nodes to reach consensus on root hash.
+Wait for sync step executor — waits for nodes to converge on context state
+hash, group governance state hash, or both.
 """
 
 import asyncio
@@ -13,30 +14,41 @@ from merobox.commands.utils import console
 
 
 class WaitForSyncStep(BaseStep):
-    """Execute a wait for sync step that verifies root hash consensus across nodes."""
+    """Wait for nodes to converge on context state and/or group governance state.
+
+    Specify ``context_id`` to wait for ``contextStateHash`` to converge across
+    nodes (CRDT storage state for that context). Specify ``group_id`` to wait
+    for ``groupStateHash`` to converge (governance state for that group).
+    Specify both to wait for both — useful for tests that change governance
+    and expect state effects (e.g. removed member, verify their writes don't
+    leak). At least one of ``context_id`` / ``group_id`` is required.
+    """
 
     def _get_required_fields(self) -> list[str]:
-        """
-        Define which fields are required for this step.
-
-        Returns:
-            List of required field names
-        """
-        return ["context_id", "nodes"]
+        # context_id and group_id are both optional; at least one is required,
+        # validated explicitly in _validate_field_types below.
+        return ["nodes"]
 
     def _validate_field_types(self) -> None:
-        """
-        Validate that fields have the correct types.
-        """
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
 
+        has_context_id = "context_id" in self.config
+        has_group_id = "group_id" in self.config
+
+        if not has_context_id and not has_group_id:
+            raise ValueError(
+                f"Step '{step_name}': at least one of 'context_id' or 'group_id' must be specified"
+            )
+
         # Validate context_id is a string
-        if "context_id" in self.config and not isinstance(
-            self.config["context_id"], str
-        ):
+        if has_context_id and not isinstance(self.config["context_id"], str):
             raise ValueError(f"Step '{step_name}': 'context_id' must be a string")
+
+        # Validate group_id is a string
+        if has_group_id and not isinstance(self.config["group_id"], str):
+            raise ValueError(f"Step '{step_name}': 'group_id' must be a string")
 
         # Validate nodes is a list
         if "nodes" in self.config:
@@ -98,24 +110,34 @@ class WaitForSyncStep(BaseStep):
         ):
             raise ValueError(f"Step '{step_name}': 'trigger_sync' must be a boolean")
 
-    async def _fetch_root_hash(
-        self, node_name: str, context_id: str, trigger_sync: bool = False
+    async def _fetch_hash(
+        self,
+        target: dict,
+        node_name: str,
+        trigger_sync: bool = False,
     ) -> tuple[str, str | None]:
         """
-        Fetch root hash for a context from a specific node with retry logic.
+        Fetch a state hash for the given target (context or group) from a
+        specific node, with retry logic.
 
         Args:
-            node_name: Name of the node to query
-            context_id: Context ID to get root hash for
-            trigger_sync: Whether to trigger sync before fetching hash
+            target: dict with keys ``kind`` (\"context\" or \"group\"),
+                ``id`` (the context_id or group_id), and ``field`` (the
+                JSON field to read from the response — ``contextStateHash``
+                or ``groupStateHash``).
+            node_name: Name of the node to query.
+            trigger_sync: Whether to trigger sync before fetching (only
+                meaningful for context targets; ignored for group targets).
 
         Returns:
-            Tuple of (node_name, root_hash) or (node_name, None) if error
+            Tuple of (node_name, hash) or (node_name, None) on error.
         """
         max_retries = SYNC_RETRY_ATTEMPTS
         retry_delay = SYNC_RETRY_DELAY
+        kind = target["kind"]
+        target_id = target["id"]
+        field = target["field"]
 
-        # Resolve node to get stable name for token caching
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
         except Exception as e:
@@ -124,18 +146,17 @@ class WaitForSyncStep(BaseStep):
 
         for retry in range(max_retries):
             try:
-                # Add small delay on retries to avoid overwhelming the API
                 if retry > 0:
                     await asyncio.sleep(retry_delay)
 
                 client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-                # Optionally trigger sync to ensure root_hash is up-to-date
-                if trigger_sync:
+                # Optionally trigger sync (context-state target only — group
+                # governance state has its own propagation path).
+                if trigger_sync and kind == "context":
                     try:
-                        client.sync_context(context_id)
+                        client.sync_context(target_id)
                     except (RuntimeError, ValueError, AttributeError):
-                        # Fallback to sync_all_contexts if sync_context fails
                         try:
                             client.sync_all_contexts()
                         except (RuntimeError, ValueError, AttributeError) as sync_error:
@@ -143,29 +164,26 @@ class WaitForSyncStep(BaseStep):
                                 f"[dim]⚠️  Sync trigger failed for {node_name}: {str(sync_error)}[/dim]"
                             )
 
-                # Get context information which includes contextStateHash
-                context_data = client.get_context(context_id)
+                # Fetch the right info object based on kind.
+                if kind == "context":
+                    response = client.get_context(target_id)
+                else:
+                    response = client.get_group_info(target_id)
 
-                # Extract context state hash from response
-                root_hash = None
+                # Extract hash from response.data.<field>.
+                value = None
+                if isinstance(response, dict) and "data" in response:
+                    body = response["data"]
+                    if isinstance(body, dict):
+                        value = body.get(field)
 
-                if isinstance(context_data, dict) and "data" in context_data:
-                    context = context_data["data"]
-                    if isinstance(context, dict):
-                        # The API returns camelCase 'contextStateHash'
-                        # (renamed from 'rootHash' in calimero/core to make
-                        # the per-context state hash naming consistent with
-                        # the new groupStateHash and namespaceStateHash;
-                        # part of the cross-DAG auth roadmap).
-                        root_hash = context.get("contextStateHash")
+                if value is not None:
+                    return node_name, str(value)
 
-                if root_hash is not None:
-                    return node_name, str(root_hash)
-
-                # No context state hash found - retry
                 if retry < max_retries - 1:
                     console.print(
-                        f"[dim]⚠️  No contextStateHash from {node_name}, retrying ({retry + 1}/{max_retries})...[/dim]"
+                        f"[dim]⚠️  No {field} from {node_name} ({kind} {target_id}), "
+                        f"retrying ({retry + 1}/{max_retries})...[/dim]"
                     )
                     continue
 
@@ -180,46 +198,65 @@ class WaitForSyncStep(BaseStep):
             ) as e:
                 if retry < max_retries - 1:
                     console.print(
-                        f"[dim]⚠️  Error fetching from {node_name}: {str(e)}, retrying ({retry + 1}/{max_retries})...[/dim]"
+                        f"[dim]⚠️  Error fetching {field} from {node_name}: {str(e)}, "
+                        f"retrying ({retry + 1}/{max_retries})...[/dim]"
                     )
                     continue
                 else:
                     console.print(
-                        f"[yellow]⚠️  Failed to get root_hash from {node_name} after {max_retries} retries: {str(e)}[/yellow]"
+                        f"[yellow]⚠️  Failed to get {field} from {node_name} after {max_retries} retries: {str(e)}[/yellow]"
                     )
                     return node_name, None
 
         return node_name, None
 
+    async def _check_target_convergence(
+        self,
+        target: dict,
+        nodes: list[str],
+        trigger_sync: bool,
+    ) -> tuple[bool, dict[str, str | None]]:
+        """Fetch the target's hash from all nodes; return (converged, per-node mapping).
+
+        Converged iff every node returned a hash and all hashes match.
+        """
+        tasks = [self._fetch_hash(target, node, trigger_sync) for node in nodes]
+        results = await asyncio.gather(*tasks)
+        node_hashes = dict(results)
+
+        # All nodes must have a value, and all values must agree.
+        if any(h is None for h in node_hashes.values()):
+            return False, node_hashes
+        unique = {h for h in node_hashes.values() if h is not None}
+        return len(unique) == 1, node_hashes
+
+    @staticmethod
+    def _target_label(target: dict) -> str:
+        """Human-readable label for log lines."""
+        return f"{target['kind']}={target['id']}"
+
     async def _wait_for_sync(
         self,
+        targets: list[dict],
         nodes: list[str],
-        context_id: str,
         timeout: int,
         check_interval: float,
         retry_attempts: int | None = None,
         trigger_sync: bool = False,
     ) -> tuple[bool, dict[str, Any]]:
         """
-        Wait for all nodes to reach the same root hash for a given context.
+        Wait for all targets to converge across all nodes.
 
-        Args:
-            nodes: List of node names to check
-            context_id: Context ID to verify sync for
-            timeout: Maximum seconds to wait for sync
-            check_interval: Seconds between sync checks
-            retry_attempts: Optional max number of attempts (overrides timeout if both set)
-            trigger_sync: Whether to trigger sync on each node before checking
-
-        Returns:
-            Tuple of (synced: bool, details: dict with sync information)
+        A target converges when every node returns the same hash for it.
+        All specified targets must converge for the overall result to succeed.
         """
         start_time = time.time()
         attempt = 0
         max_attempts = retry_attempts or float("inf")
 
+        target_labels = ", ".join(self._target_label(t) for t in targets)
         console.print(
-            f"[cyan]🔄 Waiting for {len(nodes)} node(s) to sync on context {context_id}...[/cyan]"
+            f"[cyan]🔄 Waiting for {len(nodes)} node(s) to sync on {len(targets)} target(s): {target_labels}...[/cyan]"
         )
         console.print(f"[dim]  Nodes: {', '.join(nodes)}[/dim]")
         console.print(
@@ -227,106 +264,123 @@ class WaitForSyncStep(BaseStep):
             f"{', Trigger sync: enabled' if trigger_sync else ''}[/dim]"
         )
 
+        last_per_target: dict[str, dict[str, str | None]] = {}
+
         while (time.time() - start_time < timeout) and (attempt < max_attempts):
             attempt += 1
             elapsed = time.time() - start_time
 
-            # Add small random jitter to avoid synchronized request spikes
             if attempt > 1:
-                jitter = 0.1 * (attempt % 3)  # 0-200ms jitter
+                jitter = 0.1 * (attempt % 3)
                 await asyncio.sleep(jitter)
 
-            # Fetch root hash from all nodes concurrently
-            tasks = [
-                self._fetch_root_hash(node, context_id, trigger_sync) for node in nodes
-            ]
-            results = await asyncio.gather(*tasks)
-
-            # Build hash map
-            root_hashes = dict(results)
-
-            # Check if any nodes failed to respond
-            failed_nodes = [
-                node for node, hash_val in root_hashes.items() if hash_val is None
-            ]
-            if failed_nodes:
-                console.print(
-                    f"[yellow]Attempt {attempt} ({elapsed:.1f}s): "
-                    f"Failed to get hash from {len(failed_nodes)} node(s): {', '.join(failed_nodes)}[/yellow]"
+            # Check each target's convergence in parallel.
+            target_checks = await asyncio.gather(
+                *(
+                    self._check_target_convergence(target, nodes, trigger_sync)
+                    for target in targets
                 )
-                await asyncio.sleep(check_interval)
-                continue
+            )
 
-            # Get unique hashes (excluding None values)
-            valid_hashes = {h for h in root_hashes.values() if h is not None}
+            all_converged = True
+            per_target_state: dict[str, dict[str, str | None]] = {}
+            converged_hashes: dict[str, str] = {}
 
-            if len(valid_hashes) == 1:
-                # All nodes have the same root hash - SUCCESS!
-                synced_hash = list(valid_hashes)[0]
-                elapsed = time.time() - start_time
+            for target, (converged, node_hashes) in zip(targets, target_checks):
+                label = self._target_label(target)
+                per_target_state[label] = node_hashes
+                if converged:
+                    # Take the (only) unique value
+                    converged_hashes[label] = next(iter(node_hashes.values()))
+                else:
+                    all_converged = False
 
+            last_per_target = per_target_state
+
+            if all_converged:
                 console.print(
-                    f"[green]✓ All nodes synced after {elapsed:.2f}s ({attempt} attempts)![/green]"
+                    f"[green]✓ All targets synced after {elapsed:.2f}s ({attempt} attempts)![/green]"
                 )
-                console.print(f"[green]  Root hash: {synced_hash}[/green]")
+                for label, hash_val in converged_hashes.items():
+                    console.print(f"[green]  {label}: {hash_val}[/green]")
 
                 return True, {
                     "synced": True,
-                    "root_hash": synced_hash,
+                    "targets": converged_hashes,
                     "elapsed_seconds": round(elapsed, 2),
                     "attempts": attempt,
-                    "node_hashes": root_hashes,
+                    "per_target_node_hashes": per_target_state,
                 }
 
-            # Hashes don't match yet
+            # Report what didn't converge yet.
             console.print(
-                f"[yellow]Attempt {attempt} ({elapsed:.1f}s): "
-                f"Root hashes don't match - {len(valid_hashes)} unique hash(es) found[/yellow]"
+                f"[yellow]Attempt {attempt} ({elapsed:.1f}s): {len(targets)} target(s) checked, not all converged yet[/yellow]"
             )
+            for target, (converged, node_hashes) in zip(targets, target_checks):
+                label = self._target_label(target)
+                if converged:
+                    console.print(f"[dim]  ✓ {label} converged[/dim]")
+                    continue
+                failed = [n for n, h in node_hashes.items() if h is None]
+                if failed:
+                    console.print(
+                        f"[dim]  · {label}: missing from {len(failed)} node(s): {', '.join(failed)}[/dim]"
+                    )
+                else:
+                    hash_groups: dict[str, list[str]] = {}
+                    for n, h in node_hashes.items():
+                        hash_groups.setdefault(h, []).append(n)
+                    console.print(
+                        f"[dim]  · {label}: {len(hash_groups)} unique hash(es)[/dim]"
+                    )
+                    for h, ns in hash_groups.items():
+                        console.print(f"[dim]      {h}: {', '.join(ns)}[/dim]")
 
-            # Show details of mismatched hashes
-            hash_groups = {}
-            for node, hash_val in root_hashes.items():
-                if hash_val not in hash_groups:
-                    hash_groups[hash_val] = []
-                hash_groups[hash_val].append(node)
-
-            for hash_val, node_list in hash_groups.items():
-                console.print(f"[dim]  {hash_val}: {', '.join(node_list)}[/dim]")
-
-            # Wait before next check
             await asyncio.sleep(check_interval)
 
-        # Timeout exceeded or max attempts reached - fetch final state
+        # Timeout / max attempts reached — final consistency check.
         elapsed = time.time() - start_time
-        tasks = [self._fetch_root_hash(node, context_id) for node in nodes]
-        results = await asyncio.gather(*tasks)
-        final_hashes = dict(results)
-        valid_final = {h for h in final_hashes.values() if h is not None}
-        failed_final = [n for n, h in final_hashes.items() if h is None]
-
-        # One more check: nodes may have synced between last attempt and this fetch.
-        # Require all nodes to have returned a hash (no unreachable) and one unique hash.
-        if not failed_final and len(valid_final) == 1:
-            synced_hash = list(valid_final)[0]
-            console.print(
-                f"[green]✓ All nodes synced after {elapsed:.2f}s ({attempt} attempts, verified on final check)[/green]"
+        target_checks = await asyncio.gather(
+            *(
+                self._check_target_convergence(target, nodes, False)
+                for target in targets
             )
-            console.print(f"[green]  Root hash: {synced_hash}[/green]")
+        )
+
+        all_converged = True
+        per_target_state = {}
+        converged_hashes = {}
+        for target, (converged, node_hashes) in zip(targets, target_checks):
+            label = self._target_label(target)
+            per_target_state[label] = node_hashes
+            if converged:
+                converged_hashes[label] = next(iter(node_hashes.values()))
+            else:
+                all_converged = False
+        last_per_target = per_target_state
+
+        if all_converged:
+            console.print(
+                f"[green]✓ All targets synced after {elapsed:.2f}s ({attempt} attempts, verified on final check)[/green]"
+            )
+            for label, hash_val in converged_hashes.items():
+                console.print(f"[green]  {label}: {hash_val}[/green]")
             return True, {
                 "synced": True,
-                "root_hash": synced_hash,
+                "targets": converged_hashes,
                 "elapsed_seconds": round(elapsed, 2),
                 "attempts": attempt,
-                "node_hashes": final_hashes,
+                "per_target_node_hashes": last_per_target,
             }
 
         console.print(
             f"[red]✗ Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
         )
         console.print("[red]  Final state:[/red]")
-        for node, hash_val in final_hashes.items():
-            console.print(f"[red]    {node}: {hash_val or 'N/A'}[/red]")
+        for label, node_hashes in last_per_target.items():
+            console.print(f"[red]    {label}:[/red]")
+            for node, hash_val in node_hashes.items():
+                console.print(f"[red]      {node}: {hash_val or 'N/A'}[/red]")
 
         return False, {
             "synced": False,
@@ -338,43 +392,44 @@ class WaitForSyncStep(BaseStep):
             "timeout": timeout,
             "elapsed_seconds": round(elapsed, 2),
             "attempts": attempt,
-            "final_hashes": final_hashes,
+            "per_target_node_hashes": last_per_target,
         }
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
-        """
-        Execute the wait for sync step.
+        """Execute the wait for sync step."""
+        # Resolve dynamic values for whichever IDs are present.
+        targets: list[dict] = []
+        if "context_id" in self.config:
+            context_id = self._resolve_dynamic_value(
+                self.config["context_id"], workflow_results, dynamic_values
+            )
+            targets.append(
+                {"kind": "context", "id": context_id, "field": "contextStateHash"}
+            )
+        if "group_id" in self.config:
+            group_id = self._resolve_dynamic_value(
+                self.config["group_id"], workflow_results, dynamic_values
+            )
+            targets.append(
+                {"kind": "group", "id": group_id, "field": "groupStateHash"}
+            )
 
-        Args:
-            workflow_results: Results from previous workflow steps
-            dynamic_values: Dynamic values captured from previous steps
-
-        Returns:
-            True if all nodes synced successfully, False otherwise
-        """
-        # Resolve dynamic values
-        context_id = self._resolve_dynamic_value(
-            self.config["context_id"], workflow_results, dynamic_values
-        )
         nodes = self.config["nodes"]
         timeout = self.config.get("timeout", 30)
         check_interval = self.config.get("check_interval", 0.5)
         retry_attempts = self.config.get("retry_attempts")
-        # Default: enabled - uses sync_context(context_id) for targeted sync
+        # Default: enabled — uses sync_context for context targets.
         trigger_sync = self.config.get("trigger_sync", True)
 
         console.print("\n[bold cyan]⏳ Waiting for node synchronization...[/bold cyan]")
 
-        # Execute sync wait
         synced, details = await self._wait_for_sync(
-            nodes, context_id, timeout, check_interval, retry_attempts, trigger_sync
+            targets, nodes, timeout, check_interval, retry_attempts, trigger_sync
         )
 
-        # Export details if outputs are configured
         if "outputs" in self.config:
             self._export_custom_outputs(details, "", dynamic_values)
 
-        # Return success/failure
         return synced
