@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-05-07
+
+### Changed
+
+- Require `calimero-client-py>=0.6.6`. The 0.6.6 client-py release ships
+  the `contextStateHash` rename + new `groupStateHash` field. Earlier
+  client-py versions can no longer decode group/context info responses
+  from a calimero node built from
+  [calimero/core#2289](https://github.com/calimero-network/core/pull/2289).
+- Removed the transitional `rootHash` fallback in `wait_for_sync`. With
+  client-py 0.6.6 pinned, the response struct is strictly typed against
+  `contextStateHash`, so the fallback path is dead code.
+
 ## [0.6.5] - 2026-05-07
 
 ### Changed

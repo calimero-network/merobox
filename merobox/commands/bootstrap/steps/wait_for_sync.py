@@ -219,19 +219,12 @@ class WaitForSyncStep(BaseStep):
                 else:
                     response = client.get_group_info(target_id)
 
-                # Extract hash from response.data.<field>. For context
-                # targets we also fall back to the legacy `rootHash` field
-                # name so this code works against released calimero
-                # binaries that pre-date the contextStateHash rename
-                # (transitional — can be cleaned up after the rename has
-                # shipped in a calimero release).
+                # Extract hash from response.data.<field>.
                 value = None
                 if isinstance(response, dict) and "data" in response:
                     body = response["data"]
                     if isinstance(body, dict):
                         value = body.get(field)
-                        if value is None and kind == "context":
-                            value = body.get("rootHash")
 
                 if value is not None:
                     return node_name, str(value)
