@@ -143,25 +143,29 @@ class WaitForSyncStep(BaseStep):
                                 f"[dim]⚠️  Sync trigger failed for {node_name}: {str(sync_error)}[/dim]"
                             )
 
-                # Get context information which includes root_hash
+                # Get context information which includes contextStateHash
                 context_data = client.get_context(context_id)
 
-                # Extract root hash from response
+                # Extract context state hash from response
                 root_hash = None
 
                 if isinstance(context_data, dict) and "data" in context_data:
                     context = context_data["data"]
                     if isinstance(context, dict):
-                        # The API returns camelCase 'rootHash'
-                        root_hash = context.get("rootHash") or context.get("root_hash")
+                        # The API returns camelCase 'contextStateHash'
+                        # (renamed from 'rootHash' in calimero/core to make
+                        # the per-context state hash naming consistent with
+                        # the new groupStateHash and namespaceStateHash;
+                        # part of the cross-DAG auth roadmap).
+                        root_hash = context.get("contextStateHash")
 
                 if root_hash is not None:
                     return node_name, str(root_hash)
 
-                # No root hash found - retry
+                # No context state hash found - retry
                 if retry < max_retries - 1:
                     console.print(
-                        f"[dim]⚠️  No root_hash from {node_name}, retrying ({retry + 1}/{max_retries})...[/dim]"
+                        f"[dim]⚠️  No contextStateHash from {node_name}, retrying ({retry + 1}/{max_retries})...[/dim]"
                     )
                     continue
 

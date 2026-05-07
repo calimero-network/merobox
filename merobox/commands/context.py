@@ -444,11 +444,10 @@ def show(node, context_id, verbose):
             if "protocol" in context_data:
                 console.print(f"[cyan]Protocol:[/cyan] {context_data['protocol']}")
 
-            if "rootHash" in context_data or "root_hash" in context_data:
-                root_hash = context_data.get("rootHash") or context_data.get(
-                    "root_hash"
+            if "contextStateHash" in context_data:
+                console.print(
+                    f"[cyan]Context State Hash:[/cyan] {context_data['contextStateHash']}"
                 )
-                console.print(f"[cyan]Root Hash:[/cyan] {root_hash}")
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
