@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-05-07
+
+### Changed
+
+- `wait_for_sync` step extended to accept optional `context_id` and/or
+  `group_id`. Specify `context_id` to wait for `contextStateHash`
+  convergence (storage state), `group_id` to wait for `groupStateHash`
+  convergence (governance state), or both to wait for both. At least
+  one is required. Implements A2 of the cross-DAG authorization
+  roadmap in [calimero/core](https://github.com/calimero-network/core).
+- `wait_for_sync` reads `contextStateHash` (renamed from `rootHash` in
+  [calimero/core#2289](https://github.com/calimero-network/core/pull/2289)),
+  with a transitional fallback to the legacy `rootHash` so this
+  release works against released calimero binaries that pre-date the
+  rename. The fallback can be removed in a follow-up once the rename
+  has shipped in a calimero release.
+- `outputs` references to `root_hash` continue to work via a
+  backwards-compatible top-level alias; the new `context_state_hash`
+  and `group_state_hash` keys are the canonical names going forward.
+
 ## [0.6.0] - 2026-04-23
 
 ### Added
