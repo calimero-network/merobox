@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-05-07
+
+### Changed
+
+- Require `calimero-client-py>=0.6.7`. The 0.6.7 client-py release
+  flips its core git deps back to `master` (after
+  [calimero/core#2289](https://github.com/calimero-network/core/pull/2289)
+  landed), so it's the canonical post-rename release for ongoing use.
+  No functional difference from 0.6.6 (which was pegged to the same
+  pre-merge code via the PR branch); 0.6.7 is just durable.
+
 ## [0.6.6] - 2026-05-07
 
 ### Changed
