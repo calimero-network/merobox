@@ -13,6 +13,46 @@ from merobox.commands.constants import SYNC_RETRY_ATTEMPTS, SYNC_RETRY_DELAY
 from merobox.commands.utils import console
 
 
+def _build_success_details(
+    targets: list[dict],
+    converged_hashes: dict[str, str],
+    per_target_state: dict[str, dict[str, str | None]],
+    elapsed: float,
+    attempt: int,
+) -> dict[str, Any]:
+    """Build the success result dict with backwards-compatible top-level keys.
+
+    For each target kind that converged, expose the hash at a stable
+    top-level key for downstream ``outputs:`` references:
+    * context target → ``context_state_hash`` (and legacy ``root_hash``
+      mirror, for workflows authored before the rename)
+    * group target → ``group_state_hash``
+
+    The ``targets`` map remains the canonical source of all per-target
+    hashes when multiple were specified.
+    """
+    details: dict[str, Any] = {
+        "synced": True,
+        "targets": converged_hashes,
+        "elapsed_seconds": round(elapsed, 2),
+        "attempts": attempt,
+        "per_target_node_hashes": per_target_state,
+    }
+    for target in targets:
+        label = f"{target['kind']}={target['id']}"
+        hash_val = converged_hashes.get(label)
+        if hash_val is None:
+            continue
+        if target["kind"] == "context":
+            # Legacy alias for workflows that read "root_hash"; safe to
+            # remove once all callers migrate to context_state_hash.
+            details["root_hash"] = hash_val
+            details["context_state_hash"] = hash_val
+        elif target["kind"] == "group":
+            details["group_state_hash"] = hash_val
+    return details
+
+
 class WaitForSyncStep(BaseStep):
     """Wait for nodes to converge on context state and/or group governance state.
 
@@ -170,12 +210,19 @@ class WaitForSyncStep(BaseStep):
                 else:
                     response = client.get_group_info(target_id)
 
-                # Extract hash from response.data.<field>.
+                # Extract hash from response.data.<field>. For context
+                # targets we also fall back to the legacy `rootHash` field
+                # name so this code works against released calimero
+                # binaries that pre-date the contextStateHash rename
+                # (transitional — can be cleaned up after the rename has
+                # shipped in a calimero release).
                 value = None
                 if isinstance(response, dict) and "data" in response:
                     body = response["data"]
                     if isinstance(body, dict):
                         value = body.get(field)
+                        if value is None and kind == "context":
+                            value = body.get("rootHash")
 
                 if value is not None:
                     return node_name, str(value)
@@ -304,13 +351,13 @@ class WaitForSyncStep(BaseStep):
                 for label, hash_val in converged_hashes.items():
                     console.print(f"[green]  {label}: {hash_val}[/green]")
 
-                return True, {
-                    "synced": True,
-                    "targets": converged_hashes,
-                    "elapsed_seconds": round(elapsed, 2),
-                    "attempts": attempt,
-                    "per_target_node_hashes": per_target_state,
-                }
+                return True, _build_success_details(
+                    targets,
+                    converged_hashes,
+                    per_target_state,
+                    elapsed,
+                    attempt,
+                )
 
             # Report what didn't converge yet.
             console.print(
@@ -365,13 +412,13 @@ class WaitForSyncStep(BaseStep):
             )
             for label, hash_val in converged_hashes.items():
                 console.print(f"[green]  {label}: {hash_val}[/green]")
-            return True, {
-                "synced": True,
-                "targets": converged_hashes,
-                "elapsed_seconds": round(elapsed, 2),
-                "attempts": attempt,
-                "per_target_node_hashes": last_per_target,
-            }
+            return True, _build_success_details(
+                targets,
+                converged_hashes,
+                last_per_target,
+                elapsed,
+                attempt,
+            )
 
         console.print(
             f"[red]✗ Sync verification failed after {elapsed:.2f}s ({attempt} attempts)[/red]"
