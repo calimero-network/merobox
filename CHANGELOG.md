@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-05-07
+
+### Changed
+
+- Require `calimero-client-py>=0.6.8`. The 0.6.8 client-py release is
+  pegged to [calimero/core#2292](https://github.com/calimero-network/core/pull/2292)'s
+  branch so it knows about the new `application_id` field on
+  `SignedGroupOpenInvitation`. Earlier client-py versions silently
+  drop the field during typed deserialize, which propagates the
+  pre-existing subgroup state-hash divergence the PR is fixing.
+
 ## [0.6.7] - 2026-05-07
 
 ### Changed
