@@ -543,6 +543,25 @@ class DockerManager(CleanupMixin):
                     f"traefik.http.routers.{node_name}-sse.entrypoints": "web",
                     f"traefik.http.routers.{node_name}-sse.service": f"{node_name}-core",
                     f"traefik.http.routers.{node_name}-sse.middlewares": f"cors-sse-{node_name},auth-{node_name}",
+                    # CORS preflight bypass: browsers don't send Authorization on
+                    # OPTIONS, so forward-auth would 401 the preflight and the
+                    # response would lack Access-Control-Allow-* headers. Route
+                    # OPTIONS through CORS-only middleware at higher priority.
+                    f"traefik.http.routers.{node_name}-api-preflight.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && Method(`OPTIONS`) && (PathPrefix(`/jsonrpc`) || PathPrefix(`/admin-api/`))",
+                    f"traefik.http.routers.{node_name}-api-preflight.entrypoints": "web",
+                    f"traefik.http.routers.{node_name}-api-preflight.service": f"{node_name}-core",
+                    f"traefik.http.routers.{node_name}-api-preflight.middlewares": cors_middleware_name,
+                    f"traefik.http.routers.{node_name}-api-preflight.priority": "300",
+                    f"traefik.http.routers.{node_name}-ws-preflight.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && Method(`OPTIONS`) && PathPrefix(`/ws`)",
+                    f"traefik.http.routers.{node_name}-ws-preflight.entrypoints": "web",
+                    f"traefik.http.routers.{node_name}-ws-preflight.service": f"{node_name}-core",
+                    f"traefik.http.routers.{node_name}-ws-preflight.middlewares": cors_middleware_name,
+                    f"traefik.http.routers.{node_name}-ws-preflight.priority": "300",
+                    f"traefik.http.routers.{node_name}-sse-preflight.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && Method(`OPTIONS`) && PathPrefix(`/sse`)",
+                    f"traefik.http.routers.{node_name}-sse-preflight.entrypoints": "web",
+                    f"traefik.http.routers.{node_name}-sse-preflight.service": f"{node_name}-core",
+                    f"traefik.http.routers.{node_name}-sse-preflight.middlewares": f"cors-sse-{node_name}",
+                    f"traefik.http.routers.{node_name}-sse-preflight.priority": "300",
                     # Admin dashboard (publicly accessible)
                     f"traefik.http.routers.{node_name}-dashboard.rule": f"Host(`{hostname}.127.0.0.1.nip.io`) && PathPrefix(`/admin-dashboard`)",
                     f"traefik.http.routers.{node_name}-dashboard.entrypoints": "web",

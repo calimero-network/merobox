@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-05-09
+
+### Fixed
+
+- `auth_service: true` no longer breaks CORS preflight on `/admin-api`,
+  `/jsonrpc`, `/ws`, and `/sse`. The Traefik forward-auth middleware was
+  rejecting `OPTIONS` preflights (browsers don't send `Authorization`
+  on preflights) and the resulting auth-service response lacked
+  `Access-Control-Allow-*` headers, so cross-origin browser clients
+  could not reach a node fronted by the auth proxy. Per-node
+  `*-preflight` routers now match `Method(`OPTIONS`)` at priority 300
+  and apply only the CORS headers middleware, skipping forward-auth.
+  Resolves [#228](https://github.com/calimero-network/merobox/issues/228).
+
 ## [0.6.8] - 2026-05-07
 
 ### Changed
