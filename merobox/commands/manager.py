@@ -1260,23 +1260,21 @@ class DockerManager(CleanupMixin):
 
         node_names = [f"{prefix}-{i + 1}" for i in range(count)]
 
-        # Multi-node clusters get a dedicated user-defined bridge (Docker DNS)
-        # plus auto-wired static bootstrap peers and a connectivity wait gate,
-        # so a gossipsub mesh forms deterministically instead of depending on
-        # mDNS over Docker's default bridge (see #231). Disable with
+        # Multi-node clusters get auto-wired static /ip4 bootstrap peers plus a
+        # connectivity wait gate, so peer discovery doesn't depend on mDNS over
+        # Docker's default bridge (see #231). Disable with
         # MEROBOX_LEGACY_CLUSTER_NETWORKING=1.
         legacy_cluster = bool(os.environ.get(self.LEGACY_CLUSTER_ENV))
         cluster_mode = count >= 2 and not legacy_cluster
-        # When auth is enabled the nodes are already attached to `calimero_web`,
-        # which has Docker DNS, so we don't add a second bridge — we just wire
-        # bootstrap peers using the existing container DNS names.
+        # Non-auth clusters get a dedicated user-defined bridge for isolation;
+        # auth clusters reuse `calimero_web`. If the dedicated bridge can't be
+        # created we fall back to Docker's default bridge — bootstrap peers are
+        # wired by container IP either way (merod's libp2p has no DNS transport,
+        # so /dns4 wouldn't work), so wiring isn't gated on the network.
         cluster_network = None
         if cluster_mode and not auth_service:
             cluster_network = self._ensure_cluster_network()
-        # Without a DNS-capable network there's no point wiring /dns4 peers.
-        wire_cluster_peers = cluster_mode and (
-            auth_service or cluster_network is not None
-        )
+        wire_cluster_peers = cluster_mode
 
         def start_one(i):
             node_name = node_names[i]
@@ -1505,6 +1503,12 @@ class DockerManager(CleanupMixin):
                 console.print(
                     f"[green]✓ Wired bootstrap peers and restarted "
                     f"{len(restarted)} cluster node(s)[/green]"
+                )
+            else:
+                console.print(
+                    "[yellow]⚠️  Wrote bootstrap peers but could not restart any "
+                    "container; the new config won't take effect until restart "
+                    "— falling back to mDNS-only discovery[/yellow]"
                 )
         except Exception as e:
             console.print(
