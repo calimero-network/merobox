@@ -223,10 +223,28 @@ jobs:
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh
 
+      - name: Start node log capture
+        run: |
+          chmod +x .github/scripts/capture-node-logs.sh
+          .github/scripts/capture-node-logs.sh start "$GITHUB_WORKSPACE/node-logs" /tmp/node-log-capture.state
+
       - name: Run ${{ matrix.name }}
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}"
+
+      - name: Stop node log capture
+        if: always()
+        run: .github/scripts/capture-node-logs.sh stop /tmp/node-log-capture.state
+
+      - name: Upload node logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-logs-docker-${{ matrix.name }}-${{ github.run_id }}
+          path: node-logs/
+          retention-days: 14
+          if-no-files-found: ignore
 
   test-merobox-integration:
     runs-on: ubuntu-latest
@@ -260,6 +278,11 @@ jobs:
           cd example-project
           pip install -r requirements.txt
 
+      - name: Start node log capture
+        run: |
+          chmod +x .github/scripts/capture-node-logs.sh
+          .github/scripts/capture-node-logs.sh start "$GITHUB_WORKSPACE/node-logs" /tmp/node-log-capture.state
+
       - name: Run merobox integration tests
         run: |
           echo "Performing initial cleanup..."
@@ -275,3 +298,16 @@ jobs:
           echo "Cleaning up after integration tests..."
           cd .. && merobox stop --all || true
           merobox nuke -f || true
+
+      - name: Stop node log capture
+        if: always()
+        run: .github/scripts/capture-node-logs.sh stop /tmp/node-log-capture.state
+
+      - name: Upload node logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-logs-integration-${{ github.run_id }}
+          path: node-logs/
+          retention-days: 14
+          if-no-files-found: ignore

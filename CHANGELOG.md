@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GET /admin-api/peers` endpoint returns `{"count": N}`, but `extract_peers_count`
   only understood a `peers` list, so it always showed `0` peers.
 
+### CI
+
+- The Docker workflow jobs and the integration-test job now stream each node
+  container's logs to disk (`docker logs -f`, surviving `merobox stop`/`nuke`)
+  and upload them as artifacts (`node-logs-*`), so failures — and questions like
+  "is the gossipsub mesh forming?" — can be diagnosed from CI without a re-run.
+  Mirrors core's `fuzzy-load-test` log capture. New helper:
+  `.github/scripts/capture-node-logs.sh`.
+
 ## [0.6.9] - 2026-05-09
 
 ### Fixed
