@@ -17,6 +17,15 @@ from merobox.commands.manager import (
 # Realistic-length base58btc libp2p peer IDs for the cluster-bootstrap tests
 # (the production code validates the peer-ID format before using it).
 _PID = {n: "12D3KooW" + chr(ord("A") + n) * 44 for n in range(1, 5)}
+_IP = {n: f"172.20.0.{n + 1}" for n in range(1, 5)}
+
+
+def _mock_cluster_container(ip, network="merobox-cluster", status="running"):
+    """A MagicMock container that reports `ip` on `network` (for IP discovery)."""
+    c = MagicMock()
+    c.status = status
+    c.attrs = {"NetworkSettings": {"Networks": {network: {"IPAddress": ip}}}}
+    return c
 
 
 def _capture_run_config_factory(container_configs):
@@ -830,16 +839,14 @@ def test_run_node_auth_network_wins_over_cluster_network(mock_docker):
 def test_wire_cluster_bootstrap_peers_populates_siblings(
     mock_docker, mock_read_peer_id, mock_apply_bootstrap
 ):
-    """Each cluster node gets the *other* nodes wired as static bootstrap peers."""
+    """Each cluster node gets the *other* nodes wired as /ip4 static bootstrap peers."""
     client = MagicMock()
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
 
-    peer_ids = {
-        "calimero-node-1": _PID[1],
-        "calimero-node-2": _PID[2],
-        "calimero-node-3": _PID[3],
-    }
+    nodes = ["calimero-node-1", "calimero-node-2", "calimero-node-3"]
+    peer_ids = {n: _PID[i + 1] for i, n in enumerate(nodes)}
+    ips = {n: _IP[i + 1] for i, n in enumerate(nodes)}
     mock_read_peer_id.side_effect = lambda cfg: next(
         (
             pid
@@ -849,22 +856,21 @@ def test_wire_cluster_bootstrap_peers_populates_siblings(
         None,
     )
 
-    containers = {name: MagicMock() for name in peer_ids}
-    for c in containers.values():
-        c.status = "running"
+    containers = {n: _mock_cluster_container(ips[n]) for n in nodes}
     manager.nodes = dict(containers)
     manager._fix_permissions = MagicMock()
 
-    manager._wire_cluster_bootstrap_peers(list(peer_ids), e2e_mode=True)
+    manager._wire_cluster_bootstrap_peers(nodes, "merobox-cluster", e2e_mode=True)
 
     assert mock_apply_bootstrap.call_count == 3
     for call in mock_apply_bootstrap.call_args_list:
         _config_file, node_name, addrs = call.args
         assert addrs, f"{node_name} got an empty bootstrap list"
-        assert all(f"/dns4/{node_name}/" not in a for a in addrs)
-        for sib in (n for n in peer_ids if n != node_name):
-            assert f"/dns4/{sib}/tcp/2428/p2p/{peer_ids[sib]}" in addrs
-            assert f"/dns4/{sib}/udp/2428/quic-v1/p2p/{peer_ids[sib]}" in addrs
+        assert all("/dns4/" not in a for a in addrs)
+        assert all(ips[node_name] not in a for a in addrs)  # never itself
+        for sib in (n for n in nodes if n != node_name):
+            assert f"/ip4/{ips[sib]}/tcp/2428/p2p/{peer_ids[sib]}" in addrs
+            assert f"/ip4/{ips[sib]}/udp/2428/quic-v1/p2p/{peer_ids[sib]}" in addrs
     for c in containers.values():
         c.restart.assert_called_once()
 
@@ -872,16 +878,18 @@ def test_wire_cluster_bootstrap_peers_populates_siblings(
 @patch("merobox.commands.manager.apply_bootstrap_nodes")
 @patch("merobox.commands.manager.read_peer_id")
 @patch("docker.from_env")
-def test_wire_cluster_bootstrap_peers_bails_when_too_few_peer_ids(
+def test_wire_cluster_bootstrap_peers_bails_when_too_few_endpoints(
     mock_docker, mock_read_peer_id, mock_apply_bootstrap
 ):
-    """If fewer than two peer IDs can be read, fall back to mDNS (no rewrites)."""
+    """If fewer than two peer endpoints resolve, fall back to mDNS (no rewrites)."""
     client = MagicMock()
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
     mock_read_peer_id.return_value = None
 
-    manager._wire_cluster_bootstrap_peers(["calimero-node-1", "calimero-node-2"])
+    manager._wire_cluster_bootstrap_peers(
+        ["calimero-node-1", "calimero-node-2"], "merobox-cluster"
+    )
 
     mock_apply_bootstrap.assert_not_called()
 
@@ -892,12 +900,14 @@ def test_wire_cluster_bootstrap_peers_bails_when_too_few_peer_ids(
 def test_wire_cluster_bootstrap_peers_appends_to_explicit_list(
     mock_docker, mock_read_peer_id, mock_apply_bootstrap
 ):
-    """An explicit bootstrap_nodes list is preserved; siblings are appended."""
+    """An explicit bootstrap_nodes list is preserved; sibling /ip4 addrs are appended."""
     client = MagicMock()
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
 
-    peer_ids = {"calimero-node-1": _PID[1], "calimero-node-2": _PID[2]}
+    nodes = ["calimero-node-1", "calimero-node-2"]
+    peer_ids = {n: _PID[i + 1] for i, n in enumerate(nodes)}
+    ips = {n: _IP[i + 1] for i, n in enumerate(nodes)}
     mock_read_peer_id.side_effect = lambda cfg: next(
         (
             pid
@@ -906,18 +916,33 @@ def test_wire_cluster_bootstrap_peers_appends_to_explicit_list(
         ),
         None,
     )
-    for name in peer_ids:
-        manager.nodes[name] = MagicMock(status="running")
+    for n in nodes:
+        manager.nodes[n] = _mock_cluster_container(ips[n])
     manager._fix_permissions = MagicMock()
 
     explicit = ["/ip4/63.181.86.34/tcp/4001/p2p/" + _PID[4]]
     manager._wire_cluster_bootstrap_peers(
-        list(peer_ids), e2e_mode=True, base_bootstrap_nodes=explicit
+        nodes, "merobox-cluster", e2e_mode=True, base_bootstrap_nodes=explicit
     )
 
+    assert mock_apply_bootstrap.call_count == 2
     for call in mock_apply_bootstrap.call_args_list:
         _config_file, _node_name, addrs = call.args
         assert addrs[0] == explicit[0]
+        assert any(a.startswith("/ip4/172.20.0.") and "/p2p/" in a for a in addrs[1:])
+
+
+def test_peers_count_from_response_handles_various_shapes():
+    """`GET /admin-api/peers` returns {"count": N}; older shapes use a list."""
+    f = DockerManager._peers_count_from_response
+    assert f({"count": 3}) == 3  # current merod shape
+    assert f({"data": {"count": 2}}) == 2
+    assert f({"data": {"peers": ["a", "b"]}}) == 2
+    assert f({"peers": ["a"]}) == 1
+    assert f(["a", "b", "c"]) == 3
+    assert f({"data": {"total": 0}}) == 0  # unrecognized -> 0 (not len(dict))
+    assert f({"count": True}) == 0  # a bool is not a peer count
+    assert f(None) == 0
 
 
 @patch("merobox.commands.manager.requests")
@@ -931,7 +956,7 @@ def test_wait_for_cluster_peers_true_when_all_connected(mock_docker, mock_reques
 
     resp = MagicMock()
     resp.status_code = 200
-    resp.json.return_value = {"data": {"peers": ["peerA"]}}
+    resp.json.return_value = {"count": 1}  # GET /admin-api/peers shape
     mock_requests.get.return_value = resp
 
     assert (
@@ -956,7 +981,7 @@ def test_wait_for_cluster_peers_false_on_timeout(mock_docker, mock_requests):
 
     resp = MagicMock()
     resp.status_code = 200
-    resp.json.return_value = {"data": {"peers": []}}
+    resp.json.return_value = {"count": 0}
     mock_requests.get.return_value = resp
 
     assert (

@@ -5,6 +5,7 @@ This module provides shared utilities for both DockerManager and BinaryManager
 to configure Calimero nodes consistently.
 """
 
+import ipaddress
 import re
 import stat
 import uuid
@@ -20,9 +21,14 @@ console = Console()
 # character that could break a multiaddr — no '/', no whitespace, no brackets).
 # Real peer IDs are ~46-53 chars; require a generous minimum.
 _PEER_ID_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{40,}$")
-# A safe container/DNS name to interpolate into a multiaddr (subset of Docker's
-# container-name rules).
-_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+def _valid_ipv4(addr: str) -> bool:
+    """True if ``addr`` is a syntactically valid IPv4 address."""
+    try:
+        return isinstance(ipaddress.ip_address(addr), ipaddress.IPv4Address)
+    except ValueError:
+        return False
 
 
 def set_nested_config(config: dict, key: str, value, log: bool = True) -> None:
@@ -133,24 +139,25 @@ def read_peer_id(config_file: Union[Path, str]) -> Optional[str]:
 
 def build_sibling_bootstrap_addrs(
     node_name: str,
-    peer_ids_by_name: dict[str, Optional[str]],
+    peers_by_name: dict[str, Optional[tuple[str, str]]],
     p2p_port: int,
     existing: Optional[list[str]] = None,
 ) -> list[str]:
     """
     Build the ``bootstrap.nodes`` list for ``node_name`` from its siblings.
 
-    For every *other* node in ``peer_ids_by_name`` that has a known peer ID,
-    emit both a TCP and a QUIC ``/dns4/<container>/...`` multiaddr (the cluster
-    runs on a user-defined Docker bridge, so container names resolve via Docker
-    DNS). Any ``existing`` entries (e.g. an explicit ``bootstrap_nodes:`` list
-    from the workflow) are preserved at the front; siblings are appended without
-    introducing duplicates.
+    For every *other* node in ``peers_by_name`` with a known ``(ip, peer_id)``,
+    emit both a TCP and a QUIC ``/ip4/<ip>/.../p2p/<peer_id>`` multiaddr. IPs are
+    used (not ``/dns4/<container>``) because merod's libp2p swarm is built
+    without a DNS transport, so it cannot dial ``/dns4/`` addresses. Any
+    ``existing`` entries (e.g. an explicit ``bootstrap_nodes:`` list from the
+    workflow) are preserved at the front; siblings are appended without
+    introducing duplicates. Entries with a malformed IP or peer ID are skipped.
 
     Args:
         node_name: The node whose bootstrap list is being built.
-        peer_ids_by_name: Mapping of node/container name -> peer ID (or ``None``
-            if it could not be read).
+        peers_by_name: Mapping of node/container name -> ``(ipv4, peer_id)`` (or
+            ``None`` if either could not be determined).
         p2p_port: The libp2p swarm port the nodes listen on (inside the network).
         existing: Optional pre-existing bootstrap addresses to keep.
 
@@ -159,18 +166,24 @@ def build_sibling_bootstrap_addrs(
     """
     addrs: list[str] = list(existing) if existing else []
     seen = set(addrs)
-    for other_name, other_peer_id in peer_ids_by_name.items():
-        if other_name == node_name or not other_peer_id:
+    for other_name, endpoint in peers_by_name.items():
+        if other_name == node_name or not endpoint:
             continue
-        if not _SAFE_NAME_RE.match(other_name) or not _PEER_ID_RE.match(other_peer_id):
+        ip, peer_id = endpoint
+        if (
+            not ip
+            or not peer_id
+            or not _valid_ipv4(ip)
+            or not _PEER_ID_RE.match(peer_id)
+        ):
             console.print(
                 f"[yellow]⚠️  Skipping bootstrap peer with unexpected "
-                f"name/peer-id: {other_name!r} / {other_peer_id!r}[/yellow]"
+                f"ip/peer-id: {other_name} -> {ip!r} / {peer_id!r}[/yellow]"
             )
             continue
         for addr in (
-            f"/dns4/{other_name}/tcp/{p2p_port}/p2p/{other_peer_id}",
-            f"/dns4/{other_name}/udp/{p2p_port}/quic-v1/p2p/{other_peer_id}",
+            f"/ip4/{ip}/tcp/{p2p_port}/p2p/{peer_id}",
+            f"/ip4/{ip}/udp/{p2p_port}/quic-v1/p2p/{peer_id}",
         ):
             if addr not in seen:
                 addrs.append(addr)

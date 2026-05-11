@@ -1332,8 +1332,14 @@ class DockerManager(CleanupMixin):
         # the run loudly here instead of flaking under load minutes later.
         gate_ok = True
         if all_started and wire_cluster_peers:
+            # auth clusters are already on `calimero_web`; non-auth clusters are
+            # on the dedicated bridge created above.
+            wire_network = "calimero_web" if auth_service else cluster_network
             self._wire_cluster_bootstrap_peers(
-                node_names, e2e_mode=e2e_mode, base_bootstrap_nodes=bootstrap_nodes
+                node_names,
+                wire_network,
+                e2e_mode=e2e_mode,
+                base_bootstrap_nodes=bootstrap_nodes,
             )
             gate_ok = self.wait_for_cluster_peers(node_names, expected_peers=count - 1)
 
@@ -1363,39 +1369,77 @@ class DockerManager(CleanupMixin):
             "config.toml",
         )
 
+    @staticmethod
+    def _container_network_ip(container, network_name: Optional[str]) -> Optional[str]:
+        """Return the container's IPv4 on ``network_name`` (or any network)."""
+        try:
+            container.reload()
+            networks = (
+                container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+            )
+            if network_name and network_name in networks:
+                ip = (networks[network_name] or {}).get("IPAddress")
+                if ip:
+                    return ip
+            for net in networks.values():
+                ip = (net or {}).get("IPAddress")
+                if ip:
+                    return ip
+        except Exception:
+            pass
+        return None
+
     def _wire_cluster_bootstrap_peers(
         self,
         node_names: list[str],
+        network_name: Optional[str],
         e2e_mode: bool = False,
         base_bootstrap_nodes: Optional[list[str]] = None,
     ) -> None:
         """Populate each cluster node's ``bootstrap.nodes`` with its siblings.
 
         ``merod init`` (already run by :meth:`run_node`) writes each node's
-        libp2p peer ID into ``config.toml``. We read those, build the list of
-        ``/dns4/<container>/tcp/2428/p2p/<peer_id>`` (+ ``quic-v1``) addresses
-        for every *other* node (appended after any explicit
-        ``base_bootstrap_nodes``), write them via
-        :func:`apply_bootstrap_nodes`, and restart the containers so the new
-        config takes effect. mDNS is left enabled as a fallback; the rendezvous
-        config is untouched.
+        libp2p peer ID into ``config.toml``. We read those, look up each running
+        container's IPv4 on ``network_name``, build the list of
+        ``/ip4/<ip>/tcp/2428/p2p/<peer_id>`` (+ ``quic-v1``) addresses for every
+        *other* node (appended after any explicit ``base_bootstrap_nodes``),
+        write them via :func:`apply_bootstrap_nodes`, and restart the containers
+        so the new config takes effect. IPs are used rather than
+        ``/dns4/<container>`` because merod's libp2p swarm has no DNS transport.
+        mDNS is left enabled as a fallback; the rendezvous config is untouched.
         """
         try:
-            peer_ids: dict[str, str] = {}
+            # name -> (ip, peer_id) for every node we could fully resolve.
+            endpoints: dict[str, tuple[str, str]] = {}
             config_files: dict[str, str] = {}
             for node_name in node_names:
                 config_file = self._cluster_config_file(node_name)
                 if not config_file:
                     continue
                 peer_id = read_peer_id(config_file)
-                if peer_id:
-                    peer_ids[node_name] = peer_id
-                    config_files[node_name] = config_file
+                if not peer_id:
+                    continue
+                container = self.nodes.get(node_name)
+                if container is None:
+                    try:
+                        container = self.client.containers.get(node_name)
+                    except Exception:
+                        container = None
+                ip = (
+                    self._container_network_ip(container, network_name)
+                    if container is not None
+                    else None
+                )
+                if not ip:
+                    continue
+                endpoints[node_name] = (ip, peer_id)
+                config_files[node_name] = config_file
 
-            if len(peer_ids) < 2:
+            if len(endpoints) < 2:
                 console.print(
-                    "[yellow]⚠️  Could not read enough peer IDs to wire cluster "
-                    "bootstrap peers; falling back to mDNS-only discovery[/yellow]"
+                    "[yellow]⚠️  Could not resolve enough peer endpoints to wire "
+                    "cluster bootstrap peers; falling back to mDNS-only discovery"
+                    "[/yellow]"
                 )
                 return
 
@@ -1406,11 +1450,11 @@ class DockerManager(CleanupMixin):
 
             restarted: list[str] = []
             for node_name in node_names:
-                if node_name not in peer_ids:
+                if node_name not in endpoints:
                     continue
                 addrs = build_sibling_bootstrap_addrs(
                     node_name,
-                    peer_ids,
+                    endpoints,
                     DEFAULT_P2P_PORT,
                     existing=base_bootstrap_nodes,
                 )
@@ -1470,16 +1514,19 @@ class DockerManager(CleanupMixin):
 
     @staticmethod
     def _peers_count_from_response(payload) -> int:
-        """Extract the connected-peer count from an ``/admin-api/peers`` body.
+        """Extract the connected-peer count from a ``GET /admin-api/peers`` body.
 
-        The endpoint returns ``{"data": {"peers": [...]}}`` (older builds may
-        omit the ``data`` wrapper or return the list directly). Anything that
-        doesn't resolve to a list is treated as zero peers.
+        Current merod returns ``{"count": N}`` (no ``data`` wrapper). Older /
+        other shapes (``{"data": {"peers": [...]}}``, ``{"peers": [...]}``, or a
+        bare list) are also accepted. Anything unrecognized is treated as zero.
         """
         data = payload
         if isinstance(data, dict) and "data" in data:
             data = data["data"]
         if isinstance(data, dict):
+            count = data.get("count")
+            if isinstance(count, int) and not isinstance(count, bool):
+                return count
             data = data.get("peers")
         return len(data) if isinstance(data, list) else 0
 

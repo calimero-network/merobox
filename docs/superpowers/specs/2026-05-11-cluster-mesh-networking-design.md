@@ -1,8 +1,29 @@
 # Deterministic cluster networking for multi-node merobox runs
 
-**Issue:** [merobox#231](https://github.com/calimero-network/merobox/issues/231)
+**Issue:** [merobox#231](https://github.com/calimero-network/merobox/issues/231) · **PR:** [merobox#232](https://github.com/calimero-network/merobox/pull/232)
 **Date:** 2026-05-11
-**Status:** Approved — ready for implementation plan
+**Status:** Implemented (PR #232)
+
+## Implementation notes (corrections found during CI)
+
+- **Bootstrap multiaddrs use `/ip4/<container-ip>/...`, not `/dns4/<container>/...`.** merod's
+  libp2p `Swarm` is built without a DNS transport (`crates/network/Cargo.toml` has no `"dns"`
+  feature; `behaviour.rs::build_swarm` never calls `.with_dns()`), so `/dns4/` multiaddrs
+  cannot be dialed. merobox now reads each container's IP on the cluster network (after it
+  starts) and wires `/ip4/<ip>/tcp|udp/2428/...`. The dedicated bridge is still created, but
+  only for isolation — DNS isn't relied on.
+- **`GET /admin-api/peers` returns `{"count": N}`** (a count, not a `{"data":{"peers":[...]}}`
+  list). The wait-gate parser (`_peers_count_from_response`) and the pre-existing
+  `health.py::extract_peers_count` both only understood the list shape and silently reported
+  `0`; both now handle `{"count": N}`.
+- merod only feeds `bootstrap.nodes` into Kademlia (`kad.add_address` + `kad.bootstrap()`) —
+  it doesn't hold a dedicated persistent connection per bootstrap node. Persistent peer
+  connections come from mDNS (direct dial) and rendezvous discovery (direct dial); merobox
+  runs no rendezvous server. So the wiring populates Kademlia with dialable sibling addresses
+  but, by itself, isn't guaranteed to produce the connected-peer counts the gate checks — in
+  practice mDNS on the bridge does connect the peers. (If a deterministic peering without a
+  rendezvous server is wanted, that's a core-side change — a "static keep-alive peers" list,
+  and/or adding the `dns` transport so `/dns4/` works.)
 
 ## Status note (re-scoping, 2026-05-11)
 
