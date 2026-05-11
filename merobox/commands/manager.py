@@ -4,6 +4,7 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -125,6 +126,11 @@ class DockerManager(CleanupMixin):
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
+        # Absolute path to each node's config.toml, recorded by run_node so the
+        # cluster-bootstrap wiring doesn't have to reconstruct it from a
+        # relative path (which would break if the CWD changed, or if a custom
+        # data_dir was used).
+        self.node_config_files: dict[str, str] = {}
 
         if enable_signal_handlers:
             self._setup_signal_handlers()
@@ -173,6 +179,7 @@ class DockerManager(CleanupMixin):
             )
             self.nodes.clear()
             self.node_rpc_ports.clear()
+            self.node_config_files.clear()
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""
@@ -676,6 +683,9 @@ class DockerManager(CleanupMixin):
                 )
 
             config_file = os.path.join(node_data_dir, "config.toml")
+            # Record the resolved path so cluster-bootstrap wiring can find it
+            # without reconstructing it from a relative path later.
+            self.node_config_files[node_name] = os.path.abspath(config_file)
 
             try:
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
@@ -880,6 +890,17 @@ class DockerManager(CleanupMixin):
     # cluster behavior (no dedicated network, no auto bootstrap peers, no
     # connectivity wait gate).
     LEGACY_CLUSTER_ENV = "MEROBOX_LEGACY_CLUSTER_NETWORKING"
+
+    # Environment variable to override the cluster connectivity wait-gate
+    # timeout (seconds). Bump this in slow CI if the post-restart re-dial takes
+    # longer than the default.
+    CLUSTER_PEER_TIMEOUT_ENV = "MEROBOX_CLUSTER_PEER_TIMEOUT"
+    DEFAULT_CLUSTER_PEER_TIMEOUT = 60.0
+
+    # Safe container/node name: no path-traversal, no separators — a subset of
+    # Docker's own container-name rules. Used before interpolating node names
+    # into filesystem paths or multiaddrs.
+    SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
     def _ensure_cluster_network(self) -> Optional[str]:
         """Ensure the user-defined bridge for multi-node clusters exists.
@@ -1321,10 +1342,25 @@ class DockerManager(CleanupMixin):
         )
         return all_started and gate_ok
 
-    def _cluster_config_file(self, node_name: str) -> str:
-        """Path to a cluster node's config.toml under the default data layout."""
+    def _cluster_config_file(self, node_name: str) -> Optional[str]:
+        """Absolute path to a cluster node's config.toml.
+
+        Prefers the path recorded by :meth:`run_node` (robust to CWD changes
+        and custom ``data_dir``); falls back to the default ``./data/`` layout.
+        Returns ``None`` if ``node_name`` isn't a safe path component.
+        """
+        if not self.SAFE_NAME_RE.match(node_name):
+            console.print(
+                f"[yellow]⚠️  Skipping unsafe node name: {node_name!r}[/yellow]"
+            )
+            return None
+        recorded = self.node_config_files.get(node_name)
+        if recorded:
+            return recorded
         return os.path.join(
-            os.path.abspath(f"./data/{node_name}"), node_name, "config.toml"
+            os.path.abspath(os.path.join("./data", node_name)),
+            node_name,
+            "config.toml",
         )
 
     def _wire_cluster_bootstrap_peers(
@@ -1346,10 +1382,15 @@ class DockerManager(CleanupMixin):
         """
         try:
             peer_ids: dict[str, str] = {}
+            config_files: dict[str, str] = {}
             for node_name in node_names:
-                peer_id = read_peer_id(self._cluster_config_file(node_name))
+                config_file = self._cluster_config_file(node_name)
+                if not config_file:
+                    continue
+                peer_id = read_peer_id(config_file)
                 if peer_id:
                     peer_ids[node_name] = peer_id
+                    config_files[node_name] = config_file
 
             if len(peer_ids) < 2:
                 console.print(
@@ -1376,7 +1417,7 @@ class DockerManager(CleanupMixin):
                 if not addrs:
                     continue
 
-                config_file = self._cluster_config_file(node_name)
+                config_file = config_files[node_name]
                 # The init container ran as root, so the config file may be
                 # root-owned. In e2e mode run_node already fixed ownership;
                 # otherwise do it here (idempotent, cheap).
@@ -1401,7 +1442,9 @@ class DockerManager(CleanupMixin):
                         )
 
             if restarted:
-                time.sleep(NODE_STARTUP_DELAY)
+                # Give merod time to re-read its config and start re-dialing
+                # before the connectivity gate begins polling.
+                time.sleep(max(2 * NODE_STARTUP_DELAY, 2))
                 for node_name in restarted:
                     container = self.nodes.get(node_name)
                     if container is None:
@@ -1430,13 +1473,14 @@ class DockerManager(CleanupMixin):
         """Extract the connected-peer count from an ``/admin-api/peers`` body.
 
         The endpoint returns ``{"data": {"peers": [...]}}`` (older builds may
-        omit the ``data`` wrapper or return the list directly).
+        omit the ``data`` wrapper or return the list directly). Anything that
+        doesn't resolve to a list is treated as zero peers.
         """
         data = payload
         if isinstance(data, dict) and "data" in data:
             data = data["data"]
         if isinstance(data, dict):
-            data = data.get("peers", data)
+            data = data.get("peers")
         return len(data) if isinstance(data, list) else 0
 
     def _node_connected_peers(self, node_name: str) -> int:
@@ -1456,7 +1500,7 @@ class DockerManager(CleanupMixin):
         self,
         node_names: list[str],
         expected_peers: int,
-        timeout: float = 60.0,
+        timeout: Optional[float] = None,
         interval: float = 2.0,
     ) -> bool:
         """Block until every node reports at least ``expected_peers`` peers.
@@ -1465,13 +1509,23 @@ class DockerManager(CleanupMixin):
         wired as bootstrap peers before ``merod run`` subscribes to topics, full
         connectivity is a strong predictor of a non-empty gossipsub mesh. If the
         cluster never connects, return ``False`` so the caller can fail the run
-        — a deterministic startup failure instead of flaky cross-node
-        assertions minutes into a load test. (Gossipsub mesh peer count is not
-        exposed via the admin API; connected-peer count is the observable
-        proxy.)
+        — a deterministic startup failure instead of a half-connected cluster
+        limping through a load test. (Gossipsub mesh peer count is not exposed
+        via the admin API; connected-peer count is the observable proxy.)
+
+        ``timeout`` defaults to :data:`DEFAULT_CLUSTER_PEER_TIMEOUT`, overridable
+        via the ``MEROBOX_CLUSTER_PEER_TIMEOUT`` env var.
         """
         if expected_peers <= 0:
             return True
+        if timeout is None:
+            try:
+                timeout = float(
+                    os.environ.get(self.CLUSTER_PEER_TIMEOUT_ENV)
+                    or self.DEFAULT_CLUSTER_PEER_TIMEOUT
+                )
+            except (TypeError, ValueError):
+                timeout = self.DEFAULT_CLUSTER_PEER_TIMEOUT
         console.print(
             f"[bold]Waiting for cluster connectivity "
             f"(≥{expected_peers} peer(s) per node, up to {int(timeout)}s)...[/bold]"
@@ -1486,14 +1540,15 @@ class DockerManager(CleanupMixin):
             if not short:
                 console.print("[green]✓ Cluster fully connected[/green]")
                 return True
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 detail = ", ".join(f"{name}={n}" for name, n in short.items())
                 console.print(
                     f"[red]✗ Cluster did not reach {expected_peers} peer(s) per "
                     f"node within {int(timeout)}s (short: {detail})[/red]"
                 )
                 return False
-            time.sleep(interval)
+            time.sleep(min(interval, remaining))
 
     def _graceful_stop_container(
         self,

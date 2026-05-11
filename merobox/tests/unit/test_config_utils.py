@@ -175,12 +175,19 @@ def test_read_peer_id_file_not_found_returns_none():
 # ---------------------------------------------------------------------------
 
 
+# Realistic-length base58btc libp2p peer IDs for the bootstrap-address tests.
+PID_1 = "12D3KooW" + "A" * 44
+PID_2 = "12D3KooW" + "B" * 44
+PID_3 = "12D3KooW" + "C" * 44
+PID_DEVNET = "12D3KooW" + "D" * 44
+
+
 def test_build_sibling_bootstrap_addrs_excludes_self_and_lists_siblings():
     """Every sibling appears as a /dns4 TCP + QUIC multiaddr; the node itself does not."""
     peer_ids = {
-        "calimero-node-1": "12D3KooWAAA",
-        "calimero-node-2": "12D3KooWBBB",
-        "calimero-node-3": "12D3KooWCCC",
+        "calimero-node-1": PID_1,
+        "calimero-node-2": PID_2,
+        "calimero-node-3": PID_3,
     }
 
     addrs = build_sibling_bootstrap_addrs("calimero-node-2", peer_ids, p2p_port=2428)
@@ -197,28 +204,44 @@ def test_build_sibling_bootstrap_addrs_excludes_self_and_lists_siblings():
 def test_build_sibling_bootstrap_addrs_skips_unknown_peer_ids():
     """Siblings with a falsy/None peer ID are skipped."""
     peer_ids = {
-        "calimero-node-1": "12D3KooWAAA",
+        "calimero-node-1": PID_1,
         "calimero-node-2": None,
-        "calimero-node-3": "12D3KooWCCC",
+        "calimero-node-3": PID_3,
     }
 
     addrs = build_sibling_bootstrap_addrs("calimero-node-1", peer_ids, p2p_port=2428)
 
     assert all("calimero-node-2" not in a for a in addrs)
-    assert "/dns4/calimero-node-3/tcp/2428/p2p/12D3KooWCCC" in addrs
+    assert f"/dns4/calimero-node-3/tcp/2428/p2p/{PID_3}" in addrs
+    assert len(addrs) == 2
+
+
+def test_build_sibling_bootstrap_addrs_skips_malformed_peer_id_or_name():
+    """Siblings with a non-base58 peer ID or path-unsafe name are skipped."""
+    peer_ids = {
+        "calimero-node-1": PID_1,
+        "evil/../node": PID_2,  # path-traversal in the name
+        "calimero-node-3": "not a valid peer id",  # whitespace/invalid chars
+        "calimero-node-4": PID_3,
+    }
+
+    addrs = build_sibling_bootstrap_addrs("calimero-node-1", peer_ids, p2p_port=2428)
+
+    assert all("evil" not in a and "calimero-node-3" not in a for a in addrs)
+    assert f"/dns4/calimero-node-4/tcp/2428/p2p/{PID_3}" in addrs
     assert len(addrs) == 2
 
 
 def test_build_sibling_bootstrap_addrs_appends_to_existing():
     """An existing bootstrap list is preserved; siblings are appended, deduped."""
-    peer_ids = {"node-a": "12D3KooWAAA", "node-b": "12D3KooWBBB"}
-    existing = ["/ip4/63.181.86.34/tcp/4001/p2p/12D3KooWDevnet"]
+    peer_ids = {"node-a": PID_1, "node-b": PID_2}
+    existing = [f"/ip4/63.181.86.34/tcp/4001/p2p/{PID_DEVNET}"]
 
     addrs = build_sibling_bootstrap_addrs(
         "node-a", peer_ids, p2p_port=2428, existing=existing
     )
 
-    assert addrs[0] == "/ip4/63.181.86.34/tcp/4001/p2p/12D3KooWDevnet"
-    assert "/dns4/node-b/tcp/2428/p2p/12D3KooWBBB" in addrs
+    assert addrs[0] == f"/ip4/63.181.86.34/tcp/4001/p2p/{PID_DEVNET}"
+    assert f"/dns4/node-b/tcp/2428/p2p/{PID_2}" in addrs
     # no duplicates
     assert len(addrs) == len(set(addrs))

@@ -5,6 +5,7 @@ This module provides shared utilities for both DockerManager and BinaryManager
 to configure Calimero nodes consistently.
 """
 
+import re
 import stat
 import uuid
 from pathlib import Path
@@ -14,6 +15,14 @@ import toml
 from rich.console import Console
 
 console = Console()
+
+# A libp2p peer ID rendered in base58btc (the alphabet excludes 0/O/I/l and any
+# character that could break a multiaddr — no '/', no whitespace, no brackets).
+# Real peer IDs are ~46-53 chars; require a generous minimum.
+_PEER_ID_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{40,}$")
+# A safe container/DNS name to interpolate into a multiaddr (subset of Docker's
+# container-name rules).
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def set_nested_config(config: dict, key: str, value, log: bool = True) -> None:
@@ -152,6 +161,12 @@ def build_sibling_bootstrap_addrs(
     seen = set(addrs)
     for other_name, other_peer_id in peer_ids_by_name.items():
         if other_name == node_name or not other_peer_id:
+            continue
+        if not _SAFE_NAME_RE.match(other_name) or not _PEER_ID_RE.match(other_peer_id):
+            console.print(
+                f"[yellow]⚠️  Skipping bootstrap peer with unexpected "
+                f"name/peer-id: {other_name!r} / {other_peer_id!r}[/yellow]"
+            )
             continue
         for addr in (
             f"/dns4/{other_name}/tcp/{p2p_port}/p2p/{other_peer_id}",

@@ -14,6 +14,10 @@ from merobox.commands.manager import (
     _validate_cors_origins,
 )
 
+# Realistic-length base58btc libp2p peer IDs for the cluster-bootstrap tests
+# (the production code validates the peer-ID format before using it).
+_PID = {n: "12D3KooW" + chr(ord("A") + n) * 44 for n in range(1, 5)}
+
 
 def _capture_run_config_factory(container_configs):
     """Build a `client.containers.run` side effect that records kwargs."""
@@ -763,10 +767,9 @@ def test_ensure_cluster_network_creates_when_missing(mock_docker):
     name = manager._ensure_cluster_network()
 
     assert name == DockerManager.CLUSTER_NETWORK_NAME
-    client.networks.create.assert_called_once()
-    _, kwargs = client.networks.create.call_args
-    assert kwargs.get("name") == DockerManager.CLUSTER_NETWORK_NAME
-    assert kwargs.get("driver") == "bridge"
+    client.networks.create.assert_called_once_with(
+        name=DockerManager.CLUSTER_NETWORK_NAME, driver="bridge"
+    )
 
 
 @patch("docker.from_env")
@@ -833,9 +836,9 @@ def test_wire_cluster_bootstrap_peers_populates_siblings(
     manager = DockerManager(enable_signal_handlers=False)
 
     peer_ids = {
-        "calimero-node-1": "12D3KooWAAA",
-        "calimero-node-2": "12D3KooWBBB",
-        "calimero-node-3": "12D3KooWCCC",
+        "calimero-node-1": _PID[1],
+        "calimero-node-2": _PID[2],
+        "calimero-node-3": _PID[3],
     }
     mock_read_peer_id.side_effect = lambda cfg: next(
         (
@@ -894,7 +897,7 @@ def test_wire_cluster_bootstrap_peers_appends_to_explicit_list(
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
 
-    peer_ids = {"calimero-node-1": "12D3KooWAAA", "calimero-node-2": "12D3KooWBBB"}
+    peer_ids = {"calimero-node-1": _PID[1], "calimero-node-2": _PID[2]}
     mock_read_peer_id.side_effect = lambda cfg: next(
         (
             pid
@@ -907,7 +910,7 @@ def test_wire_cluster_bootstrap_peers_appends_to_explicit_list(
         manager.nodes[name] = MagicMock(status="running")
     manager._fix_permissions = MagicMock()
 
-    explicit = ["/ip4/63.181.86.34/tcp/4001/p2p/12D3KooWDevnet"]
+    explicit = ["/ip4/63.181.86.34/tcp/4001/p2p/" + _PID[4]]
     manager._wire_cluster_bootstrap_peers(
         list(peer_ids), e2e_mode=True, base_bootstrap_nodes=explicit
     )
@@ -975,7 +978,7 @@ def test_run_multiple_nodes_legacy_env_skips_cluster_wiring(mock_docker):
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
 
-    manager._find_available_ports = MagicMock(return_value=[2428, 2429])
+    manager._find_available_ports = MagicMock(side_effect=[[2428, 2429], [2528, 2529]])
     manager.run_node = MagicMock(return_value=True)
     manager._ensure_cluster_network = MagicMock()
     manager._wire_cluster_bootstrap_peers = MagicMock()
