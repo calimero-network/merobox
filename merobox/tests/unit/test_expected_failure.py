@@ -416,6 +416,24 @@ class TestGroupManagementPerStepSmoke:
             },
         )
 
+    def test_set_member_capabilities(self):
+        # Also has a fuller dedicated class below
+        # (TestSetMemberCapabilitiesExpectedFailure); this keeps the per-step
+        # smoke list complete so all 12 wired steps are visible at a glance.
+        _smoke(
+            SetMemberCapabilitiesStep,
+            _GM_MODULE,
+            "set_member_capabilities",
+            {
+                "type": "set_member_capabilities",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "member_id": "pk",
+                "capabilities": 7,
+            },
+        )
+
     def test_get_member_capabilities(self):
         _smoke(
             GetMemberCapabilitiesStep,
@@ -557,5 +575,25 @@ class TestSetMemberCapabilitiesExpectedFailure:
     def test_exception_path_fails_without_flag(self):
         mock_client = MagicMock()
         mock_client.set_member_capabilities.side_effect = RuntimeError("nope")
+        step = self._setup(expected_failure=False)
+        assert self._run_with_mock_client(step, mock_client) is False
+
+    def test_jsonrpc_error_path_passes_when_expected(self):
+        """HTTP-200 carrying a JSON-RPC error envelope — the shape merod
+        returns for e.g. an unauthorized capability change. This branch
+        (guarded by `_check_jsonrpc_error`) is distinct from the exception
+        path and must also honor `expected_failure`."""
+        mock_client = MagicMock()
+        mock_client.set_member_capabilities.return_value = {
+            "data": {"error": {"type": "ApiError", "data": "not authorized"}}
+        }
+        step = self._setup(expected_failure=True)
+        assert self._run_with_mock_client(step, mock_client) is True
+
+    def test_jsonrpc_error_path_fails_without_flag(self):
+        mock_client = MagicMock()
+        mock_client.set_member_capabilities.return_value = {
+            "data": {"error": {"type": "ApiError", "data": "not authorized"}}
+        }
         step = self._setup(expected_failure=False)
         assert self._run_with_mock_client(step, mock_client) is False
