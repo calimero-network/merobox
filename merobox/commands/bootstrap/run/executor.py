@@ -1027,6 +1027,12 @@ class WorkflowExecutor:
         if not self.manager:
             return False
 
+        # Idempotent: a node that's already up doesn't need (re)starting — and
+        # DockerManager.run_node() would otherwise stop+remove the container.
+        if self._is_node_running(node_name):
+            console.print(f"[green]✓ Node '{node_name}' is already running[/green]")
+            return True
+
         # Get base config from workflow
         if nodes_config is None:
             nodes_config = self.config.get("nodes", {})
@@ -1099,6 +1105,11 @@ class WorkflowExecutor:
                         base_rpc_port + index if base_rpc_port is not None else None
                     )
                 except ValueError:
+                    console.print(
+                        f"[yellow]⚠ Node '{node_name}' doesn't match the "
+                        f"count-mode prefix '{prefix}-N'; using base ports "
+                        "(this may collide with other nodes).[/yellow]"
+                    )
                     port = base_port
                     rpc_port = base_rpc_port
                 node_image = image
