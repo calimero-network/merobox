@@ -310,6 +310,72 @@ def test_docker_manager_cleanup_returns_in_progress_when_flag_set(mock_docker):
 
 
 # ============================================================================
+# keep_resources_on_exit (merobox#227)
+# ============================================================================
+
+
+@patch("docker.from_env")
+def test_cleanup_on_exit_tears_down_by_default(mock_docker):
+    """By default the atexit handler stops every managed container."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+    mock_container = MagicMock()
+    manager.nodes = {"node1": mock_container}
+
+    manager._cleanup_on_exit()
+
+    assert mock_container.stop.call_count == 1
+    assert manager.nodes == {}
+
+
+@patch("docker.from_env")
+def test_keep_resources_on_exit_skips_atexit_teardown(mock_docker):
+    """keep_resources_on_exit() makes the atexit handler a no-op.
+
+    Regression test for merobox#227: `stop_all_nodes: false` must actually
+    leave the nodes running once `merobox bootstrap run` exits.
+    """
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+    mock_container = MagicMock()
+    manager.nodes = {"node1": mock_container}
+
+    manager.keep_resources_on_exit()
+    manager._cleanup_on_exit()
+
+    assert mock_container.stop.call_count == 0
+    assert manager.nodes == {"node1": mock_container}
+
+    # ...and flipping it back restores the default teardown.
+    manager.keep_resources_on_exit(False)
+    manager._cleanup_on_exit()
+    assert mock_container.stop.call_count == 1
+    assert manager.nodes == {}
+
+
+@patch("docker.from_env")
+def test_keep_resources_on_exit_does_not_block_signal_cleanup(mock_docker):
+    """keep_resources_on_exit() only suppresses atexit, not SIGINT/SIGTERM."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+    mock_container = MagicMock()
+    manager.nodes = {"node1": mock_container}
+
+    manager.keep_resources_on_exit()
+    # An explicit cleanup (what the signal handler invokes) still runs.
+    result = manager._cleanup_resources()
+
+    assert result == CleanupResult.PERFORMED
+    assert mock_container.stop.call_count == 1
+
+
+# ============================================================================
 # Graceful shutdown tests
 # ============================================================================
 
