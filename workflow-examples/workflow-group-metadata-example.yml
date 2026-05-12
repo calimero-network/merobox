@@ -1,0 +1,295 @@
+name: Group Metadata Example
+description: >
+  End-to-end coverage for the six metadata workflow steps (core #2338):
+  set/get group metadata, set/get member metadata, and set/get context
+  metadata. Builds a namespace + subgroup + group-registered context on
+  node 1, writes metadata records, propagates them to node 2, reads them
+  back with json_assert checks, then exercises the CAN_MANAGE_METADATA
+  capability gate (a non-admin member can't set group metadata until
+  granted, but can always set its own member metadata).
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Phase 1: Bootstrap — namespace, subgroup, context (all on node 1)
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      ns: namespaceId
+
+  - name: Create Subgroup in Namespace
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: '{{ns}}'
+    group_alias: 'general'
+    outputs:
+      sub: groupId
+
+  - name: Assert Subgroup Created
+    type: assert
+    statements:
+      - 'is_set({{sub}})'
+
+  - name: Wait for Subgroup Governance Propagation
+    type: wait
+    seconds: 5
+
+  - name: Create Context in Subgroup
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{sub}}'
+    outputs:
+      ctx: contextId
+
+  - name: Assert Context Created
+    type: assert
+    statements:
+      - 'is_set({{ctx}})'
+
+  # Phase 2: Write metadata records on node 1 (group, subgroup, context)
+  - name: Set Namespace Metadata
+    type: set_group_metadata
+    node: calimero-node-1
+    group_id: '{{ns}}'
+    record_name: 'Acme Workspace'
+    data:
+      topic: company-wide
+      icon: rocket
+
+  - name: Set Subgroup Metadata
+    type: set_group_metadata
+    node: calimero-node-1
+    group_id: '{{sub}}'
+    record_name: 'general'
+    data:
+      topic: everything
+      archived: 'false'
+
+  - name: Set Context Metadata
+    type: set_context_metadata
+    node: calimero-node-1
+    group_id: '{{sub}}'
+    context_id: '{{ctx}}'
+    record_name: 'general-main'
+    data:
+      kind: primary
+
+  # Phase 3: Invite node 2 into the namespace and add it to the subgroup
+  - name: Create Namespace Invitation
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: '{{ns}}'
+    outputs:
+      invitation: invitation
+
+  - name: Wait for Namespace Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins Namespace
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: '{{ns}}'
+    invitation: '{{invitation}}'
+    outputs:
+      node2_id: memberIdentity
+
+  - name: Assert Node 2 Joined
+    type: assert
+    statements:
+      - 'is_set({{node2_id}})'
+
+  - name: Add Node 2 to Subgroup
+    type: add_group_members
+    node: calimero-node-1
+    group_id: '{{sub}}'
+    members:
+      - identity: '{{node2_id}}'
+        role: Member
+
+  # Push the membership op immediately rather than waiting for the next
+  # gossip heartbeat (same pattern as workflow-group-admin-example.yml).
+  - name: Force Governance Push on Node 1
+    type: sync_group
+    node: calimero-node-1
+    group_id: '{{sub}}'
+
+  - name: Wait for Member Gossip
+    type: wait
+    seconds: 10
+
+  # Phase 4: Sync the subgroup state (and its metadata records) to node 2
+  - name: Wait for Subgroup Sync
+    type: wait_for_sync
+    group_id: '{{sub}}'
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 30
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Settle After Subgroup Sync
+    type: wait
+    seconds: 5
+
+  # Phase 5: Read metadata back from node 2 and assert contents
+  - name: Get Namespace Metadata from Node 2
+    type: get_group_metadata
+    node: calimero-node-2
+    group_id: '{{ns}}'
+    outputs:
+      ns_meta: data
+
+  - name: Assert Namespace Metadata
+    type: json_assert
+    statements:
+      - 'json_equal({{ns_meta.name}}, "Acme Workspace")'
+      - 'json_equal({{ns_meta.data.topic}}, "company-wide")'
+
+  - name: Get Subgroup Metadata from Node 2
+    type: get_group_metadata
+    node: calimero-node-2
+    group_id: '{{sub}}'
+    outputs:
+      sub_meta: data
+
+  - name: Assert Subgroup Metadata
+    type: json_assert
+    statements:
+      - 'json_equal({{sub_meta.name}}, "general")'
+
+  - name: Get Context Metadata from Node 2
+    type: get_context_metadata
+    node: calimero-node-2
+    group_id: '{{sub}}'
+    context_id: '{{ctx}}'
+    outputs:
+      ctx_meta: data
+
+  - name: Assert Context Metadata
+    type: json_assert
+    statements:
+      - 'json_equal({{ctx_meta.name}}, "general-main")'
+
+  # Phase 6: CAN_MANAGE_METADATA capability gate
+  # Node 2 has no metadata-management capability yet, so setting subgroup
+  # metadata must fail.
+  - name: Node 2 Cannot Set Subgroup Metadata Without Capability
+    type: set_group_metadata
+    node: calimero-node-2
+    group_id: '{{sub}}'
+    record_name: 'should-not-apply'
+    data:
+      attempted: 'true'
+    expected_failure: true
+
+  # Grant CAN_MANAGE_METADATA (1 << 8 == 256) to node 2 in the namespace.
+  - name: Grant Node 2 CAN_MANAGE_METADATA
+    type: set_member_capabilities
+    node: calimero-node-1
+    group_id: '{{ns}}'
+    member_id: '{{node2_id}}'
+    capabilities: 256
+
+  - name: Wait for Capability Sync
+    type: wait_for_sync
+    group_id: '{{ns}}'
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 30
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Settle After Capability Sync
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Sets Subgroup Metadata With Capability
+    type: set_group_metadata
+    node: calimero-node-2
+    group_id: '{{sub}}'
+    record_name: 'renamed-by-node2'
+
+  - name: Wait for Subgroup Metadata Sync
+    type: wait_for_sync
+    group_id: '{{sub}}'
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 30
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Settle After Subgroup Metadata Sync
+    type: wait
+    seconds: 5
+
+  - name: Get Subgroup Metadata from Node 1 After Rename
+    type: get_group_metadata
+    node: calimero-node-1
+    group_id: '{{sub}}'
+    outputs:
+      sub_meta2: data
+
+  - name: Assert Subgroup Renamed by Node 2
+    type: json_assert
+    statements:
+      - 'json_equal({{sub_meta2.name}}, "renamed-by-node2")'
+
+  # Phase 7: Member metadata — a member may always set its own record,
+  # no capability required.
+  - name: Node 2 Sets Its Own Member Metadata
+    type: set_member_metadata
+    node: calimero-node-2
+    group_id: '{{ns}}'
+    member_id: '{{node2_id}}'
+    record_name: 'node-two'
+    data:
+      status: online
+
+  - name: Wait for Member Metadata Sync
+    type: wait_for_sync
+    group_id: '{{ns}}'
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 30
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Settle After Member Metadata Sync
+    type: wait
+    seconds: 5
+
+  - name: Get Node 2 Member Metadata from Node 1
+    type: get_member_metadata
+    node: calimero-node-1
+    group_id: '{{ns}}'
+    member_id: '{{node2_id}}'
+    outputs:
+      m2_meta: data
+
+  - name: Assert Member Metadata
+    type: json_assert
+    statements:
+      - 'json_equal({{m2_meta.name}}, "node-two")'
+
+stop_all_nodes: false
