@@ -63,7 +63,7 @@ steps:
     type: create_group_in_namespace
     node: calimero-node-1
     namespace_id: '{{namespace_id}}'
-    group_alias: 'folder-v1'
+    group_name: 'folder-v1'
     outputs:
       group_id: groupId
 
@@ -111,28 +111,37 @@ steps:
     node: calimero-node-2
     context_id: '{{ctx_id}}'
 
-  # Phase 2: Aliasing
-  - name: Rename Subgroup
-    type: set_group_alias
+  # Phase 2: Metadata records (core #2338 — replaces the old group-alias feature)
+  - name: Set Group Metadata (name + data map)
+    type: set_group_metadata
     node: calimero-node-1
     group_id: '{{group_id}}'
-    alias: 'folder-renamed'
+    record_name: 'folder-renamed'
+    data:
+      env: prod
+      owner: alice
 
-  - name: Read Group Info After Rename
-    type: get_group_info
+  - name: Read Group Metadata
+    type: get_group_metadata
     node: calimero-node-1
     group_id: '{{group_id}}'
+    outputs:
+      group_meta: data
 
-  # set_member_alias requires that the requester equals the member — members
-  # may only rename themselves (core/crates/context/src/handlers/set_member_alias.rs:33-35).
-  # So we issue the call from node 2, which resolves its own namespace identity
-  # as the requester and targets its own p2_identity.
-  - name: Rename Member (self-rename from node 2)
-    type: set_member_alias
+  # Setting member metadata from node 2: the requester defaults to node 2's
+  # own namespace identity and targets its own p2_identity.
+  - name: Set Member Metadata (from node 2)
+    type: set_member_metadata
     node: calimero-node-2
     group_id: '{{group_id}}'
     member_id: '{{p2_identity}}'
-    alias: 'Bob'
+    record_name: 'Bob'
+
+  - name: Read Member Metadata
+    type: get_member_metadata
+    node: calimero-node-2
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
 
   # Phase 3: Default policy
   - name: Set Default Capabilities (create context + invite)

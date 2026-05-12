@@ -362,6 +362,298 @@ class TestReparentGroupStep:
             self._make_step(config)
 
 
+class TestMetadataSteps:
+    """Validation tests for the *_metadata step classes (core #2338).
+
+    Replaces the removed group-alias steps. Covers config validation only —
+    live execution needs the (parallel, not-yet-released) calimero-client-py
+    methods.
+    """
+
+    def _make(self, cls, config):
+        return cls(config)
+
+    def test_set_group_metadata_valid(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        self._make(
+            SetGroupMetadataStep,
+            {
+                "type": "set_group_metadata",
+                "name": "Set the group's display name",
+                "record_name": "Renamed",
+                "node": "n1",
+                "group_id": "g1",
+                "data": {"k": "v"},
+            },
+        )
+
+    def test_set_group_metadata_step_label_and_record_name_distinct(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        step = self._make(
+            SetGroupMetadataStep,
+            {
+                "type": "set_group_metadata",
+                "name": "Set the group's display name",
+                "record_name": "Acme Workspace",
+                "node": "n1",
+                "group_id": "g1",
+            },
+        )
+        assert step.config["name"] == "Set the group's display name"
+        assert step.config["record_name"] == "Acme Workspace"
+        assert step.config["name"] != step.config["record_name"]
+
+    def test_set_group_metadata_record_name_wrong_type_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        with pytest.raises(ValueError, match="record_name"):
+            self._make(
+                SetGroupMetadataStep,
+                {
+                    "type": "set_group_metadata",
+                    "node": "n1",
+                    "group_id": "g1",
+                    "record_name": 42,
+                },
+            )
+
+    def test_set_group_metadata_minimal_valid(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        self._make(
+            SetGroupMetadataStep,
+            {"type": "set_group_metadata", "node": "n1", "group_id": "g1"},
+        )
+
+    def test_set_group_metadata_missing_group_id_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        with pytest.raises(ValueError, match="group_id"):
+            self._make(
+                SetGroupMetadataStep, {"type": "set_group_metadata", "node": "n1"}
+            )
+
+    def test_set_group_metadata_data_wrong_type_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        with pytest.raises(ValueError, match="data"):
+            self._make(
+                SetGroupMetadataStep,
+                {
+                    "type": "set_group_metadata",
+                    "node": "n1",
+                    "group_id": "g1",
+                    "data": "not-a-dict",
+                },
+            )
+
+    def test_set_group_metadata_data_non_string_value_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        with pytest.raises(ValueError, match="string->string"):
+            self._make(
+                SetGroupMetadataStep,
+                {
+                    "type": "set_group_metadata",
+                    "node": "n1",
+                    "group_id": "g1",
+                    "data": {"k": 123},
+                },
+            )
+
+    def test_set_group_metadata_requester_wrong_type_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        with pytest.raises(ValueError, match="requester"):
+            self._make(
+                SetGroupMetadataStep,
+                {
+                    "type": "set_group_metadata",
+                    "node": "n1",
+                    "group_id": "g1",
+                    "requester": 5,
+                },
+            )
+
+    def test_get_group_metadata_valid(self):
+        from merobox.commands.bootstrap.steps.group_metadata import GetGroupMetadataStep
+
+        self._make(
+            GetGroupMetadataStep,
+            {"type": "get_group_metadata", "node": "n1", "group_id": "g1"},
+        )
+
+    def test_get_group_metadata_group_id_wrong_type_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import GetGroupMetadataStep
+
+        with pytest.raises(ValueError, match="group_id"):
+            self._make(
+                GetGroupMetadataStep,
+                {"type": "get_group_metadata", "node": "n1", "group_id": 7},
+            )
+
+    def test_set_member_metadata_valid(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            SetMemberMetadataStep,
+        )
+
+        self._make(
+            SetMemberMetadataStep,
+            {
+                "type": "set_member_metadata",
+                "node": "n1",
+                "group_id": "g1",
+                "member_id": "pk",
+            },
+        )
+
+    def test_set_member_metadata_missing_member_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            SetMemberMetadataStep,
+        )
+
+        with pytest.raises(ValueError, match="member_id"):
+            self._make(
+                SetMemberMetadataStep,
+                {"type": "set_member_metadata", "node": "n1", "group_id": "g1"},
+            )
+
+    def test_get_member_metadata_valid(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            GetMemberMetadataStep,
+        )
+
+        self._make(
+            GetMemberMetadataStep,
+            {
+                "type": "get_member_metadata",
+                "node": "n1",
+                "group_id": "g1",
+                "member_id": "pk",
+            },
+        )
+
+    def test_get_member_metadata_missing_member_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            GetMemberMetadataStep,
+        )
+
+        with pytest.raises(ValueError, match="member_id"):
+            self._make(
+                GetMemberMetadataStep,
+                {"type": "get_member_metadata", "node": "n1", "group_id": "g1"},
+            )
+
+    def test_set_context_metadata_valid(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            SetContextMetadataStep,
+        )
+
+        self._make(
+            SetContextMetadataStep,
+            {
+                "type": "set_context_metadata",
+                "node": "n1",
+                "group_id": "g1",
+                "context_id": "ctx",
+                "data": {"a": "b"},
+            },
+        )
+
+    def test_set_context_metadata_missing_context_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            SetContextMetadataStep,
+        )
+
+        with pytest.raises(ValueError, match="context_id"):
+            self._make(
+                SetContextMetadataStep,
+                {"type": "set_context_metadata", "node": "n1", "group_id": "g1"},
+            )
+
+    def test_get_context_metadata_valid(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            GetContextMetadataStep,
+        )
+
+        self._make(
+            GetContextMetadataStep,
+            {
+                "type": "get_context_metadata",
+                "node": "n1",
+                "group_id": "g1",
+                "context_id": "ctx",
+            },
+        )
+
+    def test_get_context_metadata_missing_context_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import (
+            GetContextMetadataStep,
+        )
+
+        with pytest.raises(ValueError, match="context_id"):
+            self._make(
+                GetContextMetadataStep,
+                {"type": "get_context_metadata", "node": "n1", "group_id": "g1"},
+            )
+
+    def test_old_alias_module_removed(self):
+        import importlib
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("merobox.commands.bootstrap.steps.group_alias")
+
+    def test_old_alias_step_classes_removed(self):
+        from merobox.commands.bootstrap import steps
+
+        assert not hasattr(steps, "SetGroupAliasStep")
+        assert not hasattr(steps, "SetMemberAliasStep")
+
+
+class TestMetadataStepConfigSchemas:
+    """Pydantic schema validation for the new *_metadata step configs."""
+
+    def test_set_group_metadata_config_valid(self):
+        from merobox.commands.bootstrap.config import SetGroupMetadataStepConfig
+
+        cfg = SetGroupMetadataStepConfig(
+            name="t",
+            node="n1",
+            group_id="g1",
+            record_name="Acme Workspace",
+            data={"k": "v"},
+        )
+        assert cfg.type == "set_group_metadata"
+        assert cfg.data == {"k": "v"}
+        assert cfg.record_name == "Acme Workspace"
+        # step label and metadata-record name are distinct fields
+        assert cfg.name == "t"
+
+    def test_set_member_metadata_config_rejects_missing_member(self):
+        from pydantic import ValidationError
+
+        from merobox.commands.bootstrap.config import SetMemberMetadataStepConfig
+
+        with pytest.raises(ValidationError):
+            SetMemberMetadataStepConfig(name="t", node="n1", group_id="g1")
+
+    def test_get_context_metadata_config_valid(self):
+        from merobox.commands.bootstrap.config import GetContextMetadataStepConfig
+
+        cfg = GetContextMetadataStepConfig(
+            name="t", node="n1", group_id="g1", context_id="ctx"
+        )
+        assert cfg.type == "get_context_metadata"
+
+    def test_old_alias_configs_removed(self):
+        from merobox.commands.bootstrap import config
+
+        assert not hasattr(config, "SetGroupAliasStepConfig")
+        assert not hasattr(config, "SetMemberAliasStepConfig")
+
+
 class TestNestUnnestRemoved:
     """The old NestGroupStep / UnnestGroupStep classes must not exist."""
 

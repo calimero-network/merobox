@@ -9,10 +9,6 @@ from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
-from merobox.commands.bootstrap.steps.group_alias import (
-    SetGroupAliasStep,
-    SetMemberAliasStep,
-)
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
 from merobox.commands.bootstrap.steps.group_governance import (
     DetachContextFromGroupStep,
@@ -36,6 +32,14 @@ from merobox.commands.bootstrap.steps.group_management import (
     SetSubgroupVisibilityStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
+)
+from merobox.commands.bootstrap.steps.group_metadata import (
+    GetContextMetadataStep,
+    GetGroupMetadataStep,
+    GetMemberMetadataStep,
+    SetContextMetadataStep,
+    SetGroupMetadataStep,
+    SetMemberMetadataStep,
 )
 from merobox.commands.bootstrap.steps.group_upgrade import (
     GetGroupUpgradeStatusStep,
@@ -255,10 +259,18 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = DeleteContextStep
         elif step_type == "uninstall_application":
             step_class = UninstallApplicationStep
-        elif step_type == "set_group_alias":
-            step_class = SetGroupAliasStep
-        elif step_type == "set_member_alias":
-            step_class = SetMemberAliasStep
+        elif step_type == "set_group_metadata":
+            step_class = SetGroupMetadataStep
+        elif step_type == "get_group_metadata":
+            step_class = GetGroupMetadataStep
+        elif step_type == "set_member_metadata":
+            step_class = SetMemberMetadataStep
+        elif step_type == "get_member_metadata":
+            step_class = GetMemberMetadataStep
+        elif step_type == "set_context_metadata":
+            step_class = SetContextMetadataStep
+        elif step_type == "get_context_metadata":
+            step_class = GetContextMetadataStep
         elif step_type == "update_group_settings":
             step_class = UpdateGroupSettingsStep
         elif step_type == "detach_context_from_group":
