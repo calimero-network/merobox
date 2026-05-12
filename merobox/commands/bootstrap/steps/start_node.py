@@ -5,10 +5,15 @@ Start node step executor - Start nodes during workflow execution.
 import asyncio
 import socket
 import time
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.health import check_node_health
 from merobox.commands.utils import console
+
+# Coroutine that starts one node: (node_name, node_config, nodes_config) -> bool
+StartNodeFn = Callable[[str, Optional[dict], Optional[dict]], Awaitable[bool]]
 
 
 class StartNodeStep(BaseStep):
@@ -21,13 +26,14 @@ class StartNodeStep(BaseStep):
         resolver: object | None = None,
         auth_mode: str | None = None,
         workflow_config: dict[str, Any] | None = None,
-        executor: object | None = None,
+        start_node_fn: Optional[StartNodeFn] = None,
     ):
         super().__init__(config, manager, resolver, auth_mode=auth_mode)
         self.workflow_config = workflow_config or {}
-        self.executor = (
-            executor  # Reference to executor for accessing node startup logic
-        )
+        # Callable that actually starts a node (the executor's node-startup
+        # logic); kept as a plain callable so the step doesn't hold a back-
+        # reference to the whole executor.
+        self.start_node_fn = start_node_fn
 
     def _get_required_fields(self) -> list[str]:
         """
@@ -115,30 +121,27 @@ class StartNodeStep(BaseStep):
         failed_to_start = []
 
         for node_name in node_names:
-            # Try to get node-specific config (only for individually defined nodes)
+            # Node-specific config only exists for individually-defined nodes;
+            # for count-based nodes pass None and let the start fn resolve it.
             node_config = None
-            if isinstance(workflow_nodes_config, dict):
-                # Check if this is a node-specific config entry
-                if node_name in workflow_nodes_config:
-                    node_config = workflow_nodes_config[node_name]
-                # For count-based nodes, pass node_config=None and let _start_single_node handle it
+            if (
+                isinstance(workflow_nodes_config, dict)
+                and node_name in workflow_nodes_config
+            ):
+                node_config = workflow_nodes_config[node_name]
 
-            # Use executor's _start_single_node method if available
-            if self.executor and hasattr(self.executor, "_start_single_node"):
-                # Use executor's method which has access to all node config
-                success = await self.executor._start_single_node(
-                    node_name, node_config, workflow_nodes_config
-                )
-            else:
+            if self.start_node_fn is None:
                 console.print(
-                    f"[red]❌ Cannot start node {node_name}: executor not available[/red]"
+                    f"[red]❌ Cannot start node {node_name}: no node-start "
+                    "function available[/red]"
                 )
                 success = False
-
-            if success:
-                started_nodes.append(node_name)
             else:
-                failed_to_start.append(node_name)
+                success = await self.start_node_fn(
+                    node_name, node_config, workflow_nodes_config
+                )
+
+            (started_nodes if success else failed_to_start).append(node_name)
 
         if failed_to_start:
             console.print(
@@ -148,57 +151,72 @@ class StartNodeStep(BaseStep):
 
         console.print(f"[green]✓ Started {len(started_nodes)} node(s)[/green]")
 
-        # Wait for nodes to be ready (optional)
-        wait_for_ready = self.config.get("wait_for_ready", True)
-        if wait_for_ready:
-            wait_timeout = self.config.get("wait_timeout", 30)
-            console.print(
-                f"[cyan]Waiting up to {wait_timeout} seconds for nodes to be ready...[/cyan]"
+        # wait_for_ready defaults to True: a started node is expected to be
+        # serving requests before the workflow continues. Set it to false to
+        # return as soon as the node process/container has been launched.
+        if self.config.get("wait_for_ready", True):
+            await self._wait_for_ready(
+                started_nodes, self.config.get("wait_timeout", 30)
             )
-
-            # Resolve RPC ports up front; nodes whose port we can't determine
-            # can't be probed, so don't hold up the wait on them.
-            node_ports = {}
-            for node_name in started_nodes:
-                rpc_port = None
-                if hasattr(self.manager, "get_node_rpc_port"):
-                    rpc_port = self.manager.get_node_rpc_port(node_name)
-                elif hasattr(self.manager, "node_rpc_ports"):
-                    rpc_port = self.manager.node_rpc_ports.get(node_name)
-                if rpc_port:
-                    node_ports[node_name] = rpc_port
-
-            if not node_ports:
-                console.print(
-                    "[yellow]⚠ Could not determine RPC ports for the started "
-                    "node(s); skipping readiness check.[/yellow]"
-                )
-            else:
-                start_time = time.time()
-                all_ready = False
-
-                while time.time() - start_time < wait_timeout:
-                    ready_count = 0
-                    for rpc_port in node_ports.values():
-                        try:
-                            with socket.create_connection(
-                                ("127.0.0.1", rpc_port), timeout=1
-                            ):
-                                ready_count += 1
-                        except Exception:
-                            pass
-
-                    if ready_count == len(node_ports):
-                        all_ready = True
-                        break
-
-                    await asyncio.sleep(1)
-
-                if all_ready:
-                    console.print("[green]✓ All nodes are ready[/green]")
-                else:
-                    console.print(
-                        "[yellow]⚠ Some nodes may not be ready yet, continuing...[/yellow]"
-                    )
-
         return True
+
+    async def _wait_for_ready(self, node_names: list[str], timeout: int) -> None:
+        """Wait for each node to accept RPC connections and pass a health check.
+
+        Best-effort: nodes whose RPC port can't be resolved are skipped, and a
+        timeout logs a warning rather than failing the step (the node was
+        already launched successfully).
+        """
+        console.print(
+            f"[cyan]Waiting up to {timeout} seconds for nodes to be ready...[/cyan]"
+        )
+
+        node_ports: dict[str, int] = {}
+        for node_name in node_names:
+            rpc_port = None
+            if hasattr(self.manager, "get_node_rpc_port"):
+                rpc_port = self.manager.get_node_rpc_port(node_name)
+            elif hasattr(self.manager, "node_rpc_ports"):
+                rpc_port = self.manager.node_rpc_ports.get(node_name)
+            if rpc_port:
+                node_ports[node_name] = rpc_port
+
+        if not node_ports:
+            console.print(
+                "[yellow]⚠ Could not determine RPC ports for the started "
+                "node(s); skipping readiness check.[/yellow]"
+            )
+            return
+
+        deadline = time.monotonic() + timeout
+        pending = set(node_ports)
+        while pending and time.monotonic() < deadline:
+            for node_name in list(pending):
+                if await self._node_ready(node_name, node_ports[node_name]):
+                    pending.discard(node_name)
+                    console.print(f"[green]✓ Node {node_name} is ready[/green]")
+            if pending:
+                await asyncio.sleep(1)
+
+        if pending:
+            console.print(
+                "[yellow]⚠ Node(s) not confirmed ready: "
+                f"{', '.join(sorted(pending))}; continuing...[/yellow]"
+            )
+        else:
+            console.print("[green]✓ All nodes are ready[/green]")
+
+    async def _node_ready(self, node_name: str, rpc_port: int) -> bool:
+        """A node is ready once its RPC port accepts a connection *and* the
+        admin health endpoint responds (a bound port alone doesn't mean the
+        node is serving requests)."""
+        try:
+            with socket.create_connection(("127.0.0.1", rpc_port), timeout=1):
+                pass
+        except OSError:
+            return False
+        try:
+            result = await check_node_health(f"http://localhost:{rpc_port}")
+            return bool(result.get("success"))
+        except Exception:
+            return False

@@ -776,6 +776,50 @@ class WorkflowExecutor:
         resolved = os.path.join(self.workflow_dir, config_path)
         return os.path.abspath(resolved)
 
+    def _build_run_node_kwargs(
+        self,
+        node_name: str,
+        *,
+        port: Optional[int],
+        rpc_port: Optional[int],
+        image: Optional[str],
+        data_dir: Optional[str] = None,
+        config_path: Optional[str] = None,
+        use_image_entrypoint: bool = False,
+    ) -> dict[str, Any]:
+        """Build the keyword arguments for ``manager.run_node()``.
+
+        Shared by every node-startup path (``_start_nodes`` and
+        ``_start_single_node``) so they stay in sync. ``merod_args`` /
+        ``auth_mode`` only apply in binary mode; ``use_image_entrypoint`` only
+        in Docker mode.
+        """
+        kwargs: dict[str, Any] = {
+            "node_name": node_name,
+            "port": port,
+            "rpc_port": rpc_port,
+            "data_dir": data_dir,
+            "image": image,
+            "auth_service": self.auth_service,
+            "auth_image": self.auth_image,
+            "auth_use_cached": self.auth_use_cached,
+            "webui_use_cached": self.webui_use_cached,
+            "log_level": self.log_level,
+            "rust_backtrace": self.rust_backtrace,
+            "workflow_id": self.workflow_id,
+            "e2e_mode": self.e2e_mode,
+            "config_path": config_path,
+            "bootstrap_nodes": self.bootstrap_nodes,
+        }
+        if self.is_binary_mode:
+            if self.auth_mode:
+                kwargs["auth_mode"] = self.auth_mode
+            if self.merod_args:
+                kwargs["merod_args"] = self.merod_args
+        else:
+            kwargs["use_image_entrypoint"] = use_image_entrypoint
+        return kwargs
+
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get("nodes", {})
@@ -854,31 +898,13 @@ class WorkflowExecutor:
                     # Not running -> start (allow manager to allocate ports if base_* is None)
                     port = base_port + i if base_port is not None else None
                     rpc_port = base_rpc_port + i if base_rpc_port is not None else None
-                    # Build arguments for run_node
-                    run_node_kwargs = {
-                        "node_name": node_name,
-                        "port": port,
-                        "rpc_port": rpc_port,
-                        "data_dir": None,
-                        "image": image,
-                        "auth_service": self.auth_service,
-                        "auth_image": self.auth_image,
-                        "auth_use_cached": self.auth_use_cached,
-                        "webui_use_cached": self.webui_use_cached,
-                        "log_level": self.log_level,
-                        "rust_backtrace": self.rust_backtrace,
-                        "workflow_id": self.workflow_id,
-                        "e2e_mode": self.e2e_mode,
-                        "bootstrap_nodes": self.bootstrap_nodes,
-                    }
-                    if self.is_binary_mode:
-                        if self.auth_mode:
-                            run_node_kwargs["auth_mode"] = self.auth_mode
-                        if self.merod_args:
-                            run_node_kwargs["merod_args"] = self.merod_args
-                    else:
-                        run_node_kwargs["use_image_entrypoint"] = use_image_entrypoint
-
+                    run_node_kwargs = self._build_run_node_kwargs(
+                        node_name,
+                        port=port,
+                        rpc_port=rpc_port,
+                        image=image,
+                        use_image_entrypoint=use_image_entrypoint,
+                    )
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
 
@@ -945,34 +971,15 @@ class WorkflowExecutor:
                         )
 
                     console.print(f"Starting node '{node_name}'...")
-                    # Build arguments for run_node
-                    run_node_kwargs = {
-                        "node_name": node_name,
-                        "port": port,
-                        "rpc_port": rpc_port,
-                        "data_dir": data_dir,
-                        "image": node_image,
-                        "auth_service": self.auth_service,
-                        "auth_image": self.auth_image,
-                        "auth_use_cached": self.auth_use_cached,
-                        "webui_use_cached": self.webui_use_cached,
-                        "log_level": self.log_level,
-                        "rust_backtrace": self.rust_backtrace,
-                        "workflow_id": self.workflow_id,
-                        "e2e_mode": self.e2e_mode,
-                        "config_path": node_config_path,
-                        "bootstrap_nodes": self.bootstrap_nodes,
-                    }
-                    if self.is_binary_mode:
-                        if self.auth_mode:
-                            run_node_kwargs["auth_mode"] = self.auth_mode
-                        if self.merod_args:
-                            run_node_kwargs["merod_args"] = self.merod_args
-                    else:
-                        run_node_kwargs["use_image_entrypoint"] = (
-                            node_use_image_entrypoint
-                        )
-
+                    run_node_kwargs = self._build_run_node_kwargs(
+                        node_name,
+                        port=port,
+                        rpc_port=rpc_port,
+                        image=node_image,
+                        data_dir=data_dir,
+                        config_path=node_config_path,
+                        use_image_entrypoint=node_use_image_entrypoint,
+                    )
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
                 else:
@@ -982,32 +989,15 @@ class WorkflowExecutor:
                     continue
             else:
                 console.print(f"Starting node '{node_name}'...")
-                # Build arguments for run_node
-                run_node_kwargs = {
-                    "node_name": node_name,
-                    "port": port,
-                    "rpc_port": rpc_port,
-                    "data_dir": data_dir,
-                    "image": node_image,
-                    "auth_service": self.auth_service,
-                    "auth_image": self.auth_image,
-                    "auth_use_cached": self.auth_use_cached,
-                    "webui_use_cached": self.webui_use_cached,
-                    "log_level": self.log_level,
-                    "rust_backtrace": self.rust_backtrace,
-                    "workflow_id": self.workflow_id,
-                    "e2e_mode": self.e2e_mode,
-                    "config_path": node_config_path,
-                    "bootstrap_nodes": self.bootstrap_nodes,
-                }
-                if self.is_binary_mode:
-                    if self.auth_mode:
-                        run_node_kwargs["auth_mode"] = self.auth_mode
-                    if self.merod_args:
-                        run_node_kwargs["merod_args"] = self.merod_args
-                else:
-                    run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
-
+                run_node_kwargs = self._build_run_node_kwargs(
+                    node_name,
+                    port=port,
+                    rpc_port=rpc_port,
+                    image=node_image,
+                    data_dir=data_dir,
+                    config_path=node_config_path,
+                    use_image_entrypoint=node_use_image_entrypoint,
+                )
                 if not self.manager.run_node(**run_node_kwargs):
                     return False
 
@@ -1042,12 +1032,12 @@ class WorkflowExecutor:
             nodes_config = self.config.get("nodes", {})
 
         base_port = (
-            nodes_config.get("base_port", 2428)
+            nodes_config.get("base_port", DEFAULT_P2P_PORT)
             if isinstance(nodes_config, dict)
             else None
         )
         base_rpc_port = (
-            nodes_config.get("base_rpc_port", 2528)
+            nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
             if isinstance(nodes_config, dict)
             else None
         )
@@ -1094,19 +1084,21 @@ class WorkflowExecutor:
                     "use_image_entrypoint", use_image_entrypoint
                 )
             elif isinstance(nodes_config, dict) and "count" in nodes_config:
-                # Extract index from node name (e.g., "calimero-node-1" -> 1)
+                # Count mode: derive the port offset from the node's index in
+                # its "{prefix}-{N}" name (1-based).
+                prefix = nodes_config.get("prefix", "calimero-node")
+                suffix = (
+                    node_name[len(prefix) :].lstrip("-")
+                    if node_name.startswith(prefix)
+                    else ""
+                )
                 try:
-                    prefix = nodes_config.get("prefix", "calimero-node")
-                    if node_name.startswith(prefix):
-                        index = int(node_name.split("-")[-1]) - 1
-                        port = base_port + index if base_port is not None else None
-                        rpc_port = (
-                            base_rpc_port + index if base_rpc_port is not None else None
-                        )
-                    else:
-                        port = base_port
-                        rpc_port = base_rpc_port
-                except (ValueError, IndexError):
+                    index = int(suffix) - 1
+                    port = base_port + index if base_port is not None else None
+                    rpc_port = (
+                        base_rpc_port + index if base_rpc_port is not None else None
+                    )
+                except ValueError:
                     port = base_port
                     rpc_port = base_rpc_port
                 node_image = image
@@ -1121,34 +1113,15 @@ class WorkflowExecutor:
                 node_config_path = config_path
                 node_use_image_entrypoint = use_image_entrypoint
 
-        # Build arguments for run_node — kept in sync with the per-node kwargs
-        # built in _start_nodes() (neither manager's run_node() accepts
-        # chain_id / mock_relayer / near_devnet_config).
-        run_node_kwargs = {
-            "node_name": node_name,
-            "port": port,
-            "rpc_port": rpc_port,
-            "data_dir": data_dir,
-            "image": node_image,
-            "auth_service": self.auth_service,
-            "auth_image": self.auth_image,
-            "auth_use_cached": self.auth_use_cached,
-            "webui_use_cached": self.webui_use_cached,
-            "log_level": self.log_level,
-            "rust_backtrace": self.rust_backtrace,
-            "workflow_id": self.workflow_id,
-            "e2e_mode": self.e2e_mode,
-            "config_path": node_config_path,
-            "bootstrap_nodes": self.bootstrap_nodes,
-        }
-        if self.is_binary_mode:
-            if self.auth_mode:
-                run_node_kwargs["auth_mode"] = self.auth_mode
-            if self.merod_args:
-                run_node_kwargs["merod_args"] = self.merod_args
-        else:
-            run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
-
+        run_node_kwargs = self._build_run_node_kwargs(
+            node_name,
+            port=port,
+            rpc_port=rpc_port,
+            image=node_image,
+            data_dir=data_dir,
+            config_path=node_config_path,
+            use_image_entrypoint=node_use_image_entrypoint,
+        )
         return self.manager.run_node(**run_node_kwargs)
 
     async def _wait_for_nodes_ready(self) -> bool:
@@ -1549,7 +1522,7 @@ class WorkflowExecutor:
             return StartNodeStep(
                 step_config,
                 workflow_config=self.config,
-                executor=self,
+                start_node_fn=self._start_single_node,
                 **common_kwargs,
             )
         elif step_type == "install_application":
