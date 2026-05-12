@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-05-12
+
+### Added
+
+- `--merod-args` flag for `merobox bootstrap run` (binary / `--no-docker` mode
+  only): forwards arbitrary arguments to each `merod run` invocation, e.g.
+  `--merod-args="--sync-strategy delta --state-sync-strategy hash"`. Parsed with
+  `shlex.split()`, ignored (with a warning) outside `--no-docker` mode, and
+  threaded through both individual and count-based / `restart: true` node
+  starts.
+- `stop_node` and `start_node` workflow steps for mid-workflow node lifecycle
+  control (benchmarking, failure/recovery testing, freeing resources). Each
+  accepts a single node name or a list. `stop_node` is idempotent for
+  already-stopped nodes; `start_node` reuses the workflow's `nodes:` config, is
+  idempotent for already-running nodes, and supports an optional readiness wait
+  (`wait_for_ready`, default `true` — a timeout fails the step — and
+  `wait_timeout`, default 30s) that connects to the RPC port and probes the
+  admin health endpoint. Resolves
+  [#143](https://github.com/calimero-network/merobox/pull/143).
+
 ### Fixed
 
 - `stop_all_nodes: false` (also the default) now actually leaves nodes running
