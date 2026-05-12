@@ -65,11 +65,14 @@ class StartNodeStep(BaseStep):
         ):
             raise ValueError(f"Step '{step_name}': 'wait_for_ready' must be a boolean")
 
-        # Validate wait_timeout is an integer if provided
-        if "wait_timeout" in self.config and not isinstance(
-            self.config["wait_timeout"], int
-        ):
-            raise ValueError(f"Step '{step_name}': 'wait_timeout' must be an integer")
+        # Validate wait_timeout is an integer if provided (bool is an int
+        # subclass in Python, so reject it explicitly).
+        if "wait_timeout" in self.config:
+            wait_timeout = self.config["wait_timeout"]
+            if isinstance(wait_timeout, bool) or not isinstance(wait_timeout, int):
+                raise ValueError(
+                    f"Step '{step_name}': 'wait_timeout' must be an integer"
+                )
 
         # Validate wait_timeout is positive if provided
         if "wait_timeout" in self.config and self.config["wait_timeout"] <= 0:
