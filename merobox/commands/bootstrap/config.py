@@ -412,7 +412,7 @@ class CreateNamespaceStepConfig(BaseStepConfig):
     application_id: str = Field(
         ..., description="Application ID for namespace creation"
     )
-    alias: Optional[str] = Field(None, description="Optional namespace alias")
+    # Optional namespace display name (inherits `name` from BaseStepConfig).
 
 
 class CreateNamespaceInvitationStepConfig(BaseStepConfig):
@@ -480,7 +480,7 @@ class CreateGroupInNamespaceStepConfig(BaseStepConfig):
     type: Literal["create_group_in_namespace"] = "create_group_in_namespace"
     node: str = Field(..., description="Target node")
     namespace_id: str = Field(..., description="Namespace ID")
-    group_alias: str = Field(..., description="Group alias")
+    group_name: Optional[str] = Field(None, description="Optional group display name")
 
 
 class ListNamespaceGroupsStepConfig(BaseStepConfig):

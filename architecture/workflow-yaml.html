@@ -770,6 +770,7 @@
 - <span class="field">type</span>: <span class="ty">create_namespace</span><br>
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Optional namespace display name</span><br>
 &nbsp;&nbsp;<span class="field">outputs</span>:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">namespaceId</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Created namespace (root group) ID</span>
     </div>
@@ -869,7 +870,7 @@
 - <span class="field">type</span>: <span class="ty">create_group_in_namespace</span><br>
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">namespace_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
-&nbsp;&nbsp;<span class="field">group_alias</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Optional display name</span><br>
+&nbsp;&nbsp;<span class="field">group_name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Optional display name</span><br>
 &nbsp;&nbsp;<span class="field">outputs</span>:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="field">groupId</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Created subgroup ID</span>
     </div>

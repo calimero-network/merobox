@@ -334,7 +334,7 @@ class TestPerStepSmoke:
                 "name": "t",
                 "node": "n1",
                 "namespace_id": "ns",
-                "group_alias": "child",
+                "group_name": "child",
             },
         )
 

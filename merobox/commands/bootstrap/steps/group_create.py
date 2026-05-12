@@ -24,8 +24,8 @@ class CreateNamespaceStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
         if not isinstance(self.config.get("application_id"), str):
             raise ValueError(f"Step '{step_name}': 'application_id' must be a string")
-        if "alias" in self.config and not isinstance(self.config.get("alias"), str):
-            raise ValueError(f"Step '{step_name}': 'alias' must be a string")
+        if "name" in self.config and not isinstance(self.config.get("name"), str):
+            raise ValueError(f"Step '{step_name}': 'name' must be a string")
 
     def _get_exportable_variables(self):
         return [
@@ -44,10 +44,10 @@ class CreateNamespaceStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
 
-        alias = None
-        if "alias" in self.config:
-            alias = self._resolve_dynamic_value(
-                self.config["alias"], workflow_results, dynamic_values
+        name = None
+        if "name" in self.config:
+            name = self._resolve_dynamic_value(
+                self.config["name"], workflow_results, dynamic_values
             )
 
         try:
@@ -62,7 +62,7 @@ class CreateNamespaceStep(BaseStep):
             if callable(create_namespace):
                 api_result = create_namespace(
                     application_id=application_id,
-                    alias=alias,
+                    name=name,
                 )
             else:
                 # Backward compatibility for older client versions.
