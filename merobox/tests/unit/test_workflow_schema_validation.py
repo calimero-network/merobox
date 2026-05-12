@@ -825,10 +825,13 @@ class TestMetadataStepSchemas:
 
     def test_valid_set_group_metadata(self, config_module):
         step = {
+            # `name` is the step label; `record_name` is the metadata
+            # record's name — they're distinct keys.
+            "name": "Rename the group folder",
             "type": "set_group_metadata",
             "node": "calimero-node-1",
             "group_id": "{{group_id}}",
-            "name": "Renamed Folder",
+            "record_name": "Renamed Folder",
             "data": {"color": "blue"},
         }
         assert config_module.validate_workflow_step(step, 0) == []
@@ -874,7 +877,7 @@ class TestMetadataStepSchemas:
             "node": "calimero-node-1",
             "group_id": "{{group_id}}",
             "member_id": "{{p2_identity}}",
-            "name": "Bob",
+            "record_name": "Bob",
             "requester": "{{admin_key}}",
         }
         assert config_module.validate_workflow_step(step, 0) == []
