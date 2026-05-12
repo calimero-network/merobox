@@ -116,7 +116,7 @@ steps:
     type: set_group_metadata
     node: calimero-node-1
     group_id: '{{group_id}}'
-    name: 'folder-renamed'
+    record_name: 'folder-renamed'
     data:
       env: prod
       owner: alice
@@ -135,7 +135,7 @@ steps:
     node: calimero-node-2
     group_id: '{{group_id}}'
     member_id: '{{p2_identity}}'
-    name: 'Bob'
+    record_name: 'Bob'
 
   - name: Read Member Metadata
     type: get_member_metadata

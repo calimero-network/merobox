@@ -380,12 +380,44 @@ class TestMetadataSteps:
             SetGroupMetadataStep,
             {
                 "type": "set_group_metadata",
-                "name": "Renamed",
+                "name": "Set the group's display name",
+                "record_name": "Renamed",
                 "node": "n1",
                 "group_id": "g1",
                 "data": {"k": "v"},
             },
         )
+
+    def test_set_group_metadata_step_label_and_record_name_distinct(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        step = self._make(
+            SetGroupMetadataStep,
+            {
+                "type": "set_group_metadata",
+                "name": "Set the group's display name",
+                "record_name": "Acme Workspace",
+                "node": "n1",
+                "group_id": "g1",
+            },
+        )
+        assert step.config["name"] == "Set the group's display name"
+        assert step.config["record_name"] == "Acme Workspace"
+        assert step.config["name"] != step.config["record_name"]
+
+    def test_set_group_metadata_record_name_wrong_type_raises(self):
+        from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
+
+        with pytest.raises(ValueError, match="record_name"):
+            self._make(
+                SetGroupMetadataStep,
+                {
+                    "type": "set_group_metadata",
+                    "node": "n1",
+                    "group_id": "g1",
+                    "record_name": 42,
+                },
+            )
 
     def test_set_group_metadata_minimal_valid(self):
         from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
@@ -587,10 +619,17 @@ class TestMetadataStepConfigSchemas:
         from merobox.commands.bootstrap.config import SetGroupMetadataStepConfig
 
         cfg = SetGroupMetadataStepConfig(
-            name="t", node="n1", group_id="g1", data={"k": "v"}
+            name="t",
+            node="n1",
+            group_id="g1",
+            record_name="Acme Workspace",
+            data={"k": "v"},
         )
         assert cfg.type == "set_group_metadata"
         assert cfg.data == {"k": "v"}
+        assert cfg.record_name == "Acme Workspace"
+        # step label and metadata-record name are distinct fields
+        assert cfg.name == "t"
 
     def test_set_member_metadata_config_rejects_missing_member(self):
         from pydantic import ValidationError

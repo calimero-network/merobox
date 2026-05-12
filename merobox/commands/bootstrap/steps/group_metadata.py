@@ -13,6 +13,9 @@ from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
+# Minimum calimero-client-py release that ships the *_metadata client methods.
+_REQUIRED_CLIENT_VERSION = "0.6.10"
+
 
 def _build_metadata_body(name: Any, data: Any, requester: Any) -> str:
     """Build the JSON body for a set-metadata admin API call.
@@ -50,9 +53,11 @@ class _SetMetadataBase(BaseStep):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
         if not isinstance(self.config.get("node"), str):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
-        meta_name = self.config.get("name")
-        if meta_name is not None and not isinstance(meta_name, str):
-            raise ValueError(f"Step '{step_name}': 'name' must be a string if provided")
+        record_name = self.config.get("record_name")
+        if record_name is not None and not isinstance(record_name, str):
+            raise ValueError(
+                f"Step '{step_name}': 'record_name' must be a string if provided"
+            )
         data = self.config.get("data")
         if data is not None:
             if not isinstance(data, dict):
@@ -69,6 +74,14 @@ class _SetMetadataBase(BaseStep):
             raise ValueError(
                 f"Step '{step_name}': 'requester' must be a string if provided"
             )
+
+    def _log_target(self, group_id: str, extra_args: list[Any]) -> str:
+        """Human-readable target description for the success log line.
+
+        The base variant only knows ``group_id``; member/context variants
+        also fold in the resolved ``member_id`` / ``context_id``.
+        """
+        return " / ".join(str(p) for p in (group_id, *extra_args))
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -87,10 +100,10 @@ class _SetMetadataBase(BaseStep):
             for field in self._extra_required
         ]
 
-        # The metadata record's "name" reuses the step's "name" key — merobox
-        # steps already carry an optional human label there, and the API field
-        # is also called "name", so they coincide. It may be absent (-> null).
-        name_raw = self.config.get("name")
+        # The metadata record's "name" comes from a dedicated `record_name`
+        # config key (kept distinct from the step's `name` label). Absent ->
+        # null; we never fall back to the step label.
+        name_raw = self.config.get("record_name")
         name = (
             self._resolve_dynamic_value(name_raw, workflow_results, dynamic_values)
             if isinstance(name_raw, str)
@@ -116,16 +129,26 @@ class _SetMetadataBase(BaseStep):
         )
         body = _build_metadata_body(name, data, requester)
 
+        expected_failure = self._is_expected_failure()
+
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            if not hasattr(client, self._api_method):
+                msg = (
+                    f"client.{self._api_method} not found — requires "
+                    f"calimero-client-py >= {_REQUIRED_CLIENT_VERSION} (got an older version)"
+                )
+                if expected_failure:
+                    self._report_expected_failure(msg)
+                    return True
+                console.print(f"[red]{msg}[/red]")
+                return False
             method = getattr(client, self._api_method)
             api_result = method(group_id, *extra_args, body)
             result = ok(api_result)
         except Exception as e:
             result = fail(f"{self._api_method} failed", error=e)
-
-        expected_failure = self._is_expected_failure()
 
         if not result["success"]:
             if expected_failure:
@@ -144,7 +167,8 @@ class _SetMetadataBase(BaseStep):
 
         workflow_results[f"{self._result_key_prefix}_{node_name}"] = result["data"]
         console.print(
-            f"[green]✓ Set {self._what} for group {group_id} on {node_name}[/green]"
+            f"[green]✓ Set {self._what} for {self._log_target(group_id, extra_args)} "
+            f"on {node_name}[/green]"
         )
         if expected_failure:
             self._report_unexpected_success()
@@ -156,8 +180,8 @@ class _GetMetadataBase(BaseStep):
 
     Mirrors ``GetGroupInfoStep`` in ``group_management.py``: the API result
     (a ``{"data": <MetadataRecord|null>}`` dict) is stored verbatim under
-    ``workflow_results`` and run through ``_export_variables`` so ``outputs:``
-    / ``json_assert`` can reach into it.
+    ``workflow_results[f"{prefix}_{node_name}"]`` and run through
+    ``_export_variables`` so ``outputs:`` / ``json_assert`` can reach into it.
     """
 
     _api_method: str = ""
@@ -178,13 +202,18 @@ class _GetMetadataBase(BaseStep):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
 
     def _get_exportable_variables(self):
+        # Mirrors GetGroupInfoStep's literal `{node_name}` template; the
+        # actual export goes through `_export_variables` (custom `outputs:`).
         return [
             (
                 self._export_name,
-                self._result_key_prefix + "_{node_name}",
+                f"{self._result_key_prefix}_{{node_name}}",
                 f"{self._what} record",
             )
         ]
+
+    def _log_target(self, group_id: str, extra_args: list[Any]) -> str:
+        return " / ".join(str(p) for p in (group_id, *extra_args))
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -199,9 +228,22 @@ class _GetMetadataBase(BaseStep):
             )
             for field in self._extra_required
         ]
+
+        expected_failure = self._is_expected_failure()
+
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            if not hasattr(client, self._api_method):
+                msg = (
+                    f"client.{self._api_method} not found — requires "
+                    f"calimero-client-py >= {_REQUIRED_CLIENT_VERSION} (got an older version)"
+                )
+                if expected_failure:
+                    self._report_expected_failure(msg)
+                    return True
+                console.print(f"[red]{msg}[/red]")
+                return False
             method = getattr(client, self._api_method)
             api_result = method(group_id, *extra_args)
             result = ok(api_result)
@@ -209,17 +251,27 @@ class _GetMetadataBase(BaseStep):
             result = fail(f"{self._api_method} failed", error=e)
 
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]{self._api_method} failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
+
         workflow_results[f"{self._result_key_prefix}_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
         console.print(
-            f"[green]✓ Got {self._what} for group {group_id} on {node_name}[/green]"
+            f"[green]✓ Got {self._what} for {self._log_target(group_id, extra_args)} "
+            f"on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 

@@ -691,14 +691,16 @@ class UninstallApplicationStepConfig(BaseStepConfig):
 class SetGroupMetadataStepConfig(BaseStepConfig):
     """Configuration for set_group_metadata step (admin-API group metadata).
 
-    The metadata record's optional ``name`` reuses the inherited ``name``
-    field (which doubles as the step label, since merobox steps already use
-    that key and the admin API field is also called ``name``).
+    The metadata record's optional name comes from ``record_name`` (kept
+    distinct from the inherited ``name`` field, which is the step label).
     """
 
     type: Literal["set_group_metadata"] = "set_group_metadata"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
+    record_name: Optional[str] = Field(
+        None, description="Optional name for the metadata record"
+    )
     data: Optional[dict[str, str]] = Field(
         None, description="Arbitrary string->string metadata map"
     )
@@ -723,6 +725,9 @@ class SetMemberMetadataStepConfig(BaseStepConfig):
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
     member_id: str = Field(..., description="Member public key")
+    record_name: Optional[str] = Field(
+        None, description="Optional name for the metadata record"
+    )
     data: Optional[dict[str, str]] = Field(
         None, description="Arbitrary string->string metadata map"
     )
@@ -748,6 +753,9 @@ class SetContextMetadataStepConfig(BaseStepConfig):
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
     context_id: str = Field(..., description="Group-registered context ID")
+    record_name: Optional[str] = Field(
+        None, description="Optional name for the metadata record"
+    )
     data: Optional[dict[str, str]] = Field(
         None, description="Arbitrary string->string metadata map"
     )

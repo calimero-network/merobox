@@ -1156,8 +1156,9 @@
     <p>Set the metadata record (<code>{ name, data, updatedAt, updatedBy }</code>)
     on a group, a group member, or a group-registered context via the admin API.
     Replaces the former <code>set_group_alias</code> / <code>set_member_alias</code>
-    steps (calimero-network/core#2338). The record's <code>name</code> reuses the
-    step's <code>name</code> key; <code>data</code> is an arbitrary string&rarr;string
+    steps (calimero-network/core#2338). The record's name comes from
+    <code>record_name</code> (a dedicated key, kept distinct from the step's
+    <code>name</code> label); <code>data</code> is an arbitrary string&rarr;string
     map; <code>requester</code> is an admin public key, required when the group is
     admin-guarded (omit otherwise). <code>set_member_metadata</code> additionally
     requires <code>member_id</code>; <code>set_context_metadata</code> additionally
@@ -1168,7 +1169,7 @@
 &nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">member_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># required for set_member_metadata</span><br>
 &nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># required for set_context_metadata</span><br>
-&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># optional metadata name</span><br>
+&nbsp;&nbsp;<span class="field">record_name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># optional name for the metadata record</span><br>
 &nbsp;&nbsp;<span class="field">data</span>: <span class="ty">map&lt;string,string&gt;</span>&nbsp;&nbsp;<span class="comment"># optional</span><br>
 &nbsp;&nbsp;<span class="field">requester</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># optional admin public key</span>
     </div>
