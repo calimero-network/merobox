@@ -886,7 +886,7 @@
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">outputs</span>:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">subgroups</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of {groupId, alias} objects</span>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">subgroups</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of {groupId, name} objects</span>
     </div>
   </div>
 </details>
@@ -1090,7 +1090,7 @@
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">outputs</span>:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">contexts</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of {contextId, alias} objects</span>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">contexts</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Array of {contextId, name} objects</span>
     </div>
   </div>
 </details>
@@ -1145,6 +1145,53 @@
 - <span class="field">type</span>: <span class="ty">uninstall_application</span><br>
 &nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
 &nbsp;&nbsp;<span class="field">application_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── set_group_metadata / set_member_metadata / set_context_metadata ── -->
+<details>
+  <summary>set_group_metadata / set_member_metadata / set_context_metadata</summary>
+  <div class="detail-body">
+    <p>Set the metadata record (<code>{ name, data, updatedAt, updatedBy }</code>)
+    on a group, a group member, or a group-registered context via the admin API.
+    Replaces the former <code>set_group_alias</code> / <code>set_member_alias</code>
+    steps (calimero-network/core#2338). The record's <code>name</code> reuses the
+    step's <code>name</code> key; <code>data</code> is an arbitrary string&rarr;string
+    map; <code>requester</code> is an admin public key, required when the group is
+    admin-guarded (omit otherwise). <code>set_member_metadata</code> additionally
+    requires <code>member_id</code>; <code>set_context_metadata</code> additionally
+    requires <code>context_id</code>.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">set_group_metadata</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># or set_member_metadata / set_context_metadata</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">member_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># required for set_member_metadata</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># required for set_context_metadata</span><br>
+&nbsp;&nbsp;<span class="field">name</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># optional metadata name</span><br>
+&nbsp;&nbsp;<span class="field">data</span>: <span class="ty">map&lt;string,string&gt;</span>&nbsp;&nbsp;<span class="comment"># optional</span><br>
+&nbsp;&nbsp;<span class="field">requester</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># optional admin public key</span>
+    </div>
+  </div>
+</details>
+
+<!-- ── get_group_metadata / get_member_metadata / get_context_metadata ── -->
+<details>
+  <summary>get_group_metadata / get_member_metadata / get_context_metadata</summary>
+  <div class="detail-body">
+    <p>Read the metadata record of a group, group member, or group-registered
+    context. Stores the <code>{ "data": &lt;MetadataRecord|null&gt; }</code> response
+    (where <code>MetadataRecord = { name, data, updatedAt, updatedBy }</code>) and
+    exposes it for <code>outputs:</code> / <code>json_assert</code> the same way
+    <code>get_group_info</code> does.</p>
+    <div class="typedef">
+- <span class="field">type</span>: <span class="ty">get_group_metadata</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># or get_member_metadata / get_context_metadata</span><br>
+&nbsp;&nbsp;<span class="field">node</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">group_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag tag-gap">required</span><br>
+&nbsp;&nbsp;<span class="field">member_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># required for get_member_metadata</span><br>
+&nbsp;&nbsp;<span class="field">context_id</span>: <span class="ty">string</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># required for get_context_metadata</span><br>
+&nbsp;&nbsp;<span class="field">outputs</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">meta</span>: <span class="ty">data</span>
     </div>
   </div>
 </details>

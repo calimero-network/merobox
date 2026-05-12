@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.11] - 2026-05-12
+
+### Changed
+
+- Replaced the group-scoped *alias* workflow steps (`set_group_alias`,
+  `set_member_alias`) with generic *metadata-record* steps, mirroring
+  calimero-network/core#2338 (which removed the group alias feature and added a
+  `MetadataRecord` — `{ name, data, updatedAt, updatedBy }` — on groups, group
+  members, and group-registered contexts). New step types:
+  `set_group_metadata` / `get_group_metadata`, `set_member_metadata` /
+  `get_member_metadata`, `set_context_metadata` / `get_context_metadata`. The
+  `set_*` steps take an optional `name` (string — reuses the step's `name`
+  key), optional `data` (string→string map), and optional `requester` (admin
+  public key). The `get_*` steps store the `{ "data": <MetadataRecord|null> }`
+  response and expose it for `outputs:` / `json_assert` the same way
+  `get_group_info` does. Bumps the `calimero-client-py` pin to `>=0.6.10`
+  (which adds the matching client methods).
+
 ## [0.6.10] - 2026-05-12
 
 ### Added

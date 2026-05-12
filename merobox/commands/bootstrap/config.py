@@ -57,8 +57,12 @@ VALID_STEP_TYPES = frozenset(
         "delete_namespace",
         "delete_context",
         "uninstall_application",
-        "set_group_alias",
-        "set_member_alias",
+        "set_group_metadata",
+        "get_group_metadata",
+        "set_member_metadata",
+        "get_member_metadata",
+        "set_context_metadata",
+        "get_context_metadata",
         "update_group_settings",
         "detach_context_from_group",
         "sync_group",
@@ -684,23 +688,82 @@ class UninstallApplicationStepConfig(BaseStepConfig):
     application_id: str = Field(..., description="Application ID to uninstall")
 
 
-class SetGroupAliasStepConfig(BaseStepConfig):
-    """Configuration for set_group_alias step (admin-API group rename)."""
+class SetGroupMetadataStepConfig(BaseStepConfig):
+    """Configuration for set_group_metadata step (admin-API group metadata).
 
-    type: Literal["set_group_alias"] = "set_group_alias"
+    The metadata record's optional ``name`` reuses the inherited ``name``
+    field (which doubles as the step label, since merobox steps already use
+    that key and the admin API field is also called ``name``).
+    """
+
+    type: Literal["set_group_metadata"] = "set_group_metadata"
     node: str = Field(..., description="Target node")
-    group_id: str = Field(..., description="Group ID to rename")
-    alias: str = Field(..., description="New human-friendly alias for the group")
+    group_id: str = Field(..., description="Group ID")
+    data: Optional[dict[str, str]] = Field(
+        None, description="Arbitrary string->string metadata map"
+    )
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key; required when the group is admin-guarded",
+    )
 
 
-class SetMemberAliasStepConfig(BaseStepConfig):
-    """Configuration for set_member_alias step (admin-API member display-name)."""
+class GetGroupMetadataStepConfig(BaseStepConfig):
+    """Configuration for get_group_metadata step."""
 
-    type: Literal["set_member_alias"] = "set_member_alias"
+    type: Literal["get_group_metadata"] = "get_group_metadata"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+
+
+class SetMemberMetadataStepConfig(BaseStepConfig):
+    """Configuration for set_member_metadata step (admin-API member metadata)."""
+
+    type: Literal["set_member_metadata"] = "set_member_metadata"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
     member_id: str = Field(..., description="Member public key")
-    alias: str = Field(..., description="New human-friendly alias for the member")
+    data: Optional[dict[str, str]] = Field(
+        None, description="Arbitrary string->string metadata map"
+    )
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key; required when the group is admin-guarded",
+    )
+
+
+class GetMemberMetadataStepConfig(BaseStepConfig):
+    """Configuration for get_member_metadata step."""
+
+    type: Literal["get_member_metadata"] = "get_member_metadata"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Member public key")
+
+
+class SetContextMetadataStepConfig(BaseStepConfig):
+    """Configuration for set_context_metadata step (admin-API context metadata)."""
+
+    type: Literal["set_context_metadata"] = "set_context_metadata"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    context_id: str = Field(..., description="Group-registered context ID")
+    data: Optional[dict[str, str]] = Field(
+        None, description="Arbitrary string->string metadata map"
+    )
+    requester: Optional[str] = Field(
+        None,
+        description="Optional admin public key; required when the group is admin-guarded",
+    )
+
+
+class GetContextMetadataStepConfig(BaseStepConfig):
+    """Configuration for get_context_metadata step."""
+
+    type: Literal["get_context_metadata"] = "get_context_metadata"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    context_id: str = Field(..., description="Group-registered context ID")
 
 
 class UpdateGroupSettingsStepConfig(BaseStepConfig):
@@ -874,8 +937,12 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "delete_namespace": DeleteNamespaceStepConfig,
     "delete_context": DeleteContextStepConfig,
     "uninstall_application": UninstallApplicationStepConfig,
-    "set_group_alias": SetGroupAliasStepConfig,
-    "set_member_alias": SetMemberAliasStepConfig,
+    "set_group_metadata": SetGroupMetadataStepConfig,
+    "get_group_metadata": GetGroupMetadataStepConfig,
+    "set_member_metadata": SetMemberMetadataStepConfig,
+    "get_member_metadata": GetMemberMetadataStepConfig,
+    "set_context_metadata": SetContextMetadataStepConfig,
+    "get_context_metadata": GetContextMetadataStepConfig,
     "update_group_settings": UpdateGroupSettingsStepConfig,
     "detach_context_from_group": DetachContextFromGroupStepConfig,
     "sync_group": SyncGroupStepConfig,
