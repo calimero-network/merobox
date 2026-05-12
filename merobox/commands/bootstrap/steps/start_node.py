@@ -156,20 +156,30 @@ class StartNodeStep(BaseStep):
                 f"[cyan]Waiting up to {wait_timeout} seconds for nodes to be ready...[/cyan]"
             )
 
-            start_time = time.time()
-            all_ready = False
+            # Resolve RPC ports up front; nodes whose port we can't determine
+            # can't be probed, so don't hold up the wait on them.
+            node_ports = {}
+            for node_name in started_nodes:
+                rpc_port = None
+                if hasattr(self.manager, "get_node_rpc_port"):
+                    rpc_port = self.manager.get_node_rpc_port(node_name)
+                elif hasattr(self.manager, "node_rpc_ports"):
+                    rpc_port = self.manager.node_rpc_ports.get(node_name)
+                if rpc_port:
+                    node_ports[node_name] = rpc_port
 
-            while time.time() - start_time < wait_timeout:
-                ready_count = 0
-                for node_name in started_nodes:
-                    # Try to get RPC port from manager
-                    rpc_port = None
-                    if hasattr(self.manager, "get_node_rpc_port"):
-                        rpc_port = self.manager.get_node_rpc_port(node_name)
-                    elif hasattr(self.manager, "node_rpc_ports"):
-                        rpc_port = self.manager.node_rpc_ports.get(node_name)
+            if not node_ports:
+                console.print(
+                    "[yellow]⚠ Could not determine RPC ports for the started "
+                    "node(s); skipping readiness check.[/yellow]"
+                )
+            else:
+                start_time = time.time()
+                all_ready = False
 
-                    if rpc_port:
+                while time.time() - start_time < wait_timeout:
+                    ready_count = 0
+                    for rpc_port in node_ports.values():
                         try:
                             with socket.create_connection(
                                 ("127.0.0.1", rpc_port), timeout=1
@@ -178,17 +188,17 @@ class StartNodeStep(BaseStep):
                         except Exception:
                             pass
 
-                if ready_count == len(started_nodes):
-                    all_ready = True
-                    break
+                    if ready_count == len(node_ports):
+                        all_ready = True
+                        break
 
-                await asyncio.sleep(1)
+                    await asyncio.sleep(1)
 
-            if all_ready:
-                console.print("[green]✓ All nodes are ready[/green]")
-            else:
-                console.print(
-                    "[yellow]⚠ Some nodes may not be ready yet, continuing...[/yellow]"
-                )
+                if all_ready:
+                    console.print("[green]✓ All nodes are ready[/green]")
+                else:
+                    console.print(
+                        "[yellow]⚠ Some nodes may not be ready yet, continuing...[/yellow]"
+                    )
 
         return True

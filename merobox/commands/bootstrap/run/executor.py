@@ -830,6 +830,8 @@ class WorkflowExecutor:
                 if self.is_binary_mode:
                     if self.auth_mode:
                         run_multiple_kwargs["auth_mode"] = self.auth_mode
+                    if self.merod_args:
+                        run_multiple_kwargs["merod_args"] = self.merod_args
                 else:
                     run_multiple_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
@@ -1049,11 +1051,6 @@ class WorkflowExecutor:
             if isinstance(nodes_config, dict)
             else None
         )
-        chain_id = (
-            nodes_config.get("chain_id", "testnet-1")
-            if isinstance(nodes_config, dict)
-            else "testnet-1"
-        )
         image = (
             self.image
             if self.image is not None
@@ -1072,7 +1069,6 @@ class WorkflowExecutor:
         if node_config:
             port = node_config.get("port", base_port)
             rpc_port = node_config.get("rpc_port", base_rpc_port)
-            node_chain_id = node_config.get("chain_id", chain_id)
             node_image = node_config.get("image", image)
             data_dir = node_config.get("data_dir")
             node_config_path = self._resolve_config_path(
@@ -1087,7 +1083,6 @@ class WorkflowExecutor:
                 node_cfg = nodes_config[node_name]
                 port = node_cfg.get("port", base_port)
                 rpc_port = node_cfg.get("rpc_port", base_rpc_port)
-                node_chain_id = node_cfg.get("chain_id", chain_id)
                 node_image = (
                     node_cfg.get("image", image) if image else node_cfg.get("image")
                 )
@@ -1114,7 +1109,6 @@ class WorkflowExecutor:
                 except (ValueError, IndexError):
                     port = base_port
                     rpc_port = base_rpc_port
-                node_chain_id = chain_id
                 node_image = image
                 data_dir = None
                 node_config_path = config_path
@@ -1122,28 +1116,18 @@ class WorkflowExecutor:
             else:
                 port = base_port
                 rpc_port = base_rpc_port
-                node_chain_id = chain_id
                 node_image = image
                 data_dir = None
                 node_config_path = config_path
                 node_use_image_entrypoint = use_image_entrypoint
 
-        # Handle NEAR devnet config if enabled
-        node_near_config = None
-        if self.near_devnet:
-            creds = await self.sandbox.create_node_account(node_name)
-            node_near_config = {
-                "rpc_url": self.near_config["rpc_url"],
-                "contract_id": self.near_config["contract_id"],
-                **creds,
-            }
-
-        # Build arguments for run_node
+        # Build arguments for run_node — kept in sync with the per-node kwargs
+        # built in _start_nodes() (neither manager's run_node() accepts
+        # chain_id / mock_relayer / near_devnet_config).
         run_node_kwargs = {
             "node_name": node_name,
             "port": port,
             "rpc_port": rpc_port,
-            "chain_id": node_chain_id,
             "data_dir": data_dir,
             "image": node_image,
             "auth_service": self.auth_service,
@@ -1152,11 +1136,9 @@ class WorkflowExecutor:
             "webui_use_cached": self.webui_use_cached,
             "log_level": self.log_level,
             "rust_backtrace": self.rust_backtrace,
-            "mock_relayer": self.mock_relayer,
             "workflow_id": self.workflow_id,
             "e2e_mode": self.e2e_mode,
             "config_path": node_config_path,
-            "near_devnet_config": node_near_config,
             "bootstrap_nodes": self.bootstrap_nodes,
         }
         if self.is_binary_mode:

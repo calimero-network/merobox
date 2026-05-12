@@ -4,8 +4,6 @@ Stop node step executor - Stop nodes during workflow execution.
 
 from typing import Any, Optional
 
-import docker
-
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
 
@@ -24,23 +22,19 @@ class StopNodeStep(BaseStep):
         if not self.manager:
             return False
 
-        if hasattr(self.manager, "is_node_running"):
-            try:
-                return self.manager.is_node_running(node_name)
-            except docker.errors.APIError as e:
-                explanation = getattr(e, "explanation", str(e))
-                console.print(
-                    f"[red]❌ Failed to check node status for {node_name}: {explanation}[/red]"
-                )
-                return None
-            except docker.errors.DockerException as e:
-                explanation = getattr(e, "explanation", str(e))
-                console.print(
-                    f"[red]❌ Docker error while checking node status for {node_name}: {explanation}[/red]"
-                )
-                return None
+        if not hasattr(self.manager, "is_node_running"):
+            return None
 
-        return None
+        try:
+            return self.manager.is_node_running(node_name)
+        except Exception as e:
+            # Backend-specific failure (e.g. Docker API error) — treat the
+            # status as unknown rather than letting it abort the workflow.
+            explanation = getattr(e, "explanation", str(e))
+            console.print(
+                f"[red]❌ Failed to check node status for {node_name}: {explanation}[/red]"
+            )
+            return None
 
     def _get_required_fields(self) -> list[str]:
         """
