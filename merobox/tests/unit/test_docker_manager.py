@@ -1121,3 +1121,46 @@ def test_run_multiple_nodes_single_node_unchanged(mock_docker):
     manager._ensure_cluster_network.assert_not_called()
     manager._wire_cluster_bootstrap_peers.assert_not_called()
     manager.wait_for_cluster_peers.assert_not_called()
+
+
+# ============================================================================
+# is_node_running (PR #143 — stop_node/start_node steps)
+# ============================================================================
+
+
+@patch("docker.from_env")
+def test_is_node_running_returns_true_for_running_container(mock_docker):
+    client = MagicMock()
+    running_container = MagicMock()
+    running_container.status = "running"
+    client.containers.get.return_value = running_container
+    mock_docker.return_value = client
+
+    manager = DockerManager()
+
+    assert manager.is_node_running("node1") is True
+    client.containers.get.assert_called_once_with("node1")
+
+
+@patch("docker.from_env")
+def test_is_node_running_returns_false_when_container_missing(mock_docker):
+    client = MagicMock()
+    client.containers.get.side_effect = docker.errors.NotFound("missing")
+    mock_docker.return_value = client
+
+    manager = DockerManager()
+
+    assert manager.is_node_running("node1") is False
+    client.containers.get.assert_called_once_with("node1")
+
+
+@patch("docker.from_env")
+def test_is_node_running_raises_api_error(mock_docker):
+    client = MagicMock()
+    client.containers.get.side_effect = docker.errors.APIError("denied")
+    mock_docker.return_value = client
+
+    manager = DockerManager()
+
+    with pytest.raises(docker.errors.APIError):
+        manager.is_node_running("node1")

@@ -72,6 +72,8 @@ from merobox.commands.bootstrap.steps.namespace import (
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
+from merobox.commands.bootstrap.steps.start_node import StartNodeStep
+from merobox.commands.bootstrap.steps.stop_node import StopNodeStep
 from merobox.commands.bootstrap.steps.subgroup import (
     AddGroupMembersStep,
     ListSubgroupsStep,
@@ -145,4 +147,6 @@ __all__ = [
     "UpgradeGroupStep",
     "GetGroupUpgradeStatusStep",
     "RetryGroupUpgradeStep",
+    "StopNodeStep",
+    "StartNodeStep",
 ]

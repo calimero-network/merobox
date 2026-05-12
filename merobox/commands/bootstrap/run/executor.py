@@ -114,6 +114,7 @@ class WorkflowExecutor:
         auth_username: Optional[str] = None,
         auth_password: Optional[str] = None,
         dry_run: bool = False,
+        merod_args: Optional[str] = None,
     ):
         self.config = config
         self.manager = manager
@@ -164,6 +165,9 @@ class WorkflowExecutor:
 
         # Auth mode for binary mode (can be set by CLI or workflow config, CLI takes precedence)
         self.auth_mode = auth_mode or config.get("auth_mode", None)
+
+        # Merod args for binary mode (CLI only, not from config)
+        self.merod_args = merod_args
 
         # Remote nodes configuration
         self.remote_nodes_config = config.get("remote_nodes", {})
@@ -772,6 +776,50 @@ class WorkflowExecutor:
         resolved = os.path.join(self.workflow_dir, config_path)
         return os.path.abspath(resolved)
 
+    def _build_run_node_kwargs(
+        self,
+        node_name: str,
+        *,
+        port: Optional[int],
+        rpc_port: Optional[int],
+        image: Optional[str],
+        data_dir: Optional[str] = None,
+        config_path: Optional[str] = None,
+        use_image_entrypoint: bool = False,
+    ) -> dict[str, Any]:
+        """Build the keyword arguments for ``manager.run_node()``.
+
+        Shared by every node-startup path (``_start_nodes`` and
+        ``_start_single_node``) so they stay in sync. ``merod_args`` /
+        ``auth_mode`` only apply in binary mode; ``use_image_entrypoint`` only
+        in Docker mode.
+        """
+        kwargs: dict[str, Any] = {
+            "node_name": node_name,
+            "port": port,
+            "rpc_port": rpc_port,
+            "data_dir": data_dir,
+            "image": image,
+            "auth_service": self.auth_service,
+            "auth_image": self.auth_image,
+            "auth_use_cached": self.auth_use_cached,
+            "webui_use_cached": self.webui_use_cached,
+            "log_level": self.log_level,
+            "rust_backtrace": self.rust_backtrace,
+            "workflow_id": self.workflow_id,
+            "e2e_mode": self.e2e_mode,
+            "config_path": config_path,
+            "bootstrap_nodes": self.bootstrap_nodes,
+        }
+        if self.is_binary_mode:
+            if self.auth_mode:
+                kwargs["auth_mode"] = self.auth_mode
+            if self.merod_args:
+                kwargs["merod_args"] = self.merod_args
+        else:
+            kwargs["use_image_entrypoint"] = use_image_entrypoint
+        return kwargs
+
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get("nodes", {})
@@ -826,6 +874,8 @@ class WorkflowExecutor:
                 if self.is_binary_mode:
                     if self.auth_mode:
                         run_multiple_kwargs["auth_mode"] = self.auth_mode
+                    if self.merod_args:
+                        run_multiple_kwargs["merod_args"] = self.merod_args
                 else:
                     run_multiple_kwargs["use_image_entrypoint"] = use_image_entrypoint
 
@@ -848,29 +898,13 @@ class WorkflowExecutor:
                     # Not running -> start (allow manager to allocate ports if base_* is None)
                     port = base_port + i if base_port is not None else None
                     rpc_port = base_rpc_port + i if base_rpc_port is not None else None
-                    # Build arguments for run_node
-                    run_node_kwargs = {
-                        "node_name": node_name,
-                        "port": port,
-                        "rpc_port": rpc_port,
-                        "data_dir": None,
-                        "image": image,
-                        "auth_service": self.auth_service,
-                        "auth_image": self.auth_image,
-                        "auth_use_cached": self.auth_use_cached,
-                        "webui_use_cached": self.webui_use_cached,
-                        "log_level": self.log_level,
-                        "rust_backtrace": self.rust_backtrace,
-                        "workflow_id": self.workflow_id,
-                        "e2e_mode": self.e2e_mode,
-                        "bootstrap_nodes": self.bootstrap_nodes,
-                    }
-                    if self.is_binary_mode:
-                        if self.auth_mode:
-                            run_node_kwargs["auth_mode"] = self.auth_mode
-                    else:
-                        run_node_kwargs["use_image_entrypoint"] = use_image_entrypoint
-
+                    run_node_kwargs = self._build_run_node_kwargs(
+                        node_name,
+                        port=port,
+                        rpc_port=rpc_port,
+                        image=image,
+                        use_image_entrypoint=use_image_entrypoint,
+                    )
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
 
@@ -937,32 +971,15 @@ class WorkflowExecutor:
                         )
 
                     console.print(f"Starting node '{node_name}'...")
-                    # Build arguments for run_node
-                    run_node_kwargs = {
-                        "node_name": node_name,
-                        "port": port,
-                        "rpc_port": rpc_port,
-                        "data_dir": data_dir,
-                        "image": node_image,
-                        "auth_service": self.auth_service,
-                        "auth_image": self.auth_image,
-                        "auth_use_cached": self.auth_use_cached,
-                        "webui_use_cached": self.webui_use_cached,
-                        "log_level": self.log_level,
-                        "rust_backtrace": self.rust_backtrace,
-                        "workflow_id": self.workflow_id,
-                        "e2e_mode": self.e2e_mode,
-                        "config_path": node_config_path,
-                        "bootstrap_nodes": self.bootstrap_nodes,
-                    }
-                    if self.is_binary_mode:
-                        if self.auth_mode:
-                            run_node_kwargs["auth_mode"] = self.auth_mode
-                    else:
-                        run_node_kwargs["use_image_entrypoint"] = (
-                            node_use_image_entrypoint
-                        )
-
+                    run_node_kwargs = self._build_run_node_kwargs(
+                        node_name,
+                        port=port,
+                        rpc_port=rpc_port,
+                        image=node_image,
+                        data_dir=data_dir,
+                        config_path=node_config_path,
+                        use_image_entrypoint=node_use_image_entrypoint,
+                    )
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
                 else:
@@ -972,35 +989,151 @@ class WorkflowExecutor:
                     continue
             else:
                 console.print(f"Starting node '{node_name}'...")
-                # Build arguments for run_node
-                run_node_kwargs = {
-                    "node_name": node_name,
-                    "port": port,
-                    "rpc_port": rpc_port,
-                    "data_dir": data_dir,
-                    "image": node_image,
-                    "auth_service": self.auth_service,
-                    "auth_image": self.auth_image,
-                    "auth_use_cached": self.auth_use_cached,
-                    "webui_use_cached": self.webui_use_cached,
-                    "log_level": self.log_level,
-                    "rust_backtrace": self.rust_backtrace,
-                    "workflow_id": self.workflow_id,
-                    "e2e_mode": self.e2e_mode,
-                    "config_path": node_config_path,
-                    "bootstrap_nodes": self.bootstrap_nodes,
-                }
-                if self.is_binary_mode:
-                    if self.auth_mode:
-                        run_node_kwargs["auth_mode"] = self.auth_mode
-                else:
-                    run_node_kwargs["use_image_entrypoint"] = node_use_image_entrypoint
-
+                run_node_kwargs = self._build_run_node_kwargs(
+                    node_name,
+                    port=port,
+                    rpc_port=rpc_port,
+                    image=node_image,
+                    data_dir=data_dir,
+                    config_path=node_config_path,
+                    use_image_entrypoint=node_use_image_entrypoint,
+                )
                 if not self.manager.run_node(**run_node_kwargs):
                     return False
 
         console.print("[green]✓ Node management completed[/green]")
         return True
+
+    async def _start_single_node(
+        self,
+        node_name: str,
+        node_config: dict | None = None,
+        nodes_config: dict | None = None,
+    ) -> bool:
+        """
+        Start a single node with proper configuration.
+
+        This is a helper method for start_node step to start individual nodes
+        with all the proper configuration from the workflow.
+
+        Args:
+            node_name: Name of the node to start
+            node_config: Optional node-specific config dict
+            nodes_config: Optional workflow nodes config dict
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.manager:
+            return False
+
+        # Idempotent: a node that's already up doesn't need (re)starting — and
+        # DockerManager.run_node() would otherwise stop+remove the container.
+        if self._is_node_running(node_name):
+            console.print(f"[green]✓ Node '{node_name}' is already running[/green]")
+            return True
+
+        # Get base config from workflow
+        if nodes_config is None:
+            nodes_config = self.config.get("nodes", {})
+
+        base_port = (
+            nodes_config.get("base_port", DEFAULT_P2P_PORT)
+            if isinstance(nodes_config, dict)
+            else None
+        )
+        base_rpc_port = (
+            nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
+            if isinstance(nodes_config, dict)
+            else None
+        )
+        image = (
+            self.image
+            if self.image is not None
+            else (nodes_config.get("image") if isinstance(nodes_config, dict) else None)
+        )
+        config_path = self._resolve_config_path(
+            nodes_config.get("config_path") if isinstance(nodes_config, dict) else None
+        )
+        use_image_entrypoint = (
+            nodes_config.get("use_image_entrypoint", False)
+            if isinstance(nodes_config, dict)
+            else False
+        )
+
+        # Use node-specific config if provided, otherwise derive from base config
+        if node_config:
+            port = node_config.get("port", base_port)
+            rpc_port = node_config.get("rpc_port", base_rpc_port)
+            node_image = node_config.get("image", image)
+            data_dir = node_config.get("data_dir")
+            node_config_path = self._resolve_config_path(
+                node_config.get("config_path", config_path)
+            )
+            node_use_image_entrypoint = node_config.get(
+                "use_image_entrypoint", use_image_entrypoint
+            )
+        else:
+            # Try to extract from nodes_config if it's a dict with node-specific entries
+            if isinstance(nodes_config, dict) and node_name in nodes_config:
+                node_cfg = nodes_config[node_name]
+                port = node_cfg.get("port", base_port)
+                rpc_port = node_cfg.get("rpc_port", base_rpc_port)
+                node_image = (
+                    node_cfg.get("image", image) if image else node_cfg.get("image")
+                )
+                data_dir = node_cfg.get("data_dir")
+                node_config_path = self._resolve_config_path(
+                    node_cfg.get("config_path", config_path)
+                )
+                node_use_image_entrypoint = node_cfg.get(
+                    "use_image_entrypoint", use_image_entrypoint
+                )
+            elif isinstance(nodes_config, dict) and "count" in nodes_config:
+                # Count mode: derive the port offset from the node's index in
+                # its "{prefix}-{N}" name (1-based).
+                prefix = nodes_config.get("prefix", "calimero-node")
+                suffix = (
+                    node_name[len(prefix) :].lstrip("-")
+                    if node_name.startswith(prefix)
+                    else ""
+                )
+                try:
+                    index = int(suffix) - 1
+                    port = base_port + index if base_port is not None else None
+                    rpc_port = (
+                        base_rpc_port + index if base_rpc_port is not None else None
+                    )
+                except ValueError:
+                    console.print(
+                        f"[yellow]⚠ Node '{node_name}' doesn't match the "
+                        f"count-mode prefix '{prefix}-N'; using base ports "
+                        "(this may collide with other nodes).[/yellow]"
+                    )
+                    port = base_port
+                    rpc_port = base_rpc_port
+                node_image = image
+                data_dir = None
+                node_config_path = config_path
+                node_use_image_entrypoint = use_image_entrypoint
+            else:
+                port = base_port
+                rpc_port = base_rpc_port
+                node_image = image
+                data_dir = None
+                node_config_path = config_path
+                node_use_image_entrypoint = use_image_entrypoint
+
+        run_node_kwargs = self._build_run_node_kwargs(
+            node_name,
+            port=port,
+            rpc_port=rpc_port,
+            image=node_image,
+            data_dir=data_dir,
+            config_path=node_config_path,
+            use_image_entrypoint=node_use_image_entrypoint,
+        )
+        return self.manager.run_node(**run_node_kwargs)
 
     async def _wait_for_nodes_ready(self) -> bool:
         """Wait for all local nodes to be ready and accessible.
@@ -1390,7 +1523,20 @@ class WorkflowExecutor:
             "auth_mode": self.auth_mode,
         }
 
-        if step_type == "install_application":
+        if step_type == "stop_node":
+            from merobox.commands.bootstrap.steps.stop_node import StopNodeStep
+
+            return StopNodeStep(step_config, **common_kwargs)
+        elif step_type == "start_node":
+            from merobox.commands.bootstrap.steps.start_node import StartNodeStep
+
+            return StartNodeStep(
+                step_config,
+                workflow_config=self.config,
+                start_node_fn=self._start_single_node,
+                **common_kwargs,
+            )
+        elif step_type == "install_application":
             return InstallApplicationStep(step_config, **common_kwargs)
         elif step_type == "create_context":
             return CreateContextStep(step_config, **common_kwargs)

@@ -186,6 +186,13 @@ def bootstrap():
     help="Set custom path to merod binary (used with --no-docker). Defaults to searching PATH and common locations (/usr/local/bin, /usr/bin, ~/bin).",
 )
 @click.option(
+    "--merod-args",
+    type=str,
+    default=None,
+    help="Additional arguments to pass to merod run command (binary mode only). "
+    'Example: --merod-args="--sync-strategy delta"',
+)
+@click.option(
     "--e2e-mode",
     is_flag=True,
     help="Enable e2e test mode with aggressive sync settings and test isolation (disables bootstrap nodes, uses unique rendezvous namespaces)",
@@ -237,6 +244,7 @@ def run(
     rust_backtrace,
     no_docker,
     binary_path,
+    merod_args,
     e2e_mode,
     remote_node,
     remote_auth,
@@ -280,6 +288,14 @@ def run(
         )
         sys.exit(1)
 
+    # Warn if --merod-args is used without --no-docker
+    if merod_args and not no_docker:
+        console.print(
+            "[yellow]⚠ --merod-args is only supported with --no-docker (binary mode). "
+            "Flag will be ignored.[/yellow]"
+        )
+        merod_args = None
+
     # Parse remote node CLI options
     cli_remote_nodes = parse_remote_nodes(remote_node)
     cli_remote_nodes = parse_remote_auth(remote_auth, cli_remote_nodes, api_key)
@@ -296,6 +312,7 @@ def run(
         rust_backtrace=rust_backtrace,
         no_docker=no_docker,
         binary_path=binary_path,
+        merod_args=merod_args,
         e2e_mode=e2e_mode,
         cli_remote_nodes=cli_remote_nodes,
         auth_mode=auth_mode,
