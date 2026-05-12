@@ -57,17 +57,27 @@ class RemoveGroupMembersStep(BaseStep):
         except Exception as e:
             result = fail("remove_group_members failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]Failed to remove group members on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"remove_group_members_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Removed {len(members)} member(s) from group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -103,18 +113,28 @@ class ListGroupMembersStep(BaseStep):
         except Exception as e:
             result = fail("list_group_members failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]list_group_members failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"members_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
         console.print(
             f"[green]✓ Listed members for group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -155,17 +175,27 @@ class UpdateMemberRoleStep(BaseStep):
         except Exception as e:
             result = fail("update_member_role failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]update_member_role failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"update_member_role_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Updated role to '{role}' for {member_id} in group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -207,17 +237,27 @@ class SetMemberCapabilitiesStep(BaseStep):
         except Exception as e:
             result = fail("set_member_capabilities failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]set_member_capabilities failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"set_member_capabilities_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Set capabilities for {member_id} in group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -258,18 +298,28 @@ class GetMemberCapabilitiesStep(BaseStep):
         except Exception as e:
             result = fail("get_member_capabilities failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]get_member_capabilities failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"capabilities_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
         console.print(
             f"[green]✓ Got capabilities for {member_id} in group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -309,17 +359,27 @@ class SetDefaultCapabilitiesStep(BaseStep):
         except Exception as e:
             result = fail("set_default_capabilities failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]set_default_capabilities failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"set_default_capabilities_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Set default capabilities for group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -367,17 +427,27 @@ class SetSubgroupVisibilityStep(BaseStep):
         except Exception as e:
             result = fail("set_subgroup_visibility failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]set_subgroup_visibility failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"set_subgroup_visibility_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Set subgroup visibility to '{visibility}' for group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -418,16 +488,26 @@ class GetGroupInfoStep(BaseStep):
         except Exception as e:
             result = fail("get_group_info failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]get_group_info failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"group_info_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
         console.print(f"[green]✓ Got info for group {group_id} on {node_name}[/green]")
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -463,18 +543,28 @@ class ListGroupContextsStep(BaseStep):
         except Exception as e:
             result = fail("list_group_contexts failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
             console.print(
                 f"[red]list_group_contexts failed on {node_name}: {result.get('error')}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"contexts_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
         console.print(
             f"[green]✓ Listed contexts for group {group_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -524,16 +614,26 @@ class DeleteGroupStep(BaseStep):
         except Exception as e:
             result = fail("delete_group failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
             exc_msg = (result.get("exception") or {}).get("message") or result.get(
                 "error"
             )
+            if expected_failure:
+                self._report_expected_failure(str(exc_msg or "Unknown error"))
+                return True
             console.print(f"[red]delete_group failed on {node_name}: {exc_msg}[/red]")
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"delete_group_{node_name}"] = result["data"]
         console.print(f"[green]✓ Deleted group {group_id} on {node_name}[/green]")
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -584,20 +684,30 @@ class DeleteNamespaceStep(BaseStep):
         except Exception as e:
             result = fail("delete_namespace failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
             exc_msg = (result.get("exception") or {}).get("message") or result.get(
                 "error"
             )
+            if expected_failure:
+                self._report_expected_failure(str(exc_msg or "Unknown error"))
+                return True
             console.print(
                 f"[red]delete_namespace failed on {node_name}: {exc_msg}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"delete_namespace_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Deleted namespace {namespace_id} on {node_name}[/green]"
         )
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
@@ -649,6 +759,8 @@ class DeleteContextStep(BaseStep):
         except Exception as e:
             result = fail("delete_context failed", error=e)
 
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
             # Surface the underlying exception message, not just the wrapper —
             # result["error"] is the hardcoded "delete_context failed" wrapper,
@@ -656,12 +768,20 @@ class DeleteContextStep(BaseStep):
             exc_msg = (result.get("exception") or {}).get("message") or result.get(
                 "error"
             )
+            if expected_failure:
+                self._report_expected_failure(str(exc_msg or "Unknown error"))
+                return True
             console.print(f"[red]delete_context failed on {node_name}: {exc_msg}[/red]")
             return False
         if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
             return False
         workflow_results[f"delete_context_{node_name}"] = result["data"]
         console.print(f"[green]✓ Deleted context {context_id} on {node_name}[/green]")
+        if expected_failure:
+            self._report_unexpected_success()
         return True
 
 
