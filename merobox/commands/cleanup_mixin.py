@@ -55,6 +55,11 @@ class CleanupMixin(ABC):
         self._cleanup_done = False
         self._original_sigint_handler = None
         self._original_sigterm_handler = None
+        # When True, the atexit handler skips resource teardown so managed
+        # containers/processes outlive the merobox process. Set via
+        # keep_resources_on_exit() — used for `stop_all_nodes: false` workflows.
+        # Signal-triggered cleanup (SIGINT/SIGTERM) is unaffected.
+        self._keep_resources_on_exit = False
 
     def _setup_signal_handlers(self):
         """Register signal handlers for graceful shutdown."""
@@ -93,10 +98,33 @@ class CleanupMixin(ABC):
     def _cleanup_on_exit(self):
         """Cleanup handler for atexit.
 
-        Calls _cleanup_resources unconditionally since it's idempotent and
-        will return immediately if cleanup was already done or is in progress.
+        Skips teardown entirely when keep_resources_on_exit() was requested
+        (e.g. a ``stop_all_nodes: false`` workflow wants the nodes to outlive
+        the run). Otherwise calls _cleanup_resources, which is idempotent and
+        returns immediately if cleanup was already done or is in progress.
         """
+        if self._keep_resources_on_exit:
+            return
         self._cleanup_resources()
+
+    def keep_resources_on_exit(self, keep: bool = True) -> None:
+        """Control whether the atexit handler tears down managed resources.
+
+        ``merobox bootstrap run`` exits as soon as the workflow finishes, which
+        fires the registered ``atexit`` handler and stops every container/process
+        this manager started. Workflows that set ``stop_all_nodes: false`` (the
+        default) want the nodes to keep running afterwards — e.g. to hand off to
+        a separate test runner — so the bootstrap executor calls this to
+        suppress the atexit teardown.
+
+        This does not affect the SIGINT/SIGTERM handlers: interrupting a run
+        still stops the managed resources.
+
+        Args:
+            keep: If True, the atexit handler becomes a no-op. If False,
+                restores the default teardown-on-exit behaviour.
+        """
+        self._keep_resources_on_exit = keep
 
     def _cleanup_resources_guarded(self, cleanup_fn, *args, **kwargs) -> CleanupResult:
         """Execute cleanup function with thread-safe guards.

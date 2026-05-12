@@ -252,6 +252,13 @@ class WorkflowExecutor:
             stop_all_nodes = self.config.get("stop_all_nodes", False)
             nuke_on_end = self.config.get("nuke_on_end", False)
 
+            # A workflow that leaves nodes running (stop_all_nodes: false, which
+            # is also the default) must actually do so: the manager's atexit
+            # handler would otherwise tear every container/process down the
+            # moment `merobox bootstrap run` exits. See merobox#227.
+            if self.manager is not None and not stop_all_nodes:
+                self.manager.keep_resources_on_exit()
+
             # Steps 1-3: Local node management (skip if remote-only mode)
             if has_local_nodes:
                 # Step 1: Restart nodes if requested (at beginning)

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `stop_all_nodes: false` (also the default) now actually leaves nodes running
+  after `merobox bootstrap run` exits. Previously the manager's `atexit` handler
+  unconditionally tore down every container it had started, so the "Step 5:
+  Leaving nodes running" path was immediately undone on process exit — the only
+  workaround was to background the run and `kill -9` it before `atexit` could
+  fire. The bootstrap executor now calls `manager.keep_resources_on_exit()` when
+  `stop_all_nodes` is falsy, suppressing the `atexit` teardown (SIGINT/SIGTERM
+  cleanup is unchanged — interrupting a run still stops the nodes). Resolves
+  [#227](https://github.com/calimero-network/merobox/issues/227).
 - Multi-node clusters now wire up static bootstrap peers instead of depending on
   mDNS-only discovery over Docker's default bridge. When 2+ nodes are started
   (and `MEROBOX_LEGACY_CLUSTER_NETWORKING` is not set), merobox now: (1) attaches
