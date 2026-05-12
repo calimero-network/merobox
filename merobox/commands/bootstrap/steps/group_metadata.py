@@ -48,11 +48,9 @@ class _SetMetadataBase(BaseStep):
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
-        for field in ("group_id", *self._extra_required):
+        for field in ("node", "group_id", *self._extra_required):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
-        if not isinstance(self.config.get("node"), str):
-            raise ValueError(f"Step '{step_name}': 'node' must be a string")
         record_name = self.config.get("record_name")
         if record_name is not None and not isinstance(record_name, str):
             raise ValueError(
@@ -133,6 +131,14 @@ class _SetMetadataBase(BaseStep):
 
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+        except Exception as e:
+            if expected_failure:
+                self._report_expected_failure(f"node resolution failed: {e}")
+                return True
+            console.print(f"[red]Failed to resolve node {node_name}: {e}[/red]")
+            return False
+
+        try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
             if not hasattr(client, self._api_method):
                 msg = (
@@ -163,6 +169,9 @@ class _SetMetadataBase(BaseStep):
             if expected_failure:
                 self._report_expected_failure("JSON-RPC error returned")
                 return True
+            console.print(
+                f"[red]{self._api_method} returned a JSON-RPC error on {node_name}[/red]"
+            )
             return False
 
         workflow_results[f"{self._result_key_prefix}_{node_name}"] = result["data"]
@@ -233,6 +242,14 @@ class _GetMetadataBase(BaseStep):
 
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+        except Exception as e:
+            if expected_failure:
+                self._report_expected_failure(f"node resolution failed: {e}")
+                return True
+            console.print(f"[red]Failed to resolve node {node_name}: {e}[/red]")
+            return False
+
+        try:
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
             if not hasattr(client, self._api_method):
                 msg = (
@@ -262,6 +279,9 @@ class _GetMetadataBase(BaseStep):
             if expected_failure:
                 self._report_expected_failure("JSON-RPC error returned")
                 return True
+            console.print(
+                f"[red]{self._api_method} returned a JSON-RPC error on {node_name}[/red]"
+            )
             return False
 
         workflow_results[f"{self._result_key_prefix}_{node_name}"] = result["data"]

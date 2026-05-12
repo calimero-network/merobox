@@ -18,9 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   members, and group-registered contexts). New step types:
   `set_group_metadata` / `get_group_metadata`, `set_member_metadata` /
   `get_member_metadata`, `set_context_metadata` / `get_context_metadata`. The
-  `set_*` steps take an optional `name` (string — reuses the step's `name`
-  key), optional `data` (string→string map), and optional `requester` (admin
-  public key). The `get_*` steps store the `{ "data": <MetadataRecord|null> }`
+  `set_*` steps take an optional `record_name` (string — a dedicated key,
+  distinct from the step's `name` label), optional `data` (string→string map),
+  and optional `requester` (admin public key). The `get_*` steps store the
+  `{ "data": <MetadataRecord|null> }`
   response and expose it for `outputs:` / `json_assert` the same way
   `get_group_info` does. Bumps the `calimero-client-py` pin to `>=0.6.10`
   (which adds the matching client methods).

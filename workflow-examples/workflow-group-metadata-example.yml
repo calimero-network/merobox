@@ -150,30 +150,37 @@ steps:
     seconds: 5
 
   # Phase 5: Read metadata back from node 2 and assert contents
+  # `get_*_metadata` steps export from the MetadataRecord
+  # ({name, data, updatedAt, updatedBy}) — `_export_custom_outputs`
+  # unwraps the one `data` envelope level for us. `outputs:` supports
+  # dotted paths (e.g. `data.topic`) into that record; `json_assert`
+  # statement args only resolve flat `{{var}}` placeholders, so the
+  # nested-value extraction has to happen here in `outputs:`.
   - name: Get Namespace Metadata from Node 2
     type: get_group_metadata
     node: calimero-node-2
     group_id: '{{ns}}'
     outputs:
-      ns_meta: data
+      ns_name: name
+      ns_topic: data.topic
 
   - name: Assert Namespace Metadata
     type: json_assert
     statements:
-      - 'json_equal({{ns_meta.name}}, "Acme Workspace")'
-      - 'json_equal({{ns_meta.data.topic}}, "company-wide")'
+      - 'json_equal({{ns_name}}, "Acme Workspace")'
+      - 'json_equal({{ns_topic}}, "company-wide")'
 
   - name: Get Subgroup Metadata from Node 2
     type: get_group_metadata
     node: calimero-node-2
     group_id: '{{sub}}'
     outputs:
-      sub_meta: data
+      sub_name: name
 
   - name: Assert Subgroup Metadata
     type: json_assert
     statements:
-      - 'json_equal({{sub_meta.name}}, "general")'
+      - 'json_equal({{sub_name}}, "general")'
 
   - name: Get Context Metadata from Node 2
     type: get_context_metadata
@@ -181,12 +188,12 @@ steps:
     group_id: '{{sub}}'
     context_id: '{{ctx}}'
     outputs:
-      ctx_meta: data
+      ctx_name: name
 
   - name: Assert Context Metadata
     type: json_assert
     statements:
-      - 'json_equal({{ctx_meta.name}}, "general-main")'
+      - 'json_equal({{ctx_name}}, "general-main")'
 
   # Phase 6: CAN_MANAGE_METADATA capability gate
   # Node 2 has no metadata-management capability yet, so setting subgroup
@@ -200,12 +207,15 @@ steps:
       attempted: 'true'
     expected_failure: true
 
-  # Grant CAN_MANAGE_METADATA (1 << 8 == 256) to node 2 in the namespace.
+  # Grant CAN_MANAGE_METADATA to node 2 in the namespace.
   - name: Grant Node 2 CAN_MANAGE_METADATA
     type: set_member_capabilities
     node: calimero-node-1
     group_id: '{{ns}}'
     member_id: '{{node2_id}}'
+    # CAN_MANAGE_METADATA = 1 << 8 = 256
+    # (calimero-network/core: crates/context/config/src/lib.rs,
+    #  MemberCapabilities::CAN_MANAGE_METADATA)
     capabilities: 256
 
   - name: Wait for Capability Sync
@@ -247,12 +257,12 @@ steps:
     node: calimero-node-1
     group_id: '{{sub}}'
     outputs:
-      sub_meta2: data
+      sub_name2: name
 
   - name: Assert Subgroup Renamed by Node 2
     type: json_assert
     statements:
-      - 'json_equal({{sub_meta2.name}}, "renamed-by-node2")'
+      - 'json_equal({{sub_name2}}, "renamed-by-node2")'
 
   # Phase 7: Member metadata — a member may always set its own record,
   # no capability required.
@@ -285,11 +295,13 @@ steps:
     group_id: '{{ns}}'
     member_id: '{{node2_id}}'
     outputs:
-      m2_meta: data
+      m2_name: name
+      m2_status: data.status
 
   - name: Assert Member Metadata
     type: json_assert
     statements:
-      - 'json_equal({{m2_meta.name}}, "node-two")'
+      - 'json_equal({{m2_name}}, "node-two")'
+      - 'json_equal({{m2_status}}, "online")'
 
 stop_all_nodes: false

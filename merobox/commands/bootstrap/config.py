@@ -412,7 +412,9 @@ class CreateNamespaceStepConfig(BaseStepConfig):
     application_id: str = Field(
         ..., description="Application ID for namespace creation"
     )
-    # Optional namespace display name (inherits `name` from BaseStepConfig).
+    # A namespace's display name (if any) is set afterward via a
+    # set_group_metadata step — there is no namespace-name field here. The
+    # inherited `name` from BaseStepConfig is the step label, nothing more.
 
 
 class CreateNamespaceInvitationStepConfig(BaseStepConfig):
