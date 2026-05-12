@@ -585,7 +585,7 @@ class TestSetMemberCapabilitiesExpectedFailure:
         path and must also honor `expected_failure`."""
         mock_client = MagicMock()
         mock_client.set_member_capabilities.return_value = {
-            "data": {"error": {"type": "ApiError", "data": "not authorized"}}
+            "error": {"type": "ApiError", "data": "not authorized"}
         }
         step = self._setup(expected_failure=True)
         assert self._run_with_mock_client(step, mock_client) is True
@@ -593,7 +593,7 @@ class TestSetMemberCapabilitiesExpectedFailure:
     def test_jsonrpc_error_path_fails_without_flag(self):
         mock_client = MagicMock()
         mock_client.set_member_capabilities.return_value = {
-            "data": {"error": {"type": "ApiError", "data": "not authorized"}}
+            "error": {"type": "ApiError", "data": "not authorized"}
         }
         step = self._setup(expected_failure=False)
         assert self._run_with_mock_client(step, mock_client) is False
