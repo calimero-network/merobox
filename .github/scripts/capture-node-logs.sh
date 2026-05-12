@@ -23,11 +23,13 @@ case "$cmd" in
     state_file="${3:?usage: capture-node-logs.sh start <logdir> <state-file>}"
     mkdir -p "$logdir"
     state_dir="$(mktemp -d)"
+    : > "$state_dir/follower-pids"
 
     (
       # Re-follow a container if its name reappears (merobox retries tear
       # down and recreate containers with the same name); append so the
-      # earlier attempt's output is kept.
+      # earlier attempt's output is kept. Record each follower PID so `stop`
+      # can target exactly these processes (no broad `pkill -f`).
       declare -A pids=()
       while [ ! -f "$state_dir/stop" ]; do
         for c in $(docker ps --filter "label=calimero.node=true" \
@@ -37,6 +39,7 @@ case "$cmd" in
             echo "[node-log-capture] following $c -> $logdir/$c.log"
             docker logs -f --timestamps "$c" >> "$logdir/$c.log" 2>&1 &
             pids[$c]=$!
+            echo "$!" >> "$state_dir/follower-pids"
           fi
         done
         sleep 1
@@ -57,10 +60,14 @@ case "$cmd" in
     watcher_pid="$(sed -n 1p "$state_file" || true)"
     state_dir="$(sed -n 2p "$state_file" || true)"
     [ -n "$state_dir" ] && touch "$state_dir/stop" || true
-    # Let the `docker logs -f` followers flush their tail before we kill them.
+    # Let the `docker logs -f` followers flush their tail before we stop them.
     sleep 2
     [ -n "$watcher_pid" ] && kill "$watcher_pid" 2>/dev/null || true
-    pkill -f 'docker logs -f --timestamps' 2>/dev/null || true
+    if [ -n "$state_dir" ] && [ -f "$state_dir/follower-pids" ]; then
+      while read -r pid; do
+        [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+      done < "$state_dir/follower-pids"
+    fi
     echo "[node-log-capture] stopped"
     ;;
 

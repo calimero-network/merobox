@@ -19,8 +19,9 @@ console = Console()
 
 # A libp2p peer ID rendered in base58btc (the alphabet excludes 0/O/I/l and any
 # character that could break a multiaddr — no '/', no whitespace, no brackets).
-# Real peer IDs are ~46-53 chars; require a generous minimum.
-_PEER_ID_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{40,}$")
+# Real peer IDs are ~46 chars (CIDv0 `Qm…`) up to ~53 (`12D3KooW…` for Ed25519);
+# 46 is a safe lower bound.
+_PEER_ID_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{46,}$")
 
 
 def _valid_ipv4(addr: str) -> bool:

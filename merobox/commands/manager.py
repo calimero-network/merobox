@@ -1331,14 +1331,24 @@ class DockerManager(CleanupMixin):
         gate_ok = True
         if all_started and wire_cluster_peers:
             # auth clusters are already on `calimero_web`; non-auth clusters are
-            # on the dedicated bridge created above.
+            # on the dedicated bridge (or the default bridge if creation failed,
+            # in which case wire_network is None and the container's only IP is
+            # used).
             wire_network = "calimero_web" if auth_service else cluster_network
-            self._wire_cluster_bootstrap_peers(
+            wired = self._wire_cluster_bootstrap_peers(
                 node_names,
                 wire_network,
                 e2e_mode=e2e_mode,
                 base_bootstrap_nodes=bootstrap_nodes,
             )
+            if not wired:
+                console.print(
+                    "[yellow]⚠️  Static bootstrap-peer wiring was incomplete; "
+                    "cluster connectivity now depends on the mDNS fallback[/yellow]"
+                )
+            # The gate checks connectivity regardless of how it was achieved
+            # (the wiring populates Kademlia; mDNS dials peers directly) — a
+            # cluster that never connects fails the run here, loudly.
             gate_ok = self.wait_for_cluster_peers(node_names, expected_peers=count - 1)
 
         console.print(
@@ -1367,18 +1377,33 @@ class DockerManager(CleanupMixin):
             "config.toml",
         )
 
+    def _get_node_container(self, node_name: str):
+        """The Docker container object for ``node_name`` (tracked or looked up)."""
+        container = self.nodes.get(node_name)
+        if container is not None:
+            return container
+        try:
+            return self.client.containers.get(node_name)
+        except Exception:
+            return None
+
     @staticmethod
     def _container_network_ip(container, network_name: Optional[str]) -> Optional[str]:
-        """Return the container's IPv4 on ``network_name`` (or any network)."""
+        """Return the container's IPv4.
+
+        If ``network_name`` is given, only that network is consulted (returns
+        ``None`` if the container isn't on it — we don't want to silently pick
+        an address from the wrong network). If ``network_name`` is ``None``
+        (e.g. we fell back to the default bridge), the container's sole/first
+        network IP is used.
+        """
         try:
             container.reload()
             networks = (
                 container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
             )
-            if network_name and network_name in networks:
-                ip = (networks[network_name] or {}).get("IPAddress")
-                if ip:
-                    return ip
+            if network_name:
+                return (networks.get(network_name) or {}).get("IPAddress") or None
             for net in networks.values():
                 ip = (net or {}).get("IPAddress")
                 if ip:
@@ -1393,23 +1418,27 @@ class DockerManager(CleanupMixin):
         network_name: Optional[str],
         e2e_mode: bool = False,
         base_bootstrap_nodes: Optional[list[str]] = None,
-    ) -> None:
+    ) -> bool:
         """Populate each cluster node's ``bootstrap.nodes`` with its siblings.
 
         ``merod init`` (already run by :meth:`run_node`) writes each node's
         libp2p peer ID into ``config.toml``. We read those, look up each running
-        container's IPv4 on ``network_name``, build the list of
+        container's IPv4 on ``network_name`` (or its sole network if
+        ``network_name`` is ``None``), build the list of
         ``/ip4/<ip>/tcp/2428/p2p/<peer_id>`` (+ ``quic-v1``) addresses for every
         *other* node (appended after any explicit ``base_bootstrap_nodes``),
         write them via :func:`apply_bootstrap_nodes`, and restart the containers
         so the new config takes effect. IPs are used rather than
         ``/dns4/<container>`` because merod's libp2p swarm has no DNS transport.
         mDNS is left enabled as a fallback; the rendezvous config is untouched.
+
+        Returns ``True`` only if every node with a resolvable endpoint was
+        rewritten *and* restarted; ``False`` (after a warning) otherwise — in
+        which case the caller should treat connectivity as mDNS-dependent.
         """
         try:
-            # name -> (ip, peer_id) for every node we could fully resolve.
-            endpoints: dict[str, tuple[str, str]] = {}
-            config_files: dict[str, str] = {}
+            # name -> (ip, peer_id, config_file) for every node we resolved.
+            resolved: dict[str, tuple[str, str, str]] = {}
             for node_name in node_names:
                 config_file = self._cluster_config_file(node_name)
                 if not config_file:
@@ -1417,12 +1446,7 @@ class DockerManager(CleanupMixin):
                 peer_id = read_peer_id(config_file)
                 if not peer_id:
                     continue
-                container = self.nodes.get(node_name)
-                if container is None:
-                    try:
-                        container = self.client.containers.get(node_name)
-                    except Exception:
-                        container = None
+                container = self._get_node_container(node_name)
                 ip = (
                     self._container_network_ip(container, network_name)
                     if container is not None
@@ -1430,26 +1454,24 @@ class DockerManager(CleanupMixin):
                 )
                 if not ip:
                     continue
-                endpoints[node_name] = (ip, peer_id)
-                config_files[node_name] = config_file
+                resolved[node_name] = (ip, peer_id, config_file)
 
-            if len(endpoints) < 2:
+            if len(resolved) < 2:
                 console.print(
                     "[yellow]⚠️  Could not resolve enough peer endpoints to wire "
                     "cluster bootstrap peers; falling back to mDNS-only discovery"
                     "[/yellow]"
                 )
-                return
+                return False
 
             console.print(
                 "[bold]Wiring static bootstrap peers for the cluster "
                 "(no longer mDNS-only)...[/bold]"
             )
 
+            endpoints = {n: (ip, pid) for n, (ip, pid, _) in resolved.items()}
             restarted: list[str] = []
-            for node_name in node_names:
-                if node_name not in endpoints:
-                    continue
+            for node_name, (_ip, _pid, config_file) in resolved.items():
                 addrs = build_sibling_bootstrap_addrs(
                     node_name,
                     endpoints,
@@ -1458,8 +1480,6 @@ class DockerManager(CleanupMixin):
                 )
                 if not addrs:
                     continue
-
-                config_file = config_files[node_name]
                 # The init container ran as root, so the config file may be
                 # root-owned. In e2e mode run_node already fixed ownership;
                 # otherwise do it here (idempotent, cheap).
@@ -1467,12 +1487,7 @@ class DockerManager(CleanupMixin):
                     self._fix_permissions(os.path.dirname(config_file))
                 apply_bootstrap_nodes(config_file, node_name, addrs)
 
-                container = self.nodes.get(node_name)
-                if container is None:
-                    try:
-                        container = self.client.containers.get(node_name)
-                    except Exception:
-                        container = None
+                container = self._get_node_container(node_name)
                 if container is not None:
                     try:
                         container.restart(timeout=CONTAINER_STOP_TIMEOUT)
@@ -1483,38 +1498,43 @@ class DockerManager(CleanupMixin):
                             f"bootstrap peers: {e}[/yellow]"
                         )
 
-            if restarted:
-                # Give merod time to re-read its config and start re-dialing
-                # before the connectivity gate begins polling.
-                time.sleep(max(2 * NODE_STARTUP_DELAY, 2))
-                for node_name in restarted:
-                    container = self.nodes.get(node_name)
-                    if container is None:
-                        continue
-                    try:
-                        container.reload()
-                        if container.status != "running":
-                            console.print(
-                                f"[yellow]⚠️  {node_name} is not running after "
-                                "restart with bootstrap peers[/yellow]"
-                            )
-                    except Exception:
-                        pass
-                console.print(
-                    f"[green]✓ Wired bootstrap peers and restarted "
-                    f"{len(restarted)} cluster node(s)[/green]"
-                )
-            else:
+            if not restarted:
                 console.print(
                     "[yellow]⚠️  Wrote bootstrap peers but could not restart any "
-                    "container; the new config won't take effect until restart "
-                    "— falling back to mDNS-only discovery[/yellow]"
+                    "container; the new config won't take effect — falling back "
+                    "to mDNS-only discovery[/yellow]"
                 )
+                return False
+
+            # Give merod time to re-read its config and start re-dialing before
+            # the connectivity gate begins polling. (The gate itself is the real
+            # readiness wait — this is just so the post-restart status check and
+            # the first poll aren't pointlessly early.)
+            time.sleep(max(2 * NODE_STARTUP_DELAY, 2))
+            for node_name in restarted:
+                container = self.nodes.get(node_name)
+                if container is None:
+                    continue
+                try:
+                    container.reload()
+                    if container.status != "running":
+                        console.print(
+                            f"[yellow]⚠️  {node_name} is not running after "
+                            "restart with bootstrap peers[/yellow]"
+                        )
+                except Exception:
+                    pass
+            console.print(
+                f"[green]✓ Wired bootstrap peers and restarted "
+                f"{len(restarted)} cluster node(s)[/green]"
+            )
+            return len(restarted) == len(resolved)
         except Exception as e:
             console.print(
                 f"[yellow]⚠️  Failed to wire cluster bootstrap peers: {e}; "
                 "falling back to mDNS-only discovery[/yellow]"
             )
+            return False
 
     @staticmethod
     def _peers_count_from_response(payload) -> int:

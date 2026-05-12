@@ -833,6 +833,24 @@ def test_run_node_auth_network_wins_over_cluster_network(mock_docker):
     assert main_configs and main_configs[0].get("network") == "calimero_web"
 
 
+def _setup_mock_cluster(manager, mock_read_peer_id, nodes, network="merobox-cluster"):
+    """Wire a manager + read_peer_id mock for `nodes`, deterministically.
+
+    Returns (peer_ids, ips, config_files) dicts keyed by node name. The
+    config-file paths are explicit (recorded in `manager.node_config_files`) so
+    `read_peer_id` is mocked as an exact lookup, not a path-substring heuristic.
+    """
+    peer_ids = {n: _PID[i + 1] for i, n in enumerate(nodes)}
+    ips = {n: _IP[i + 1] for i, n in enumerate(nodes)}
+    config_files = {n: f"/abs/data/{n}/{n}/config.toml" for n in nodes}
+    manager.node_config_files = dict(config_files)
+    by_path = {p: peer_ids[n] for n, p in config_files.items()}
+    mock_read_peer_id.side_effect = lambda cfg: by_path.get(str(cfg))
+    manager.nodes = {n: _mock_cluster_container(ips[n], network=network) for n in nodes}
+    manager._fix_permissions = MagicMock()
+    return peer_ids, ips, config_files
+
+
 @patch("merobox.commands.manager.apply_bootstrap_nodes")
 @patch("merobox.commands.manager.read_peer_id")
 @patch("docker.from_env")
@@ -845,22 +863,12 @@ def test_wire_cluster_bootstrap_peers_populates_siblings(
     manager = DockerManager(enable_signal_handlers=False)
 
     nodes = ["calimero-node-1", "calimero-node-2", "calimero-node-3"]
-    peer_ids = {n: _PID[i + 1] for i, n in enumerate(nodes)}
-    ips = {n: _IP[i + 1] for i, n in enumerate(nodes)}
-    mock_read_peer_id.side_effect = lambda cfg: next(
-        (
-            pid
-            for name, pid in peer_ids.items()
-            if f"/{name}/" in str(cfg).replace("\\", "/")
-        ),
-        None,
+    peer_ids, ips, _cfgs = _setup_mock_cluster(manager, mock_read_peer_id, nodes)
+
+    assert (
+        manager._wire_cluster_bootstrap_peers(nodes, "merobox-cluster", e2e_mode=True)
+        is True
     )
-
-    containers = {n: _mock_cluster_container(ips[n]) for n in nodes}
-    manager.nodes = dict(containers)
-    manager._fix_permissions = MagicMock()
-
-    manager._wire_cluster_bootstrap_peers(nodes, "merobox-cluster", e2e_mode=True)
 
     assert mock_apply_bootstrap.call_count == 3
     for call in mock_apply_bootstrap.call_args_list:
@@ -871,7 +879,7 @@ def test_wire_cluster_bootstrap_peers_populates_siblings(
         for sib in (n for n in nodes if n != node_name):
             assert f"/ip4/{ips[sib]}/tcp/2428/p2p/{peer_ids[sib]}" in addrs
             assert f"/ip4/{ips[sib]}/udp/2428/quic-v1/p2p/{peer_ids[sib]}" in addrs
-    for c in containers.values():
+    for c in manager.nodes.values():
         c.restart.assert_called_once()
 
 
@@ -887,10 +895,12 @@ def test_wire_cluster_bootstrap_peers_bails_when_too_few_endpoints(
     manager = DockerManager(enable_signal_handlers=False)
     mock_read_peer_id.return_value = None
 
-    manager._wire_cluster_bootstrap_peers(
-        ["calimero-node-1", "calimero-node-2"], "merobox-cluster"
+    assert (
+        manager._wire_cluster_bootstrap_peers(
+            ["calimero-node-1", "calimero-node-2"], "merobox-cluster"
+        )
+        is False
     )
-
     mock_apply_bootstrap.assert_not_called()
 
 
@@ -906,19 +916,7 @@ def test_wire_cluster_bootstrap_peers_appends_to_explicit_list(
     manager = DockerManager(enable_signal_handlers=False)
 
     nodes = ["calimero-node-1", "calimero-node-2"]
-    peer_ids = {n: _PID[i + 1] for i, n in enumerate(nodes)}
-    ips = {n: _IP[i + 1] for i, n in enumerate(nodes)}
-    mock_read_peer_id.side_effect = lambda cfg: next(
-        (
-            pid
-            for name, pid in peer_ids.items()
-            if f"/{name}/" in str(cfg).replace("\\", "/")
-        ),
-        None,
-    )
-    for n in nodes:
-        manager.nodes[n] = _mock_cluster_container(ips[n])
-    manager._fix_permissions = MagicMock()
+    _peer_ids, _ips, _cfgs = _setup_mock_cluster(manager, mock_read_peer_id, nodes)
 
     explicit = ["/ip4/63.181.86.34/tcp/4001/p2p/" + _PID[4]]
     manager._wire_cluster_bootstrap_peers(
