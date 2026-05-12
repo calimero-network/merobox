@@ -820,46 +820,113 @@ class TestBucketBStepSchemas:
         assert config_module.validate_workflow_step(step, 0) == []
 
 
-class TestGroupAliasStepSchemas:
-    """Schema validation for set_group_alias and set_member_alias."""
+class TestMetadataStepSchemas:
+    """Schema validation for the *_metadata step types (core #2338)."""
 
-    def test_valid_set_group_alias(self, config_module):
+    def test_valid_set_group_metadata(self, config_module):
         step = {
-            "type": "set_group_alias",
+            # `name` is the step label; `record_name` is the metadata
+            # record's name — they're distinct keys.
+            "name": "Rename the group folder",
+            "type": "set_group_metadata",
             "node": "calimero-node-1",
             "group_id": "{{group_id}}",
-            "alias": "folder-renamed",
+            "record_name": "Renamed Folder",
+            "data": {"color": "blue"},
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
-    def test_invalid_set_group_alias_missing_alias(self, config_module):
+    def test_valid_set_group_metadata_minimal(self, config_module):
         step = {
-            "type": "set_group_alias",
+            "type": "set_group_metadata",
             "node": "calimero-node-1",
             "group_id": "{{group_id}}",
         }
-        errors = config_module.validate_workflow_step(step, 0)
-        assert any("alias" in e for e in errors)
+        assert config_module.validate_workflow_step(step, 0) == []
 
-    def test_valid_set_member_alias(self, config_module):
+    def test_invalid_set_group_metadata_missing_group_id(self, config_module):
         step = {
-            "type": "set_member_alias",
+            "type": "set_group_metadata",
+            "node": "calimero-node-1",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("group_id" in e for e in errors)
+
+    def test_invalid_set_group_metadata_data_wrong_type(self, config_module):
+        step = {
+            "type": "set_group_metadata",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "data": "not-a-dict",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("data" in e for e in errors)
+
+    def test_valid_get_group_metadata(self, config_module):
+        step = {
+            "type": "get_group_metadata",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "outputs": {"meta": "data"},
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_set_member_metadata(self, config_module):
+        step = {
+            "type": "set_member_metadata",
             "node": "calimero-node-1",
             "group_id": "{{group_id}}",
             "member_id": "{{p2_identity}}",
-            "alias": "Bob",
+            "record_name": "Bob",
+            "requester": "{{admin_key}}",
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
-    def test_invalid_set_member_alias_missing_member(self, config_module):
+    def test_invalid_set_member_metadata_missing_member(self, config_module):
         step = {
-            "type": "set_member_alias",
+            "type": "set_member_metadata",
             "node": "calimero-node-1",
             "group_id": "{{group_id}}",
-            "alias": "Bob",
         }
         errors = config_module.validate_workflow_step(step, 0)
         assert any("member_id" in e for e in errors)
+
+    def test_valid_get_member_metadata(self, config_module):
+        step = {
+            "type": "get_member_metadata",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_set_context_metadata(self, config_module):
+        step = {
+            "type": "set_context_metadata",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "context_id": "{{context_id}}",
+            "data": {"k": "v"},
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_context_metadata_missing_context(self, config_module):
+        step = {
+            "type": "set_context_metadata",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("context_id" in e for e in errors)
+
+    def test_valid_get_context_metadata(self, config_module):
+        step = {
+            "type": "get_context_metadata",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "context_id": "{{context_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
 
 
 class TestGroupGovernanceStepSchemas:

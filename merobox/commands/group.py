@@ -328,12 +328,12 @@ def list_subgroups(group_id, node, verbose):
 
         table = Table(title="Group Subgroups", box=box.ROUNDED)
         table.add_column("Group ID", style="cyan")
-        table.add_column("Alias", style="yellow")
+        table.add_column("Name", style="yellow")
         for subgroup in subgroups:
             if isinstance(subgroup, dict):
                 table.add_row(
                     subgroup.get("groupId", subgroup.get("id", "Unknown")),
-                    subgroup.get("alias", "N/A"),
+                    subgroup.get("name", "N/A"),
                 )
             else:
                 table.add_row(str(subgroup), "N/A")

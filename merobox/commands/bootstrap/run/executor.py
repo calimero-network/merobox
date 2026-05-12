@@ -31,9 +31,12 @@ from merobox.commands.bootstrap.steps import (
     DeleteNamespaceStep,
     DetachContextFromGroupStep,
     ExecuteStep,
+    GetContextMetadataStep,
     GetGroupInfoStep,
+    GetGroupMetadataStep,
     GetGroupUpgradeStatusStep,
     GetMemberCapabilitiesStep,
+    GetMemberMetadataStep,
     GetNamespaceIdentityStep,
     InstallApplicationStep,
     InviteOpenStep,
@@ -55,10 +58,11 @@ from merobox.commands.bootstrap.steps import (
     RepeatStep,
     RetryGroupUpgradeStep,
     ScriptStep,
+    SetContextMetadataStep,
     SetDefaultCapabilitiesStep,
-    SetGroupAliasStep,
-    SetMemberAliasStep,
+    SetGroupMetadataStep,
     SetMemberCapabilitiesStep,
+    SetMemberMetadataStep,
     SetSubgroupVisibilityStep,
     SyncGroupStep,
     UninstallApplicationStep,
@@ -1624,10 +1628,18 @@ class WorkflowExecutor:
             return DeleteContextStep(step_config, **common_kwargs)
         elif step_type == "uninstall_application":
             return UninstallApplicationStep(step_config, **common_kwargs)
-        elif step_type == "set_group_alias":
-            return SetGroupAliasStep(step_config, **common_kwargs)
-        elif step_type == "set_member_alias":
-            return SetMemberAliasStep(step_config, **common_kwargs)
+        elif step_type == "set_group_metadata":
+            return SetGroupMetadataStep(step_config, **common_kwargs)
+        elif step_type == "get_group_metadata":
+            return GetGroupMetadataStep(step_config, **common_kwargs)
+        elif step_type == "set_member_metadata":
+            return SetMemberMetadataStep(step_config, **common_kwargs)
+        elif step_type == "get_member_metadata":
+            return GetMemberMetadataStep(step_config, **common_kwargs)
+        elif step_type == "set_context_metadata":
+            return SetContextMetadataStep(step_config, **common_kwargs)
+        elif step_type == "get_context_metadata":
+            return GetContextMetadataStep(step_config, **common_kwargs)
         elif step_type == "update_group_settings":
             return UpdateGroupSettingsStep(step_config, **common_kwargs)
         elif step_type == "detach_context_from_group":

@@ -24,8 +24,6 @@ class CreateNamespaceStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
         if not isinstance(self.config.get("application_id"), str):
             raise ValueError(f"Step '{step_name}': 'application_id' must be a string")
-        if "alias" in self.config and not isinstance(self.config.get("alias"), str):
-            raise ValueError(f"Step '{step_name}': 'alias' must be a string")
 
     def _get_exportable_variables(self):
         return [
@@ -44,12 +42,6 @@ class CreateNamespaceStep(BaseStep):
             self.config["application_id"], workflow_results, dynamic_values
         )
 
-        alias = None
-        if "alias" in self.config:
-            alias = self._resolve_dynamic_value(
-                self.config["alias"], workflow_results, dynamic_values
-            )
-
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
         except Exception as e:
@@ -60,10 +52,9 @@ class CreateNamespaceStep(BaseStep):
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
             create_namespace = getattr(client, "create_namespace", None)
             if callable(create_namespace):
-                api_result = create_namespace(
-                    application_id=application_id,
-                    alias=alias,
-                )
+                # A namespace's display name (if any) is set afterward via a
+                # set_group_metadata step — never inferred from this step's label.
+                api_result = create_namespace(application_id=application_id)
             else:
                 # Backward compatibility for older client versions.
                 api_result = client.create_group(application_id=application_id)

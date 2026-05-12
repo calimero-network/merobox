@@ -94,7 +94,7 @@ steps:
     type: create_group_in_namespace
     node: calimero-node-1
     namespace_id: nonexistent-namespace-id-for-negative-test
-    group_alias: negative-test-child
+    group_name: negative-test-child
     expected_failure: true
 
   # Two more step types — install_application and add_group_members — were

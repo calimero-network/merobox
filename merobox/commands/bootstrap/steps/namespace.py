@@ -122,15 +122,19 @@ class CreateGroupInNamespaceStep(BaseStep):
     """Create a group within a namespace."""
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "namespace_id", "group_alias"]
+        return ["node", "namespace_id"]
 
     def _validate_field_types(self) -> None:
         step_name = self.config.get(
             "name", f'Unnamed {self.config.get("type", "Unknown")} step'
         )
-        for field in ("node", "namespace_id", "group_alias"):
+        for field in ("node", "namespace_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        if "group_name" in self.config and not isinstance(
+            self.config.get("group_name"), str
+        ):
+            raise ValueError(f"Step '{step_name}': 'group_name' must be a string")
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -139,9 +143,11 @@ class CreateGroupInNamespaceStep(BaseStep):
         namespace_id = self._resolve_dynamic_value(
             self.config["namespace_id"], workflow_results, dynamic_values
         )
-        group_alias = self._resolve_dynamic_value(
-            self.config["group_alias"], workflow_results, dynamic_values
-        )
+        group_name = None
+        if "group_name" in self.config:
+            group_name = self._resolve_dynamic_value(
+                self.config["group_name"], workflow_results, dynamic_values
+            )
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
@@ -152,7 +158,7 @@ class CreateGroupInNamespaceStep(BaseStep):
                 result = ok(
                     create_group_in_namespace(
                         namespace_id=namespace_id,
-                        group_alias=group_alias,
+                        group_name=group_name,
                     )
                 )
             else:
