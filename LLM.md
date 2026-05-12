@@ -171,6 +171,10 @@ merobox bootstrap validate workflow.yml
 
 # Create a sample workflow
 merobox bootstrap create-sample
+
+# Pass extra arguments straight to `merod run` (binary mode only)
+merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
+  --merod-args="--sync-strategy delta --state-sync-strategy hash"
 ```
 
 ## Workflow YAML Structure
@@ -576,6 +580,33 @@ Join a context using an open invitation.
   outputs:
     joined_context_id: "contextId"
     member_public_key: "memberPublicKey"
+```
+
+#### Stop Node Step
+
+Stop one or more running nodes mid-workflow (useful for benchmarking, failure
+testing, or freeing resources). Local nodes only; remote nodes can't be stopped.
+Already-stopped nodes are handled gracefully.
+
+```yaml
+- type: stop_node
+  nodes: calimero-node-1        # single node, or a list:
+  # nodes:
+  #   - calimero-node-1
+  #   - calimero-node-2
+```
+
+#### Start Node Step
+
+(Re)start one or more nodes mid-workflow, using their configuration from the
+workflow's `nodes:` section. Idempotent — a node that's already running is left
+alone.
+
+```yaml
+- type: start_node
+  nodes: calimero-node-1        # single node, or a list
+  wait_for_ready: true          # default true; fails the step on timeout
+  wait_timeout: 30              # seconds, default 30
 ```
 
 ## Variable Substitution
@@ -1180,7 +1211,8 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
 install_application, create_context, create_identity, join_context, call, wait,
-repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test
+repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test,
+stop_node, start_node
 
 # Workflow configuration options
 auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image,
