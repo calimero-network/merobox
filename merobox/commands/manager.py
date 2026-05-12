@@ -4,6 +4,7 @@ Calimero Manager - Core functionality for managing Calimero nodes in Docker cont
 
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 import docker
+import requests
 from rich.console import Console
 from rich.table import Table
 
@@ -19,6 +21,8 @@ from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
+    build_sibling_bootstrap_addrs,
+    read_peer_id,
 )
 from merobox.commands.constants import (
     CONTAINER_STOP_TIMEOUT,
@@ -122,6 +126,11 @@ class DockerManager(CleanupMixin):
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
+        # Absolute path to each node's config.toml, recorded by run_node so the
+        # cluster-bootstrap wiring doesn't have to reconstruct it from a
+        # relative path (which would break if the CWD changed, or if a custom
+        # data_dir was used).
+        self.node_config_files: dict[str, str] = {}
 
         if enable_signal_handlers:
             self._setup_signal_handlers()
@@ -170,6 +179,7 @@ class DockerManager(CleanupMixin):
             )
             self.nodes.clear()
             self.node_rpc_ports.clear()
+            self.node_config_files.clear()
 
     def _is_remote_image(self, image: str) -> bool:
         """Check if the image name indicates a remote registry."""
@@ -308,6 +318,7 @@ class DockerManager(CleanupMixin):
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
         cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
+        network: str = None,  # user-defined Docker network to attach the node to
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -672,6 +683,9 @@ class DockerManager(CleanupMixin):
                 )
 
             config_file = os.path.join(node_data_dir, "config.toml")
+            # Record the resolved path so cluster-bootstrap wiring can find it
+            # without reconstructing it from a relative path later.
+            self.node_config_files[node_name] = os.path.abspath(config_file)
 
             try:
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
@@ -720,6 +734,12 @@ class DockerManager(CleanupMixin):
             # Set primary network for auth service
             if auth_service:
                 run_config["network"] = "calimero_web"
+            elif network:
+                # Attach cluster nodes to a user-defined bridge so they get
+                # Docker DNS names — this lets us hand peers stable
+                # /dns4/<container>/... bootstrap addresses instead of relying
+                # on mDNS over Docker's default bridge (see #231).
+                run_config["network"] = network
 
             container = self.client.containers.run(**run_config)
             self.nodes[node_name] = container
@@ -859,6 +879,57 @@ class DockerManager(CleanupMixin):
             console.print(
                 f"[yellow]⚠️  Warning: Could not ensure auth networks: {str(e)}[/yellow]"
             )
+
+    # Name of the user-defined bridge that multi-node clusters are attached to.
+    # A user-defined network gives containers automatic DNS resolution by
+    # container name, which lets us hand peers stable /dns4/<container>/...
+    # bootstrap addresses instead of depending on mDNS over the default bridge.
+    CLUSTER_NETWORK_NAME = "merobox-cluster"
+
+    # Environment variable that restores the old default-bridge + mDNS-only
+    # cluster behavior (no dedicated network, no auto bootstrap peers, no
+    # connectivity wait gate).
+    LEGACY_CLUSTER_ENV = "MEROBOX_LEGACY_CLUSTER_NETWORKING"
+
+    # Environment variable to override the cluster connectivity wait-gate
+    # timeout (seconds). Bump this in slow CI if the post-restart re-dial takes
+    # longer than the default.
+    CLUSTER_PEER_TIMEOUT_ENV = "MEROBOX_CLUSTER_PEER_TIMEOUT"
+    DEFAULT_CLUSTER_PEER_TIMEOUT = 60.0
+
+    # Safe container/node name: no path-traversal, no separators — a subset of
+    # Docker's own container-name rules. Used before interpolating node names
+    # into filesystem paths or multiaddrs.
+    SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+    def _ensure_cluster_network(self) -> Optional[str]:
+        """Ensure the user-defined bridge for multi-node clusters exists.
+
+        Returns the network name on success, or ``None`` if it could not be
+        created (callers should then fall back to the default bridge + mDNS).
+        """
+        try:
+            try:
+                self.client.networks.get(self.CLUSTER_NETWORK_NAME)
+                console.print(
+                    f"[cyan]✓ Network {self.CLUSTER_NETWORK_NAME} already exists[/cyan]"
+                )
+            except docker.errors.NotFound:
+                console.print(
+                    f"[yellow]Creating network: {self.CLUSTER_NETWORK_NAME}[/yellow]"
+                )
+                self.client.networks.create(
+                    name=self.CLUSTER_NETWORK_NAME, driver="bridge"
+                )
+                console.print(
+                    f"[green]✓ Created network: {self.CLUSTER_NETWORK_NAME}[/green]"
+                )
+            return self.CLUSTER_NETWORK_NAME
+        except Exception as e:
+            console.print(
+                f"[yellow]⚠️  Warning: Could not ensure cluster network: {str(e)}[/yellow]"
+            )
+            return None
 
     def _start_auth_service_stack(
         self,
@@ -1187,8 +1258,26 @@ class DockerManager(CleanupMixin):
         else:
             rpc_ports = [base_rpc_port + i for i in range(count)]
 
+        node_names = [f"{prefix}-{i + 1}" for i in range(count)]
+
+        # Multi-node clusters get auto-wired static /ip4 bootstrap peers plus a
+        # connectivity wait gate, so peer discovery doesn't depend on mDNS over
+        # Docker's default bridge (see #231). Disable with
+        # MEROBOX_LEGACY_CLUSTER_NETWORKING=1.
+        legacy_cluster = bool(os.environ.get(self.LEGACY_CLUSTER_ENV))
+        cluster_mode = count >= 2 and not legacy_cluster
+        # Non-auth clusters get a dedicated user-defined bridge for isolation;
+        # auth clusters reuse `calimero_web`. If the dedicated bridge can't be
+        # created we fall back to Docker's default bridge — bootstrap peers are
+        # wired by container IP either way (merod's libp2p has no DNS transport,
+        # so /dns4 wouldn't work), so wiring isn't gated on the network.
+        cluster_network = None
+        if cluster_mode and not auth_service:
+            cluster_network = self._ensure_cluster_network()
+        wire_cluster_peers = cluster_mode
+
         def start_one(i):
-            node_name = f"{prefix}-{i + 1}"
+            node_name = node_names[i]
             return node_name, self.run_node(
                 node_name,
                 p2p_ports[i],
@@ -1205,6 +1294,7 @@ class DockerManager(CleanupMixin):
                 bootstrap_nodes=bootstrap_nodes,
                 use_image_entrypoint=use_image_entrypoint,
                 cors_allowed_origins=cors_allowed_origins,
+                network=cluster_network,
             )
 
         success_count = 0
@@ -1232,10 +1322,304 @@ class DockerManager(CleanupMixin):
                     else:
                         console.print(f"[red]Failed to start node {node_name}[/red]")
 
+        all_started = success_count == count
+
+        # Once every node is up, point each one's config at the *other* nodes as
+        # static bootstrap peers, restart so merod re-reads it, then block until
+        # the cluster is fully connected. A cluster that never connects fails
+        # the run loudly here instead of flaking under load minutes later.
+        gate_ok = True
+        if all_started and wire_cluster_peers:
+            # auth clusters are already on `calimero_web`; non-auth clusters are
+            # on the dedicated bridge (or the default bridge if creation failed,
+            # in which case wire_network is None and the container's only IP is
+            # used).
+            wire_network = "calimero_web" if auth_service else cluster_network
+            wired = self._wire_cluster_bootstrap_peers(
+                node_names,
+                wire_network,
+                e2e_mode=e2e_mode,
+                base_bootstrap_nodes=bootstrap_nodes,
+            )
+            if not wired:
+                console.print(
+                    "[yellow]⚠️  Static bootstrap-peer wiring was incomplete; "
+                    "cluster connectivity now depends on the mDNS fallback[/yellow]"
+                )
+            # The gate checks connectivity regardless of how it was achieved
+            # (the wiring populates Kademlia; mDNS dials peers directly) — a
+            # cluster that never connects fails the run here, loudly.
+            gate_ok = self.wait_for_cluster_peers(node_names, expected_peers=count - 1)
+
         console.print(
             f"\n[bold]Deployment Summary: {success_count}/{count} nodes started successfully[/bold]"
         )
-        return success_count == count
+        return all_started and gate_ok
+
+    def _cluster_config_file(self, node_name: str) -> Optional[str]:
+        """Absolute path to a cluster node's config.toml.
+
+        Prefers the path recorded by :meth:`run_node` (robust to CWD changes
+        and custom ``data_dir``); falls back to the default ``./data/`` layout.
+        Returns ``None`` if ``node_name`` isn't a safe path component.
+        """
+        if not self.SAFE_NAME_RE.match(node_name):
+            console.print(
+                f"[yellow]⚠️  Skipping unsafe node name: {node_name!r}[/yellow]"
+            )
+            return None
+        recorded = self.node_config_files.get(node_name)
+        if recorded:
+            return recorded
+        return os.path.join(
+            os.path.abspath(os.path.join("./data", node_name)),
+            node_name,
+            "config.toml",
+        )
+
+    def _get_node_container(self, node_name: str):
+        """The Docker container object for ``node_name`` (tracked or looked up)."""
+        container = self.nodes.get(node_name)
+        if container is not None:
+            return container
+        try:
+            return self.client.containers.get(node_name)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _container_network_ip(container, network_name: Optional[str]) -> Optional[str]:
+        """Return the container's IPv4.
+
+        If ``network_name`` is given, only that network is consulted (returns
+        ``None`` if the container isn't on it — we don't want to silently pick
+        an address from the wrong network). If ``network_name`` is ``None``
+        (e.g. we fell back to the default bridge), the container's sole/first
+        network IP is used.
+        """
+        try:
+            container.reload()
+            networks = (
+                container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+            )
+            if network_name:
+                return (networks.get(network_name) or {}).get("IPAddress") or None
+            for net in networks.values():
+                ip = (net or {}).get("IPAddress")
+                if ip:
+                    return ip
+        except Exception:
+            pass
+        return None
+
+    def _wire_cluster_bootstrap_peers(
+        self,
+        node_names: list[str],
+        network_name: Optional[str],
+        e2e_mode: bool = False,
+        base_bootstrap_nodes: Optional[list[str]] = None,
+    ) -> bool:
+        """Populate each cluster node's ``bootstrap.nodes`` with its siblings.
+
+        ``merod init`` (already run by :meth:`run_node`) writes each node's
+        libp2p peer ID into ``config.toml``. We read those, look up each running
+        container's IPv4 on ``network_name`` (or its sole network if
+        ``network_name`` is ``None``), build the list of
+        ``/ip4/<ip>/tcp/2428/p2p/<peer_id>`` (+ ``quic-v1``) addresses for every
+        *other* node (appended after any explicit ``base_bootstrap_nodes``),
+        write them via :func:`apply_bootstrap_nodes`, and restart the containers
+        so the new config takes effect. IPs are used rather than
+        ``/dns4/<container>`` because merod's libp2p swarm has no DNS transport.
+        mDNS is left enabled as a fallback; the rendezvous config is untouched.
+
+        Returns ``True`` only if every node with a resolvable endpoint was
+        rewritten *and* restarted; ``False`` (after a warning) otherwise — in
+        which case the caller should treat connectivity as mDNS-dependent.
+        """
+        try:
+            # name -> (ip, peer_id, config_file) for every node we resolved.
+            resolved: dict[str, tuple[str, str, str]] = {}
+            for node_name in node_names:
+                config_file = self._cluster_config_file(node_name)
+                if not config_file:
+                    continue
+                peer_id = read_peer_id(config_file)
+                if not peer_id:
+                    continue
+                container = self._get_node_container(node_name)
+                ip = (
+                    self._container_network_ip(container, network_name)
+                    if container is not None
+                    else None
+                )
+                if not ip:
+                    continue
+                resolved[node_name] = (ip, peer_id, config_file)
+
+            if len(resolved) < 2:
+                console.print(
+                    "[yellow]⚠️  Could not resolve enough peer endpoints to wire "
+                    "cluster bootstrap peers; falling back to mDNS-only discovery"
+                    "[/yellow]"
+                )
+                return False
+
+            console.print(
+                "[bold]Wiring static bootstrap peers for the cluster "
+                "(no longer mDNS-only)...[/bold]"
+            )
+
+            endpoints = {n: (ip, pid) for n, (ip, pid, _) in resolved.items()}
+            restarted: list[str] = []
+            for node_name, (_ip, _pid, config_file) in resolved.items():
+                addrs = build_sibling_bootstrap_addrs(
+                    node_name,
+                    endpoints,
+                    DEFAULT_P2P_PORT,
+                    existing=base_bootstrap_nodes,
+                )
+                if not addrs:
+                    continue
+                # The init container ran as root, so the config file may be
+                # root-owned. In e2e mode run_node already fixed ownership;
+                # otherwise do it here (idempotent, cheap).
+                if not e2e_mode:
+                    self._fix_permissions(os.path.dirname(config_file))
+                apply_bootstrap_nodes(config_file, node_name, addrs)
+
+                container = self._get_node_container(node_name)
+                if container is not None:
+                    try:
+                        container.restart(timeout=CONTAINER_STOP_TIMEOUT)
+                        restarted.append(node_name)
+                    except Exception as e:
+                        console.print(
+                            f"[yellow]⚠️  Could not restart {node_name} to apply "
+                            f"bootstrap peers: {e}[/yellow]"
+                        )
+
+            if not restarted:
+                console.print(
+                    "[yellow]⚠️  Wrote bootstrap peers but could not restart any "
+                    "container; the new config won't take effect — falling back "
+                    "to mDNS-only discovery[/yellow]"
+                )
+                return False
+
+            # Give merod time to re-read its config and start re-dialing before
+            # the connectivity gate begins polling. (The gate itself is the real
+            # readiness wait — this is just so the post-restart status check and
+            # the first poll aren't pointlessly early.)
+            time.sleep(max(2 * NODE_STARTUP_DELAY, 2))
+            for node_name in restarted:
+                container = self.nodes.get(node_name)
+                if container is None:
+                    continue
+                try:
+                    container.reload()
+                    if container.status != "running":
+                        console.print(
+                            f"[yellow]⚠️  {node_name} is not running after "
+                            "restart with bootstrap peers[/yellow]"
+                        )
+                except Exception:
+                    pass
+            console.print(
+                f"[green]✓ Wired bootstrap peers and restarted "
+                f"{len(restarted)} cluster node(s)[/green]"
+            )
+            return len(restarted) == len(resolved)
+        except Exception as e:
+            console.print(
+                f"[yellow]⚠️  Failed to wire cluster bootstrap peers: {e}; "
+                "falling back to mDNS-only discovery[/yellow]"
+            )
+            return False
+
+    @staticmethod
+    def _peers_count_from_response(payload) -> int:
+        """Extract the connected-peer count from a ``GET /admin-api/peers`` body.
+
+        Current merod returns ``{"count": N}`` (no ``data`` wrapper). Older /
+        other shapes (``{"data": {"peers": [...]}}``, ``{"peers": [...]}``, or a
+        bare list) are also accepted. Anything unrecognized is treated as zero.
+        """
+        data = payload
+        if isinstance(data, dict) and "data" in data:
+            data = data["data"]
+        if isinstance(data, dict):
+            count = data.get("count")
+            if isinstance(count, int) and not isinstance(count, bool):
+                return count
+            data = data.get("peers")
+        return len(data) if isinstance(data, list) else 0
+
+    def _node_connected_peers(self, node_name: str) -> int:
+        """Best-effort connected-peer count for a node (0 on any error)."""
+        port = self.get_node_rpc_port(node_name)
+        if not port:
+            return 0
+        try:
+            resp = requests.get(f"http://localhost:{port}/admin-api/peers", timeout=5)
+            if resp.status_code == 200:
+                return self._peers_count_from_response(resp.json())
+        except Exception:
+            pass
+        return 0
+
+    def wait_for_cluster_peers(
+        self,
+        node_names: list[str],
+        expected_peers: int,
+        timeout: Optional[float] = None,
+        interval: float = 2.0,
+    ) -> bool:
+        """Block until every node reports at least ``expected_peers`` peers.
+
+        This is the merobox-side precondition check for #231: with siblings
+        wired as bootstrap peers before ``merod run`` subscribes to topics, full
+        connectivity is a strong predictor of a non-empty gossipsub mesh. If the
+        cluster never connects, return ``False`` so the caller can fail the run
+        — a deterministic startup failure instead of a half-connected cluster
+        limping through a load test. (Gossipsub mesh peer count is not exposed
+        via the admin API; connected-peer count is the observable proxy.)
+
+        ``timeout`` defaults to :data:`DEFAULT_CLUSTER_PEER_TIMEOUT`, overridable
+        via the ``MEROBOX_CLUSTER_PEER_TIMEOUT`` env var.
+        """
+        if expected_peers <= 0:
+            return True
+        if timeout is None:
+            try:
+                timeout = float(
+                    os.environ.get(self.CLUSTER_PEER_TIMEOUT_ENV)
+                    or self.DEFAULT_CLUSTER_PEER_TIMEOUT
+                )
+            except (TypeError, ValueError):
+                timeout = self.DEFAULT_CLUSTER_PEER_TIMEOUT
+        console.print(
+            f"[bold]Waiting for cluster connectivity "
+            f"(≥{expected_peers} peer(s) per node, up to {int(timeout)}s)...[/bold]"
+        )
+        deadline = time.monotonic() + timeout
+        while True:
+            short = {
+                name: n
+                for name in node_names
+                if (n := self._node_connected_peers(name)) < expected_peers
+            }
+            if not short:
+                console.print("[green]✓ Cluster fully connected[/green]")
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                detail = ", ".join(f"{name}={n}" for name, n in short.items())
+                console.print(
+                    f"[red]✗ Cluster did not reach {expected_peers} peer(s) per "
+                    f"node within {int(timeout)}s (short: {detail})[/red]"
+                )
+                return False
+            time.sleep(min(interval, remaining))
 
     def _graceful_stop_container(
         self,

@@ -76,7 +76,15 @@ def extract_auth_status(auth_data):
 
 
 def extract_peers_count(peers_data):
-    """Extract peers count from peers response."""
+    """Extract the connected-peer count from a ``GET /admin-api/peers`` body.
+
+    Current merod returns ``{"count": N}``; older/other shapes use a ``peers``
+    list (optionally under a ``data`` wrapper).
+    """
+    # Current shape: {"count": N} (optionally wrapped in {"data": ...}).
+    count = extract_nested_data(peers_data, "count")
+    if isinstance(count, int) and not isinstance(count, bool):
+        return count
     peers = extract_nested_data(peers_data, "peers", "data")
     if isinstance(peers, list):
         return len(peers)

@@ -14,6 +14,36 @@ from merobox.commands.manager import (
     _validate_cors_origins,
 )
 
+# Realistic-length base58btc libp2p peer IDs for the cluster-bootstrap tests
+# (the production code validates the peer-ID format before using it).
+_PID = {n: "12D3KooW" + chr(ord("A") + n) * 44 for n in range(1, 5)}
+_IP = {n: f"172.20.0.{n + 1}" for n in range(1, 5)}
+
+
+def _mock_cluster_container(ip, network="merobox-cluster", status="running"):
+    """A MagicMock container that reports `ip` on `network` (for IP discovery)."""
+    c = MagicMock()
+    c.status = status
+    c.attrs = {"NetworkSettings": {"Networks": {network: {"IPAddress": ip}}}}
+    return c
+
+
+def _capture_run_config_factory(container_configs):
+    """Build a `client.containers.run` side effect that records kwargs."""
+
+    def capture_run_config(**kwargs):
+        container_configs.append(kwargs)
+        mock_container = MagicMock()
+        mock_container.status = "running"
+        mock_container.short_id = "abc123"
+        mock_container.attrs = {
+            "NetworkSettings": {"Ports": {}},
+            "Config": {"Env": []},
+        }
+        return mock_container
+
+    return capture_run_config
+
 
 @patch("docker.from_env")
 def test_docker_container_uses_cap_add_not_privileged(mock_docker):
@@ -711,3 +741,317 @@ def test_default_cors_origins_constant():
     assert "http://localhost" in DEFAULT_CORS_ORIGINS
     assert "http://127.0.0.1" in DEFAULT_CORS_ORIGINS
     assert "http://localhost:3000" in DEFAULT_CORS_ORIGINS
+
+
+# ============================================================================
+# Cluster networking (#231): user-defined bridge + auto bootstrap peers + gate
+# ============================================================================
+
+
+@patch("docker.from_env")
+def test_ensure_cluster_network_reuses_existing(mock_docker):
+    """If the cluster bridge already exists, it is reused (not recreated)."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    client.networks.get.return_value = MagicMock()
+
+    name = manager._ensure_cluster_network()
+
+    assert name == DockerManager.CLUSTER_NETWORK_NAME
+    client.networks.get.assert_called_once_with(DockerManager.CLUSTER_NETWORK_NAME)
+    client.networks.create.assert_not_called()
+
+
+@patch("docker.from_env")
+def test_ensure_cluster_network_creates_when_missing(mock_docker):
+    """If the cluster bridge is missing, it is created as a user-defined bridge."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    client.networks.get.side_effect = docker.errors.NotFound("nope")
+
+    name = manager._ensure_cluster_network()
+
+    assert name == DockerManager.CLUSTER_NETWORK_NAME
+    client.networks.create.assert_called_once_with(
+        name=DockerManager.CLUSTER_NETWORK_NAME, driver="bridge"
+    )
+
+
+@patch("docker.from_env")
+def test_ensure_cluster_network_returns_none_on_failure(mock_docker):
+    """If the bridge cannot be created, return None so callers can fall back."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    client.networks.get.side_effect = docker.errors.NotFound("nope")
+    client.networks.create.side_effect = docker.errors.APIError("boom")
+
+    assert manager._ensure_cluster_network() is None
+
+
+@patch("docker.from_env")
+def test_run_node_attaches_to_given_network(mock_docker):
+    """run_node(network=...) attaches the run container to that network."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+
+    container_configs = []
+    client.containers.run.side_effect = _capture_run_config_factory(container_configs)
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+
+    manager.run_node("test-node", network="merobox-cluster")
+
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert main_configs and main_configs[0].get("network") == "merobox-cluster"
+
+
+@patch("docker.from_env")
+def test_run_node_auth_network_wins_over_cluster_network(mock_docker):
+    """When auth is enabled, the auth web network takes precedence over `network`."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._start_auth_service_stack = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    container_configs = []
+    client.containers.run.side_effect = _capture_run_config_factory(container_configs)
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+    client.networks.get.return_value = MagicMock()
+
+    manager.run_node("test-node", auth_service=True, network="merobox-cluster")
+
+    main_configs = [c for c in container_configs if c.get("detach") is True]
+    assert main_configs and main_configs[0].get("network") == "calimero_web"
+
+
+def _setup_mock_cluster(manager, mock_read_peer_id, nodes, network="merobox-cluster"):
+    """Wire a manager + read_peer_id mock for `nodes`, deterministically.
+
+    Returns (peer_ids, ips, config_files) dicts keyed by node name. The
+    config-file paths are explicit (recorded in `manager.node_config_files`) so
+    `read_peer_id` is mocked as an exact lookup, not a path-substring heuristic.
+    """
+    peer_ids = {n: _PID[i + 1] for i, n in enumerate(nodes)}
+    ips = {n: _IP[i + 1] for i, n in enumerate(nodes)}
+    config_files = {n: f"/abs/data/{n}/{n}/config.toml" for n in nodes}
+    manager.node_config_files = dict(config_files)
+    by_path = {p: peer_ids[n] for n, p in config_files.items()}
+    mock_read_peer_id.side_effect = lambda cfg: by_path.get(str(cfg))
+    manager.nodes = {n: _mock_cluster_container(ips[n], network=network) for n in nodes}
+    manager._fix_permissions = MagicMock()
+    return peer_ids, ips, config_files
+
+
+@patch("merobox.commands.manager.apply_bootstrap_nodes")
+@patch("merobox.commands.manager.read_peer_id")
+@patch("docker.from_env")
+def test_wire_cluster_bootstrap_peers_populates_siblings(
+    mock_docker, mock_read_peer_id, mock_apply_bootstrap
+):
+    """Each cluster node gets the *other* nodes wired as /ip4 static bootstrap peers."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    nodes = ["calimero-node-1", "calimero-node-2", "calimero-node-3"]
+    peer_ids, ips, _cfgs = _setup_mock_cluster(manager, mock_read_peer_id, nodes)
+
+    assert (
+        manager._wire_cluster_bootstrap_peers(nodes, "merobox-cluster", e2e_mode=True)
+        is True
+    )
+
+    assert mock_apply_bootstrap.call_count == 3
+    for call in mock_apply_bootstrap.call_args_list:
+        _config_file, node_name, addrs = call.args
+        assert addrs, f"{node_name} got an empty bootstrap list"
+        assert all("/dns4/" not in a for a in addrs)
+        assert all(ips[node_name] not in a for a in addrs)  # never itself
+        for sib in (n for n in nodes if n != node_name):
+            assert f"/ip4/{ips[sib]}/tcp/2428/p2p/{peer_ids[sib]}" in addrs
+            assert f"/ip4/{ips[sib]}/udp/2428/quic-v1/p2p/{peer_ids[sib]}" in addrs
+    for c in manager.nodes.values():
+        c.restart.assert_called_once()
+
+
+@patch("merobox.commands.manager.apply_bootstrap_nodes")
+@patch("merobox.commands.manager.read_peer_id")
+@patch("docker.from_env")
+def test_wire_cluster_bootstrap_peers_bails_when_too_few_endpoints(
+    mock_docker, mock_read_peer_id, mock_apply_bootstrap
+):
+    """If fewer than two peer endpoints resolve, fall back to mDNS (no rewrites)."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    mock_read_peer_id.return_value = None
+
+    assert (
+        manager._wire_cluster_bootstrap_peers(
+            ["calimero-node-1", "calimero-node-2"], "merobox-cluster"
+        )
+        is False
+    )
+    mock_apply_bootstrap.assert_not_called()
+
+
+@patch("merobox.commands.manager.apply_bootstrap_nodes")
+@patch("merobox.commands.manager.read_peer_id")
+@patch("docker.from_env")
+def test_wire_cluster_bootstrap_peers_appends_to_explicit_list(
+    mock_docker, mock_read_peer_id, mock_apply_bootstrap
+):
+    """An explicit bootstrap_nodes list is preserved; sibling /ip4 addrs are appended."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    nodes = ["calimero-node-1", "calimero-node-2"]
+    _peer_ids, _ips, _cfgs = _setup_mock_cluster(manager, mock_read_peer_id, nodes)
+
+    explicit = ["/ip4/63.181.86.34/tcp/4001/p2p/" + _PID[4]]
+    manager._wire_cluster_bootstrap_peers(
+        nodes, "merobox-cluster", e2e_mode=True, base_bootstrap_nodes=explicit
+    )
+
+    assert mock_apply_bootstrap.call_count == 2
+    for call in mock_apply_bootstrap.call_args_list:
+        _config_file, _node_name, addrs = call.args
+        assert addrs[0] == explicit[0]
+        assert any(a.startswith("/ip4/172.20.0.") and "/p2p/" in a for a in addrs[1:])
+
+
+def test_peers_count_from_response_handles_various_shapes():
+    """`GET /admin-api/peers` returns {"count": N}; older shapes use a list."""
+    f = DockerManager._peers_count_from_response
+    assert f({"count": 3}) == 3  # current merod shape
+    assert f({"data": {"count": 2}}) == 2
+    assert f({"data": {"peers": ["a", "b"]}}) == 2
+    assert f({"peers": ["a"]}) == 1
+    assert f(["a", "b", "c"]) == 3
+    assert f({"data": {"total": 0}}) == 0  # unrecognized -> 0 (not len(dict))
+    assert f({"count": True}) == 0  # a bool is not a peer count
+    assert f(None) == 0
+
+
+@patch("merobox.commands.manager.requests")
+@patch("docker.from_env")
+def test_wait_for_cluster_peers_true_when_all_connected(mock_docker, mock_requests):
+    """Returns True once every node reports at least `expected_peers` peers."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    manager.node_rpc_ports = {"calimero-node-1": 2528, "calimero-node-2": 2529}
+
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"count": 1}  # GET /admin-api/peers shape
+    mock_requests.get.return_value = resp
+
+    assert (
+        manager.wait_for_cluster_peers(
+            ["calimero-node-1", "calimero-node-2"],
+            expected_peers=1,
+            timeout=2.0,
+            interval=0.01,
+        )
+        is True
+    )
+
+
+@patch("merobox.commands.manager.requests")
+@patch("docker.from_env")
+def test_wait_for_cluster_peers_false_on_timeout(mock_docker, mock_requests):
+    """Returns False if some node never reaches `expected_peers` within the timeout."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    manager.node_rpc_ports = {"calimero-node-1": 2528, "calimero-node-2": 2529}
+
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"count": 0}
+    mock_requests.get.return_value = resp
+
+    assert (
+        manager.wait_for_cluster_peers(
+            ["calimero-node-1", "calimero-node-2"],
+            expected_peers=1,
+            timeout=0.05,
+            interval=0.01,
+        )
+        is False
+    )
+
+
+@patch.dict("os.environ", {"MEROBOX_LEGACY_CLUSTER_NETWORKING": "1"})
+@patch("docker.from_env")
+def test_run_multiple_nodes_legacy_env_skips_cluster_wiring(mock_docker):
+    """The legacy kill-switch disables the dedicated network, wiring and gate."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    manager._find_available_ports = MagicMock(side_effect=[[2428, 2429], [2528, 2529]])
+    manager.run_node = MagicMock(return_value=True)
+    manager._ensure_cluster_network = MagicMock()
+    manager._wire_cluster_bootstrap_peers = MagicMock()
+    manager.wait_for_cluster_peers = MagicMock()
+
+    assert manager.run_multiple_nodes(2) is True
+    manager._ensure_cluster_network.assert_not_called()
+    manager._wire_cluster_bootstrap_peers.assert_not_called()
+    manager.wait_for_cluster_peers.assert_not_called()
+    # run_node still called per node, with no cluster network
+    assert manager.run_node.call_count == 2
+    for call in manager.run_node.call_args_list:
+        assert call.kwargs.get("network") is None
+
+
+@patch("docker.from_env")
+def test_run_multiple_nodes_wires_cluster_and_fails_on_gate(mock_docker):
+    """Multi-node cluster: network + wiring happen, and a failed gate fails the run."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    manager._find_available_ports = MagicMock(side_effect=[[2428, 2429], [2528, 2529]])
+    manager.run_node = MagicMock(return_value=True)
+    manager._ensure_cluster_network = MagicMock(return_value="merobox-cluster")
+    manager._wire_cluster_bootstrap_peers = MagicMock()
+    manager.wait_for_cluster_peers = MagicMock(return_value=False)
+
+    result = manager.run_multiple_nodes(2)
+
+    manager._ensure_cluster_network.assert_called_once()
+    manager._wire_cluster_bootstrap_peers.assert_called_once()
+    manager.wait_for_cluster_peers.assert_called_once()
+    assert result is False  # gate failed -> run fails
+
+
+@patch("docker.from_env")
+def test_run_multiple_nodes_single_node_unchanged(mock_docker):
+    """A single-node run does not touch the cluster network / wiring / gate."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    manager._find_available_ports = MagicMock(side_effect=[[2428], [2528]])
+    manager.run_node = MagicMock(return_value=True)
+    manager._ensure_cluster_network = MagicMock()
+    manager._wire_cluster_bootstrap_peers = MagicMock()
+    manager.wait_for_cluster_peers = MagicMock()
+
+    assert manager.run_multiple_nodes(1) is True
+    manager._ensure_cluster_network.assert_not_called()
+    manager._wire_cluster_bootstrap_peers.assert_not_called()
+    manager.wait_for_cluster_peers.assert_not_called()

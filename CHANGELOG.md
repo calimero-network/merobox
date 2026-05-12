@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Multi-node clusters now wire up static bootstrap peers instead of depending on
+  mDNS-only discovery over Docker's default bridge. When 2+ nodes are started
+  (and `MEROBOX_LEGACY_CLUSTER_NETWORKING` is not set), merobox now: (1) attaches
+  the nodes to a dedicated user-defined bridge network (`merobox-cluster`) for
+  isolation — except when the auth/Traefik stack is enabled, in which case the
+  existing `calimero_web` network is used; (2) reads each node's libp2p peer ID
+  from its `config.toml` (written by `merod init`) and its container IP on the
+  cluster network, and wires every node's `bootstrap.nodes` to its siblings as
+  `/ip4/<container-ip>/tcp/2428/p2p/<peer_id>` (+ `quic-v1`) — IPs, not
+  `/dns4/<container>`, because merod's libp2p swarm is built without a DNS
+  transport — appended after any explicit `bootstrap_nodes:` from the workflow,
+  then restarts the containers so the new config takes effect (mDNS stays enabled
+  as a fallback; the rendezvous config is untouched); and (3) blocks until every
+  node reports `count-1` connected peers via `GET /admin-api/peers`, failing the
+  run if the cluster never connects (timeout overridable via
+  `MEROBOX_CLUSTER_PEER_TIMEOUT`, default 60s). Previously, `--e2e-mode` clusters
+  (used by the `core` `fuzzy-load-test` CI) emptied `bootstrap.nodes` and pointed
+  discovery at a rendezvous namespace with no rendezvous server, leaving mDNS as
+  the only live peer-discovery path, so the broadcast fast-path stayed cold and
+  every cross-node update leaned on periodic sync (slower, and a narrower code
+  path). Resolves [#231](https://github.com/calimero-network/merobox/issues/231).
+- `merobox health` now reports the connected-peer count correctly. The
+  `GET /admin-api/peers` endpoint returns `{"count": N}`, but `extract_peers_count`
+  only understood a `peers` list, so it always showed `0` peers.
+
+### CI
+
+- The Docker workflow jobs and the integration-test job now stream each node
+  container's logs to disk (`docker logs -f`, surviving `merobox stop`/`nuke`)
+  and upload them as artifacts (`node-logs-*`), so failures — and questions like
+  "is the gossipsub mesh forming?" — can be diagnosed from CI without a re-run.
+  Mirrors core's `fuzzy-load-test` log capture. New helper:
+  `.github/scripts/capture-node-logs.sh`.
+
 ## [0.6.9] - 2026-05-09
 
 ### Fixed
@@ -352,7 +388,9 @@ subtree. To preserve a context before deletion, use
 ### Changed
 - **Default Network Configuration**: All workflows now use e2e-style network isolation by default
 - **Test Reliability**: Significantly improved 3-node test reliability in CI environments
-- **Peer Discovery**: Uses rendezvous-based discovery instead of unreliable mDNS in CI
+- **Peer Discovery**: Sets a unique rendezvous namespace per workflow (note: no
+  rendezvous server is started by merobox, so in practice CI clusters relied on
+  mDNS until the dedicated cluster networking added under #231)
 - **Sync Settings**: Uses regular production sync defaults (no aggressive overrides needed)
 
 ### Technical Details
