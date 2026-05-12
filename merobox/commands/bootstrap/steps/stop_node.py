@@ -90,7 +90,9 @@ class StopNodeStep(BaseStep):
         if isinstance(nodes_config, str):
             # Resolve dynamic values in node name
             node_names = [
-                self._resolve_dynamic_value(nodes_config, workflow_results, dynamic_values)
+                self._resolve_dynamic_value(
+                    nodes_config, workflow_results, dynamic_values
+                )
             ]
         else:
             # Resolve dynamic values in each node name

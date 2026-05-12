@@ -25,7 +25,9 @@ class StartNodeStep(BaseStep):
     ):
         super().__init__(config, manager, resolver, auth_mode=auth_mode)
         self.workflow_config = workflow_config or {}
-        self.executor = executor  # Reference to executor for accessing node startup logic
+        self.executor = (
+            executor  # Reference to executor for accessing node startup logic
+        )
 
     def _get_required_fields(self) -> list[str]:
         """
@@ -55,23 +57,17 @@ class StartNodeStep(BaseStep):
         if "wait_for_ready" in self.config and not isinstance(
             self.config["wait_for_ready"], bool
         ):
-            raise ValueError(
-                f"Step '{step_name}': 'wait_for_ready' must be a boolean"
-            )
+            raise ValueError(f"Step '{step_name}': 'wait_for_ready' must be a boolean")
 
         # Validate wait_timeout is an integer if provided
         if "wait_timeout" in self.config and not isinstance(
             self.config["wait_timeout"], int
         ):
-            raise ValueError(
-                f"Step '{step_name}': 'wait_timeout' must be an integer"
-            )
+            raise ValueError(f"Step '{step_name}': 'wait_timeout' must be an integer")
 
         # Validate wait_timeout is positive if provided
         if "wait_timeout" in self.config and self.config["wait_timeout"] <= 0:
-            raise ValueError(
-                f"Step '{step_name}': 'wait_timeout' must be positive"
-            )
+            raise ValueError(f"Step '{step_name}': 'wait_timeout' must be positive")
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -97,7 +93,9 @@ class StartNodeStep(BaseStep):
         if isinstance(nodes_config, str):
             # Resolve dynamic values in node name
             node_names = [
-                self._resolve_dynamic_value(nodes_config, workflow_results, dynamic_values)
+                self._resolve_dynamic_value(
+                    nodes_config, workflow_results, dynamic_values
+                )
             ]
         else:
             # Resolve dynamic values in each node name

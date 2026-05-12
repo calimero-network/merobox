@@ -16,12 +16,21 @@ steps:
     outputs:
       app_id: applicationId
 
+  - name: Create Namespace
+    type: create_namespace
+    node: test-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
   - name: Create Context
     type: create_context
     node: test-node-1
     application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
     outputs:
       context_id: contextId
+      member_public_key: memberPublicKey
 
   - name: Stop Node 1
     type: stop_node
@@ -41,7 +50,7 @@ steps:
     type: call
     node: test-node-1
     context_id: "{{context_id}}"
-    executor_public_key: "test"
+    executor_public_key: "{{member_public_key}}"
     method: get
     args:
       key: test
