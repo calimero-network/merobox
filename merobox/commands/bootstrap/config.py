@@ -80,6 +80,8 @@ VALID_STEP_TYPES = frozenset(
         "upload_blob",
         "create_mesh",
         "fuzzy_test",
+        "stop_node",
+        "start_node",
     }
 )
 
