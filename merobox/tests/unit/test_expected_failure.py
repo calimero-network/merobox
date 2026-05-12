@@ -18,6 +18,20 @@ from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
 from merobox.commands.bootstrap.steps.group_invite import CreateNamespaceInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
+from merobox.commands.bootstrap.steps.group_management import (
+    DeleteContextStep,
+    DeleteGroupStep,
+    DeleteNamespaceStep,
+    GetGroupInfoStep,
+    GetMemberCapabilitiesStep,
+    ListGroupContextsStep,
+    ListGroupMembersStep,
+    RemoveGroupMembersStep,
+    SetDefaultCapabilitiesStep,
+    SetMemberCapabilitiesStep,
+    SetSubgroupVisibilityStep,
+    UpdateMemberRoleStep,
+)
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.namespace import CreateGroupInNamespaceStep
@@ -351,3 +365,235 @@ class TestPerStepSmoke:
                 "members": [{"identity": "pk", "role": "Member"}],
             },
         )
+
+
+# =============================================================================
+# group_management.py step types — calimero-network/merobox#214: these step
+# classes silently dropped `expected_failure`. Verify the exception branch is
+# now wired for every one of them.
+# =============================================================================
+
+_GM_MODULE = "merobox.commands.bootstrap.steps.group_management"
+
+
+class TestGroupManagementPerStepSmoke:
+    """One lightweight smoke test per group_management step type wired in #214."""
+
+    def test_remove_group_members(self):
+        _smoke(
+            RemoveGroupMembersStep,
+            _GM_MODULE,
+            "remove_group_members",
+            {
+                "type": "remove_group_members",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "members": ["pk"],
+            },
+        )
+
+    def test_list_group_members(self):
+        _smoke(
+            ListGroupMembersStep,
+            _GM_MODULE,
+            "list_group_members",
+            {"type": "list_group_members", "name": "t", "node": "n1", "group_id": "g"},
+        )
+
+    def test_update_member_role(self):
+        _smoke(
+            UpdateMemberRoleStep,
+            _GM_MODULE,
+            "update_member_role",
+            {
+                "type": "update_member_role",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "member_id": "pk",
+                "role": "Member",
+            },
+        )
+
+    def test_set_member_capabilities(self):
+        # Also has a fuller dedicated class below
+        # (TestSetMemberCapabilitiesExpectedFailure); this keeps the per-step
+        # smoke list complete so all 12 wired steps are visible at a glance.
+        _smoke(
+            SetMemberCapabilitiesStep,
+            _GM_MODULE,
+            "set_member_capabilities",
+            {
+                "type": "set_member_capabilities",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "member_id": "pk",
+                "capabilities": 7,
+            },
+        )
+
+    def test_get_member_capabilities(self):
+        _smoke(
+            GetMemberCapabilitiesStep,
+            _GM_MODULE,
+            "get_member_capabilities",
+            {
+                "type": "get_member_capabilities",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "member_id": "pk",
+            },
+        )
+
+    def test_set_default_capabilities(self):
+        _smoke(
+            SetDefaultCapabilitiesStep,
+            _GM_MODULE,
+            "set_default_capabilities",
+            {
+                "type": "set_default_capabilities",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "capabilities": 1,
+            },
+        )
+
+    def test_set_subgroup_visibility(self):
+        _smoke(
+            SetSubgroupVisibilityStep,
+            _GM_MODULE,
+            "set_subgroup_visibility",
+            {
+                "type": "set_subgroup_visibility",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "visibility": "open",
+            },
+        )
+
+    def test_get_group_info(self):
+        _smoke(
+            GetGroupInfoStep,
+            _GM_MODULE,
+            "get_group_info",
+            {"type": "get_group_info", "name": "t", "node": "n1", "group_id": "g"},
+        )
+
+    def test_list_group_contexts(self):
+        _smoke(
+            ListGroupContextsStep,
+            _GM_MODULE,
+            "list_group_contexts",
+            {"type": "list_group_contexts", "name": "t", "node": "n1", "group_id": "g"},
+        )
+
+    def test_delete_group(self):
+        _smoke(
+            DeleteGroupStep,
+            _GM_MODULE,
+            "delete_group",
+            {"type": "delete_group", "name": "t", "node": "n1", "group_id": "g"},
+        )
+
+    def test_delete_namespace(self):
+        _smoke(
+            DeleteNamespaceStep,
+            _GM_MODULE,
+            "delete_namespace",
+            {
+                "type": "delete_namespace",
+                "name": "t",
+                "node": "n1",
+                "namespace_id": "ns",
+            },
+        )
+
+    def test_delete_context(self):
+        _smoke(
+            DeleteContextStep,
+            _GM_MODULE,
+            "delete_context",
+            {"type": "delete_context", "name": "t", "node": "n1", "context_id": "ctx"},
+        )
+
+
+class TestSetMemberCapabilitiesExpectedFailure:
+    """Fuller coverage for one representative group_management step
+    (`set_member_capabilities`): exception path, success-with-flag warning,
+    and the no-flag failure path."""
+
+    def _setup(self, expected_failure):
+        return SetMemberCapabilitiesStep(
+            {
+                "type": "set_member_capabilities",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "member_id": "pk",
+                "capabilities": 7,
+                "expected_failure": expected_failure,
+            }
+        )
+
+    def _run_with_mock_client(self, step, mock_client):
+        with (
+            patch.object(
+                step,
+                "_resolve_node_for_client",
+                return_value=("http://localhost:1234", "n1"),
+            ),
+            patch(
+                f"{_GM_MODULE}.get_client_for_rpc_url",
+                return_value=mock_client,
+            ),
+            patch.object(step, "_resolve_dynamic_value", side_effect=lambda v, *_: v),
+            patch.object(step, "_print_node_logs_on_failure"),
+        ):
+            return _run(step.execute({}, {}))
+
+    def test_exception_path_passes_when_expected(self):
+        mock_client = MagicMock()
+        mock_client.set_member_capabilities.side_effect = RuntimeError("nope")
+        step = self._setup(expected_failure=True)
+        with patch.object(step, "_report_expected_failure") as report:
+            assert self._run_with_mock_client(step, mock_client) is True
+            report.assert_called_once()
+
+    def test_success_with_expected_failure_warns_but_passes(self):
+        mock_client = MagicMock()
+        mock_client.set_member_capabilities.return_value = {"data": "ok"}
+        step = self._setup(expected_failure=True)
+        with patch.object(step, "_report_unexpected_success") as warn:
+            assert self._run_with_mock_client(step, mock_client) is True
+            warn.assert_called_once()
+
+    def test_exception_path_fails_without_flag(self):
+        mock_client = MagicMock()
+        mock_client.set_member_capabilities.side_effect = RuntimeError("nope")
+        step = self._setup(expected_failure=False)
+        assert self._run_with_mock_client(step, mock_client) is False
+
+    def test_jsonrpc_error_path_passes_when_expected(self):
+        """HTTP-200 carrying a JSON-RPC error envelope — the shape merod
+        returns for e.g. an unauthorized capability change. This branch
+        (guarded by `_check_jsonrpc_error`) is distinct from the exception
+        path and must also honor `expected_failure`."""
+        mock_client = MagicMock()
+        mock_client.set_member_capabilities.return_value = {
+            "error": {"type": "ApiError", "data": "not authorized"}
+        }
+        step = self._setup(expected_failure=True)
+        assert self._run_with_mock_client(step, mock_client) is True
+
+    def test_jsonrpc_error_path_fails_without_flag(self):
+        mock_client = MagicMock()
+        mock_client.set_member_capabilities.return_value = {
+            "error": {"type": "ApiError", "data": "not authorized"}
+        }
+        step = self._setup(expected_failure=False)
+        assert self._run_with_mock_client(step, mock_client) is False

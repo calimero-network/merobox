@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.12] - 2026-05-12
+
+### Fixed
+
+- `expected_failure: true` is now honored by the `group_management.py` step
+  classes — it was previously a silent no-op on most of them. Wired into
+  `RemoveGroupMembersStep`, `ListGroupMembersStep`, `UpdateMemberRoleStep`,
+  `SetMemberCapabilitiesStep`, `GetMemberCapabilitiesStep`,
+  `SetDefaultCapabilitiesStep`, `SetSubgroupVisibilityStep`, `GetGroupInfoStep`,
+  `ListGroupContextsStep`, `DeleteGroupStep`, `DeleteNamespaceStep`,
+  `DeleteContextStep`, and `UninstallApplicationStep`, matching the pattern
+  already used by the `Leave*` steps (on a failure path → `_report_expected_failure`
+  and return success; on the success path → `_report_unexpected_success` warn).
+  Fixes [#214](https://github.com/calimero-network/merobox/issues/214).
+
 ## [0.6.11] - 2026-05-12
 
 ### Changed
