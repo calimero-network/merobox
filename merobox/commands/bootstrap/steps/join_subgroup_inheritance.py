@@ -111,9 +111,9 @@ class JoinSubgroupInheritanceStep(BaseStep):
                     if f"subgroup_was_inherited_{node_name}" not in dynamic_values:
                         was_inherited = nested.get("wasInherited")
                         if was_inherited is not None:
-                            dynamic_values[
-                                f"subgroup_was_inherited_{node_name}"
-                            ] = was_inherited
+                            dynamic_values[f"subgroup_was_inherited_{node_name}"] = (
+                                was_inherited
+                            )
 
             console.print(
                 f"[green]✓ Node {node_name} joined subgroup {group_id} "
