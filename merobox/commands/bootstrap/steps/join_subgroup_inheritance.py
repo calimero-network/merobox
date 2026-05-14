@@ -65,17 +65,21 @@ class JoinSubgroupInheritanceStep(BaseStep):
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
+        # Version-mismatch check sits OUTSIDE the API-call try/except so the
+        # actionable "requires >= 0.6.11" message reaches the workflow author
+        # directly rather than being swallowed as a generic
+        # "join_subgroup_inheritance failed" failure.
+        client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+        method = getattr(client, "join_subgroup_inheritance", None)
+        if not callable(method):
+            console.print(
+                f"[red]join_subgroup_inheritance is not available in the current "
+                f"calimero-client-py release on {node_name} "
+                f"(requires >= 0.6.11)[/red]"
+            )
+            return False
+
         try:
-            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            method = getattr(client, "join_subgroup_inheritance", None)
-            if not callable(method):
-                # Older calimero-client-py releases (< 0.6.11) lack this
-                # method. Surface the missing-binding case explicitly so
-                # workflow authors can pin to a current client release.
-                raise RuntimeError(
-                    "join_subgroup_inheritance is not available in the current "
-                    "calimero-client-py release (requires >= 0.6.11)"
-                )
             api_result = method(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
@@ -100,11 +104,11 @@ class JoinSubgroupInheritanceStep(BaseStep):
                 if isinstance(nested, dict):
                     if f"subgroup_id_{node_name}" not in dynamic_values:
                         gid = nested.get("groupId")
-                        if gid:
+                        if gid is not None:
                             dynamic_values[f"subgroup_id_{node_name}"] = gid
                     if f"subgroup_member_public_key_{node_name}" not in dynamic_values:
                         member_pk = nested.get("memberPublicKey")
-                        if member_pk:
+                        if member_pk is not None:
                             dynamic_values[
                                 f"subgroup_member_public_key_{node_name}"
                             ] = member_pk
