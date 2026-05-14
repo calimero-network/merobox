@@ -33,6 +33,7 @@ VALID_STEP_TYPES = frozenset(
         "join_open",
         "create_identity",
         "join_context",
+        "join_subgroup_inheritance",
         "leave_context",
         "leave_group",
         "leave_namespace",
@@ -248,6 +249,20 @@ class JoinContextStepConfig(BaseStepConfig):
     type: Literal["join_context"] = "join_context"
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID to join")
+
+
+class JoinSubgroupInheritanceStepConfig(BaseStepConfig):
+    """Configuration for join_subgroup_inheritance step.
+
+    Calls the `POST /admin-api/groups/:group_id/join-via-inheritance`
+    endpoint from calimero-network/core#2357 so the target node
+    materialises its inherited Open-subgroup membership without an
+    admin-signed invitation or a prior `join_context`.
+    """
+
+    type: Literal["join_subgroup_inheritance"] = "join_subgroup_inheritance"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Open subgroup ID to join via inheritance")
 
 
 class CallStep(BaseStepConfig):
@@ -925,6 +940,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "invite_open": InviteStep,
     "join": JoinStep,
     "join_context": JoinContextStepConfig,
+    "join_subgroup_inheritance": JoinSubgroupInheritanceStepConfig,
     "join_open": JoinStep,
     "list_namespaces": ListNamespacesStepConfig,
     "get_namespace_identity": GetNamespaceIdentityStepConfig,

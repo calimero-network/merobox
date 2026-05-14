@@ -65,6 +65,9 @@ from merobox.commands.bootstrap.steps.join import (
     JoinNamespaceStep as JoinNamespaceAliasStep,
 )
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
+from merobox.commands.bootstrap.steps.join_subgroup_inheritance import (
+    JoinSubgroupInheritanceStep,
+)
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.namespace import (
@@ -111,6 +114,7 @@ __all__ = [
     "InviteOpenStep",
     "InviteIdentityStep",
     "JoinContextStep",
+    "JoinSubgroupInheritanceStep",
     "JoinInvitationStep",
     "JoinNamespaceAliasStep",
     "JoinOpenStep",
