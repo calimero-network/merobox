@@ -1164,3 +1164,140 @@ def test_is_node_running_raises_api_error(mock_docker):
 
     with pytest.raises(docker.errors.APIError):
         manager.is_node_running("node1")
+
+
+# ============================================================================
+# Graceful stop timeout overrides (issue #237)
+# ============================================================================
+
+
+@patch.dict("os.environ", {"MEROBOX_STOP_TIMEOUT": "120"}, clear=False)
+@patch("docker.from_env")
+def test_stop_all_nodes_honors_env_stop_timeout(mock_docker):
+    """MEROBOX_STOP_TIMEOUT overrides the default 10s container stop grace."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    seed.name = "calimero-node-1"
+    worker = MagicMock()
+    worker.name = "calimero-node-2"
+    client.containers.list.return_value = [seed, worker]
+
+    manager.stop_all_nodes(drain_timeout=0)
+
+    seed.stop.assert_called_once_with(timeout=120)
+    worker.stop.assert_called_once_with(timeout=120)
+
+
+@patch.dict("os.environ", {"MEROBOX_STOP_TIMEOUT": "not-a-number"}, clear=False)
+@patch("docker.from_env")
+def test_stop_all_nodes_falls_back_when_env_is_garbage(mock_docker):
+    """A non-numeric env value must not abort cleanup — fall back silently."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    seed.name = "calimero-node-1"
+    client.containers.list.return_value = [seed]
+
+    manager.stop_all_nodes(drain_timeout=0)
+
+    # 10s is the CONTAINER_STOP_TIMEOUT default.
+    seed.stop.assert_called_once_with(timeout=10)
+
+
+@patch.dict("os.environ", {"MEROBOX_STOP_TIMEOUT": "120"}, clear=False)
+@patch("docker.from_env")
+def test_explicit_stop_timeout_overrides_env(mock_docker):
+    """An explicit caller-provided stop_timeout wins over the env override."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    client.containers.list.return_value = [seed]
+
+    manager.stop_all_nodes(drain_timeout=0, stop_timeout=42)
+
+    seed.stop.assert_called_once_with(timeout=42)
+
+
+@patch("docker.from_env")
+def test_stop_all_nodes_gives_seed_and_workers_same_grace(mock_docker):
+    """Regression for #237: workers must get the same stop_timeout as the seed."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    containers = [MagicMock(name=f"calimero-node-{i}") for i in range(1, 5)]
+    for i, c in enumerate(containers, start=1):
+        c.name = f"calimero-node-{i}"
+    client.containers.list.return_value = containers
+
+    manager.stop_all_nodes(drain_timeout=0, stop_timeout=90)
+
+    for c in containers:
+        c.kill.assert_called_once_with(signal="SIGTERM")
+        c.stop.assert_called_once_with(timeout=90)
+
+
+@patch.dict("os.environ", {"MEROBOX_DRAIN_TIMEOUT": "2"}, clear=False)
+@patch("docker.from_env")
+def test_drain_timeout_env_override(mock_docker):
+    """MEROBOX_DRAIN_TIMEOUT controls the post-SIGTERM pre-stop wait."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    client.containers.list.return_value = [seed]
+
+    with patch("merobox.commands.manager.time.sleep") as mock_sleep:
+        manager.stop_all_nodes(stop_timeout=10)
+
+    # assert_any_call rather than assert_called_with: _graceful_stop_containers_batch
+    # may call time.sleep for other reasons (none today, but defensive).
+    mock_sleep.assert_any_call(2)
+
+
+@patch.dict("os.environ", {"MEROBOX_STOP_TIMEOUT": "120.5"}, clear=False)
+@patch("docker.from_env")
+def test_float_env_value_is_truncated_not_rejected(mock_docker):
+    """Float strings like '120.5' truncate to int, not silently fall back to default."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    client.containers.list.return_value = [seed]
+
+    manager.stop_all_nodes(drain_timeout=0)
+
+    seed.stop.assert_called_once_with(timeout=120)
+
+
+@patch.dict("os.environ", {"MEROBOX_DRAIN_TIMEOUT": "0"}, clear=False)
+@patch("docker.from_env")
+def test_drain_timeout_zero_skips_drain_phase(mock_docker):
+    """MEROBOX_DRAIN_TIMEOUT=0 propagates and skips the drain sleep entirely."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    client.containers.list.return_value = [seed]
+
+    with patch("merobox.commands.manager.time.sleep") as mock_sleep:
+        manager.stop_all_nodes(stop_timeout=10)
+
+    mock_sleep.assert_not_called()

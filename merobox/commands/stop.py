@@ -30,7 +30,29 @@ from merobox.commands.manager import DockerManager
     is_flag=True,
     help="Stop nodes in binary mode (managed as native processes)",
 )
-def stop(node_name, stop_all, auth_service, no_docker):
+@click.option(
+    "--timeout",
+    "stop_timeout",
+    type=int,
+    default=None,
+    help=(
+        "Seconds the daemon waits for each container to exit after SIGTERM "
+        "before issuing SIGKILL. Defaults to MEROBOX_STOP_TIMEOUT or 10s. "
+        "Bump this for profiling workflows (e.g. perf record traps that "
+        "need time to flush mmap rings on worker nodes — see issue #237)."
+    ),
+)
+@click.option(
+    "--drain-timeout",
+    "drain_timeout",
+    type=int,
+    default=None,
+    help=(
+        "Seconds to wait after the initial SIGTERM before issuing the stop. "
+        "Defaults to MEROBOX_DRAIN_TIMEOUT or 5s."
+    ),
+)
+def stop(node_name, stop_all, auth_service, no_docker, stop_timeout, drain_timeout):
     """Stop Calimero node(s)."""
     console = Console()
 
@@ -42,13 +64,21 @@ def stop(node_name, stop_all, auth_service, no_docker):
 
     calimero_manager = BinaryManager() if no_docker else DockerManager()
 
+    # Build kwargs only for timeouts the caller actually set, so the manager's
+    # env-var resolution still applies when CLI flags are absent.
+    stop_kwargs = {}
+    if stop_timeout is not None:
+        stop_kwargs["stop_timeout"] = stop_timeout
+    if drain_timeout is not None:
+        stop_kwargs["drain_timeout"] = drain_timeout
+
     if auth_service:
         # Stop auth service stack
         success = calimero_manager.stop_auth_service_stack()
         sys.exit(0 if success else 1)
     elif stop_all:
         # Stop all nodes
-        nodes_success = calimero_manager.stop_all_nodes()
+        nodes_success = calimero_manager.stop_all_nodes(**stop_kwargs)
 
         auth_success = True  # Default to success if no auth services to stop
         if not no_docker:
@@ -75,7 +105,7 @@ def stop(node_name, stop_all, auth_service, no_docker):
         sys.exit(0 if (nodes_success and auth_success) else 1)
     elif node_name:
         # Stop specific node
-        success = calimero_manager.stop_node(node_name)
+        success = calimero_manager.stop_node(node_name, **stop_kwargs)
         sys.exit(0 if success else 1)
     else:
         console.print(

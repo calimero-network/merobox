@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.13] - 2026-05-14
+
+### Fixed
+
+- Worker containers in multi-node clusters now get the same graceful-shutdown
+  window as the seed, configurable up to whatever the workload needs. The
+  previous fixed 5s drain + 10s `container.stop` (15s total) was enough for
+  the seed (node-1) but too short for workers running heavier profiling traps:
+  their `perf record` mmap rings never finished flushing before SIGKILL, so
+  worker-side `perf-*.data` and flamegraph artifacts never reached the bind
+  mount. Adds `MEROBOX_STOP_TIMEOUT` / `MEROBOX_DRAIN_TIMEOUT` env vars and
+  matching `--timeout` / `--drain-timeout` CLI flags on `merobox stop`,
+  plumbed through `DockerManager` and `BinaryManager`. Explicit caller-set
+  values still win over env, and non-numeric env values fall back to the
+  default rather than aborting cleanup. Resolves
+  [#237](https://github.com/calimero-network/merobox/issues/237).
+
 ## [0.6.12] - 2026-05-12
 
 ### Fixed
