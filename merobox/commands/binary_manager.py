@@ -27,7 +27,13 @@ from merobox.commands.constants import (
     DEFAULT_RPC_PORT,
     PROCESS_WAIT_TIMEOUT,
     SOCKET_CONNECTION_TIMEOUT,
+    resolved_drain_timeout,
+    resolved_stop_timeout,
 )
+
+# Default drain wait (seconds) used by BinaryManager when SIGTERM-then-wait
+# is sent to a batch of native processes. Mirrors DockerManager's drain phase.
+BINARY_DRAIN_TIMEOUT = 2
 
 console = Console()
 
@@ -74,8 +80,16 @@ class BinaryManager(CleanupMixin):
         if enable_signal_handlers:
             self._setup_signal_handlers()
 
-    def _do_cleanup(self):
-        """Perform the actual process cleanup."""
+    def _do_cleanup(self, stop_timeout: Optional[int] = None):
+        """Perform the actual process cleanup.
+
+        Args:
+            stop_timeout: Seconds to wait for each process to exit after
+                SIGTERM before issuing SIGKILL. ``None`` resolves to
+                ``MEROBOX_STOP_TIMEOUT`` or ``PROCESS_WAIT_TIMEOUT``.
+        """
+        if stop_timeout is None:
+            stop_timeout = resolved_stop_timeout(PROCESS_WAIT_TIMEOUT)
         if self.processes:
             console.print("[cyan]Stopping managed processes...[/cyan]")
             for node_name in list(self.processes.keys()):
@@ -83,7 +97,7 @@ class BinaryManager(CleanupMixin):
                     process = self.processes[node_name]
                     process.terminate()
                     try:
-                        process.wait(timeout=PROCESS_WAIT_TIMEOUT)
+                        process.wait(timeout=stop_timeout)
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait()
@@ -455,15 +469,34 @@ class BinaryManager(CleanupMixin):
             console.print(f"[red]✗ Failed to start node {node_name}: {str(e)}[/red]")
             return False
 
-    def stop_node(self, node_name: str) -> bool:
-        """Stop a running node."""
+    def stop_node(
+        self,
+        node_name: str,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
+    ) -> bool:
+        """Stop a running node.
+
+        Args:
+            node_name: Name of the node to stop.
+            drain_timeout: Seconds to wait for a PID-tracked node to drain
+                after SIGTERM (only used when we lack the Popen handle).
+                ``None`` resolves to ``MEROBOX_DRAIN_TIMEOUT`` or 2s.
+            stop_timeout: Seconds to wait for the tracked Popen to exit
+                gracefully before SIGKILL. ``None`` resolves to
+                ``MEROBOX_STOP_TIMEOUT`` or ``PROCESS_WAIT_TIMEOUT``.
+        """
+        if drain_timeout is None:
+            drain_timeout = resolved_drain_timeout(BINARY_DRAIN_TIMEOUT)
+        if stop_timeout is None:
+            stop_timeout = resolved_stop_timeout(PROCESS_WAIT_TIMEOUT)
         try:
             # Check if we have the process object
             if node_name in self.processes:
                 process = self.processes[node_name]
                 try:
                     process.terminate()
-                    process.wait(timeout=PROCESS_WAIT_TIMEOUT)
+                    process.wait(timeout=stop_timeout)
                     console.print(f"[green]✓ Stopped node {node_name}[/green]")
                 except subprocess.TimeoutExpired:
                     console.print(f"[yellow]Force killing node {node_name}...[/yellow]")
@@ -478,7 +511,7 @@ class BinaryManager(CleanupMixin):
             pid = self._load_pid(node_name)
             if pid and self._is_process_running(pid):
                 os.kill(pid, signal.SIGTERM)
-                time.sleep(2)
+                time.sleep(drain_timeout)
 
                 # Check if still running
                 if self._is_process_running(pid):
@@ -498,8 +531,25 @@ class BinaryManager(CleanupMixin):
             console.print(f"[red]✗ Failed to stop node {node_name}: {str(e)}[/red]")
             return False
 
-    def stop_all_nodes(self) -> bool:
-        """Stop all running nodes. Returns True on success, False on failure."""
+    def stop_all_nodes(
+        self,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
+    ) -> bool:
+        """Stop all running nodes. Returns True on success, False on failure.
+
+        Args:
+            drain_timeout: Seconds to wait between the batched SIGTERM and the
+                per-process exit check. ``None`` resolves to
+                ``MEROBOX_DRAIN_TIMEOUT`` or 2s.
+            stop_timeout: Seconds to wait for each tracked process to exit
+                gracefully before SIGKILL. ``None`` resolves to
+                ``MEROBOX_STOP_TIMEOUT`` or ``PROCESS_WAIT_TIMEOUT``.
+        """
+        if drain_timeout is None:
+            drain_timeout = resolved_drain_timeout(BINARY_DRAIN_TIMEOUT)
+        if stop_timeout is None:
+            stop_timeout = resolved_stop_timeout(PROCESS_WAIT_TIMEOUT)
         stopped = 0
         failed_nodes = []
 
@@ -545,7 +595,7 @@ class BinaryManager(CleanupMixin):
                 pass
 
         # Phase 2: Wait once for all to drain (instead of per-node sleep)
-        time.sleep(2)
+        time.sleep(drain_timeout)
 
         # Phase 3: Collect results and clean up (SIGTERM already sent)
         for node_name in running_nodes:
@@ -554,7 +604,7 @@ class BinaryManager(CleanupMixin):
                     process = self.processes[node_name]
                     try:
                         # SIGTERM already sent in Phase 1, just wait
-                        process.wait(timeout=PROCESS_WAIT_TIMEOUT)
+                        process.wait(timeout=stop_timeout)
                         console.print(f"[green]✓ Stopped node {node_name}[/green]")
                     except subprocess.TimeoutExpired:
                         console.print(

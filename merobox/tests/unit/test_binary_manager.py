@@ -1,7 +1,7 @@
 import signal
 import subprocess
 import threading
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from merobox.commands.binary_manager import BinaryManager
 from merobox.commands.constants import CleanupResult
@@ -216,3 +216,55 @@ def test_binary_manager_cleanup_returns_in_progress_when_flag_set():
     result = manager._cleanup_resources()
     assert result == CleanupResult.PERFORMED
     assert mock_process.terminate.call_count == 1
+
+
+# ============================================================================
+# Graceful stop timeout overrides (issue #237)
+# ============================================================================
+
+
+@patch.dict("os.environ", {"MEROBOX_STOP_TIMEOUT": "120"}, clear=False)
+def test_binary_cleanup_honors_env_stop_timeout():
+    """MEROBOX_STOP_TIMEOUT extends the per-process wait in cleanup."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    mock_process = MagicMock()
+    manager.processes = {"node1": mock_process}
+    manager._remove_pid_file = MagicMock()
+
+    manager._cleanup_resources()
+
+    mock_process.wait.assert_called_once_with(timeout=120)
+
+
+@patch.dict("os.environ", {"MEROBOX_STOP_TIMEOUT": "90"}, clear=False)
+def test_binary_stop_node_honors_env_stop_timeout():
+    """MEROBOX_STOP_TIMEOUT controls stop_node's graceful wait."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    mock_process = MagicMock()
+    manager.processes = {"node1": mock_process}
+    manager._remove_pid_file = MagicMock()
+
+    manager.stop_node("node1")
+
+    mock_process.wait.assert_called_once_with(timeout=90)
+
+
+def test_binary_stop_node_explicit_timeout_wins():
+    """Explicit caller-provided stop_timeout overrides env resolution."""
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+
+    mock_process = MagicMock()
+    manager.processes = {"node1": mock_process}
+    manager._remove_pid_file = MagicMock()
+
+    manager.stop_node("node1", stop_timeout=42)
+
+    mock_process.wait.assert_called_once_with(timeout=42)
