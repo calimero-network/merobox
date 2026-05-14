@@ -28,10 +28,13 @@ from merobox.commands.constants import (
     CONTAINER_STOP_TIMEOUT,
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
+    GRACEFUL_CLEANUP_DRAIN_TIMEOUT,
     NODE_STARTUP_DELAY,
     P2P_PORT_BINDING,
     RPC_PORT_BINDING,
     CleanupResult,
+    resolved_drain_timeout,
+    resolved_stop_timeout,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,7 +139,9 @@ class DockerManager(CleanupMixin):
             self._setup_signal_handlers()
 
     def _cleanup_resources(
-        self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
+        self,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
     ) -> CleanupResult:
         """Stop all managed resources (containers) with graceful shutdown.
 
@@ -153,22 +158,37 @@ class DockerManager(CleanupMixin):
         avoid blocking process termination or triggering forced kills.
 
         Args:
-            drain_timeout: Seconds to wait for connection draining (default 3s).
-            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+            drain_timeout: Seconds to wait for connection draining. ``None``
+                resolves to ``MEROBOX_DRAIN_TIMEOUT`` or
+                ``GRACEFUL_CLEANUP_DRAIN_TIMEOUT`` (3s).
+            stop_timeout: Seconds to wait for container stop. ``None`` resolves
+                to ``MEROBOX_STOP_TIMEOUT`` or ``CONTAINER_STOP_TIMEOUT`` (10s).
         """
+        if drain_timeout is None:
+            drain_timeout = resolved_drain_timeout(GRACEFUL_CLEANUP_DRAIN_TIMEOUT)
+        if stop_timeout is None:
+            stop_timeout = resolved_stop_timeout()
         return self._cleanup_resources_guarded(
             self._do_cleanup, drain_timeout, stop_timeout
         )
 
     def _do_cleanup(
-        self, drain_timeout: int = 3, stop_timeout: int = CONTAINER_STOP_TIMEOUT
+        self,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
     ):
         """Perform the actual container cleanup.
 
         Args:
-            drain_timeout: Seconds to wait for connection draining.
-            stop_timeout: Seconds to wait for container stop.
+            drain_timeout: Seconds to wait for connection draining. ``None``
+                resolves to env override or cleanup default (3s).
+            stop_timeout: Seconds to wait for container stop. ``None`` resolves
+                to env override or ``CONTAINER_STOP_TIMEOUT`` (10s).
         """
+        if drain_timeout is None:
+            drain_timeout = resolved_drain_timeout(GRACEFUL_CLEANUP_DRAIN_TIMEOUT)
+        if stop_timeout is None:
+            stop_timeout = resolved_stop_timeout()
         if self.nodes:
             console.print(
                 "[cyan]Stopping managed containers with graceful shutdown...[/cyan]"
@@ -1625,8 +1645,8 @@ class DockerManager(CleanupMixin):
         self,
         container,
         container_name: str,
-        drain_timeout: int = 5,
-        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
     ) -> bool:
         """Gracefully stop a single container with connection draining.
 
@@ -1636,8 +1656,10 @@ class DockerManager(CleanupMixin):
         Args:
             container: Docker container object
             container_name: Name of the container (for logging)
-            drain_timeout: Seconds to wait for connection draining (default 5s)
-            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+            drain_timeout: Seconds to wait for connection draining. ``None``
+                resolves to ``MEROBOX_DRAIN_TIMEOUT`` or 5s.
+            stop_timeout: Seconds to wait for container stop. ``None`` resolves
+                to ``MEROBOX_STOP_TIMEOUT`` or ``CONTAINER_STOP_TIMEOUT``.
 
         Returns:
             True if container was stopped successfully, False otherwise
@@ -1650,29 +1672,39 @@ class DockerManager(CleanupMixin):
     def _graceful_stop_containers_batch(
         self,
         containers: list[tuple[str, any]],
-        drain_timeout: int = 5,
-        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
     ) -> tuple[int, list[str]]:
         """Gracefully stop multiple containers with O(timeout) complexity.
 
         This method implements batch graceful shutdown:
         1. Send SIGTERM to ALL containers first (parallel signal phase)
         2. Wait ONCE for drain_timeout (shared drain period)
-        3. Stop and remove all containers
+        3. Stop and remove all containers in parallel — every container gets
+           the same ``stop_timeout``, so worker nodes have the same window as
+           the seed to flush in-container traps (e.g. perf record draining
+           its mmap ring before SIGKILL).
 
         This is more efficient than sequential graceful stops which would
         take O(n * drain_timeout) time.
 
         Args:
             containers: List of (container_name, container) tuples to stop
-            drain_timeout: Seconds to wait for connection draining (default 5s)
-            stop_timeout: Seconds to wait for each container stop (default CONTAINER_STOP_TIMEOUT)
+            drain_timeout: Seconds to wait for connection draining. ``None``
+                resolves to ``MEROBOX_DRAIN_TIMEOUT`` or 5s.
+            stop_timeout: Seconds to wait for each container stop. ``None``
+                resolves to ``MEROBOX_STOP_TIMEOUT`` or ``CONTAINER_STOP_TIMEOUT``.
 
         Returns:
             Tuple of (success_count, failed_names)
         """
         if not containers:
             return 0, []
+
+        if drain_timeout is None:
+            drain_timeout = resolved_drain_timeout()
+        if stop_timeout is None:
+            stop_timeout = resolved_stop_timeout()
 
         # Phase 1: Send SIGTERM to all containers (parallel signal)
         console.print(
@@ -1755,8 +1787,8 @@ class DockerManager(CleanupMixin):
     def stop_node(
         self,
         node_name: str,
-        drain_timeout: int = 5,
-        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
     ) -> bool:
         """Stop a Calimero node container with graceful shutdown.
 
@@ -1767,8 +1799,10 @@ class DockerManager(CleanupMixin):
 
         Args:
             node_name: Name of the node to stop
-            drain_timeout: Seconds to wait for connection draining (default 5s)
-            stop_timeout: Seconds to wait for container stop (default CONTAINER_STOP_TIMEOUT)
+            drain_timeout: Seconds to wait for connection draining. ``None``
+                resolves to ``MEROBOX_DRAIN_TIMEOUT`` or 5s.
+            stop_timeout: Seconds to wait for container stop. ``None`` resolves
+                to ``MEROBOX_STOP_TIMEOUT`` or ``CONTAINER_STOP_TIMEOUT``.
 
         Returns:
             True if node was stopped successfully, False otherwise
@@ -1812,17 +1846,22 @@ class DockerManager(CleanupMixin):
 
     def stop_all_nodes(
         self,
-        drain_timeout: int = 5,
-        stop_timeout: int = CONTAINER_STOP_TIMEOUT,
+        drain_timeout: Optional[int] = None,
+        stop_timeout: Optional[int] = None,
     ) -> bool:
         """Stop all running Calimero nodes with graceful shutdown.
 
         Uses batch graceful shutdown for O(timeout) complexity instead of
-        O(n * timeout) that sequential stops would require.
+        O(n * timeout) that sequential stops would require. Every node — seed
+        and workers alike — gets the same grace window, so in-container
+        SIGTERM traps (e.g. ``perf record`` flushing its mmap ring on a worker)
+        have the same time to finish before the daemon issues SIGKILL.
 
         Args:
-            drain_timeout: Seconds to wait for connection draining (default 5s)
-            stop_timeout: Seconds to wait for each container stop (default CONTAINER_STOP_TIMEOUT)
+            drain_timeout: Seconds to wait for connection draining. ``None``
+                resolves to ``MEROBOX_DRAIN_TIMEOUT`` or 5s.
+            stop_timeout: Seconds to wait for each container stop. ``None``
+                resolves to ``MEROBOX_STOP_TIMEOUT`` or ``CONTAINER_STOP_TIMEOUT``.
 
         Returns:
             True if all nodes were stopped successfully, False otherwise

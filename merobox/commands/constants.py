@@ -76,6 +76,48 @@ NODE_STARTUP_DELAY = 1  # seconds (health check handles actual readiness)
 SOCKET_CONNECTION_TIMEOUT = 1.5  # seconds
 NUKE_STOP_TIMEOUT = 30  # seconds
 
+# Graceful shutdown defaults used when stopping cluster containers/processes.
+# These are knob-able via env vars so profiling-aware CI workflows can extend
+# the grace period — e.g. so `perf record`'s SIGTERM trap has time to drain its
+# mmap ring buffer and write flamegraphs to the bind mount on worker nodes,
+# not just the seed. See issue #237.
+GRACEFUL_DRAIN_TIMEOUT = 5  # seconds — phase-1 wait after SIGTERM
+GRACEFUL_CLEANUP_DRAIN_TIMEOUT = (
+    3  # seconds — shorter drain inside atexit/SIGTERM cleanup
+)
+ENV_STOP_TIMEOUT = "MEROBOX_STOP_TIMEOUT"
+ENV_DRAIN_TIMEOUT = "MEROBOX_DRAIN_TIMEOUT"
+
+
+def _resolve_timeout_env(env_name: str, default: int) -> int:
+    """Read a positive-int timeout override from ``env_name`` or return ``default``.
+
+    Non-numeric or non-positive values fall back to ``default`` rather than
+    aborting — stopping a cluster shouldn't fail because someone exported
+    ``MEROBOX_STOP_TIMEOUT=oops``.
+    """
+    import os
+
+    raw = os.environ.get(env_name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def resolved_stop_timeout(default: int = CONTAINER_STOP_TIMEOUT) -> int:
+    """Container stop timeout, with ``MEROBOX_STOP_TIMEOUT`` override applied."""
+    return _resolve_timeout_env(ENV_STOP_TIMEOUT, default)
+
+
+def resolved_drain_timeout(default: int = GRACEFUL_DRAIN_TIMEOUT) -> int:
+    """Pre-stop drain wait, with ``MEROBOX_DRAIN_TIMEOUT`` override applied."""
+    return _resolve_timeout_env(ENV_DRAIN_TIMEOUT, default)
+
+
 # Polling intervals and delays
 # Naming convention: _TIMEOUT for max-wait limits, _INTERVAL for polling, _DELAY for pauses
 RPC_WAIT_TIMEOUT = 10  # seconds to wait for RPC to be ready
