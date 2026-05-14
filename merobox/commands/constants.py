@@ -2,6 +2,7 @@
 Constants and configuration values used across the merobox codebase.
 """
 
+import os
 from enum import Enum, auto
 
 
@@ -90,22 +91,23 @@ ENV_DRAIN_TIMEOUT = "MEROBOX_DRAIN_TIMEOUT"
 
 
 def _resolve_timeout_env(env_name: str, default: int) -> int:
-    """Read a positive-int timeout override from ``env_name`` or return ``default``.
+    """Read a non-negative-int timeout override from ``env_name`` or return ``default``.
 
-    Non-numeric or non-positive values fall back to ``default`` rather than
+    Non-numeric or negative values fall back to ``default`` rather than
     aborting — stopping a cluster shouldn't fail because someone exported
-    ``MEROBOX_STOP_TIMEOUT=oops``.
+    ``MEROBOX_STOP_TIMEOUT=oops``. Float strings (``"120.5"``) are truncated
+    to int rather than silently rejected, so values computed in shell
+    pipelines don't trip the user. ``0`` is allowed and propagated — for the
+    drain phase it means "skip the wait entirely".
     """
-    import os
-
     raw = os.environ.get(env_name)
     if raw is None or raw == "":
         return default
     try:
-        value = int(raw)
-    except ValueError:
+        value = int(float(raw))
+    except (ValueError, OverflowError):
         return default
-    return value if value > 0 else default
+    return value if value >= 0 else default
 
 
 def resolved_stop_timeout(default: int = CONTAINER_STOP_TIMEOUT) -> int:

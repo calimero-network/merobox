@@ -159,15 +159,11 @@ class DockerManager(CleanupMixin):
 
         Args:
             drain_timeout: Seconds to wait for connection draining. ``None``
-                resolves to ``MEROBOX_DRAIN_TIMEOUT`` or
-                ``GRACEFUL_CLEANUP_DRAIN_TIMEOUT`` (3s).
-            stop_timeout: Seconds to wait for container stop. ``None`` resolves
-                to ``MEROBOX_STOP_TIMEOUT`` or ``CONTAINER_STOP_TIMEOUT`` (10s).
+                is forwarded as-is so ``_do_cleanup`` can do the single
+                env-var resolution (avoids double-resolution diverging).
+            stop_timeout: Seconds to wait for container stop. ``None`` is
+                forwarded as-is — see ``drain_timeout``.
         """
-        if drain_timeout is None:
-            drain_timeout = resolved_drain_timeout(GRACEFUL_CLEANUP_DRAIN_TIMEOUT)
-        if stop_timeout is None:
-            stop_timeout = resolved_stop_timeout()
         return self._cleanup_resources_guarded(
             self._do_cleanup, drain_timeout, stop_timeout
         )

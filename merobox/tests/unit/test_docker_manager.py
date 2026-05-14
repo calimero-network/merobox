@@ -1263,4 +1263,41 @@ def test_drain_timeout_env_override(mock_docker):
     with patch("merobox.commands.manager.time.sleep") as mock_sleep:
         manager.stop_all_nodes(stop_timeout=10)
 
-    mock_sleep.assert_called_with(2)
+    # assert_any_call rather than assert_called_with: _graceful_stop_containers_batch
+    # may call time.sleep for other reasons (none today, but defensive).
+    mock_sleep.assert_any_call(2)
+
+
+@patch.dict("os.environ", {"MEROBOX_STOP_TIMEOUT": "120.5"}, clear=False)
+@patch("docker.from_env")
+def test_float_env_value_is_truncated_not_rejected(mock_docker):
+    """Float strings like '120.5' truncate to int, not silently fall back to default."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    client.containers.list.return_value = [seed]
+
+    manager.stop_all_nodes(drain_timeout=0)
+
+    seed.stop.assert_called_once_with(timeout=120)
+
+
+@patch.dict("os.environ", {"MEROBOX_DRAIN_TIMEOUT": "0"}, clear=False)
+@patch("docker.from_env")
+def test_drain_timeout_zero_skips_drain_phase(mock_docker):
+    """MEROBOX_DRAIN_TIMEOUT=0 propagates and skips the drain sleep entirely."""
+    client = MagicMock()
+    mock_docker.return_value = client
+
+    manager = DockerManager(enable_signal_handlers=False)
+
+    seed = MagicMock()
+    client.containers.list.return_value = [seed]
+
+    with patch("merobox.commands.manager.time.sleep") as mock_sleep:
+        manager.stop_all_nodes(stop_timeout=10)
+
+    mock_sleep.assert_not_called()
