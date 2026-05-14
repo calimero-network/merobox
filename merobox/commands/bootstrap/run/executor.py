@@ -43,6 +43,7 @@ from merobox.commands.bootstrap.steps import (
     JoinContextStep,
     JoinNamespaceStep,
     JoinOpenStep,
+    JoinSubgroupInheritanceStep,
     LeaveContextStep,
     LeaveGroupStep,
     LeaveNamespaceStep,
@@ -1656,6 +1657,8 @@ class WorkflowExecutor:
             return RetryGroupUpgradeStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
+        elif step_type == "join_subgroup_inheritance":
+            return JoinSubgroupInheritanceStep(step_config, **common_kwargs)
         elif step_type == "leave_context":
             return LeaveContextStep(step_config, **common_kwargs)
         elif step_type == "leave_group":

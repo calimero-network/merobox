@@ -24,6 +24,9 @@ from merobox.commands.bootstrap.steps.join import (
     JoinNamespaceStep as JoinInvitationStep,
 )
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
+from merobox.commands.bootstrap.steps.join_subgroup_inheritance import (
+    JoinSubgroupInheritanceStep,
+)
 from merobox.commands.bootstrap.steps.namespace import (
     CreateGroupInNamespaceStep,
     GetNamespaceIdentityStep,
@@ -685,6 +688,8 @@ class ParallelStep(BaseStep):
             return JoinInvitationStep(step_config, **common_kwargs)
         elif step_type == "join_context":
             return JoinContextStep(step_config, **common_kwargs)
+        elif step_type == "join_subgroup_inheritance":
+            return JoinSubgroupInheritanceStep(step_config, **common_kwargs)
         elif step_type in ("create_namespace", "create_group"):
             return CreateNamespaceStep(step_config, **common_kwargs)
         elif step_type in ("create_namespace_invitation", "create_group_invitation"):

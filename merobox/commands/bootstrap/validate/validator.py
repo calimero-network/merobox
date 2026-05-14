@@ -54,6 +54,9 @@ from merobox.commands.bootstrap.steps.join import (
     JoinNamespaceStep as JoinInvitationStep,
 )
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
+from merobox.commands.bootstrap.steps.join_subgroup_inheritance import (
+    JoinSubgroupInheritanceStep,
+)
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.namespace import (
@@ -215,6 +218,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = JoinNamespaceStep
         elif step_type == "join_context":
             step_class = JoinContextStep
+        elif step_type == "join_subgroup_inheritance":
+            step_class = JoinSubgroupInheritanceStep
         elif step_type == "list_namespaces":
             step_class = ListNamespacesStep
         elif step_type == "get_namespace_identity":
