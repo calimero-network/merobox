@@ -207,11 +207,15 @@ steps:
       attempted: 'true'
     expected_failure: true
 
-  # Grant CAN_MANAGE_METADATA to node 2 in the namespace.
+  # Grant CAN_MANAGE_METADATA to node 2 on the subgroup it will modify.
+  # Core does not propagate non-admin governance capabilities across the
+  # namespace→subgroup boundary (see
+  # crates/context/src/group_store/permission_checker.rs::is_authorized_with_capability),
+  # so the bit must be granted directly on {{sub}}, not on the parent {{ns}}.
   - name: Grant Node 2 CAN_MANAGE_METADATA
     type: set_member_capabilities
     node: calimero-node-1
-    group_id: '{{ns}}'
+    group_id: '{{sub}}'
     member_id: '{{node2_id}}'
     # CAN_MANAGE_METADATA = 1 << 8 = 256
     # (calimero-network/core: crates/context/config/src/lib.rs,
@@ -220,7 +224,7 @@ steps:
 
   - name: Wait for Capability Sync
     type: wait_for_sync
-    group_id: '{{ns}}'
+    group_id: '{{sub}}'
     nodes:
       - calimero-node-1
       - calimero-node-2
