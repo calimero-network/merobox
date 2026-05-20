@@ -313,15 +313,17 @@ class SetMemberAutoFollowStep(BaseStep):
 
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
         except Exception as e:
-            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
+            console.print(
+                f"[red]Failed to construct client for {node_name}: {str(e)}[/red]"
+            )
             return False
 
         # Version-mismatch check sits OUTSIDE the API-call try/except so the
         # actionable "requires >= 0.6.13" message reaches the workflow author
         # directly rather than being swallowed as a generic
         # "set_member_auto_follow failed" failure.
-        client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
         method = getattr(client, "set_member_auto_follow", None)
         if not callable(method):
             console.print(

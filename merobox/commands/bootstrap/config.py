@@ -627,7 +627,7 @@ class SetMemberAutoFollowStepConfig(BaseStepConfig):
     auto_follow_subgroups: bool = Field(
         ..., description="Self-admit into nested subgroups under this group"
     )
-    requester: str | None = Field(
+    requester: Optional[str] = Field(
         None,
         description=(
             "Optional public key of the identity to act on behalf of "
