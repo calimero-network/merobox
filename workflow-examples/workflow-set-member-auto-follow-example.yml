@@ -1,0 +1,155 @@
+name: Set Member Auto-Follow Example
+description: >
+  Demonstrates the `set_member_auto_follow` step (calimero-network/core #2422
+  Phase A plumbing). Toggles a member's per-group `auto_follow.contexts` /
+  `auto_follow.subgroups` flags via the
+  `PUT /admin-api/groups/:group_id/members/:identity/auto-follow` route.
+
+  Auth model: admin sets flags for any member, or the target sets them on
+  itself (apply path enforces admin-or-self). This workflow exercises both
+  variants and both flag combinations.
+
+  Workflow shape mirrors `workflow-group-admin-example.yml`: bootstrap a
+  two-node namespace + subgroup so node 2 has a stable identity in the group,
+  then run a sequence of `set_member_auto_follow` calls against it.
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Phase 1: Bootstrap namespace + subgroup + two-node membership.
+
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Get Node 1 Namespace Identity
+    type: get_namespace_identity
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      p1_admin_key: publicKey
+
+  - name: Create Namespace Invitation
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - name: Wait for Namespace Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins Namespace
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+    outputs:
+      p2_identity: memberIdentity
+
+  - name: Create Subgroup
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    application_id: '{{app_id}}'
+    outputs:
+      group_id: groupId
+
+  - name: Add Node 2 to Subgroup
+    type: add_group_members
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    members:
+      - '{{p2_identity}}'
+
+  - name: Wait for Member Gossip
+    type: wait
+    seconds: 10
+
+  # Phase 2: Admin sets node-2's flags (admin path).
+
+  # Initial state: both flags default to `false` for non-TEE members.
+  # Admin (node 1) flips contexts on, leaves subgroups off.
+  - name: Admin Enables contexts-only auto-follow for Node 2
+    type: set_member_auto_follow
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+    auto_follow_contexts: true
+    auto_follow_subgroups: false
+
+  - name: Wait for Admin-Set Gossip
+    type: wait
+    seconds: 5
+
+  # Toggle the opposite combination from the admin side.
+  - name: Admin Flips to subgroups-only auto-follow for Node 2
+    type: set_member_auto_follow
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+    auto_follow_contexts: false
+    auto_follow_subgroups: true
+
+  - name: Wait for Flip Gossip
+    type: wait
+    seconds: 5
+
+  # Both on (the TEE-fleet-join shape).
+  - name: Admin Enables both flags for Node 2
+    type: set_member_auto_follow
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+    auto_follow_contexts: true
+    auto_follow_subgroups: true
+
+  - name: Wait for Both-On Gossip
+    type: wait
+    seconds: 5
+
+  # Phase 3: Self-set (target acts on itself).
+  # The apply path enforces admin-or-self, so this should succeed even
+  # though node 2 is a regular member.
+
+  - name: Node 2 Self-Disables both flags
+    type: set_member_auto_follow
+    node: calimero-node-2
+    group_id: '{{group_id}}'
+    member_id: '{{p2_identity}}'
+    auto_follow_contexts: false
+    auto_follow_subgroups: false
+    requester: '{{p2_identity}}'
+
+  - name: Wait for Self-Set Gossip
+    type: wait
+    seconds: 5
+
+  # Phase 4: Admin acts on itself (explicit requester = admin identity).
+  # Exercises the optional `requester` field with a non-default value.
+
+  - name: Admin Self-Sets contexts-only on Self
+    type: set_member_auto_follow
+    node: calimero-node-1
+    group_id: '{{group_id}}'
+    member_id: '{{p1_admin_key}}'
+    auto_follow_contexts: true
+    auto_follow_subgroups: false
+    requester: '{{p1_admin_key}}'
