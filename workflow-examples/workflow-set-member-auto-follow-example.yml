@@ -77,7 +77,8 @@ steps:
     node: calimero-node-1
     group_id: '{{group_id}}'
     members:
-      - '{{p2_identity}}'
+      - identity: '{{p2_identity}}'
+        role: Member
 
   - name: Wait for Member Gossip
     type: wait
