@@ -261,6 +261,116 @@ class SetMemberCapabilitiesStep(BaseStep):
         return True
 
 
+class SetMemberAutoFollowStep(BaseStep):
+    """Toggle a member's per-group `auto_follow.contexts` /
+    `auto_follow.subgroups` flags. Authorized by group admin (any target) or
+    by the target itself (self-setting); apply path enforces admin-or-self
+    (calimero-network/core#2422)."""
+
+    def _get_required_fields(self) -> list[str]:
+        return [
+            "node",
+            "group_id",
+            "member_id",
+            "auto_follow_contexts",
+            "auto_follow_subgroups",
+        ]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "group_id", "member_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        for field in ("auto_follow_contexts", "auto_follow_subgroups"):
+            if not isinstance(self.config.get(field), bool):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a boolean")
+        requester = self.config.get("requester")
+        if requester is not None and not isinstance(requester, str):
+            raise ValueError(
+                f"Step '{step_name}': 'requester' must be a string when set"
+            )
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        group_id = self._resolve_dynamic_value(
+            self.config["group_id"], workflow_results, dynamic_values
+        )
+        member_id = self._resolve_dynamic_value(
+            self.config["member_id"], workflow_results, dynamic_values
+        )
+        auto_follow_contexts = self.config["auto_follow_contexts"]
+        auto_follow_subgroups = self.config["auto_follow_subgroups"]
+        raw_requester = self.config.get("requester")
+        requester = (
+            self._resolve_dynamic_value(raw_requester, workflow_results, dynamic_values)
+            if raw_requester is not None
+            else None
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+        except Exception as e:
+            console.print(
+                f"[red]Failed to construct client for {node_name}: {str(e)}[/red]"
+            )
+            return False
+
+        # Version-mismatch check sits OUTSIDE the API-call try/except so the
+        # actionable "requires >= 0.6.13" message reaches the workflow author
+        # directly rather than being swallowed as a generic
+        # "set_member_auto_follow failed" failure.
+        method = getattr(client, "set_member_auto_follow", None)
+        if not callable(method):
+            console.print(
+                f"[red]set_member_auto_follow is not available in the current "
+                f"calimero-client-py release on {node_name} "
+                f"(requires >= 0.6.13)[/red]"
+            )
+            return False
+
+        try:
+            api_result = method(
+                group_id=group_id,
+                member_id=member_id,
+                auto_follow_contexts=auto_follow_contexts,
+                auto_follow_subgroups=auto_follow_subgroups,
+                requester=requester,
+            )
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("set_member_auto_follow failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]set_member_auto_follow failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+        workflow_results[f"set_member_auto_follow_{node_name}"] = result["data"]
+        console.print(
+            f"[green]✓ Set auto-follow (contexts={auto_follow_contexts}, "
+            f"subgroups={auto_follow_subgroups}) for {member_id} in group "
+            f"{group_id} on {node_name}[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
 class GetMemberCapabilitiesStep(BaseStep):
     """Get capabilities for a specific member in a group."""
 

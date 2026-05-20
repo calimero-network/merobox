@@ -62,6 +62,7 @@ from merobox.commands.bootstrap.steps import (
     SetContextMetadataStep,
     SetDefaultCapabilitiesStep,
     SetGroupMetadataStep,
+    SetMemberAutoFollowStep,
     SetMemberCapabilitiesStep,
     SetMemberMetadataStep,
     SetSubgroupVisibilityStep,
@@ -1610,6 +1611,8 @@ class WorkflowExecutor:
             return UpdateMemberRoleStep(step_config, **common_kwargs)
         elif step_type == "set_member_capabilities":
             return SetMemberCapabilitiesStep(step_config, **common_kwargs)
+        elif step_type == "set_member_auto_follow":
+            return SetMemberAutoFollowStep(step_config, **common_kwargs)
         elif step_type == "get_member_capabilities":
             return GetMemberCapabilitiesStep(step_config, **common_kwargs)
         elif step_type == "set_default_capabilities":

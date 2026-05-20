@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.14] - 2026-05-14
+
+### Changed
+
+- Re-release wave alongside #239's `join_subgroup_inheritance` step
+  (already covered in the 0.6.13 entry). Applies repository-wide
+  `black` formatting and bumps the version stamp; no functional
+  changes beyond what 0.6.13 already shipped.
+
+## [0.6.15] - 2026-05-20
+
+### Added
+
+- New `set_member_auto_follow` workflow step wrapping core's
+  `PUT /admin-api/groups/:group_id/members/:identity/auto-follow` endpoint
+  (calimero-network/core#2427 + #2430). Lets workflows toggle a member's
+  per-group `auto_follow.contexts` / `auto_follow.subgroups` flags
+  declaratively — previously these flags were only ever set inside core's
+  TEE fleet-join path with both hardcoded to `true`, leaving the bucket
+  uncovered by every existing e2e workflow (the gap that let
+  calimero-network/core#2422's auto-follow regression slip past). Authorized
+  by group admin (any `member_id`) or by the target itself (self-setting);
+  apply path enforces admin-or-self. Bumps the `calimero-client-py` floor
+  from `>=0.6.11` to `>=0.6.13` so installs auto-pull the new Python
+  binding the step depends on. The step graceful-degrades on older client
+  releases by surfacing an actionable `(requires >= 0.6.13)` message
+  outside the API-call try/except.
+
 ## [0.6.13] - 2026-05-14
 
 ### Fixed

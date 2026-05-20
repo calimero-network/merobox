@@ -82,10 +82,20 @@ steps:
     outputs:
       set_result: result            # Export 'result' as 'set_result'
 
-  # Step 9: Wait for the set operation to complete and propagate
+  # Step 9: Wait for the set operation to converge across both nodes.
+  # `wait_for_sync` polls each node's DAG heads + root hash and returns as
+  # soon as they converge; replaces a blind 3s sleep which was insufficient
+  # for the cross-node sync timing on recent merod:edge builds (the post-rc.41
+  # sync-manager refactors in core's #2420 / #2424).
   - name: Wait for Set Operation
-    type: wait
-    seconds: 3
+    type: wait_for_sync
+    context_id: '{{context_id}}'
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 120
+    check_interval: 2
+    trigger_sync: true
 
   # Step 10: Execute a view call to retrieve the stored value
   # Demonstrates cross-node execution using the joined context
@@ -120,8 +130,14 @@ steps:
           iteration_set_result: result  # Export 'result' as 'iteration_set_result'
       
       - name: Wait for Set Operation
-        type: wait
-        seconds: 2
+        type: wait_for_sync
+        context_id: '{{context_id}}'
+        nodes:
+          - calimero-node-1
+          - calimero-node-2
+        timeout: 60
+        check_interval: 2
+        trigger_sync: true
       
       - name: Get Key-Value Pair
         type: call

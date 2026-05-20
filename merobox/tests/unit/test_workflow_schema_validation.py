@@ -706,6 +706,40 @@ class TestBucketBStepSchemas:
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
+    def test_valid_set_member_auto_follow(self, config_module):
+        step = {
+            "type": "set_member_auto_follow",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "auto_follow_contexts": True,
+            "auto_follow_subgroups": False,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_set_member_auto_follow_with_requester(self, config_module):
+        step = {
+            "type": "set_member_auto_follow",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "auto_follow_contexts": False,
+            "auto_follow_subgroups": True,
+            "requester": "{{p1_identity}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_set_member_auto_follow_missing_flag(self, config_module):
+        step = {
+            "type": "set_member_auto_follow",
+            "node": "calimero-node-1",
+            "group_id": "{{group_id}}",
+            "member_id": "{{p2_identity}}",
+            "auto_follow_contexts": True,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("auto_follow_subgroups" in e for e in errors)
+
     def test_invalid_get_member_capabilities_missing_member(self, config_module):
         step = {
             "type": "get_member_capabilities",

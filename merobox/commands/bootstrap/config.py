@@ -48,6 +48,7 @@ VALID_STEP_TYPES = frozenset(
         "list_group_members",
         "update_member_role",
         "set_member_capabilities",
+        "set_member_auto_follow",
         "get_member_capabilities",
         "set_default_capabilities",
         "set_default_visibility",
@@ -607,6 +608,35 @@ class GetMemberCapabilitiesStepConfig(BaseStepConfig):
     member_id: str = Field(..., description="Member public key")
 
 
+class SetMemberAutoFollowStepConfig(BaseStepConfig):
+    """Configuration for set_member_auto_follow step.
+
+    Toggles a member's per-group `auto_follow.contexts` /
+    `auto_follow.subgroups` flags. Authorized by group admin (for any
+    `member_id`) or by the target itself (self-setting); the apply path
+    enforces admin-or-self (calimero-network/core#2422).
+    """
+
+    type: Literal["set_member_auto_follow"] = "set_member_auto_follow"
+    node: str = Field(..., description="Target node")
+    group_id: str = Field(..., description="Group ID")
+    member_id: str = Field(..., description="Target member public key")
+    auto_follow_contexts: bool = Field(
+        ..., description="Auto-join new contexts registered in this group"
+    )
+    auto_follow_subgroups: bool = Field(
+        ..., description="Self-admit into nested subgroups under this group"
+    )
+    requester: Optional[str] = Field(
+        None,
+        description=(
+            "Optional public key of the identity to act on behalf of "
+            "(must be the group admin or the target itself); when omitted "
+            "the server resolves an admin signing key it holds."
+        ),
+    )
+
+
 class SetDefaultCapabilitiesStepConfig(BaseStepConfig):
     """Configuration for set_default_capabilities step."""
 
@@ -954,6 +984,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "list_group_contexts": ListGroupContextsStepConfig,
     "update_member_role": UpdateMemberRoleStepConfig,
     "set_member_capabilities": SetMemberCapabilitiesStepConfig,
+    "set_member_auto_follow": SetMemberAutoFollowStepConfig,
     "get_member_capabilities": GetMemberCapabilitiesStepConfig,
     "set_default_capabilities": SetDefaultCapabilitiesStepConfig,
     "set_default_visibility": SetDefaultVisibilityStepConfig,
