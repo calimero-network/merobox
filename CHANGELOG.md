@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.14] - 2026-05-14
+
+### Changed
+
+- Re-release wave alongside #239's `join_subgroup_inheritance` step
+  (already covered in the 0.6.13 entry). Applies repository-wide
+  `black` formatting and bumps the version stamp; no functional
+  changes beyond what 0.6.13 already shipped.
+
 ## [0.6.15] - 2026-05-20
 
 ### Added
