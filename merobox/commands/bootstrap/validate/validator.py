@@ -28,6 +28,7 @@ from merobox.commands.bootstrap.steps.group_management import (
     RemoveGroupMembersStep,
     SetDefaultCapabilitiesStep,
     SetDefaultVisibilityStep,
+    SetMemberAutoFollowStep,
     SetMemberCapabilitiesStep,
     SetSubgroupVisibilityStep,
     UninstallApplicationStep,
@@ -244,6 +245,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = UpdateMemberRoleStep
         elif step_type == "set_member_capabilities":
             step_class = SetMemberCapabilitiesStep
+        elif step_type == "set_member_auto_follow":
+            step_class = SetMemberAutoFollowStep
         elif step_type == "get_member_capabilities":
             step_class = GetMemberCapabilitiesStep
         elif step_type == "set_default_capabilities":
