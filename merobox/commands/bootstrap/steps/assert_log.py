@@ -106,7 +106,11 @@ class _AssertLogStepBase(BaseStep):
             if container is None:
                 container = self.manager.client.containers.get(node_name)
             tail = tail_lines if tail_lines is not None else _DOCKER_TAIL_ALL
-            raw = container.logs(tail=tail, timestamps=True)
+            # timestamps=False so that anchored regex patterns (e.g. ^WARN)
+            # behave predictably and the failure-report line content isn't
+            # prefixed with noise. line_no in our own enumeration still gives
+            # the user a position reference.
+            raw = container.logs(tail=tail, timestamps=False)
             if isinstance(raw, bytes):
                 return raw.decode("utf-8", errors="replace")
             return str(raw)
