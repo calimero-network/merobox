@@ -158,11 +158,15 @@ class AssertLogAbsentStep(_AssertLogStepBase):
     ) -> bool:
         target_nodes = self._resolve_target_nodes()
         if not target_nodes:
+            # Symmetric with the no-logs-retrievable failure mode added in
+            # 1edf6aa: a guard that resolves to zero target nodes is a no-op
+            # gate, not a vacuous pass. Fail loudly so CI surfaces the bug.
             console.print(
-                "[yellow]⚠️  assert_log_absent: no target nodes resolved; "
-                "treating as pass[/yellow]"
+                "[red]✗ assert_log_absent failed: no target nodes resolved "
+                "(check the nodes: list or whether any nodes are running)"
+                "[/red]"
             )
-            return True
+            return False
 
         # Deduplicate patterns to avoid double-counting and duplicate reports
         # when a user accidentally lists the same pattern twice.
