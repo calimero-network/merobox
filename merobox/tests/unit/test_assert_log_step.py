@@ -56,7 +56,19 @@ def _binary_manager_with_logs(node_logs: dict[str, str]) -> MagicMock:
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    # asyncio.run() calls set_event_loop(None) in its finally block on
+    # Python 3.10+, which leaks across tests: subsequent test files that
+    # use the deprecated asyncio.get_event_loop().run_until_complete(...)
+    # pattern then crash with "There is no current event loop in thread
+    # 'MainThread'". Restore an event loop after each call so our tests
+    # don't break other test files in the suite.
+    try:
+        return asyncio.run(coro)
+    finally:
+        try:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+        except Exception:
+            pass
 
 
 # ============================================================================
