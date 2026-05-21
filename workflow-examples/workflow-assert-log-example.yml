@@ -1,0 +1,89 @@
+description: Example workflow showcasing assert_log_absent and assert_log_present steps
+name: Assert Log Example
+
+# Single node — these steps assert on node logs, no need for a multi-node mesh.
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: assert-log-node
+  base_port: 9030
+  base_rpc_port: 9130
+
+steps:
+  # Do some real work so the node has something to log: install an app,
+  # create a namespace, create a context. This gives both step types
+  # something interesting to scan.
+  - name: Install Application
+    type: install_application
+    node: assert-log-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace
+    type: create_namespace
+    node: assert-log-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Context
+    type: create_context
+    node: assert-log-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # Let log output settle so the scans below see a stable window.
+  - name: Wait for log output to settle
+    type: wait
+    seconds: 3
+
+  # ── assert_log_absent: guard against Rust panic + fatal-level output ──
+  # These patterns are language- / framework-level signatures, so they
+  # don't depend on merod's specific log format. A healthy run should
+  # never produce them.
+  - name: Regression guard — no panic / fatal
+    type: assert_log_absent
+    nodes: [assert-log-node-1]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+  # ── assert_log_present: confirm the node actually emitted log output ──
+  # `INFO` is the default tracing level — any healthy merod run produces
+  # at least one INFO line during startup. min_matches: 1 is the default.
+  - name: Confirm node emitted tracing output
+    type: assert_log_present
+    nodes: [assert-log-node-1]
+    patterns:
+      - "INFO"
+
+  # ── Demonstrate the full schema in a single step ──
+  # case_sensitive: false — match "WARN", "warn", "Warn", etc.
+  # tail_lines: 1000     — only scan the last 1000 lines per node.
+  # regex: false         — patterns are literal substrings (the default).
+  - name: Bounded-window guard (regex / case_sensitive / tail_lines / min_matches)
+    type: assert_log_absent
+    nodes: [assert-log-node-1]
+    patterns:
+      - "segmentation fault"
+      - "Out of memory"
+    regex: false
+    case_sensitive: false
+    tail_lines: 1000
+
+  # ── Demonstrate the empty-nodes-list shorthand: scan ALL running nodes ──
+  - name: Cluster-wide panic guard (nodes:[] = all running nodes)
+    type: assert_log_absent
+    nodes: []
+    patterns:
+      - "panicked at"
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 60
