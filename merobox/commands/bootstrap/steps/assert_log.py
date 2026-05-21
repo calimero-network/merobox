@@ -31,12 +31,32 @@ class _AssertLogStepBase(BaseStep):
         # nodes" (resolved at execute time via the manager).
         self._validate_list_field("nodes", allow_empty=True, element_type=str)
         self._validate_list_field("patterns", allow_empty=False, element_type=str)
+        # Empty-string patterns trivially match every line, which makes the
+        # step meaningless and is almost always a YAML typo. Reject early.
+        for idx, pattern in enumerate(self.config["patterns"]):
+            if pattern == "":
+                raise ValueError(
+                    f"Step '{self._get_step_name()}': 'patterns[{idx}]' "
+                    f"must not be an empty string"
+                )
         if "regex" in self.config:
             self._validate_boolean_field("regex")
         if "case_sensitive" in self.config:
             self._validate_boolean_field("case_sensitive")
         if "tail_lines" in self.config and self.config["tail_lines"] is not None:
             self._validate_integer_field("tail_lines", positive=True)
+        # If regex=True, compile each pattern at validation time so malformed
+        # regexes surface as a clean ValueError instead of crashing the step
+        # mid-execution with re.error.
+        if self.config.get("regex"):
+            for idx, pattern in enumerate(self.config["patterns"]):
+                try:
+                    re.compile(pattern)
+                except re.error as exc:
+                    raise ValueError(
+                        f"Step '{self._get_step_name()}': 'patterns[{idx}]' "
+                        f"is not a valid regex ({exc})"
+                    ) from exc
 
     # ------------------------------------------------------------------
     # Helpers
@@ -140,7 +160,9 @@ class AssertLogAbsentStep(_AssertLogStepBase):
             )
             return True
 
-        patterns: list[str] = list(self.config["patterns"])
+        # Deduplicate patterns to avoid double-counting and duplicate reports
+        # when a user accidentally lists the same pattern twice.
+        patterns: list[str] = list(dict.fromkeys(self.config["patterns"]))
         matchers = [(p, self._compile_matcher(p)) for p in patterns]
 
         all_ok = True
@@ -200,7 +222,11 @@ class AssertLogPresentStep(_AssertLogStepBase):
             )
             return False
 
-        patterns: list[str] = list(self.config["patterns"])
+        # Deduplicate patterns: with duplicates a single matching line would
+        # increment hits[pattern] multiple times via the duplicate matcher
+        # entries, letting a pattern that only hits min_matches/N times still
+        # pass an aggregated min_matches threshold.
+        patterns: list[str] = list(dict.fromkeys(self.config["patterns"]))
         min_matches = int(self.config.get("min_matches", 1))
         matchers = [(p, self._compile_matcher(p)) for p in patterns]
 

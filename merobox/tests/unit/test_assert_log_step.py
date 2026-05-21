@@ -136,6 +136,45 @@ class TestAssertLogAbsentValidation:
             manager=MagicMock(),
         )
 
+    def test_empty_string_pattern_rejected(self):
+        # An empty-string pattern matches every line — almost certainly a YAML
+        # templating bug, so reject at construction time.
+        with pytest.raises(ValueError, match="empty string"):
+            AssertLogAbsentStep(
+                {
+                    "type": "assert_log_absent",
+                    "nodes": ["node-1"],
+                    "patterns": ["valid", ""],
+                },
+                manager=MagicMock(),
+            )
+
+    def test_invalid_regex_pattern_rejected_at_construction(self):
+        # When regex=True, malformed patterns should fail validation rather
+        # than crash mid-execute with re.error.
+        with pytest.raises(ValueError, match="not a valid regex"):
+            AssertLogAbsentStep(
+                {
+                    "type": "assert_log_absent",
+                    "nodes": ["node-1"],
+                    "patterns": ["[invalid"],
+                    "regex": True,
+                },
+                manager=MagicMock(),
+            )
+
+    def test_invalid_regex_only_validated_when_regex_flag_true(self):
+        # Without regex=True the same string is a literal substring and should
+        # not trigger a regex validation error.
+        AssertLogAbsentStep(
+            {
+                "type": "assert_log_absent",
+                "nodes": ["node-1"],
+                "patterns": ["[not-a-regex"],
+            },
+            manager=MagicMock(),
+        )
+
 
 class TestAssertLogPresentValidation:
     def test_min_matches_must_be_positive(self):
@@ -405,6 +444,22 @@ class TestAssertLogPresentBehaviour:
             manager=manager,
         )
         assert _run(step.execute({}, {})) is True
+
+    def test_duplicate_patterns_do_not_double_count_hits(self):
+        # Regression for meroreviewer critical: a pattern listed twice must
+        # not let a single matching line satisfy min_matches=2. The user's
+        # intent for duplicates is unambiguous (same pattern = one rule).
+        manager = _docker_manager_with_logs({"node-1": "Sync session complete\n"})
+        step = AssertLogPresentStep(
+            {
+                "type": "assert_log_present",
+                "nodes": ["node-1"],
+                "patterns": ["Sync session complete", "Sync session complete"],
+                "min_matches": 2,
+            },
+            manager=manager,
+        )
+        assert _run(step.execute({}, {})) is False
 
     def test_binary_mode_used_for_present(self):
         manager = _binary_manager_with_logs({"node-1": "Sync session complete\n"})
