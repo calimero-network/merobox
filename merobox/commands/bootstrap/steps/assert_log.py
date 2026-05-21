@@ -292,10 +292,15 @@ class AssertLogPresentStep(_AssertLogStepBase):
         missing = [p for p in patterns if hits[p] < min_matches]
         if missing:
             for pattern in missing:
+                # markup=False so a pattern containing literal Rich markup
+                # characters (e.g. "[red]" embedded in the pattern itself)
+                # isn't interpreted as a console tag.
                 console.print(
-                    f"[red]✗ assert_log_present failed: pattern "
+                    f"✗ assert_log_present failed: pattern "
                     f"{pattern!r} had {hits[pattern]} hit(s), "
-                    f"expected >= {min_matches}[/red]"
+                    f"expected >= {min_matches}",
+                    style="red",
+                    markup=False,
                 )
             return False
 
