@@ -69,7 +69,10 @@ class _AssertLogStepBase(BaseStep):
         )
 
     def _resolve_target_nodes(self) -> list[str]:
-        nodes = list(self.config.get("nodes", []))
+        # Deduplicate while preserving order: a user listing the same node
+        # twice would otherwise have its log scanned twice and double-count
+        # in assert_log_present's aggregated hits.
+        nodes = list(dict.fromkeys(self.config.get("nodes", [])))
         if nodes:
             return nodes
         # Empty list => all running nodes

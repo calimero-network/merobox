@@ -481,6 +481,23 @@ class TestAssertLogPresentBehaviour:
         )
         assert _run(step.execute({}, {})) is False
 
+    def test_duplicate_nodes_do_not_double_count_hits(self):
+        # If a user accidentally lists the same node twice, _fetch_log would
+        # be called twice for the same content and each matching line would
+        # be counted twice — letting a pattern with hits/2 satisfy
+        # min_matches=2. Dedupe target_nodes at resolution time.
+        manager = _docker_manager_with_logs({"node-1": "Sync session complete\n"})
+        step = AssertLogPresentStep(
+            {
+                "type": "assert_log_present",
+                "nodes": ["node-1", "node-1"],
+                "patterns": ["Sync session complete"],
+                "min_matches": 2,
+            },
+            manager=manager,
+        )
+        assert _run(step.execute({}, {})) is False
+
     def test_duplicate_patterns_do_not_double_count_hits(self):
         # Regression for meroreviewer critical: a pattern listed twice must
         # not let a single matching line satisfy min_matches=2. The user's
