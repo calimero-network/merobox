@@ -76,11 +76,20 @@ class _AssertLogStepBase(BaseStep):
         if self.manager is None:
             return []
         if self._is_binary_mode():
-            listed = self.manager.list_nodes() or []
+            try:
+                listed = self.manager.list_nodes() or []
+            except Exception as e:
+                console.print(
+                    f"[yellow]⚠️  manager.list_nodes() failed: {e}[/yellow]"
+                )
+                return []
             return [n["name"] for n in listed if isinstance(n, dict) and "name" in n]
         try:
             return list(self.manager.get_running_nodes() or [])
-        except Exception:
+        except Exception as e:
+            console.print(
+                f"[yellow]⚠️  manager.get_running_nodes() failed: {e}[/yellow]"
+            )
             return []
 
     def _fetch_log(self, node_name: str) -> str | None:
@@ -184,10 +193,14 @@ class AssertLogAbsentStep(_AssertLogStepBase):
                 for pattern, matches in matchers:
                     if matches(line):
                         trimmed = line if len(line) <= 200 else line[:197] + "..."
+                        # markup=False so log content containing [..] or {..}
+                        # isn't interpreted by Rich as console markup.
                         console.print(
-                            f"[red]✗ assert_log_absent failed on node "
+                            f"✗ assert_log_absent failed on node "
                             f"'{node_name}' line {line_no}: matched pattern "
-                            f"{pattern!r} -> {trimmed!r}[/red]"
+                            f"{pattern!r} -> {trimmed!r}",
+                            style="red",
+                            markup=False,
                         )
                         all_ok = False
 
@@ -288,9 +301,13 @@ class AssertLogPresentStep(_AssertLogStepBase):
         for pattern in patterns:
             node_name, line_no, line = sample_hits[pattern]
             trimmed = line if len(line) <= 200 else line[:197] + "..."
+            # markup=False so log content containing [..] or {..} isn't
+            # interpreted by Rich as console markup.
             console.print(
-                f"[green]✓ assert_log_present: {pattern!r} matched "
+                f"✓ assert_log_present: {pattern!r} matched "
                 f"{hits[pattern]} time(s) (first: node '{node_name}' line "
-                f"{line_no} -> {trimmed!r})[/green]"
+                f"{line_no} -> {trimmed!r})",
+                style="green",
+                markup=False,
             )
         return True
