@@ -5,6 +5,10 @@ This module provides comprehensive validation for workflow configurations
 without requiring full workflow execution.
 """
 
+from merobox.commands.bootstrap.steps.assert_log import (
+    AssertLogAbsentStep,
+    AssertLogPresentStep,
+)
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
@@ -203,6 +207,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = AssertStep
         elif step_type == "json_assert":
             step_class = JsonAssertStep
+        elif step_type == "assert_log_absent":
+            step_class = AssertLogAbsentStep
+        elif step_type == "assert_log_present":
+            step_class = AssertLogPresentStep
         elif step_type == "get_proposal":
             step_class = GetProposalStep
         elif step_type == "list_proposals":
