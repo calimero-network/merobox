@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.16] - 2026-05-21
+
+### Added
+
+- Two new workflow step types — `assert_log_absent` and `assert_log_present`
+  — that assert on the contents of a node's docker / binary logs, so
+  regression workflows can express log-grep gates inline instead of relying
+  on out-of-band CI shell steps to download log artefacts and post-grep
+  them. `assert_log_absent` fails if any pattern matches in any of the
+  named nodes' logs; `assert_log_present` fails unless every pattern has
+  at least `min_matches` hits aggregated across the union of named nodes.
+  Shared schema knobs: `regex` (default false, literal substring), `tail_lines`
+  (default unbounded), `case_sensitive` (default true), `min_matches`
+  (default 1, present-only). Empty `nodes:` list resolves to all running
+  nodes at execute time. Docker mode uses `container.logs(tail=...,
+  timestamps=False)`; binary mode uses `BinaryManager.get_node_logs`.
+  Closes calimero-network/merobox#243; unblocks restoring the regression
+  gates lost when calimero-network/core#2431 folded the auto-follow
+  workflows into the e2e matrix.
+
 ## [0.6.14] - 2026-05-14
 
 ### Changed
