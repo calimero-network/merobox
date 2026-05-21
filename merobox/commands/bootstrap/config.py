@@ -80,6 +80,8 @@ VALID_STEP_TYPES = frozenset(
         "script",
         "assert",
         "json_assert",
+        "assert_log_absent",
+        "assert_log_present",
         "get_proposal",
         "list_proposals",
         "get_proposal_approvers",
@@ -382,6 +384,51 @@ class JsonAssertStep(BaseStepConfig):
     type: Literal["json_assert"] = "json_assert"
     statements: list[Union[str, dict[str, Any]]] = Field(
         ..., description="List of JSON assertion statements"
+    )
+
+
+class AssertLogAbsentStepConfig(BaseStepConfig):
+    """Configuration for assert_log_absent step."""
+
+    type: Literal["assert_log_absent"] = "assert_log_absent"
+    nodes: list[str] = Field(
+        ..., description="Node names to scan. Empty list = all running nodes."
+    )
+    patterns: list[str] = Field(
+        ..., description="Patterns whose presence in any node's logs fails the step"
+    )
+    regex: Optional[bool] = Field(
+        False, description="If true, treat patterns as Python regex"
+    )
+    tail_lines: Optional[int] = Field(
+        None, description="Only scan the last N lines per node"
+    )
+    case_sensitive: Optional[bool] = Field(
+        True, description="If false, matching is case-insensitive"
+    )
+
+
+class AssertLogPresentStepConfig(BaseStepConfig):
+    """Configuration for assert_log_present step."""
+
+    type: Literal["assert_log_present"] = "assert_log_present"
+    nodes: list[str] = Field(
+        ..., description="Node names to scan. Empty list = all running nodes."
+    )
+    patterns: list[str] = Field(
+        ..., description="Patterns each requiring at least min_matches hits"
+    )
+    regex: Optional[bool] = Field(
+        False, description="If true, treat patterns as Python regex"
+    )
+    tail_lines: Optional[int] = Field(
+        None, description="Only scan the last N lines per node"
+    )
+    case_sensitive: Optional[bool] = Field(
+        True, description="If false, matching is case-insensitive"
+    )
+    min_matches: Optional[int] = Field(
+        1, description="Required hits per pattern, aggregated across nodes"
     )
 
 
@@ -1015,6 +1062,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "script": ScriptStep,
     "assert": AssertStep,
     "json_assert": JsonAssertStep,
+    "assert_log_absent": AssertLogAbsentStepConfig,
+    "assert_log_present": AssertLogPresentStepConfig,
     "get_proposal": GetProposalStep,
     "list_proposals": ListProposalsStep,
     "get_proposal_approvers": GetProposalApproversStep,

@@ -75,6 +75,10 @@ from merobox.commands.bootstrap.steps import (
     WaitForSyncStep,
     WaitStep,
 )
+from merobox.commands.bootstrap.steps.assert_log import (
+    AssertLogAbsentStep,
+    AssertLogPresentStep,
+)
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
@@ -1568,6 +1572,10 @@ class WorkflowExecutor:
             return AssertStep(step_config, **common_kwargs)
         elif step_type == "json_assert":
             return JsonAssertStep(step_config, **common_kwargs)
+        elif step_type == "assert_log_absent":
+            return AssertLogAbsentStep(step_config, **common_kwargs)
+        elif step_type == "assert_log_present":
+            return AssertLogPresentStep(step_config, **common_kwargs)
         elif step_type == "get_proposal":
             return GetProposalStep(step_config, **common_kwargs)
         elif step_type == "list_proposals":

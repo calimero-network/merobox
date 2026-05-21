@@ -2,6 +2,10 @@
 Steps module - Individual step implementations for workflow execution.
 """
 
+from merobox.commands.bootstrap.steps.assert_log import (
+    AssertLogAbsentStep,
+    AssertLogPresentStep,
+)
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.blob import UploadBlobStep
@@ -126,6 +130,8 @@ __all__ = [
     "ParallelStep",
     "ScriptStep",
     "AssertStep",
+    "AssertLogAbsentStep",
+    "AssertLogPresentStep",
     "JsonAssertStep",
     "UploadBlobStep",
     "CreateMeshStep",
