@@ -166,10 +166,12 @@ class AssertLogAbsentStep(_AssertLogStepBase):
         matchers = [(p, self._compile_matcher(p)) for p in patterns]
 
         all_ok = True
+        nodes_scanned = 0
         for node_name in target_nodes:
             log = self._fetch_log(node_name)
             if log is None:
                 continue
+            nodes_scanned += 1
             for line_no, line in enumerate(self._iter_lines(log), start=1):
                 for pattern, matches in matchers:
                     if matches(line):
@@ -181,11 +183,21 @@ class AssertLogAbsentStep(_AssertLogStepBase):
                         )
                         all_ok = False
 
+        # If no logs were retrievable across ANY target node, treat the step
+        # as a failure rather than silently passing. Otherwise a typo in
+        # `nodes:` would turn the regression gate into a no-op.
+        if nodes_scanned == 0:
+            console.print(
+                f"[red]✗ assert_log_absent failed: no logs retrievable "
+                f"from any of {len(target_nodes)} target node(s)[/red]"
+            )
+            return False
+
         if all_ok:
             console.print(
                 f"[green]✓ assert_log_absent: none of "
                 f"{len(patterns)} pattern(s) matched across "
-                f"{len(target_nodes)} node(s)[/green]"
+                f"{nodes_scanned} node(s)[/green]"
             )
         return all_ok
 
@@ -233,15 +245,27 @@ class AssertLogPresentStep(_AssertLogStepBase):
         hits: dict[str, int] = dict.fromkeys(patterns, 0)
         sample_hits: dict[str, tuple[str, int, str]] = {}
 
+        nodes_scanned = 0
         for node_name in target_nodes:
             log = self._fetch_log(node_name)
             if log is None:
                 continue
+            nodes_scanned += 1
             for line_no, line in enumerate(self._iter_lines(log), start=1):
                 for pattern, matches in matchers:
                     if matches(line):
                         hits[pattern] += 1
                         sample_hits.setdefault(pattern, (node_name, line_no, line))
+
+        # The patterns-missing branch below already fails on zero hits, but a
+        # dedicated message makes the no-logs-retrievable mode debuggable
+        # without forcing the user to infer it from "had 0 hit(s)".
+        if nodes_scanned == 0:
+            console.print(
+                f"[red]✗ assert_log_present failed: no logs retrievable "
+                f"from any of {len(target_nodes)} target node(s)[/red]"
+            )
+            return False
 
         missing = [p for p in patterns if hits[p] < min_matches]
         if missing:

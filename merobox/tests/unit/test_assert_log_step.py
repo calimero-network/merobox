@@ -339,6 +339,24 @@ class TestAssertLogAbsentBehaviour:
         assert _run(step.execute({}, {})) is False
         manager.get_running_nodes.assert_called()
 
+    def test_fails_when_no_logs_retrievable_from_any_node(self):
+        # Regression for Cursor Bugbot: a typo'd nodes list (every fetch
+        # returns None) must not silently pass — that turns the gate into
+        # a no-op and lets regressions slip through.
+        manager = MagicMock()
+        del manager.binary_path
+        manager.nodes = {}
+        manager.client.containers.get.side_effect = Exception("no such container")
+        step = AssertLogAbsentStep(
+            {
+                "type": "assert_log_absent",
+                "nodes": ["typoed-node-1", "typoed-node-2"],
+                "patterns": ["context not materialised"],
+            },
+            manager=manager,
+        )
+        assert _run(step.execute({}, {})) is False
+
     def test_binary_mode_uses_manager_get_node_logs(self):
         manager = _binary_manager_with_logs(
             {"node-1": "ready\nWARN inbound stream for unknown context\n"}
@@ -444,6 +462,24 @@ class TestAssertLogPresentBehaviour:
             manager=manager,
         )
         assert _run(step.execute({}, {})) is True
+
+    def test_present_fails_when_no_logs_retrievable(self):
+        # Symmetric to the absent case: if every fetch returns None,
+        # report it explicitly instead of relying on the patterns-missing
+        # branch's generic "had 0 hit(s)" message.
+        manager = _docker_manager_with_logs({"node-1": "ok\n"})
+        # Replace the container.logs to fail for every node
+        manager.client.containers.get.side_effect = Exception("no such container")
+        manager.nodes = {}
+        step = AssertLogPresentStep(
+            {
+                "type": "assert_log_present",
+                "nodes": ["ghost"],
+                "patterns": ["anything"],
+            },
+            manager=manager,
+        )
+        assert _run(step.execute({}, {})) is False
 
     def test_duplicate_patterns_do_not_double_count_hits(self):
         # Regression for meroreviewer critical: a pattern listed twice must
