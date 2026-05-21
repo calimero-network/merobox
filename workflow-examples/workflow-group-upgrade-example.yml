@@ -76,12 +76,12 @@ steps:
     type: wait
     seconds: 5
 
-  # Phase 3: Set upgrade policy to coordinated (synchronous upgrade)
-  - name: Set Upgrade Policy to Coordinated
+  # Phase 3: Set upgrade policy to automatic
+  - name: Set Upgrade Policy to Automatic
     type: update_group_settings
     node: calimero-node-1
     group_id: '{{group_id}}'
-    upgrade_policy: coordinated
+    upgrade_policy: automatic
 
   # Phase 4: Initiate upgrade v1 -> v2
   - name: Upgrade Subgroup Application to v2
