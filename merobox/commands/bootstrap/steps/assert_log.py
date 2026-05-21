@@ -79,9 +79,7 @@ class _AssertLogStepBase(BaseStep):
             try:
                 listed = self.manager.list_nodes() or []
             except Exception as e:
-                console.print(
-                    f"[yellow]⚠️  manager.list_nodes() failed: {e}[/yellow]"
-                )
+                console.print(f"[yellow]⚠️  manager.list_nodes() failed: {e}[/yellow]")
                 return []
             return [n["name"] for n in listed if isinstance(n, dict) and "name" in n]
         try:
