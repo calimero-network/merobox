@@ -17,9 +17,8 @@ explicit `wait_for_sync` or short `wait` before asserting state propagation.
 from typing import Any
 
 from merobox.commands.bootstrap.steps._docker_utils import (
-    get_docker_manager,
+    get_docker_client,
     is_binary_mode,
-    resolve_container,
     warn_if_mdns_enabled,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -61,14 +60,17 @@ class DisconnectNodeStep(BaseStep):
             f"[yellow]Disconnecting {node_name} from network {network_name}...[/yellow]"
         )
 
-        container = resolve_container(self.manager, node_name)
-        if container is None:
+        client = get_docker_client(self.manager)
+        try:
+            container = client.containers.get(node_name)
+        except Exception as exc:
+            console.print(f"[red]✗ Container '{node_name}' not found: {exc}[/red]")
             return False
 
         warn_if_mdns_enabled(container, node_name)
 
         try:
-            network = get_docker_manager(self.manager).client.networks.get(network_name)
+            network = client.networks.get(network_name)
             network.disconnect(container)
         except Exception as exc:
             console.print(
@@ -113,12 +115,15 @@ class ConnectNodeStep(BaseStep):
             f"[yellow]Connecting {node_name} to network {network_name}...[/yellow]"
         )
 
-        container = resolve_container(self.manager, node_name)
-        if container is None:
+        client = get_docker_client(self.manager)
+        try:
+            container = client.containers.get(node_name)
+        except Exception as exc:
+            console.print(f"[red]✗ Container '{node_name}' not found: {exc}[/red]")
             return False
 
         try:
-            network = get_docker_manager(self.manager).client.networks.get(network_name)
+            network = client.networks.get(network_name)
             network.connect(container)
         except Exception as exc:
             console.print(

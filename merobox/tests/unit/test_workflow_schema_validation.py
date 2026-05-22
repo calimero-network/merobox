@@ -510,9 +510,9 @@ class TestValidStepTypes:
             "fuzzy_test",
         ]
         for step_type in expected_types:
-            assert step_type in config_module.VALID_STEP_TYPES, (
-                f"Missing step type: {step_type}"
-            )
+            assert (
+                step_type in config_module.VALID_STEP_TYPES
+            ), f"Missing step type: {step_type}"
 
     def test_no_duplicate_types(self, config_module):
         """Test that there are no duplicate step types."""

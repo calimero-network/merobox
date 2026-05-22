@@ -78,15 +78,20 @@ class RestartContainerStep(BaseStep):
         return await self._wait_healthy(container_name, timeout)
 
     async def _wait_healthy(self, container_name: str, timeout: int) -> bool:
-        """Poll the node's admin /health endpoint until ready or timeout."""
+        """Poll the node's admin /health endpoint until ready or timeout.
+
+        The caller asked for health verification (wait_healthy=true), so if we
+        can't even resolve the RPC URL the step has to fail — silently passing
+        would mask a node-unavailability bug.
+        """
         try:
             rpc_url = get_node_rpc_url(container_name, self.manager)
         except Exception as exc:
             console.print(
-                f"[yellow]Could not resolve RPC URL for {container_name}: "
-                f"{exc}. Skipping health wait.[/yellow]"
+                f"[red]✗ Could not resolve RPC URL for {container_name}: "
+                f"{exc}[/red]"
             )
-            return True
+            return False
 
         deadline = time.time() + timeout
         console.print(

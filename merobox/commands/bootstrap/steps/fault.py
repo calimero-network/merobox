@@ -142,13 +142,20 @@ class InjectNetworkFaultStep(BaseStep):
             ["tc", "qdisc", "del", "dev", interface, "root"],
         )
         if del_result.exit_code != 0:
+            # The fault duration has already elapsed, so the user-visible
+            # fault window is done; failing the step here would abort the
+            # workflow without un-stucking the qdisc anyway. Surface a loud
+            # error with the remediation and let the workflow continue —
+            # the next inject_network_fault auto-clears via the leading
+            # `tc qdisc del`, and restart_container is the manual escape.
             stderr = del_result.output.decode("utf-8", errors="replace")
             console.print(
-                f"[yellow]⚠️  Failed to clear netem on {container_name} "
-                f"({stderr.strip() or 'unknown'}). Container may have stale "
-                f"qdisc — restart_container will clear it.[/yellow]"
+                f"[red]✗ Failed to clear netem on {container_name} "
+                f"({stderr.strip() or 'unknown'}). Stale qdisc remains on "
+                f"the container — subsequent steps may see degraded network. "
+                f"Use restart_container to clear it.[/red]"
             )
-            return False
+            return True
 
         console.print(f"[green]✓ Cleared fault on {container_name}[/green]")
         return True
