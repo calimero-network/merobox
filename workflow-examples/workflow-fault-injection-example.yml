@@ -1,0 +1,74 @@
+description: |
+  Showcase of merobox's network fault-injection primitives. Each phase
+  demonstrates one of the new steps (pause, restart, disconnect/connect,
+  inject_network_fault). Designed to be run end-to-end on a developer
+  machine; safe to interrupt at any step.
+
+  Set `mdns: false` so the relay/rendezvous code path is actually exercised
+  — the fault-injection warnings will otherwise nag.
+name: Network Fault Injection Example
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  mdns: false           # force relay code path
+  network_admin: true   # NET_ADMIN for tc — default true, shown for clarity
+
+steps:
+  # --- Phase 1: pause/unpause simulates laptop sleep ---
+  - name: Pause node 1 (sleep simulation)
+    type: pause_container
+    container: calimero-node-1
+
+  - name: Hold pause for 30s
+    type: wait
+    seconds: 30
+
+  - name: Unpause node 1 (wake)
+    type: unpause_container
+    container: calimero-node-1
+
+  - name: Settle after wake
+    type: wait
+    seconds: 5
+
+  # --- Phase 2: full container restart ---
+  - name: Restart node 2
+    type: restart_container
+    container: calimero-node-2
+    wait_healthy: true
+    timeout: 60
+
+  # --- Phase 3: partition + heal on the docker bridge ---
+  - name: Partition node 3 from the bridge
+    type: disconnect_node
+    node: calimero-node-3
+
+  - name: Hold partition for 15s
+    type: wait
+    seconds: 15
+
+  - name: Heal node 3
+    type: connect_node
+    node: calimero-node-3
+
+  - name: Wait for libp2p mesh reformation
+    type: wait
+    seconds: 8
+
+  # --- Phase 4: tc netem packet loss ---
+  - name: Inject 30% packet loss on node 1 for 10s
+    type: inject_network_fault
+    container: calimero-node-1
+    fault: loss
+    percent: 30
+    duration: 10
+
+  # --- Phase 5: tc netem added latency ---
+  - name: Inject 500ms latency on node 2 for 10s
+    type: inject_network_fault
+    container: calimero-node-2
+    fault: delay
+    ms: 500
+    duration: 10

@@ -11,6 +11,7 @@ from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
+from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 from merobox.commands.bootstrap.steps.group_create import (
     CreateGroupStep,
@@ -81,8 +82,17 @@ from merobox.commands.bootstrap.steps.namespace import (
     ListNamespaceGroupsStep,
     ListNamespacesStep,
 )
+from merobox.commands.bootstrap.steps.network import (
+    ConnectNodeStep,
+    DisconnectNodeStep,
+)
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
+from merobox.commands.bootstrap.steps.pause import (
+    PauseContainerStep,
+    UnpauseContainerStep,
+)
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
+from merobox.commands.bootstrap.steps.restart import RestartContainerStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.start_node import StartNodeStep
 from merobox.commands.bootstrap.steps.stop_node import StopNodeStep
@@ -129,6 +139,12 @@ __all__ = [
     "RepeatStep",
     "ParallelStep",
     "ScriptStep",
+    "PauseContainerStep",
+    "UnpauseContainerStep",
+    "RestartContainerStep",
+    "DisconnectNodeStep",
+    "ConnectNodeStep",
+    "InjectNetworkFaultStep",
     "AssertStep",
     "AssertLogAbsentStep",
     "AssertLogPresentStep",

@@ -80,14 +80,24 @@ from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogPresentStep,
 )
 from merobox.commands.bootstrap.steps.assertion import AssertStep
+from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
+from merobox.commands.bootstrap.steps.network import (
+    ConnectNodeStep,
+    DisconnectNodeStep,
+)
+from merobox.commands.bootstrap.steps.pause import (
+    PauseContainerStep,
+    UnpauseContainerStep,
+)
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
     GetProposalStep,
     ListProposalsStep,
 )
+from merobox.commands.bootstrap.steps.restart import RestartContainerStep
 from merobox.commands.constants import (
     ASYNC_POLL_INTERVAL,
     DEFAULT_P2P_PORT,
@@ -830,6 +840,25 @@ class WorkflowExecutor:
             kwargs["use_image_entrypoint"] = use_image_entrypoint
         return kwargs
 
+    @staticmethod
+    def _apply_fault_kwargs(
+        run_node_kwargs: dict,
+        node_cfg: Optional[dict],
+        nodes_config: dict,
+    ) -> None:
+        """Apply mdns / network_admin overrides with per-node precedence.
+
+        Per-node values in node_cfg win over the top-level nodes_config values.
+        Keys are only set if the workflow explicitly provided them so the
+        run_node defaults remain in effect otherwise. No-ops in binary mode —
+        caller is responsible for only invoking this on the docker path.
+        """
+        for key in ("mdns", "network_admin"):
+            if isinstance(node_cfg, dict) and key in node_cfg:
+                run_node_kwargs[key] = node_cfg[key]
+            elif key in nodes_config:
+                run_node_kwargs[key] = nodes_config[key]
+
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get("nodes", {})
@@ -881,6 +910,13 @@ class WorkflowExecutor:
                     "e2e_mode": self.e2e_mode,
                     "bootstrap_nodes": self.bootstrap_nodes,
                 }
+                if not self.is_binary_mode:
+                    if "mdns" in nodes_config:
+                        run_multiple_kwargs["mdns"] = nodes_config["mdns"]
+                    if "network_admin" in nodes_config:
+                        run_multiple_kwargs["network_admin"] = nodes_config[
+                            "network_admin"
+                        ]
                 if self.is_binary_mode:
                     if self.auth_mode:
                         run_multiple_kwargs["auth_mode"] = self.auth_mode
@@ -896,7 +932,7 @@ class WorkflowExecutor:
                     f"Checking {count} nodes with prefix '{prefix}' (no restart mode)..."
                 )
                 for i in range(count):
-                    node_name = f"{prefix}-{i+1}"
+                    node_name = f"{prefix}-{i + 1}"
                     is_running = self._is_node_running(node_name)
 
                     if is_running:
@@ -915,6 +951,8 @@ class WorkflowExecutor:
                         image=image,
                         use_image_entrypoint=use_image_entrypoint,
                     )
+                    if not self.is_binary_mode:
+                        self._apply_fault_kwargs(run_node_kwargs, None, nodes_config)
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
 
@@ -990,6 +1028,10 @@ class WorkflowExecutor:
                         config_path=node_config_path,
                         use_image_entrypoint=node_use_image_entrypoint,
                     )
+                    if not self.is_binary_mode:
+                        self._apply_fault_kwargs(
+                            run_node_kwargs, node_cfg, nodes_config
+                        )
                     if not self.manager.run_node(**run_node_kwargs):
                         return False
                 else:
@@ -1008,6 +1050,8 @@ class WorkflowExecutor:
                     config_path=node_config_path,
                     use_image_entrypoint=node_use_image_entrypoint,
                 )
+                if not self.is_binary_mode:
+                    self._apply_fault_kwargs(run_node_kwargs, node_cfg, nodes_config)
                 if not self.manager.run_node(**run_node_kwargs):
                     return False
 
@@ -1314,7 +1358,7 @@ class WorkflowExecutor:
             count = nodes_config["count"]
             if isinstance(count, int) and count >= 0:
                 prefix = nodes_config.get("prefix", "calimero-node")
-                return {f"{prefix}-{i+1}" for i in range(count)}
+                return {f"{prefix}-{i + 1}" for i in range(count)}
             else:
                 return set()
         else:
@@ -1568,6 +1612,18 @@ class WorkflowExecutor:
             return ParallelStep(step_config, **common_kwargs)
         elif step_type == "script":
             return ScriptStep(step_config, **common_kwargs)
+        elif step_type == "pause_container":
+            return PauseContainerStep(step_config, **common_kwargs)
+        elif step_type == "unpause_container":
+            return UnpauseContainerStep(step_config, **common_kwargs)
+        elif step_type == "restart_container":
+            return RestartContainerStep(step_config, **common_kwargs)
+        elif step_type == "disconnect_node":
+            return DisconnectNodeStep(step_config, **common_kwargs)
+        elif step_type == "connect_node":
+            return ConnectNodeStep(step_config, **common_kwargs)
+        elif step_type == "inject_network_fault":
+            return InjectNetworkFaultStep(step_config, **common_kwargs)
         elif step_type == "assert":
             return AssertStep(step_config, **common_kwargs)
         elif step_type == "json_assert":

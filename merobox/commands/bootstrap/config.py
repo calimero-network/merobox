@@ -78,6 +78,12 @@ VALID_STEP_TYPES = frozenset(
         "repeat",
         "parallel",
         "script",
+        "pause_container",
+        "unpause_container",
+        "restart_container",
+        "disconnect_node",
+        "connect_node",
+        "inject_network_fault",
         "assert",
         "json_assert",
         "assert_log_absent",
@@ -118,6 +124,20 @@ class NodesConfig(BaseModel):
     )
     use_image_entrypoint: Optional[bool] = Field(
         False, description="Use Docker image entrypoint"
+    )
+    mdns: Optional[bool] = Field(
+        None,
+        description=(
+            "Force discovery.mdns in node config. Set to false to exercise "
+            "the rendezvous/relay code path under fault-injection workflows."
+        ),
+    )
+    network_admin: Optional[bool] = Field(
+        None,
+        description=(
+            "Add NET_ADMIN capability to node containers. Default true so "
+            "inject_network_fault works out of the box; set false to opt out."
+        ),
     )
 
 
@@ -364,6 +384,89 @@ class ScriptStep(BaseStepConfig):
     script: str = Field(..., description="Path to the script")
     target: Optional[str] = Field("nodes", description="Target: 'image' or 'nodes'")
     description: Optional[str] = Field(None, description="Description of the script")
+
+
+class PauseContainerStepConfig(BaseStepConfig):
+    """Configuration for pause_container step."""
+
+    type: Literal["pause_container"] = "pause_container"
+    container: str = Field(..., description="Target container name")
+
+
+class UnpauseContainerStepConfig(BaseStepConfig):
+    """Configuration for unpause_container step."""
+
+    type: Literal["unpause_container"] = "unpause_container"
+    container: str = Field(..., description="Target container name")
+
+
+class RestartContainerStepConfig(BaseStepConfig):
+    """Configuration for restart_container step."""
+
+    type: Literal["restart_container"] = "restart_container"
+    container: str = Field(..., description="Target container name")
+    wait_healthy: Optional[bool] = Field(
+        True, description="Poll /admin-api/health until ready (default true)"
+    )
+    timeout: Optional[int] = Field(
+        None, ge=1, description="Health-wait timeout in seconds"
+    )
+
+
+class DisconnectNodeStepConfig(BaseStepConfig):
+    """Configuration for disconnect_node step."""
+
+    type: Literal["disconnect_node"] = "disconnect_node"
+    node: str = Field(..., description="Target node container name")
+    network: Optional[str] = Field(
+        "bridge", description="Docker network to disconnect from (default: bridge)"
+    )
+
+
+class ConnectNodeStepConfig(BaseStepConfig):
+    """Configuration for connect_node step."""
+
+    type: Literal["connect_node"] = "connect_node"
+    node: str = Field(..., description="Target node container name")
+    network: Optional[str] = Field(
+        "bridge", description="Docker network to (re)connect to (default: bridge)"
+    )
+
+
+class InjectNetworkFaultStepConfig(BaseStepConfig):
+    """Configuration for inject_network_fault step."""
+
+    type: Literal["inject_network_fault"] = "inject_network_fault"
+    container: str = Field(..., description="Target container name")
+    fault: Literal["loss", "delay"] = Field(
+        ..., description="Fault type — use disconnect_node for full partition"
+    )
+    duration: int = Field(..., ge=1, description="How long to hold the fault (seconds)")
+    percent: Optional[float] = Field(
+        None, description="Loss percent (required when fault=loss)"
+    )
+    ms: Optional[int] = Field(
+        None, ge=1, description="Added delay in ms (required when fault=delay)"
+    )
+    interface: Optional[str] = Field(
+        "eth0", description="Container network interface (default: eth0)"
+    )
+
+    @model_validator(mode="after")
+    def validate_fault_requires_arg(self) -> "InjectNetworkFaultStepConfig":
+        """Each fault type needs its own arg — surface that at schema validation
+        rather than waiting for the step to run."""
+        if self.fault == "loss":
+            if self.percent is None or not (0 < self.percent <= 100):
+                raise ValueError(
+                    "inject_network_fault: 'percent' in (0, 100] is required when fault=loss"
+                )
+        elif self.fault == "delay":
+            if self.ms is None or self.ms <= 0:
+                raise ValueError(
+                    "inject_network_fault: positive integer 'ms' is required when fault=delay"
+                )
+        return self
 
 
 class AssertStep(BaseStepConfig):
@@ -1060,6 +1163,12 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "repeat": RepeatStep,
     "parallel": ParallelStep,
     "script": ScriptStep,
+    "pause_container": PauseContainerStepConfig,
+    "unpause_container": UnpauseContainerStepConfig,
+    "restart_container": RestartContainerStepConfig,
+    "disconnect_node": DisconnectNodeStepConfig,
+    "connect_node": ConnectNodeStepConfig,
+    "inject_network_fault": InjectNetworkFaultStepConfig,
     "assert": AssertStep,
     "json_assert": JsonAssertStep,
     "assert_log_absent": AssertLogAbsentStepConfig,
