@@ -839,6 +839,7 @@ class WorkflowExecutor:
             "e2e_mode": self.e2e_mode,
             "config_path": config_path,
             "bootstrap_nodes": self.bootstrap_nodes,
+            # keep merod-init bootstrap.nodes when True (opt-out of e2e isolation)
             "preserve_default_bootstrap": self.preserve_default_bootstrap,
         }
         if self.is_binary_mode:
@@ -919,6 +920,10 @@ class WorkflowExecutor:
                     "workflow_id": self.workflow_id,
                     "e2e_mode": self.e2e_mode,
                     "bootstrap_nodes": self.bootstrap_nodes,
+                    # Mirror _build_run_node_kwargs so the restart+count
+                    # path doesn't silently drop the opt-out when the
+                    # workflow sets preserve_default_bootstrap: true.
+                    "preserve_default_bootstrap": self.preserve_default_bootstrap,
                 }
                 if not self.is_binary_mode:
                     if "mdns" in nodes_config:

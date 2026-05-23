@@ -263,18 +263,7 @@ def apply_e2e_defaults(
         # Apply e2e-style defaults for reliable testing
         # Note: Only bootstrap, discovery, and sync settings are configured here.
         # Protocol-specific config (Ethereum, ICP, etc.) should be handled separately.
-        e2e_config = {
-            # Use unique rendezvous namespace per workflow (like e2e tests)
-            "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-            # Keep mDNS as backup (like e2e tests)
-            "discovery.mdns": True,
-            # Aggressive sync settings from e2e tests for reliable testing
-            "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-            # 500ms between syncs (very aggressive for tests)
-            "sync.interval_ms": 500,
-            # 1s periodic checks (ensures rapid sync in tests)
-            "sync.frequency_ms": 1000,
-        }
+        e2e_config = {}
 
         # By default, clear bootstrap.nodes to fully isolate the cluster
         # from any outside network. Workflows can opt out via the
@@ -283,6 +272,21 @@ def apply_e2e_defaults(
         # rendezvous server.
         if not preserve_default_bootstrap:
             e2e_config["bootstrap.nodes"] = []
+
+        e2e_config.update(
+            {
+                # Use unique rendezvous namespace per workflow (like e2e tests)
+                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
+                # Keep mDNS as backup (like e2e tests)
+                "discovery.mdns": True,
+                # Aggressive sync settings from e2e tests for reliable testing
+                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
+                # 500ms between syncs (very aggressive for tests)
+                "sync.interval_ms": 500,
+                # 1s periodic checks (ensures rapid sync in tests)
+                "sync.frequency_ms": 1000,
+            }
+        )
 
         # Apply each configuration
         for key, value in e2e_config.items():

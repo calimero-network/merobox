@@ -139,6 +139,39 @@ def test_apply_e2e_defaults_file_not_found():
         assert result is False
 
 
+def test_apply_e2e_defaults_clears_existing_bootstrap_by_default():
+    """The default (preserve_default_bootstrap=False) clears a pre-existing
+    boot-node list — confirming the e2e-isolation guarantee. The
+    `test_apply_e2e_defaults` case above starts from an empty config and
+    therefore doesn't exercise the *clearing* behaviour against a
+    populated list; this test does."""
+    devnet_boot = "/ip4/63.181.86.34/tcp/4001/p2p/12D3KooW" + "X" * 44
+
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {"bootstrap": {"nodes": [devnet_boot]}}
+
+        with patch("builtins.open", mock_open()):
+            with (
+                patch("pathlib.Path.exists", return_value=True),
+                patch("pathlib.Path.chmod"),
+                patch("pathlib.Path.stat"),
+            ):
+                result = apply_e2e_defaults(
+                    Path("/tmp/config.toml"),
+                    "node1",
+                    workflow_id="test-clear-boot",
+                    # preserve_default_bootstrap omitted = default False
+                )
+
+                assert result is True
+
+                args, _ = mock_toml.dump.call_args
+                config_dict = args[0]
+
+                # Pre-existing boot-node was cleared (the isolation default).
+                assert config_dict["bootstrap"]["nodes"] == []
+
+
 def test_apply_e2e_defaults_preserve_default_bootstrap():
     """preserve_default_bootstrap=True keeps whatever bootstrap.nodes was
     written by `merod init` (the public devnet boot-node), and still
