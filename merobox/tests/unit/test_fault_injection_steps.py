@@ -222,13 +222,30 @@ class TestDetectNodeNetwork:
         c = self._container({"host": {}, "none": {}, "bridge": {}})
         assert detect_node_network(c) == "bridge"
 
-    def test_auth_mode_multinetwork_picks_attached(self):
+    def test_auth_mode_multinetwork_prefers_web_over_internal(self):
         from merobox.commands.bootstrap.steps._docker_utils import (
             detect_node_network,
         )
 
-        # Auth-mode containers are on calimero_web + calimero_internal but
-        # NOT bridge. Defaulting to bridge here would 404; picking a real
-        # attached network is correct (sorted for determinism).
+        # Auth-mode containers are on calimero_web + calimero_internal.
+        # calimero_web carries user-facing libp2p/RPC traffic — severing
+        # it is what a partition test wants. calimero_internal is the
+        # Traefik backend channel and is the WRONG target.
         c = self._container({"calimero_web": {}, "calimero_internal": {}})
-        assert detect_node_network(c) == "calimero_internal"
+        assert detect_node_network(c) == "calimero_web"
+
+    def test_reload_failure_still_returns_a_network(self):
+        from merobox.commands.bootstrap.steps._docker_utils import (
+            detect_node_network,
+        )
+
+        class FlakyContainer:
+            def __init__(self):
+                self.attrs = {"NetworkSettings": {"Networks": {"merobox-cluster": {}}}}
+
+            def reload(self):
+                raise RuntimeError("daemon flake")
+
+        # When container.reload() fails, the function should still pick a
+        # network from whatever attrs it has, not crash.
+        assert detect_node_network(FlakyContainer()) == "merobox-cluster"

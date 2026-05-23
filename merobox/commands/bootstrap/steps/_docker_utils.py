@@ -21,6 +21,13 @@ CLUSTER_NETWORK = "merobox-cluster"
 # Universal Docker default — always exists, always a safe fallback target
 # for a re-attach when no better signal is available.
 DEFAULT_NETWORK = "bridge"
+# Auth-mode networks. `calimero_web` carries the user-facing libp2p / RPC
+# traffic that a partition test wants to sever; `calimero_internal` is the
+# Traefik-↔-node backend and is the WRONG target for a peer partition.
+# When both are attached, prefer web (severing it also makes the node
+# unreachable from peers via the routed path).
+_AUTH_WEB_NETWORK = "calimero_web"
+_AUTH_INTERNAL_NETWORK = "calimero_internal"
 # Internal dynamic-values key prefix. Use partition_network_key(node) to
 # build the per-node key; the helper guarantees disconnect_node and
 # connect_node format it the same way (a raw f-string template would
@@ -62,7 +69,7 @@ def get_docker_client(manager: Any):
 
     Steps that consume Docker primitives are expected to short-circuit on
     is_binary_mode before reaching this helper, so a missing or binary-mode
-    manager here is a programmer error — surfaces as a clear AttributeError
+    manager here is a programmer error — surfaces as a clear RuntimeError
     rather than silently spinning up a fresh DockerManager (which would
     register signal handlers and connect to docker.sock as a side effect).
     """
@@ -93,33 +100,47 @@ def detect_node_network(container: Any) -> str:
 
     Workflows can run on Docker's default `bridge`, the modern
     `merobox-cluster` user-defined bridge (count >= 2 + restart non-auth
-    path in run_multiple_nodes), or `calimero_web` (auth-mode). The right
-    target is whatever the container is actually attached to.
+    path in run_multiple_nodes), or `calimero_web` + `calimero_internal`
+    (auth-mode). The right target is whatever the container is actually
+    attached to.
 
     Priority:
       1. `merobox-cluster` if attached — the dominant modern case.
-      2. The single non-default attached network — covers auth
-         (`calimero_web`) and any custom-network workflow.
-      3. `bridge` — universal Docker default; the safe fallback when the
+      2. `calimero_web` if attached — the user-facing auth-mode network.
+         Severing it is what a partition test wants;
+         `calimero_internal` is the Traefik backend channel and would
+         leave peers reachable via the routed path.
+      3. The single non-default attached network — custom-network case.
+      4. The alphabetically-first attached candidate when multiple non-
+         special networks remain, with a warning so the author can pin
+         `network:` explicitly.
+      5. `bridge` — universal Docker default; the safe fallback when the
          container has no attached networks (e.g. mid-partition reattach
          without a preceding disconnect_node to inform connect_node).
     """
     try:
         container.reload()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Stale attrs would silently pick the wrong network; warn so the
+        # author at least sees the cause in the run log.
+        console.print(
+            f"[yellow]⚠️  container.reload() failed while detecting network "
+            f"({exc!r}); proceeding with possibly stale NetworkSettings.[/yellow]"
+        )
     networks_dict = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
     candidates = [n for n in networks_dict.keys() if n not in _SKIP_NETWORKS]
 
     if CLUSTER_NETWORK in candidates:
         return CLUSTER_NETWORK
+    if _AUTH_WEB_NETWORK in candidates:
+        return _AUTH_WEB_NETWORK
     if len(candidates) == 1:
         return candidates[0]
     if len(candidates) > 1:
         # Ambiguous multi-network attachment — pick the first sorted
         # candidate so the choice is at least deterministic and known-attached
-        # (defaulting to `bridge` here would be wrong for auth-mode workflows
-        # that put nodes on calimero_web + calimero_internal but not bridge).
+        # (defaulting to `bridge` here would be wrong for any workflow that
+        # put nodes on custom networks but not bridge).
         sorted_candidates = sorted(candidates)
         chosen = sorted_candidates[0]
         console.print(
@@ -167,6 +188,19 @@ def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
     # workflow value can't path-traverse out of the data dir.
     if not _SAFE_NAME_RE.match(node_name):
         return
+
+    # exec_run blocks indefinitely on a paused container (the process is
+    # SIGSTOP'd and never reads from the exec stream). Check state first so
+    # disconnect/fault steps running after a pause_container don't hang
+    # the workflow on a best-effort warning.
+    try:
+        container.reload()
+        state = container.attrs.get("State", {}).get("Status")
+    except Exception:
+        state = None
+    if state and state != "running":
+        return
+
     config_path = f"/app/data/{node_name}/config.toml"
     try:
         result = container.exec_run(["cat", config_path])
