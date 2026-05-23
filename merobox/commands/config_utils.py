@@ -231,6 +231,7 @@ def apply_e2e_defaults(
     config_file: Union[Path, str],
     node_name: str,
     workflow_id: Optional[str] = None,
+    preserve_default_bootstrap: bool = False,
 ) -> bool:
     """
     Apply e2e-style defaults for reliable testing.
@@ -239,6 +240,11 @@ def apply_e2e_defaults(
         config_file: Path to the config.toml file (Path or str)
         node_name: Name of the node (for logging)
         workflow_id: Optional workflow ID for test isolation. Generated if not provided.
+        preserve_default_bootstrap: When True, skip clearing `bootstrap.nodes`,
+            leaving whatever `merod init` wrote (the public devnet boot-node).
+            Off by default so the e2e defaults remain isolated from any
+            outside network; opt-in for workflows that explicitly want a
+            stable rendezvous server outside the test cluster.
     """
     try:
         # Generate unique workflow ID if not provided
@@ -258,8 +264,6 @@ def apply_e2e_defaults(
         # Note: Only bootstrap, discovery, and sync settings are configured here.
         # Protocol-specific config (Ethereum, ICP, etc.) should be handled separately.
         e2e_config = {
-            # Disable bootstrap nodes for test isolation
-            "bootstrap.nodes": [],
             # Use unique rendezvous namespace per workflow (like e2e tests)
             "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
             # Keep mDNS as backup (like e2e tests)
@@ -271,6 +275,14 @@ def apply_e2e_defaults(
             # 1s periodic checks (ensures rapid sync in tests)
             "sync.frequency_ms": 1000,
         }
+
+        # By default, clear bootstrap.nodes to fully isolate the cluster
+        # from any outside network. Workflows can opt out via the
+        # `preserve_default_bootstrap` field to keep whatever `merod
+        # init` wrote (the public devnet boot-node) as a stable
+        # rendezvous server.
+        if not preserve_default_bootstrap:
+            e2e_config["bootstrap.nodes"] = []
 
         # Apply each configuration
         for key, value in e2e_config.items():

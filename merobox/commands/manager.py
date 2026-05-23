@@ -338,6 +338,7 @@ class DockerManager(CleanupMixin):
         network: str = None,  # user-defined Docker network to attach the node to
         mdns: Optional[bool] = None,  # force discovery.mdns in node config
         network_admin: bool = True,  # add NET_ADMIN cap for fault-injection steps
+        preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -715,7 +716,12 @@ class DockerManager(CleanupMixin):
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
                     self._fix_permissions(node_data_dir)
-                    apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(
+                        config_file,
+                        node_name,
+                        workflow_id,
+                        preserve_default_bootstrap=preserve_default_bootstrap,
+                    )
 
                 # Apply bootstrap nodes configuration (works regardless of e2e_mode)
                 if bootstrap_nodes:
@@ -731,7 +737,12 @@ class DockerManager(CleanupMixin):
                     console.print(
                         f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
                     )
-                    apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(
+                        config_file,
+                        node_name,
+                        workflow_id,
+                        preserve_default_bootstrap=preserve_default_bootstrap,
+                    )
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
@@ -1268,6 +1279,7 @@ class DockerManager(CleanupMixin):
         cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
         mdns: Optional[bool] = None,
         network_admin: bool = True,
+        preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1328,6 +1340,7 @@ class DockerManager(CleanupMixin):
                 network=cluster_network,
                 mdns=mdns,
                 network_admin=network_admin,
+                preserve_default_bootstrap=preserve_default_bootstrap,
             )
 
         success_count = 0

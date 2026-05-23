@@ -139,6 +139,50 @@ def test_apply_e2e_defaults_file_not_found():
         assert result is False
 
 
+def test_apply_e2e_defaults_preserve_default_bootstrap():
+    """preserve_default_bootstrap=True keeps whatever bootstrap.nodes was
+    written by `merod init` (the public devnet boot-node), and still
+    applies the rest of the e2e defaults (discovery + sync)."""
+    # Simulate what `merod init` writes by default: a single public
+    # devnet boot-node in the bootstrap list.
+    devnet_boot = "/ip4/63.181.86.34/tcp/4001/p2p/12D3KooW" + "X" * 44
+    initial_config = {"bootstrap": {"nodes": [devnet_boot]}}
+
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {
+            "bootstrap": {"nodes": list(initial_config["bootstrap"]["nodes"])}
+        }
+
+        with patch("builtins.open", mock_open()):
+            with (
+                patch("pathlib.Path.exists", return_value=True),
+                patch("pathlib.Path.chmod"),
+                patch("pathlib.Path.stat"),
+            ):
+                result = apply_e2e_defaults(
+                    Path("/tmp/config.toml"),
+                    "node1",
+                    workflow_id="test-keep-boot",
+                    preserve_default_bootstrap=True,
+                )
+
+                assert result is True
+
+                args, _ = mock_toml.dump.call_args
+                config_dict = args[0]
+
+                # The boot-node from `merod init` survives — this is the
+                # whole point of the opt-out.
+                assert config_dict["bootstrap"]["nodes"] == [devnet_boot]
+                # Discovery + sync defaults still applied.
+                assert (
+                    config_dict["discovery"]["rendezvous"]["namespace"]
+                    == "calimero/merobox-tests/test-keep-boot"
+                )
+                assert config_dict["discovery"]["mdns"] is True
+                assert config_dict["sync"]["timeout_ms"] == 30000
+
+
 # ---------------------------------------------------------------------------
 # read_peer_id
 # ---------------------------------------------------------------------------

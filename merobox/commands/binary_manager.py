@@ -207,6 +207,8 @@ class BinaryManager(CleanupMixin):
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
         merod_args: Optional[str] = None,  # Additional arguments to pass to merod run
+        preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
+        **_ignored,  # tolerate Docker-only kwargs (mdns, network_admin, etc.)
     ) -> bool:
         """
         Run a Calimero node as a native binary process.
@@ -355,7 +357,12 @@ class BinaryManager(CleanupMixin):
 
             # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
             if e2e_mode:
-                apply_e2e_defaults(actual_config_file, node_name, workflow_id)
+                apply_e2e_defaults(
+                    actual_config_file,
+                    node_name,
+                    workflow_id,
+                    preserve_default_bootstrap=preserve_default_bootstrap,
+                )
 
             # Apply bootstrap nodes configuration (works regardless of e2e_mode)
             if bootstrap_nodes:
@@ -828,6 +835,8 @@ class BinaryManager(CleanupMixin):
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
         merod_args: Optional[str] = None,  # Additional arguments to pass to merod run
+        preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
+        **_ignored,  # tolerate Docker-only kwargs
     ) -> bool:
         """
         Start multiple nodes with sequential naming.
@@ -905,6 +914,7 @@ class BinaryManager(CleanupMixin):
                 bootstrap_nodes=bootstrap_nodes,
                 auth_mode=auth_mode,
                 merod_args=merod_args,
+                preserve_default_bootstrap=preserve_default_bootstrap,
             )
 
         with ThreadPoolExecutor(max_workers=count) as pool:
