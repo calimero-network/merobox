@@ -199,6 +199,13 @@ def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
     except Exception:
         state = None
     if state and state != "running":
+        # Log so an author who paused-then-disconnected a node still sees
+        # *something* in the run log — silently skipping would mask the
+        # case where a workflow author actually wanted the warning.
+        console.print(
+            f"[dim]({node_name}: container state is '{state}', skipping "
+            f"mdns check — paused/exited exec_run would hang)[/dim]"
+        )
         return
 
     config_path = f"/app/data/{node_name}/config.toml"

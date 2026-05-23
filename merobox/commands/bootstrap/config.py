@@ -475,11 +475,9 @@ class InjectNetworkFaultStepConfig(BaseStepConfig):
         enforced by the Field constraints; this validator only checks
         cross-field presence based on `fault`.
         """
-        if self.fault == "loss" and (
-            self.percent is None or not (0 < self.percent <= 100)
-        ):
+        if self.fault == "loss" and self.percent is None:
             raise ValueError(
-                "inject_network_fault: 'percent' in (0, 100] is required when fault=loss"
+                "inject_network_fault: 'percent' is required when fault=loss"
             )
         if self.fault == "delay" and self.ms is None:
             raise ValueError("inject_network_fault: 'ms' is required when fault=delay")
