@@ -56,14 +56,22 @@ steps:
       invitation: invitation         # Export 'invitation' as 'invitation'
 
   # Step 6: Join the namespace from the second node
-  # This makes node-2 a namespace member. It does NOT, by itself,
-  # subscribe node-2 to contexts already inside the namespace — that's
-  # what the next step enables.
+  # This makes node-2 a namespace member and returns the per-group
+  # member identity that we need to pass to `set_member_auto_follow`
+  # in step 7. Important: `member_identity` is *not* the same as
+  # `public_key` from create_identity — `set_member_auto_follow` keys
+  # off the in-group identity that join_namespace assigns, not the
+  # node's raw identity public key. Passing `public_key` here is the
+  # mistake the previous workflow made; the server responded with an
+  # opaque "set_member_auto_follow failed" because it could not find
+  # the member.
   - name: Join Namespace from Node 2
     type: join_namespace
     node: calimero-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
+    outputs:
+      member_identity: memberIdentity
 
   # Step 7: Grant node-2 auto-follow on new contexts in this namespace.
   # The previous version of this workflow assumed `join_namespace`
@@ -86,7 +94,7 @@ steps:
     type: set_member_auto_follow
     node: calimero-node-1
     group_id: '{{namespace_id}}'
-    member_id: '{{public_key}}'
+    member_id: '{{member_identity}}'
     auto_follow_contexts: true
     auto_follow_subgroups: true
 
