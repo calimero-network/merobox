@@ -21,11 +21,19 @@ CLUSTER_NETWORK = "merobox-cluster"
 # Universal Docker default — always exists, always a safe fallback target
 # for a re-attach when no better signal is available.
 DEFAULT_NETWORK = "bridge"
-# Dynamic-values key under which disconnect_node records the network it
-# severed, so a downstream connect_node reattaches to the SAME network
-# regardless of how nodes were started. Keyed per-node to support
-# concurrent partitions.
-PARTITION_NETWORK_KEY = "__partition_network_{node}"
+# Internal dynamic-values key prefix. Use partition_network_key(node) to
+# build the per-node key; the helper guarantees disconnect_node and
+# connect_node format it the same way (a raw f-string template would
+# silently break with a typo).
+_PARTITION_NETWORK_KEY_PREFIX = "__partition_network_"
+
+
+def partition_network_key(node: str) -> str:
+    """Return the dynamic_values key disconnect_node uses to record the
+    network it severed, so connect_node can reattach to the same one."""
+    return f"{_PARTITION_NETWORK_KEY_PREFIX}{node}"
+
+
 # Networks that are never valid partition targets even if listed on a
 # container — `host` shares the host stack; `none` is the absence of a NIC.
 _SKIP_NETWORKS = frozenset({"host", "none"})
@@ -112,10 +120,11 @@ def detect_node_network(container: Any) -> str:
         # candidate so the choice is at least deterministic and known-attached
         # (defaulting to `bridge` here would be wrong for auth-mode workflows
         # that put nodes on calimero_web + calimero_internal but not bridge).
-        chosen = sorted(candidates)[0]
+        sorted_candidates = sorted(candidates)
+        chosen = sorted_candidates[0]
         console.print(
             f"[yellow]⚠️  Container attached to multiple networks "
-            f"({', '.join(candidates)}); picking `{chosen}` for the "
+            f"({', '.join(sorted_candidates)}); picking `{chosen}` for the "
             f"partition. Pin `network:` in the step to override.[/yellow]"
         )
         return chosen

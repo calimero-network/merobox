@@ -25,10 +25,10 @@ from typing import Any
 import docker.errors
 
 from merobox.commands.bootstrap.steps._docker_utils import (
-    PARTITION_NETWORK_KEY,
     detect_node_network,
     get_docker_client,
     is_binary_mode,
+    partition_network_key,
     safe_console_error,
     warn_if_mdns_enabled,
 )
@@ -101,7 +101,7 @@ class DisconnectNodeStep(BaseStep):
         # Record so a downstream connect_node reattaches to the SAME network,
         # which matters when the workflow path used run_node directly
         # (no merobox-cluster created) — auto-detection then has no signal.
-        dynamic_values[PARTITION_NETWORK_KEY.format(node=node_name)] = network_name
+        dynamic_values[partition_network_key(node_name)] = network_name
 
         console.print(f"[green]✓ Disconnected {node_name} from {network_name}[/green]")
         return True
@@ -110,8 +110,13 @@ class DisconnectNodeStep(BaseStep):
 class ConnectNodeStep(BaseStep):
     """Connect a node container back to a Docker network.
 
-    Auto-targets merobox-cluster when `network:` is not set, since a
-    disconnected container has no NetworkSettings to introspect.
+    Network resolution order when `network:` is not set:
+      1. The network recorded by a preceding disconnect_node call (read
+         from dynamic_values). This is the common case and the only
+         signal that survives a full disconnect.
+      2. detect_node_network on the container — if it's only partially
+         disconnected, picks an attached candidate; otherwise falls back
+         to Docker's default `bridge`.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -151,7 +156,7 @@ class ConnectNodeStep(BaseStep):
             # Prefer the network recorded by a prior disconnect_node — this is
             # the only signal that survives a full container disconnect, since
             # the container's NetworkSettings is empty by then.
-            recorded = dynamic_values.get(PARTITION_NETWORK_KEY.format(node=node_name))
+            recorded = dynamic_values.get(partition_network_key(node_name))
             network_name = recorded or detect_node_network(container)
 
         console.print(
@@ -172,7 +177,7 @@ class ConnectNodeStep(BaseStep):
 
         # Clean up the recorded partition network so a fresh disconnect
         # cycle doesn't pick up stale state.
-        dynamic_values.pop(PARTITION_NETWORK_KEY.format(node=node_name), None)
+        dynamic_values.pop(partition_network_key(node_name), None)
 
         console.print(f"[green]✓ Connected {node_name} to {network_name}[/green]")
         return True

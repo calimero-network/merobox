@@ -11,7 +11,12 @@ description: |
   workflow-examples/scripts/assert-container-{state,network}.sh.
 
   Set `mdns: false` so the relay/rendezvous code path is actually exercised
-  — the disconnect step's warning will otherwise nag.
+  — the disconnect step's warning will otherwise nag. The companion
+  workflow-fault-injection-convergence-example.yml intentionally leaves
+  mDNS ON because it needs nodes to discover each other initially
+  (no bootstrap peers are wired in count-mode-no-restart). The two
+  workflows test different things: this one demos the primitives' API
+  shape; the other one verifies their behavioral effect on app state.
 
   NOTE: The fourth primitive — `inject_network_fault` — depends on `tc`
   (iproute2) being present inside the container. The stock

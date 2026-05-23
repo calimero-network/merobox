@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.17] - 2026-05-23
+
+### Added
+
+- Network fault-injection workflow step family. `pause_container` /
+  `unpause_container` simulate laptop sleep / Tauri App Nap;
+  `restart_container` (defaults `wait_healthy: true`) simulates a
+  boot-node restart; `disconnect_node` / `connect_node` partition + heal
+  on the container's Docker network with auto-detection (merobox-cluster
+  / calimero_web / bridge) and per-disconnect round-trip state recorded
+  via dynamic_values; `inject_network_fault` runs `tc netem` loss/delay
+  inside the container. Closes 5/7 primitives from
+  calimero-network/merobox#246; the remaining two are tracked in
+  calimero-network/merobox#247 (move_to_network multi-network schema)
+  and calimero-network/merobox#248 (NAT topology).
+- Two node-level config flags on the `nodes:` block: `mdns: false` forces
+  `discovery.mdns` off so the rendezvous/relay code path is actually
+  exercised; `network_admin: true` (default) adds the NET_ADMIN
+  capability to node containers so `inject_network_fault` works out of
+  the box. NET_ADMIN is namespaced to the container's netns and cannot
+  reach the host network stack. Set `network_admin: false` to opt out.
+- Two workflow examples wired into CI: the lightweight
+  `workflow-fault-injection-example.yml` demos the primitives with paired
+  docker-inspect assertion scripts (`assert-container-state.sh`,
+  `assert-container-network.sh`), and
+  `workflow-fault-injection-convergence-example.yml` installs kv_store
+  and walks a 3-node mesh through partition / pause / restart with
+  app-level convergence assertions that catch silent-no-op regressions.
+  A third workflow (`workflow-fault-injection-tc-example.yml`) ships as
+  copy-pasteable starter for users who run a custom merod image with
+  iproute2 installed; excluded from CI since the stock image lacks tc.
+
 ## [0.6.16] - 2026-05-21
 
 ### Added

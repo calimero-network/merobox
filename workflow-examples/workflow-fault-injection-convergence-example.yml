@@ -31,10 +31,14 @@ nodes:
   count: 3
   image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
-  # mDNS is left ENABLED here on purpose — nodes find each other via mDNS
-  # over Docker's default bridge, and disconnect_node severs that path.
-  # Relay-recovery testing (which needs mdns: false) is a separate concern
-  # tracked under the inject_network_fault tc-example workflow.
+  # mDNS is left ENABLED here on purpose — count-mode-no-restart starts
+  # nodes individually without auto-wiring bootstrap peers, so the only
+  # way they discover each other is mDNS over the default bridge.
+  # disconnect_node severs that path cleanly, so the partition is still
+  # real. The companion workflow-fault-injection-example.yml sets
+  # mdns:false because its goal is to exercise the relay/rendezvous code
+  # path; we don't need that here, and turning it off would prevent
+  # the initial mesh setup from converging.
 
 steps:
   # --- Setup: mesh on all 3 nodes ---
