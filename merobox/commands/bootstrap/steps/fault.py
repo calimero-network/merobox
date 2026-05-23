@@ -136,16 +136,18 @@ class InjectNetworkFaultStep(BaseStep):
         ]
         add_result = container.exec_run(add_cmd)
         if add_result.exit_code != 0:
-            stderr = add_result.output.decode("utf-8", errors="replace")
+            # `exec_run` without demux=True returns combined stdout+stderr.
+            # Naming it `output` keeps that honest for future maintainers.
+            output = add_result.output.decode("utf-8", errors="replace")
             hint = ""
-            if "executable file not found" in stderr or "tc: not found" in stderr:
+            if "executable file not found" in output or "tc: not found" in output:
                 hint = (
                     " — the container image does not ship `tc` (iproute2). "
                     "The stock merod image is one of these; build a thin "
                     "image on top with `apt-get install -y iproute2` and "
                     "point `nodes.image` at it."
                 )
-            elif "Operation not permitted" in stderr or "EPERM" in stderr:
+            elif "Operation not permitted" in output or "EPERM" in output:
                 hint = (
                     " — looks like NET_ADMIN is missing. Ensure the workflow's "
                     "`nodes:` block does not set `network_admin: false`."
@@ -153,7 +155,7 @@ class InjectNetworkFaultStep(BaseStep):
             safe_console_error(
                 "✗ Failed to apply netem on {container}: {err}{hint}",
                 container=container_name,
-                err=stderr.strip() or "unknown error",
+                err=output.strip() or "unknown error",
                 hint=hint,
             )
             return False
@@ -170,13 +172,13 @@ class InjectNetworkFaultStep(BaseStep):
             # error with the remediation and let the workflow continue —
             # the next inject_network_fault auto-clears via the leading
             # `tc qdisc del`, and restart_container is the manual escape.
-            stderr = del_result.output.decode("utf-8", errors="replace")
+            output = del_result.output.decode("utf-8", errors="replace")
             safe_console_error(
                 "✗ Failed to clear netem on {container} ({err}). Stale qdisc "
                 "remains on the container — subsequent steps may see degraded "
                 "network. Use restart_container to clear it.",
                 container=container_name,
-                err=stderr.strip() or "unknown",
+                err=output.strip() or "unknown",
             )
             return True
 

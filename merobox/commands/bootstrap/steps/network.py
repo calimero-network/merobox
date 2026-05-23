@@ -25,6 +25,7 @@ from typing import Any
 import docker.errors
 
 from merobox.commands.bootstrap.steps._docker_utils import (
+    PARTITION_NETWORK_KEY,
     detect_node_network,
     get_docker_client,
     is_binary_mode,
@@ -97,6 +98,11 @@ class DisconnectNodeStep(BaseStep):
             )
             return False
 
+        # Record so a downstream connect_node reattaches to the SAME network,
+        # which matters when the workflow path used run_node directly
+        # (no merobox-cluster created) — auto-detection then has no signal.
+        dynamic_values[PARTITION_NETWORK_KEY.format(node=node_name)] = network_name
+
         console.print(f"[green]✓ Disconnected {node_name} from {network_name}[/green]")
         return True
 
@@ -142,7 +148,11 @@ class ConnectNodeStep(BaseStep):
                 explicit_network, workflow_results, dynamic_values
             )
         else:
-            network_name = detect_node_network(container)
+            # Prefer the network recorded by a prior disconnect_node — this is
+            # the only signal that survives a full container disconnect, since
+            # the container's NetworkSettings is empty by then.
+            recorded = dynamic_values.get(PARTITION_NETWORK_KEY.format(node=node_name))
+            network_name = recorded or detect_node_network(container)
 
         console.print(
             f"[yellow]Connecting {node_name} to network {network_name}...[/yellow]"
@@ -159,6 +169,10 @@ class ConnectNodeStep(BaseStep):
                 err=exc,
             )
             return False
+
+        # Clean up the recorded partition network so a fresh disconnect
+        # cycle doesn't pick up stale state.
+        dynamic_values.pop(PARTITION_NETWORK_KEY.format(node=node_name), None)
 
         console.print(f"[green]✓ Connected {node_name} to {network_name}[/green]")
         return True

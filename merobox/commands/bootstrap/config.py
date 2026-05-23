@@ -452,7 +452,10 @@ class InjectNetworkFaultStepConfig(BaseStepConfig):
     )
     duration: int = Field(..., ge=1, description="How long to hold the fault (seconds)")
     percent: Optional[float] = Field(
-        None, description="Loss percent (required when fault=loss)"
+        None,
+        gt=0,
+        le=100,
+        description="Loss percent in (0, 100] (required when fault=loss)",
     )
     ms: Optional[int] = Field(
         None, ge=1, description="Added delay in ms (required when fault=delay)"
@@ -466,17 +469,20 @@ class InjectNetworkFaultStepConfig(BaseStepConfig):
     @model_validator(mode="after")
     def validate_fault_requires_arg(self) -> "InjectNetworkFaultStepConfig":
         """Each fault type needs its own arg — surface that at schema validation
-        rather than waiting for the step to run."""
-        if self.fault == "loss":
-            if self.percent is None or not (0 < self.percent <= 100):
-                raise ValueError(
-                    "inject_network_fault: 'percent' in (0, 100] is required when fault=loss"
-                )
-        elif self.fault == "delay":
-            if self.ms is None or self.ms <= 0:
-                raise ValueError(
-                    "inject_network_fault: positive integer 'ms' is required when fault=delay"
-                )
+        rather than waiting for the step to run.
+
+        The numeric bounds (`percent` in (0, 100], `ms` >= 1) are already
+        enforced by the Field constraints; this validator only checks
+        cross-field presence based on `fault`.
+        """
+        if self.fault == "loss" and (
+            self.percent is None or not (0 < self.percent <= 100)
+        ):
+            raise ValueError(
+                "inject_network_fault: 'percent' in (0, 100] is required when fault=loss"
+            )
+        if self.fault == "delay" and self.ms is None:
+            raise ValueError("inject_network_fault: 'ms' is required when fault=delay")
         return self
 
 

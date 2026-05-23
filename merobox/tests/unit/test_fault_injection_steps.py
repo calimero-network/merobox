@@ -203,14 +203,16 @@ class TestDetectNodeNetwork:
         c = self._container({"calimero_web": {}})
         assert detect_node_network(c) == "calimero_web"
 
-    def test_disconnected_container_defaults_to_cluster(self):
+    def test_disconnected_container_defaults_to_bridge(self):
         from merobox.commands.bootstrap.steps._docker_utils import (
             detect_node_network,
         )
 
-        # No networks attached → assume modern cluster default for reattach.
+        # No networks attached → fall back to bridge (the universal Docker
+        # default that always exists). connect_node short-circuits this
+        # case via the partition-network dynamic value anyway.
         c = self._container({})
-        assert detect_node_network(c) == "merobox-cluster"
+        assert detect_node_network(c) == "bridge"
 
     def test_skips_host_and_none_networks(self):
         from merobox.commands.bootstrap.steps._docker_utils import (
@@ -219,3 +221,14 @@ class TestDetectNodeNetwork:
 
         c = self._container({"host": {}, "none": {}, "bridge": {}})
         assert detect_node_network(c) == "bridge"
+
+    def test_auth_mode_multinetwork_picks_attached(self):
+        from merobox.commands.bootstrap.steps._docker_utils import (
+            detect_node_network,
+        )
+
+        # Auth-mode containers are on calimero_web + calimero_internal but
+        # NOT bridge. Defaulting to bridge here would 404; picking a real
+        # attached network is correct (sorted for determinism).
+        c = self._container({"calimero_web": {}, "calimero_internal": {}})
+        assert detect_node_network(c) == "calimero_internal"

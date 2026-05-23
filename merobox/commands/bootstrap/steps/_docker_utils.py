@@ -15,11 +15,17 @@ from rich.markup import escape
 
 from merobox.commands.utils import console
 
-# Modern multi-node clusters attach nodes to this user-defined bridge.
-# disconnect_node / connect_node fall back to it when the workflow doesn't
-# pin a `network:` and the container exposes no other usable network (e.g.
-# when ConnectNodeStep runs after a full disconnect).
+# Modern multi-node clusters (run_multiple_nodes path) attach nodes to this
+# user-defined bridge. Preferred over `bridge` when both are present.
 CLUSTER_NETWORK = "merobox-cluster"
+# Universal Docker default — always exists, always a safe fallback target
+# for a re-attach when no better signal is available.
+DEFAULT_NETWORK = "bridge"
+# Dynamic-values key under which disconnect_node records the network it
+# severed, so a downstream connect_node reattaches to the SAME network
+# regardless of how nodes were started. Keyed per-node to support
+# concurrent partitions.
+PARTITION_NETWORK_KEY = "__partition_network_{node}"
 # Networks that are never valid partition targets even if listed on a
 # container — `host` shares the host stack; `none` is the absence of a NIC.
 _SKIP_NETWORKS = frozenset({"host", "none"})
@@ -27,6 +33,11 @@ _SKIP_NETWORKS = frozenset({"host", "none"})
 # (whitespace, case) so a stylistic difference in someone's config.toml
 # can't silently suppress the relay-bypass warning.
 _MDNS_FALSE_RE = re.compile(r"(?im)^\s*mdns\s*=\s*false\s*(?:#.*)?$")
+# Same restriction merobox's manager applies to node names. Used here to
+# guard node-name → container-path interpolation (e.g. warn_if_mdns_enabled
+# reads /app/data/<node_name>/config.toml). A crafted name like
+# `../../etc` would otherwise read arbitrary files inside the container.
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def is_binary_mode(manager: Any) -> bool:
@@ -73,19 +84,17 @@ def detect_node_network(container: Any) -> str:
     """Pick the right Docker network for a partition/heal on this container.
 
     Workflows can run on Docker's default `bridge`, the modern
-    `merobox-cluster` user-defined bridge (count >= 2 non-auth path), or
-    `calimero_web` (auth-mode). disconnect_node/connect_node must target
-    the one the container is actually on, or the step is a silent no-op.
+    `merobox-cluster` user-defined bridge (count >= 2 + restart non-auth
+    path in run_multiple_nodes), or `calimero_web` (auth-mode). The right
+    target is whatever the container is actually attached to.
 
     Priority:
       1. `merobox-cluster` if attached — the dominant modern case.
-      2. The single non-default attached network — covers auth (calimero_web)
-         and any custom-network workflow.
-      3. `bridge` — legacy / single-node default.
-
-    When called on a container that has been fully disconnected, returns
-    CLUSTER_NETWORK so a subsequent connect step reattaches to the right
-    bridge by default.
+      2. The single non-default attached network — covers auth
+         (`calimero_web`) and any custom-network workflow.
+      3. `bridge` — universal Docker default; the safe fallback when the
+         container has no attached networks (e.g. mid-partition reattach
+         without a preceding disconnect_node to inform connect_node).
     """
     try:
         container.reload()
@@ -98,18 +107,23 @@ def detect_node_network(container: Any) -> str:
         return CLUSTER_NETWORK
     if len(candidates) == 1:
         return candidates[0]
-    if not candidates:
-        # Fully disconnected (or never attached to a usable network) — assume
-        # the modern cluster default so connect_node reattaches sanely.
-        return CLUSTER_NETWORK
-    # Ambiguous (multiple non-default networks). bridge is the historical
-    # default; surface a warning so the user can pin `network:` explicitly.
-    console.print(
-        f"[yellow]⚠️  Container attached to multiple networks "
-        f"({', '.join(candidates)}); defaulting partition to `bridge`. "
-        f"Pin `network:` in the step to override.[/yellow]"
-    )
-    return "bridge"
+    if len(candidates) > 1:
+        # Ambiguous multi-network attachment — pick the first sorted
+        # candidate so the choice is at least deterministic and known-attached
+        # (defaulting to `bridge` here would be wrong for auth-mode workflows
+        # that put nodes on calimero_web + calimero_internal but not bridge).
+        chosen = sorted(candidates)[0]
+        console.print(
+            f"[yellow]⚠️  Container attached to multiple networks "
+            f"({', '.join(candidates)}); picking `{chosen}` for the "
+            f"partition. Pin `network:` in the step to override.[/yellow]"
+        )
+        return chosen
+    # No candidates (fully disconnected, or attached only to host/none).
+    # connect_node short-circuits this via the partition-network dynamic
+    # value for the common disconnect→connect round-trip; bridge is the
+    # safe Docker-wide default for the residual case.
+    return DEFAULT_NETWORK
 
 
 def safe_console_error(template: str, **fields: str) -> None:
@@ -139,8 +153,11 @@ def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
     silently-passing relay test outweighs the cost of a false alarm.
     """
     # CALIMERO_HOME is /app/data inside the container, and merod stores the
-    # per-node config at $CALIMERO_HOME/<node_name>/config.toml. Use the exact
-    # path so the check doesn't traverse anything else under /app/data.
+    # per-node config at $CALIMERO_HOME/<node_name>/config.toml. Validate
+    # node_name against the same safe-name pattern manager uses, so a crafted
+    # workflow value can't path-traverse out of the data dir.
+    if not _SAFE_NAME_RE.match(node_name):
+        return
     config_path = f"/app/data/{node_name}/config.toml"
     try:
         result = container.exec_run(["cat", config_path])
