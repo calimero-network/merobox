@@ -185,8 +185,12 @@ class WorkflowExecutor:
         # `merod init` survives. Off by default to preserve test
         # isolation; opt-in for workflows that need a stable rendezvous
         # server outside the test cluster.
-        self.preserve_default_bootstrap = config.get(
-            "preserve_default_bootstrap", False
+        # bool() cast guards against a non-bool truthy in the YAML
+        # (e.g. the string "yes") that Pydantic would have rejected on
+        # the model path — `config` here is the raw dict, not the
+        # validated model.
+        self.preserve_default_bootstrap = bool(
+            config.get("preserve_default_bootstrap", False)
         )
 
         # Generate unique workflow ID for test isolation (like e2e tests)

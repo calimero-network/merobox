@@ -1260,7 +1260,7 @@ class WorkflowConfig(BaseModel):
     bootstrap_nodes: Optional[list[str]] = Field(
         None, description="Bootstrap nodes to connect to"
     )
-    preserve_default_bootstrap: Optional[bool] = Field(
+    preserve_default_bootstrap: bool = Field(
         False,
         description=(
             "When `--e2e-mode` is in effect, skip clearing `bootstrap.nodes` "

@@ -170,6 +170,18 @@ def test_apply_e2e_defaults_clears_existing_bootstrap_by_default():
 
                 # Pre-existing boot-node was cleared (the isolation default).
                 assert config_dict["bootstrap"]["nodes"] == []
+                # Clearing the boot-node must NOT skip the discovery/sync
+                # defaults — guards against a refactor regression where
+                # the conditional bootstrap.nodes block accidentally
+                # short-circuits the rest of the e2e_config dict.
+                assert (
+                    config_dict["discovery"]["rendezvous"]["namespace"]
+                    == "calimero/merobox-tests/test-clear-boot"
+                )
+                assert config_dict["discovery"]["mdns"] is True
+                assert config_dict["sync"]["timeout_ms"] == 30000
+                assert config_dict["sync"]["interval_ms"] == 500
+                assert config_dict["sync"]["frequency_ms"] == 1000
 
 
 def test_apply_e2e_defaults_preserve_default_bootstrap():
