@@ -4,17 +4,21 @@ name: Sample Calimero Workflow
 # Force pull Docker images even if they exist locally
 force_pull_image: true
 
-# Step ordering mirrors workflow-examples/workflow-groups-example.yml, the
-# known-good namespace + explicit join_context flow against merod:edge.
-# Earlier versions of this workflow set chain_id/base_port/base_rpc_port
-# and tried various namespace-membership tricks; both ended in node-2
-# never receiving sync updates from node-1. Keep this aligned with the
-# passing groups-example until we have a specific reason to diverge.
+# Step ordering mirrors workflow-examples/workflow-groups-example.yml,
+# the known-good namespace + explicit join_context flow against
+# merod:edge. The only deliberate divergence is `base_port` /
+# `base_rpc_port`: this workflow runs alongside the `shared_cluster`
+# session fixture (3 nodes on the default port range starting at 2428),
+# so it must bind a non-overlapping port window. The groups-example
+# Docker job runs on its own GHA runner without that fixture, which is
+# why it can use the defaults.
 
 nodes:
   count: 2
   image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
+  base_port: 9000
+  base_rpc_port: 9100
 
 steps:
   - name: Install Application on Node 1
