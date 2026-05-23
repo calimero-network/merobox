@@ -286,6 +286,32 @@ jobs:
           cd example-project
           pip install -r requirements.txt
 
+      # Build kv_store.wasm fresh from calimero-network/core master.
+      # example-project/res/kv_store.wasm is checked in as a fallback for
+      # local developers who don't have the core repo, but CI must
+      # rebuild against current core so the CRDT op format matches the
+      # `merod:edge` image the workflow runs against. A stale WASM in
+      # CI causes node-2 to fail to deserialise deltas from node-1 with
+      # `Invalid Option representation: ...` once core's op encoding
+      # has changed.
+      - name: Set up Rust (wasm32 target for kv_store)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build kv_store.wasm from current core
+        run: |
+          chmod +x workflow-examples/scripts/build_res_wasm.sh
+          ./workflow-examples/scripts/build_res_wasm.sh
+          # The build script outputs to workflow-examples/res/. Copy
+          # into example-project/res/ so the integration workflow's
+          # `path: ./res/kv_store.wasm` resolves to the fresh build.
+          mkdir -p example-project/res
+          cp workflow-examples/res/kv_store.wasm example-project/res/kv_store.wasm
+          echo "::group::Rebuilt kv_store.wasm"
+          ls -la example-project/res/kv_store.wasm
+          echo "::endgroup::"
+
       - name: Start node log capture
         run: |
           chmod +x .github/scripts/capture-node-logs.sh
