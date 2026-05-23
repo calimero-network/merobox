@@ -101,6 +101,41 @@ def apply_bootstrap_nodes(
         return False
 
 
+def apply_mdns_setting(
+    config_file: Union[Path, str],
+    node_name: str,
+    enabled: bool,
+) -> bool:
+    """Force discovery.mdns to a specific value in a node's config.toml.
+
+    Without this, a single Docker bridge lets containers find each other via
+    mDNS — relay-recovery test paths become no-ops. Workflows running fault
+    injection should set mdns=false so the rendezvous/relay code path is
+    actually exercised.
+    """
+    try:
+        config_path = Path(config_file)
+        if not config_path.exists():
+            console.print(f"[yellow]Config file not found: {config_file}[/yellow]")
+            return False
+
+        with open(config_path, encoding="utf-8") as f:
+            config = toml.load(f)
+
+        set_nested_config(config, "discovery.mdns", enabled)
+
+        config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
+        with open(config_path, "w", encoding="utf-8") as f:
+            toml.dump(config, f)
+
+        console.print(f"[green]✓ Set discovery.mdns={enabled} for {node_name}[/green]")
+        return True
+
+    except Exception as e:
+        console.print(f"[red]✗ Failed to set mdns for {node_name}: {e}[/red]")
+        return False
+
+
 def read_peer_id(config_file: Union[Path, str]) -> Optional[str]:
     """
     Read the libp2p peer ID from a node's config.toml.

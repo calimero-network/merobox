@@ -1,0 +1,112 @@
+description: |
+  Showcase of merobox's network fault-injection primitives that work with the
+  stock merod image: pause/unpause, restart, and disconnect/connect on the
+  Docker bridge. Designed to be run end-to-end on a developer machine; safe
+  to interrupt at any step.
+
+  Each fault step is paired with a `script` assertion that verifies the
+  observable container state changed as expected — without these, a silent
+  no-op in any of the primitives would let the workflow pass while
+  exercising nothing. The assertion scripts live under
+  workflow-examples/scripts/assert-container-{state,network}.sh.
+
+  Set `mdns: false` so the relay/rendezvous code path is actually exercised
+  — the disconnect step's warning will otherwise nag. The companion
+  workflow-fault-injection-convergence-example.yml intentionally leaves
+  mDNS ON because it needs nodes to discover each other initially
+  (no bootstrap peers are wired in count-mode-no-restart). The two
+  workflows test different things: this one demos the primitives' API
+  shape; the other one verifies their behavioral effect on app state.
+
+  NOTE: The fourth primitive — `inject_network_fault` — depends on `tc`
+  (iproute2) being present inside the container. The stock
+  ghcr.io/calimero-network/merod image does NOT ship it, so a separate
+  example workflow lives at workflow-fault-injection-tc-example.yml for
+  users who run a custom merod image with iproute2 installed.
+name: Network Fault Injection Example
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  mdns: false           # force relay code path
+  network_admin: true   # NET_ADMIN — default true, shown here for clarity
+
+steps:
+  # --- Phase 1: pause/unpause simulates laptop sleep ---
+  - name: Pause node 1 (sleep simulation)
+    type: pause_container
+    container: calimero-node-1
+
+  - name: Verify node 1 is paused
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-state.sh
+    args:
+      - calimero-node-1
+      - paused
+
+  - name: Hold pause for 5s
+    type: wait
+    seconds: 5
+
+  - name: Unpause node 1 (wake)
+    type: unpause_container
+    container: calimero-node-1
+
+  - name: Verify node 1 is running
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-state.sh
+    args:
+      - calimero-node-1
+      - running
+
+  - name: Settle after wake
+    type: wait
+    seconds: 5
+
+  # --- Phase 2: full container restart ---
+  # `wait_healthy: true` already verifies the node's admin /health responds
+  # after restart, which is the strongest signal that the restart did
+  # something — no separate state assertion needed here.
+  - name: Restart node 2
+    type: restart_container
+    container: calimero-node-2
+    wait_healthy: true
+    timeout: 60
+
+  # --- Phase 3: partition + heal on the docker bridge ---
+  - name: Partition node 3 from the bridge
+    type: disconnect_node
+    node: calimero-node-3
+
+  - name: Verify node 3 is off the bridge
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-network.sh
+    args:
+      - calimero-node-3
+      - bridge
+      - absent
+
+  - name: Hold partition for 5s
+    type: wait
+    seconds: 5
+
+  - name: Heal node 3
+    type: connect_node
+    node: calimero-node-3
+
+  - name: Verify node 3 is back on the bridge
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-network.sh
+    args:
+      - calimero-node-3
+      - bridge
+      - present
+
+  - name: Wait for libp2p mesh reformation
+    type: wait
+    seconds: 8

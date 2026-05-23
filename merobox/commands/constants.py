@@ -155,6 +155,8 @@ RESERVED_NODE_CONFIG_KEYS = {
     "image",
     "config_path",
     "use_image_entrypoint",
+    "mdns",
+    "network_admin",
 }
 
 # Response field names (from API responses)

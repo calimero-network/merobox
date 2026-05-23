@@ -12,6 +12,7 @@ from merobox.commands.bootstrap.steps.assert_log import (
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
+from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
 from merobox.commands.bootstrap.steps.group_governance import (
@@ -70,13 +71,22 @@ from merobox.commands.bootstrap.steps.namespace import (
     ListNamespaceGroupsStep,
     ListNamespacesStep,
 )
+from merobox.commands.bootstrap.steps.network import (
+    ConnectNodeStep,
+    DisconnectNodeStep,
+)
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
+from merobox.commands.bootstrap.steps.pause import (
+    PauseContainerStep,
+    UnpauseContainerStep,
+)
 from merobox.commands.bootstrap.steps.proposals import (
     GetProposalApproversStep,
     GetProposalStep,
     ListProposalsStep,
 )
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
+from merobox.commands.bootstrap.steps.restart import RestartContainerStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.bootstrap.steps.start_node import StartNodeStep
 from merobox.commands.bootstrap.steps.stop_node import StopNodeStep
@@ -146,10 +156,10 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
             # Validate each step
             for i, step in enumerate(steps):
                 if not isinstance(step, dict):
-                    errors.append(f"Step {i+1} must be a dictionary")
+                    errors.append(f"Step {i + 1} must be a dictionary")
                     continue
 
-                step_name = step.get("name", f"Step {i+1}")
+                step_name = step.get("name", f"Step {i + 1}")
                 step_type = step.get("type")
 
                 if not step_type:
@@ -305,6 +315,18 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = StopNodeStep
         elif step_type == "start_node":
             step_class = StartNodeStep
+        elif step_type == "pause_container":
+            step_class = PauseContainerStep
+        elif step_type == "unpause_container":
+            step_class = UnpauseContainerStep
+        elif step_type == "restart_container":
+            step_class = RestartContainerStep
+        elif step_type == "disconnect_node":
+            step_class = DisconnectNodeStep
+        elif step_type == "connect_node":
+            step_class = ConnectNodeStep
+        elif step_type == "inject_network_fault":
+            step_class = InjectNetworkFaultStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

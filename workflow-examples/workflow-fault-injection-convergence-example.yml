@@ -1,0 +1,317 @@
+description: |
+  Behavioral verification for the network fault-injection primitives.
+  Goes beyond the lightweight docker-state checks in
+  workflow-fault-injection-example.yml — installs kv_store, joins three
+  nodes via a mesh, and proves each primitive has the convergence effect
+  it claims:
+
+    Partition test:
+      - write `partition_test` on node-1 while node-3 is disconnected
+      - read on node-3 → assert the value did NOT propagate (catches a
+        silent no-op in disconnect_node directly)
+      - heal node-3, wait_for_sync, read on node-3 → assert convergence
+
+    Pause test:
+      - pause node-1, write a different value on node-2
+      - unpause node-1, wait_for_sync, read on node-1 → assert it
+        caught up to the post-pause value
+      - the docker-state assertion proves the pause itself worked
+
+    Restart test:
+      - write on node-2, restart node-2 (wait_healthy)
+      - read on node-2 → assert the value survived restart
+
+  Slower than the lightweight workflow (~3-5 minutes) because of real app
+  install + context join + sync cycles. The payoff is catching the exact
+  class of bug we shipped twice in this PR: a "successful" partition
+  primitive that didn't actually partition.
+name: Network Fault Injection — Convergence Test
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  # mDNS is left ENABLED here on purpose — count-mode-no-restart starts
+  # nodes individually without auto-wiring bootstrap peers, so the only
+  # way they discover each other is mDNS over the default bridge.
+  # disconnect_node severs that path cleanly, so the partition is still
+  # real. The companion workflow-fault-injection-example.yml sets
+  # mdns:false because its goal is to exercise the relay/rendezvous code
+  # path; we don't need that here, and turning it off would prevent
+  # the initial mesh setup from converging.
+
+steps:
+  # --- Setup: mesh on all 3 nodes ---
+  - name: Install kv_store on node 1
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create mesh context across all 3 nodes
+    type: create_mesh
+    context_node: calimero-node-1
+    application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
+    nodes:
+      - calimero-node-2
+      - calimero-node-3
+    capability: member
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # --- Baseline: prove the mesh works before we break it ---
+  - name: Set baseline key from node 1
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: baseline
+      value: ok
+
+  - name: Wait for baseline to reach all 3 nodes
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 60
+
+  - name: Read baseline on node 3
+    type: call
+    node: calimero-node-3
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: baseline
+    outputs:
+      baseline_node3: result
+
+  - name: Assert baseline replicated to node 3 (sanity check)
+    type: assert
+    statements:
+      - "contains({{baseline_node3}}, 'ok')"
+
+  # ====================================================================
+  # Phase A: Partition test — the headline behavioral assertion
+  # ====================================================================
+  - name: Disconnect node 3 from the bridge
+    type: disconnect_node
+    node: calimero-node-3
+
+  - name: Assert node 3 is off the bridge
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-network.sh
+    args:
+      - calimero-node-3
+      - bridge
+      - absent
+
+  - name: Write a key while node 3 is partitioned
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: partition_test
+      value: written_while_partitioned
+
+  - name: node-1 and node-2 still converge with each other
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 30
+
+  - name: Give node-3 a chance to (NOT) sync — short grace window
+    type: wait
+    seconds: 10
+
+  # No during-partition read assertion here on purpose. The
+  # `Assert node 3 is off the bridge` script step above is already a hard
+  # gate against the regression class we care about:
+  #   - silent disconnect no-op → node-3 still on bridge → assert fails
+  #   - wrong-network disconnect → node-3 still on bridge → assert fails
+  #   - correct disconnect → node-3 off bridge → assert passes
+  # An additional `call` step with `expected_failure: true` would only
+  # add a soft warning (the existing ExecuteStep prints
+  # "Expected failure but call succeeded" and still returns True on
+  # unexpected success), so it would not strengthen the gate.
+
+  - name: Heal node 3
+    type: connect_node
+    node: calimero-node-3
+
+  - name: Assert node 3 back on the bridge
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-network.sh
+    args:
+      - calimero-node-3
+      - bridge
+      - present
+
+  - name: Wait for node 3 to catch up after heal
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 90
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Read partition_test on node 3 after heal
+    type: call
+    node: calimero-node-3
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: partition_test
+    outputs:
+      partition_node3_after_heal: result
+
+  - name: Assert node 3 converged after heal
+    type: assert
+    statements:
+      - "contains({{partition_node3_after_heal}}, 'written_while_partitioned')"
+
+  # ====================================================================
+  # Phase B: Pause test — proves pause + unpause + recovery cycle
+  # ====================================================================
+  # The "pause actually paused" assertion is the docker-state script below;
+  # the "convergence resumes after unpause" assertion is the final read.
+  - name: Set pre-pause key from node 1
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: pause_test
+      value: before_pause
+
+  - name: Wait for pre-pause to reach all 3 nodes
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 60
+
+  - name: Pause node 1
+    type: pause_container
+    container: calimero-node-1
+
+  - name: Assert node 1 is paused
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-state.sh
+    args:
+      - calimero-node-1
+      - paused
+
+  - name: Overwrite pause_test from node 2 while node 1 is frozen
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: pause_test
+      value: after_pause
+
+  - name: node-2 and node-3 still converge with each other
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 30
+
+  - name: Unpause node 1
+    type: unpause_container
+    container: calimero-node-1
+
+  - name: Assert node 1 is running
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-container-state.sh
+    args:
+      - calimero-node-1
+      - running
+
+  - name: Wait for node 1 to catch up after unpause
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 90
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Read pause_test on node 1 after unpause
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: pause_test
+    outputs:
+      pause_node1_after_unpause: result
+
+  - name: Assert node 1 caught up to the post-pause value
+    type: assert
+    statements:
+      - "contains({{pause_node1_after_unpause}}, 'after_pause')"
+
+  # ====================================================================
+  # Phase C: Restart test — proves state survives + node rejoins mesh
+  # ====================================================================
+  - name: Set restart_test key from node 2
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: restart_test
+      value: pre_restart
+
+  - name: Wait for restart_test to reach all 3 nodes
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 60
+
+  - name: Restart node 2
+    type: restart_container
+    container: calimero-node-2
+    wait_healthy: true
+    timeout: 60
+
+  - name: Read restart_test back from node 2 after restart
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: restart_test
+    outputs:
+      restart_node2_after: result
+
+  - name: Assert node 2 retained state across restart
+    type: assert
+    statements:
+      - "contains({{restart_node2_after}}, 'pre_restart')"

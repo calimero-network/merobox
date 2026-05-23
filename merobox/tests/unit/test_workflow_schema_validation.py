@@ -1122,3 +1122,105 @@ class TestGroupUpgradeStepSchemas:
         }
         errors = config_module.validate_workflow_step(step, 0)
         assert any("signing_key" in e for e in errors)
+
+
+class TestFaultInjectionStepSchemas:
+    """Schema tests for the network fault-injection primitives."""
+
+    def test_valid_pause_container(self, config_module):
+        step = {"type": "pause_container", "container": "calimero-node-1"}
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_pause_container_missing_container(self, config_module):
+        step = {"type": "pause_container"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("container" in e for e in errors)
+
+    def test_valid_unpause_container(self, config_module):
+        step = {"type": "unpause_container", "container": "calimero-node-1"}
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_restart_container_defaults(self, config_module):
+        step = {"type": "restart_container", "container": "calimero-node-1"}
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_restart_container_explicit_timeout(self, config_module):
+        step = {
+            "type": "restart_container",
+            "container": "calimero-node-1",
+            "wait_healthy": True,
+            "timeout": 90,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_restart_container_bad_timeout(self, config_module):
+        step = {
+            "type": "restart_container",
+            "container": "calimero-node-1",
+            "timeout": 0,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("timeout" in e for e in errors)
+
+    def test_valid_disconnect_node_defaults(self, config_module):
+        step = {"type": "disconnect_node", "node": "calimero-node-1"}
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_connect_node_custom_network(self, config_module):
+        step = {
+            "type": "connect_node",
+            "node": "calimero-node-1",
+            "network": "calimero_internal",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_inject_network_fault_loss(self, config_module):
+        step = {
+            "type": "inject_network_fault",
+            "container": "calimero-node-1",
+            "fault": "loss",
+            "percent": 30,
+            "duration": 5,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_inject_network_fault_delay(self, config_module):
+        step = {
+            "type": "inject_network_fault",
+            "container": "calimero-node-1",
+            "fault": "delay",
+            "ms": 500,
+            "duration": 10,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_inject_network_fault_partition_rejected(self, config_module):
+        # 'partition' must NOT be in the enum — full partition is handled
+        # by disconnect_node so the two primitives don't overlap.
+        step = {
+            "type": "inject_network_fault",
+            "container": "calimero-node-1",
+            "fault": "partition",
+            "duration": 5,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("fault" in e for e in errors)
+
+    def test_invalid_inject_network_fault_loss_missing_percent(self, config_module):
+        step = {
+            "type": "inject_network_fault",
+            "container": "calimero-node-1",
+            "fault": "loss",
+            "duration": 5,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert errors
+
+    def test_valid_nodes_with_mdns_and_network_admin(self, config_module):
+        """NodesConfig accepts the new top-level mdns/network_admin keys."""
+        # Build via NodesConfig directly — the validate_workflow_step path
+        # only exercises step schemas, not the top-level nodes config.
+        cfg = config_module.NodesConfig(count=3, mdns=False, network_admin=False)
+        dumped = cfg.model_dump(exclude_none=True)
+        assert dumped["mdns"] is False
+        assert dumped["network_admin"] is False

@@ -1,0 +1,41 @@
+description: |
+  Demonstrates merobox's `inject_network_fault` step (tc netem packet loss
+  and added latency). REQUIRES a custom merod image with iproute2 installed
+  — the stock ghcr.io/calimero-network/merod image does NOT ship `tc`, so
+  this workflow will fail with "tc: executable file not found" against it.
+
+  To use this example, build a thin image on top of merod:
+
+      FROM ghcr.io/calimero-network/merod:edge
+      USER root
+      RUN apt-get update && apt-get install -y --no-install-recommends \
+              iproute2 && rm -rf /var/lib/apt/lists/*
+
+  …then point the `image:` field below at your tag.
+
+  For the partition / pause / restart primitives that work with the stock
+  image, see workflow-fault-injection-example.yml.
+name: Network Fault Injection (tc netem) Example
+
+nodes:
+  count: 2
+  # Replace with your custom image that includes iproute2.
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  mdns: false           # force relay code path
+  network_admin: true   # NET_ADMIN — default true, shown for clarity
+
+steps:
+  - name: Inject 30% packet loss on node 1 for 10s
+    type: inject_network_fault
+    container: calimero-node-1
+    fault: loss
+    percent: 30
+    duration: 10
+
+  - name: Inject 500ms latency on node 2 for 10s
+    type: inject_network_fault
+    container: calimero-node-2
+    fault: delay
+    ms: 500
+    duration: 10

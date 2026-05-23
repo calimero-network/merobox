@@ -71,22 +71,30 @@ jobs:
       - uses: actions/checkout@v4
       - id: set
         run: |
-          # Binary mode: all workflows except fuzzy and auth-related
+          # Binary mode: all workflows except fuzzy, auth-related, and the
+          # whole fault-injection family. The fault primitives are
+          # Docker-specific (the steps short-circuit on is_binary_mode) and
+          # the paired docker-inspect assertion scripts would fail outright
+          # in binary mode where no container exists.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
             grep -v cached-frontends | \
+            grep -v fault-injection | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
 
-          # Docker mode: same but also exclude binary-only workflow
+          # Docker mode: same but also exclude binary-only workflow.
+          # fault-injection-tc requires a custom merod image with iproute2
+          # installed (the stock image lacks `tc`); skipped in CI.
           DOCKER=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
             grep -v cached-frontends | \
             grep -v example-binary | \
+            grep -v fault-injection-tc | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT
 

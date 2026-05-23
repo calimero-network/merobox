@@ -21,6 +21,7 @@ from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
+    apply_mdns_setting,
     build_sibling_bootstrap_addrs,
     read_peer_id,
 )
@@ -335,6 +336,8 @@ class DockerManager(CleanupMixin):
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
         cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
         network: str = None,  # user-defined Docker network to attach the node to
+        mdns: Optional[bool] = None,  # force discovery.mdns in node config
+        network_admin: bool = True,  # add NET_ADMIN cap for fault-injection steps
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -501,6 +504,11 @@ class DockerManager(CleanupMixin):
                     "SETGID",
                     "SETUID",
                     "PERFMON",
+                    # NET_ADMIN lets fault-injection steps (inject_network_fault)
+                    # run `tc qdisc` inside the container. The capability is
+                    # namespaced to the container's netns — it cannot reach
+                    # the host network stack without --network host.
+                    *(["NET_ADMIN"] if network_admin else []),
                 ],
                 "environment": node_env,
                 "ports": {
@@ -712,6 +720,11 @@ class DockerManager(CleanupMixin):
                 # Apply bootstrap nodes configuration (works regardless of e2e_mode)
                 if bootstrap_nodes:
                     apply_bootstrap_nodes(config_file, node_name, bootstrap_nodes)
+
+                # Force discovery.mdns if the workflow opted in or out.
+                if mdns is not None:
+                    self._fix_permissions(node_data_dir)
+                    apply_mdns_setting(config_file, node_name, mdns)
 
             except Exception:
                 if e2e_mode:
@@ -1253,6 +1266,8 @@ class DockerManager(CleanupMixin):
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         use_image_entrypoint: bool = False,  # preserve Docker image's entrypoint
         cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
+        mdns: Optional[bool] = None,
+        network_admin: bool = True,
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1311,6 +1326,8 @@ class DockerManager(CleanupMixin):
                 use_image_entrypoint=use_image_entrypoint,
                 cors_allowed_origins=cors_allowed_origins,
                 network=cluster_network,
+                mdns=mdns,
+                network_admin=network_admin,
             )
 
         success_count = 0
