@@ -1,11 +1,17 @@
 description: |
-  Showcase of merobox's network fault-injection primitives. Each phase
-  demonstrates one of the new steps (pause, restart, disconnect/connect,
-  inject_network_fault). Designed to be run end-to-end on a developer
-  machine; safe to interrupt at any step.
+  Showcase of merobox's network fault-injection primitives that work with the
+  stock merod image: pause/unpause, restart, and disconnect/connect on the
+  Docker bridge. Designed to be run end-to-end on a developer machine; safe
+  to interrupt at any step.
 
   Set `mdns: false` so the relay/rendezvous code path is actually exercised
-  — the fault-injection warnings will otherwise nag.
+  — the disconnect step's warning will otherwise nag.
+
+  NOTE: The fourth primitive — `inject_network_fault` — depends on `tc`
+  (iproute2) being present inside the container. The stock
+  ghcr.io/calimero-network/merod image does NOT ship it, so a separate
+  example workflow lives at workflow-fault-injection-tc-example.yml for
+  users who run a custom merod image with iproute2 installed.
 name: Network Fault Injection Example
 
 nodes:
@@ -13,7 +19,7 @@ nodes:
   image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
   mdns: false           # force relay code path
-  network_admin: true   # NET_ADMIN for tc — default true, shown for clarity
+  network_admin: true   # NET_ADMIN — default true, shown here for clarity
 
 steps:
   # --- Phase 1: pause/unpause simulates laptop sleep ---
@@ -56,19 +62,3 @@ steps:
   - name: Wait for libp2p mesh reformation
     type: wait
     seconds: 8
-
-  # --- Phase 4: tc netem packet loss ---
-  - name: Inject 30% packet loss on node 1 for 10s
-    type: inject_network_fault
-    container: calimero-node-1
-    fault: loss
-    percent: 30
-    duration: 10
-
-  # --- Phase 5: tc netem added latency ---
-  - name: Inject 500ms latency on node 2 for 10s
-    type: inject_network_fault
-    container: calimero-node-2
-    fault: delay
-    ms: 500
-    duration: 10

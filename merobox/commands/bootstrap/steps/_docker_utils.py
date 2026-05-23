@@ -68,10 +68,12 @@ def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
     produce the warning — silence requires opt-in, since the cost of a
     silently-passing relay test outweighs the cost of a false alarm.
     """
+    # CALIMERO_HOME is /app/data inside the container, and merod stores the
+    # per-node config at $CALIMERO_HOME/<node_name>/config.toml. Use the exact
+    # path so the check doesn't traverse anything else under /app/data.
+    config_path = f"/app/data/{node_name}/config.toml"
     try:
-        result = container.exec_run(
-            ["sh", "-c", "cat /app/data/*/config.toml 2>/dev/null || true"]
-        )
+        result = container.exec_run(["cat", config_path])
         if result.exit_code != 0:
             return
         text = result.output.decode("utf-8", errors="replace").lower()

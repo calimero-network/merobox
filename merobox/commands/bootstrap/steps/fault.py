@@ -125,7 +125,14 @@ class InjectNetworkFaultStep(BaseStep):
         if add_result.exit_code != 0:
             stderr = add_result.output.decode("utf-8", errors="replace")
             hint = ""
-            if "Operation not permitted" in stderr or "EPERM" in stderr:
+            if "executable file not found" in stderr or "tc: not found" in stderr:
+                hint = (
+                    " — the container image does not ship `tc` (iproute2). "
+                    "The stock merod image is one of these; build a thin "
+                    "image on top with `apt-get install -y iproute2` and "
+                    "point `nodes.image` at it."
+                )
+            elif "Operation not permitted" in stderr or "EPERM" in stderr:
                 hint = (
                     " — looks like NET_ADMIN is missing. Ensure the workflow's "
                     "`nodes:` block does not set `network_admin: false`."

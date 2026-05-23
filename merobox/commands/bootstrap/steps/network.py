@@ -16,6 +16,8 @@ explicit `wait_for_sync` or short `wait` before asserting state propagation.
 
 from typing import Any
 
+import docker.errors
+
 from merobox.commands.bootstrap.steps._docker_utils import (
     get_docker_client,
     is_binary_mode,
@@ -63,8 +65,8 @@ class DisconnectNodeStep(BaseStep):
         client = get_docker_client(self.manager)
         try:
             container = client.containers.get(node_name)
-        except Exception as exc:
-            console.print(f"[red]✗ Container '{node_name}' not found: {exc}[/red]")
+        except docker.errors.NotFound:
+            console.print(f"[red]✗ Container '{node_name}' not found[/red]")
             return False
 
         warn_if_mdns_enabled(container, node_name)
@@ -118,8 +120,8 @@ class ConnectNodeStep(BaseStep):
         client = get_docker_client(self.manager)
         try:
             container = client.containers.get(node_name)
-        except Exception as exc:
-            console.print(f"[red]✗ Container '{node_name}' not found: {exc}[/red]")
+        except docker.errors.NotFound:
+            console.print(f"[red]✗ Container '{node_name}' not found[/red]")
             return False
 
         try:
