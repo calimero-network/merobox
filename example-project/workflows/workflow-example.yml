@@ -12,6 +12,22 @@ nodes:
   base_port: 9000
   base_rpc_port: 9100
 
+# Step ordering note:
+#   The original workflow tried to drive cross-node sync by joining
+#   node-2 into the namespace and assuming context membership would
+#   follow automatically. With the namespace-governance refactors in
+#   core that's no longer true — namespace membership and per-context
+#   membership are decoupled, and `set_member_auto_follow` on the
+#   namespace does not retroactively (or even prospectively, in
+#   practice against the current `:prerelease` image) subscribe a
+#   member to contexts in that namespace.
+#
+#   This version mirrors the shape of the passing
+#   `workflow-groups-example.yml`: create the context up front, have
+#   node-2 explicitly `join_context` after `join_namespace`. The
+#   namespace gives node-2 the authority to join; the explicit
+#   join_context wires the per-context membership that sync uses.
+
 steps:
   # Step 1: Install the application on the first node
   # This captures the application ID for use in subsequent steps
@@ -24,8 +40,6 @@ steps:
       app_id: applicationId          # Export 'applicationId' field as 'app_id'
 
   # Step 2: Create a namespace on the first node
-  # The namespace governs membership and (with auto-follow) context
-  # admission for everything created inside it.
   - name: Create Namespace on Node 1
     type: create_namespace
     node: calimero-node-1
@@ -33,75 +47,9 @@ steps:
     outputs:
       namespace_id: namespaceId
 
-  # Step 3: Generate an identity on the second node
-  # This captures the public key for use in the namespace invitation
-  # and for the auto-follow grant below.
-  - name: Create Identity on Node 2
-    type: create_identity
-    node: calimero-node-2
-    outputs:
-      public_key: publicKey         # Export 'publicKey' as 'public_key'
-
-  # Step 4: Wait for identity creation to complete
-  - name: Wait for Identity Creation
-    type: wait
-    seconds: 5
-
-  # Step 5: Create the namespace invitation for the second node
-  - name: Invite Node 2 from Node 1
-    type: create_namespace_invitation
-    node: calimero-node-1
-    namespace_id: '{{namespace_id}}'
-    outputs:
-      invitation: invitation         # Export 'invitation' as 'invitation'
-
-  # Step 6: Join the namespace from the second node
-  # This makes node-2 a namespace member and returns the per-group
-  # member identity that we need to pass to `set_member_auto_follow`
-  # in step 7. Important: `member_identity` is *not* the same as
-  # `public_key` from create_identity — `set_member_auto_follow` keys
-  # off the in-group identity that join_namespace assigns, not the
-  # node's raw identity public key. Passing `public_key` here is the
-  # mistake the previous workflow made; the server responded with an
-  # opaque "set_member_auto_follow failed" because it could not find
-  # the member.
-  - name: Join Namespace from Node 2
-    type: join_namespace
-    node: calimero-node-2
-    namespace_id: '{{namespace_id}}'
-    invitation: '{{invitation}}'
-    outputs:
-      member_identity: memberIdentity
-
-  # Step 7: Grant node-2 auto-follow on new contexts in this namespace.
-  # The previous version of this workflow assumed `join_namespace`
-  # implicitly subscribed the member to the namespace's contexts. That
-  # assumption stopped holding with the namespace-governance refactors
-  # in core — `auto_follow.contexts` is now an explicit per-member
-  # toggle rather than an implicit consequence of namespace membership.
-  #
-  # Setting `auto_follow_contexts: true` here *before* the context is
-  # created in step 8 means node-2 will admit itself into the new
-  # context on creation. The flag is forward-looking; it does NOT
-  # retroactively subscribe a member to contexts that already existed
-  # at the time of the grant — which is why step 7 sits between
-  # join_namespace (member exists) and create_context (context will be
-  # created with the flag in place).
-  #
-  # `requester` is omitted because node-1 is the namespace admin and
-  # the server resolves the admin signing key automatically.
-  - name: Grant Auto-Follow to Node 2
-    type: set_member_auto_follow
-    node: calimero-node-1
-    group_id: '{{namespace_id}}'
-    member_id: '{{member_identity}}'
-    auto_follow_contexts: true
-    auto_follow_subgroups: true
-
-  # Step 8: Create a context in the namespace
-  # Because step 7 granted node-2 auto-follow on contexts in this
-  # namespace, node-2 will admit itself into the new context as part of
-  # the namespace governance broadcast.
+  # Step 3: Create a context inside the namespace on the first node.
+  # Created up front so the context exists by the time node-2 has
+  # joined the namespace and is ready to join_context.
   - name: Create Context on Node 1
     type: create_context
     node: calimero-node-1
@@ -111,8 +59,57 @@ steps:
       context_id: contextId          # Export 'contextId' field as 'context_id'
       member_public_key: memberPublicKey  # Export 'memberPublicKey' as 'member_public_key'
 
-  # Step 9: Execute a contract call to set a key-value pair
-  # Uses the member public key from the context as the executor
+  # Step 4: Generate an identity on the second node
+  # Captured for the test harness's identity-creation assertion.
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      public_key: publicKey         # Export 'publicKey' as 'public_key'
+
+  # Step 5: Wait for identity creation to complete
+  - name: Wait for Identity Creation
+    type: wait
+    seconds: 5
+
+  # Step 6: Create the namespace invitation for the second node
+  - name: Invite Node 2 from Node 1
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation         # Export 'invitation' as 'invitation'
+
+  # Step 7: Wait for namespace gossip to propagate from node-1 to
+  # node-2 before node-2 attempts to join. Mirrors the wait in
+  # workflow-groups-example.yml; without it join_namespace can race
+  # the gossip and fail to find the namespace.
+  - name: Wait for Namespace Gossip
+    type: wait
+    seconds: 5
+
+  # Step 8: Join the namespace from the second node.
+  # Node-2 is now a namespace member, which gives it the authority to
+  # join any context inside that namespace by id.
+  - name: Join Namespace from Node 2
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+    outputs:
+      member_identity: memberIdentity
+
+  # Step 9: Node-2 explicitly joins the existing context.
+  # `join_context` keys off the context_id directly — no separate
+  # invitation is needed because node-2 is already a namespace member,
+  # and namespace membership authorises joining any context in that
+  # namespace. This is the step the old workflow was missing.
+  - name: Node 2 Joins Group Context
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+
+  # Step 10: Execute a contract call to set a key-value pair
   - name: Execute Contract Call - Set Key-Value
     type: call
     node: calimero-node-1
@@ -124,10 +121,11 @@ steps:
     outputs:
       set_result: result            # Export 'result' as 'set_result'
 
-  # Step 10: Wait for the set operation to converge across both nodes.
-  # `wait_for_sync` polls each node's DAG heads + root hash and returns
-  # as soon as they converge. With the auto-follow grant in step 7,
-  # node-2 picks up the context root within a few sync cycles.
+  # Step 11: Wait for the set operation to converge across both nodes.
+  # `wait_for_sync` polls each node's DAG heads + root hash and
+  # returns as soon as they converge. With node-2 now an explicit
+  # context member, the converge typically happens within a few sync
+  # cycles.
   - name: Wait for Set Operation
     type: wait_for_sync
     context_id: '{{context_id}}'
@@ -138,8 +136,7 @@ steps:
     check_interval: 2
     trigger_sync: true
 
-  # Step 11: Execute a view call to retrieve the stored value
-  # Demonstrates cross-node execution using the joined context
+  # Step 12: Execute a view call to retrieve the stored value
   - name: Execute View Call - Get Value
     type: call
     node: calimero-node-2
@@ -150,8 +147,8 @@ steps:
     outputs:
       get_result: result            # Export 'result' as 'get_result'
 
-  # Step 12: Repeat a set of operations multiple times
-  # Demonstrates the new repeat step functionality
+  # Step 13: Repeat a set of operations multiple times
+  # Demonstrates the repeat step functionality
   - name: Repeat Operations Multiple Times
     type: repeat
     count: 3
