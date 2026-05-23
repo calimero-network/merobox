@@ -134,23 +134,16 @@ steps:
     type: wait
     seconds: 10
 
-  # Headline assertion: if disconnect worked, the call must fail on node-3
-  # (partitioned containers cannot execute contract calls — both because
-  # the key never arrived AND because the contract executor itself depends
-  # on libp2p connectivity for some paths). expected_failure: true turns
-  # that failure into a pass.
-  #
-  # If disconnect_node were a silent no-op, the write would have synced to
-  # node-3, the call would succeed, and expected_failure would FAIL the
-  # workflow — exactly the regression we want to catch.
-  - name: Assert node 3 cannot execute while partitioned
-    type: call
-    node: calimero-node-3
-    context_id: "{{context_id}}"
-    method: get
-    args:
-      key: partition_test
-    expected_failure: true
+  # No during-partition read assertion here on purpose. The
+  # `Assert node 3 is off the bridge` script step above is already a hard
+  # gate against the regression class we care about:
+  #   - silent disconnect no-op → node-3 still on bridge → assert fails
+  #   - wrong-network disconnect → node-3 still on bridge → assert fails
+  #   - correct disconnect → node-3 off bridge → assert passes
+  # An additional `call` step with `expected_failure: true` would only
+  # add a soft warning (the existing ExecuteStep prints
+  # "Expected failure but call succeeded" and still returns True on
+  # unexpected success), so it would not strengthen the gate.
 
   - name: Heal node 3
     type: connect_node

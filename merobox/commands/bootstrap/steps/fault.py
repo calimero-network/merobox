@@ -110,6 +110,23 @@ class InjectNetworkFaultStep(BaseStep):
         if container is None:
             return False
 
+        # exec_run blocks indefinitely on a paused container (process is
+        # SIGSTOP'd, never reads from the exec stream), so a workflow that
+        # pauses a node and then injects loss/delay would hang until
+        # workflow timeout instead of failing fast.
+        try:
+            container.reload()
+            state = container.attrs.get("State", {}).get("Status")
+        except Exception:
+            state = None
+        if state and state != "running":
+            console.print(
+                f"[red]✗ Cannot inject fault on {container_name}: container "
+                f"state is '{state}', exec_run would hang. Unpause / restart "
+                f"the container first.[/red]"
+            )
+            return False
+
         warn_if_mdns_enabled(container, container_name)
 
         console.print(
