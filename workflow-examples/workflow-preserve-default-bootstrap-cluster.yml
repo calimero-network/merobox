@@ -1,0 +1,117 @@
+description: >
+  Multi-node companion to workflow-preserve-default-bootstrap.yml.
+
+  The single-node workflow proves `preserve_default_bootstrap: true`
+  is respected by `apply_e2e_defaults`. This one proves the preserved
+  boot-node *survives* the cluster-bootstrap-wiring step.
+
+  Why a separate workflow
+  -----------------------
+
+  In Docker mode with count >= 2, after every node's config has been
+  written by `apply_e2e_defaults`, merobox runs
+  `_wire_cluster_bootstrap_peers` to populate each node's
+  `bootstrap.nodes` with the *other* nodes' libp2p addresses (so the
+  cluster can connect without relying on mDNS). That step calls
+  `apply_bootstrap_nodes`, which REPLACES the on-disk list wholesale.
+  If the wiring code doesn't fold the existing list back in, the
+  merod-init devnet boot-node that `preserve_default_bootstrap=True`
+  saved is silently lost — the user's opt-out becomes a no-op for
+  every multi-node cluster.
+
+  The fix at `_wire_cluster_bootstrap_peers` reads the on-disk
+  `bootstrap.nodes` (via `read_bootstrap_nodes`) and merges it into
+  the wiring step's `existing` list. This workflow regress-tests
+  that fix: with 2 nodes in Docker mode, the wiring step actually
+  runs, and the `assert_log_present` for the public devnet peer ID
+  would fail (the devnet would not be dialed) if the merge weren't
+  in place.
+
+  See also: workflow-examples/workflow-preserve-default-bootstrap.yml
+  for the single-node smoke test (which doesn't trigger
+  `_wire_cluster_bootstrap_peers` and so doesn't exercise this code
+  path).
+name: Preserve Default Bootstrap — Cluster
+
+# Two nodes — minimum for `_wire_cluster_bootstrap_peers` to engage
+# (`len(resolved) < 2` short-circuits with a warning and returns
+# False otherwise; see manager.py).
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: preserve-boot-cluster
+  base_port: 9050
+  base_rpc_port: 9150
+
+# The opt-out under test.
+preserve_default_bootstrap: true
+
+steps:
+  # Smoke: install an app + create a context. Proves the bootstrap-
+  # write paths (apply_e2e_defaults, apply_bootstrap_nodes via the
+  # wiring step, container restart) didn't blow up under the new
+  # field in the multi-node code path.
+  - name: Install Application on node-1
+    type: install_application
+    node: preserve-boot-cluster-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace on node-1
+    type: create_namespace
+    node: preserve-boot-cluster-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Context on node-1
+    type: create_context
+    node: preserve-boot-cluster-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+
+  # Both nodes restarted by the wiring step; give libp2p time to
+  # emit its first round of bootstrap-dial logs after that restart.
+  - name: Wait for post-wiring bootstrap dials
+    type: wait
+    seconds: 10
+
+  # The regression assertion. The devnet boot-node peer ID must
+  # appear in BOTH nodes' logs, because both nodes were given the
+  # devnet entry by `merod init`, both had it preserved by
+  # `apply_e2e_defaults`, and the wiring step must have folded it
+  # back in before writing the sibling-augmented list.
+  #
+  # The same banner-warning rule from the single-node workflow
+  # applies: rotating the public devnet boot-node in
+  # `crates/network/primitives/src/config.rs` requires updating
+  # this peer ID in both workflow files.
+  - name: Assert preserved boot-node survives cluster wiring on node-1
+    type: assert_log_present
+    nodes: [preserve-boot-cluster-1]
+    patterns:
+      - "12D3KooWR5V4zmisVtVdGE6i8jfFwtgRNq5t8eDGxfckKuhXu7Eh"
+
+  - name: Assert preserved boot-node survives cluster wiring on node-2
+    type: assert_log_present
+    nodes: [preserve-boot-cluster-2]
+    patterns:
+      - "12D3KooWR5V4zmisVtVdGE6i8jfFwtgRNq5t8eDGxfckKuhXu7Eh"
+
+  # Regression guard against the wiring path introducing a startup
+  # crash under the new field.
+  - name: No panics or fatal errors on either node
+    type: assert_log_absent
+    nodes:
+      - preserve-boot-cluster-1
+      - preserve-boot-cluster-2
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true

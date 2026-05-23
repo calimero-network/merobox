@@ -5,6 +5,7 @@ from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
     build_sibling_bootstrap_addrs,
+    read_bootstrap_nodes,
     read_peer_id,
     set_nested_config,
 )
@@ -267,6 +268,54 @@ def test_read_peer_id_file_not_found_returns_none():
     """read_peer_id returns None when the config file does not exist."""
     with patch("pathlib.Path.exists", return_value=False):
         assert read_peer_id(Path("/missing/config.toml")) is None
+
+
+# ---------------------------------------------------------------------------
+# read_bootstrap_nodes
+# ---------------------------------------------------------------------------
+
+
+def test_read_bootstrap_nodes_returns_existing_list():
+    """read_bootstrap_nodes echoes the bootstrap.nodes list verbatim — the
+    cluster-wiring code relies on this to recover the preserved merod-init
+    boot-node before it appends sibling addrs."""
+    devnet = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooW" + "Y" * 44
+    config = {"bootstrap": {"nodes": [devnet]}, "discovery": {"mdns": True}}
+
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = config
+        with patch("builtins.open", mock_open()):
+            with patch("pathlib.Path.exists", return_value=True):
+                assert read_bootstrap_nodes(Path("/tmp/config.toml")) == [devnet]
+
+
+def test_read_bootstrap_nodes_missing_key_returns_empty():
+    """When `apply_e2e_defaults` has cleared the list (the default
+    isolation behaviour) the wiring code must treat the absence the same
+    as an explicit empty list and not raise."""
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {"discovery": {"mdns": True}}
+        with patch("builtins.open", mock_open()):
+            with patch("pathlib.Path.exists", return_value=True):
+                assert read_bootstrap_nodes(Path("/tmp/config.toml")) == []
+
+
+def test_read_bootstrap_nodes_file_not_found_returns_empty():
+    """No config file (e.g. the node hasn't been initialised yet) must
+    return [] so callers can fall through to their own defaults."""
+    with patch("pathlib.Path.exists", return_value=False):
+        assert read_bootstrap_nodes(Path("/missing/config.toml")) == []
+
+
+def test_read_bootstrap_nodes_non_list_value_returns_empty():
+    """Defensive: if the on-disk config has been corrupted and the value
+    is a scalar (or anything non-list), don't propagate the bad shape to
+    the wiring code — return [] and let it fall back."""
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {"bootstrap": {"nodes": "not-a-list"}}
+        with patch("builtins.open", mock_open()):
+            with patch("pathlib.Path.exists", return_value=True):
+                assert read_bootstrap_nodes(Path("/tmp/config.toml")) == []
 
 
 # ---------------------------------------------------------------------------

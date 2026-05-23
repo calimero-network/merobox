@@ -23,6 +23,7 @@ from merobox.commands.config_utils import (
     apply_e2e_defaults,
     apply_mdns_setting,
     build_sibling_bootstrap_addrs,
+    read_bootstrap_nodes,
     read_peer_id,
 )
 from merobox.commands.constants import (
@@ -1518,11 +1519,25 @@ class DockerManager(CleanupMixin):
             endpoints = {n: (ip, pid) for n, (ip, pid, _) in resolved.items()}
             restarted: list[str] = []
             for node_name, (_ip, _pid, config_file) in resolved.items():
+                # `apply_bootstrap_nodes` further down REPLACES bootstrap.nodes
+                # wholesale, so anything we want to keep across the wiring step
+                # has to be folded into `existing` here. Read the on-disk list
+                # so a preserved merod-init boot-node (under
+                # `preserve_default_bootstrap=True`) and any prior write from
+                # an explicit workflow `bootstrap_nodes:` field both survive
+                # alongside the sibling addrs we're about to compute.
+                # `dict.fromkeys` keeps insertion order while deduping in case
+                # the workflow's `bootstrap_nodes:` (passed in here as
+                # `base_bootstrap_nodes`) and the on-disk list overlap.
+                existing_on_disk = read_bootstrap_nodes(config_file)
+                merged_existing = list(
+                    dict.fromkeys(list(base_bootstrap_nodes or []) + existing_on_disk)
+                )
                 addrs = build_sibling_bootstrap_addrs(
                     node_name,
                     endpoints,
                     DEFAULT_P2P_PORT,
-                    existing=base_bootstrap_nodes,
+                    existing=merged_existing,
                 )
                 if not addrs:
                     continue

@@ -136,6 +136,36 @@ def apply_mdns_setting(
         return False
 
 
+def read_bootstrap_nodes(config_file: Union[Path, str]) -> list[str]:
+    """Read the current ``bootstrap.nodes`` list from a node's config.toml.
+
+    The list reflects whatever was last written by ``merod init`` (the
+    public devnet boot-node), ``apply_e2e_defaults`` (cleared to ``[]``
+    by default; preserved when ``preserve_default_bootstrap=True``), or
+    ``apply_bootstrap_nodes`` (an explicit workflow-supplied list).
+    Callers that need to *extend* the existing list rather than
+    overwrite it — e.g. cluster-wiring code that appends sibling addrs
+    after the per-node config has already been written — read it here
+    so the preceding writes survive.
+
+    Returns an empty list if the file is missing, the key is absent, or
+    the stored value isn't a list.
+    """
+    try:
+        config_path = Path(config_file)
+        if not config_path.exists():
+            return []
+        with open(config_path, encoding="utf-8") as f:
+            config = toml.load(f)
+        nodes = config.get("bootstrap", {}).get("nodes", [])
+        return list(nodes) if isinstance(nodes, list) else []
+    except Exception as e:
+        console.print(
+            f"[red]✗ Failed to read bootstrap.nodes from {config_file}: {e}[/red]"
+        )
+        return []
+
+
 def read_peer_id(config_file: Union[Path, str]) -> Optional[str]:
     """
     Read the libp2p peer ID from a node's config.toml.
