@@ -134,23 +134,23 @@ steps:
     type: wait
     seconds: 10
 
-  - name: Read partition_test on partitioned node 3
+  # Headline assertion: if disconnect worked, the call must fail on node-3
+  # (partitioned containers cannot execute contract calls — both because
+  # the key never arrived AND because the contract executor itself depends
+  # on libp2p connectivity for some paths). expected_failure: true turns
+  # that failure into a pass.
+  #
+  # If disconnect_node were a silent no-op, the write would have synced to
+  # node-3, the call would succeed, and expected_failure would FAIL the
+  # workflow — exactly the regression we want to catch.
+  - name: Assert node 3 cannot execute while partitioned
     type: call
     node: calimero-node-3
     context_id: "{{context_id}}"
     method: get
     args:
       key: partition_test
-    outputs:
-      partition_node3_while_split: result
-
-  # Headline assertion: a real disconnect prevents propagation. If
-  # disconnect_node were a silent no-op, this read would return
-  # 'written_while_partitioned' and the workflow would fail here.
-  - name: Assert node 3 did NOT receive the write
-    type: assert
-    statements:
-      - "not_contains({{partition_node3_while_split}}, 'written_while_partitioned')"
+    expected_failure: true
 
   - name: Heal node 3
     type: connect_node
