@@ -419,7 +419,11 @@ class DisconnectNodeStepConfig(BaseStepConfig):
     type: Literal["disconnect_node"] = "disconnect_node"
     node: str = Field(..., description="Target node container name")
     network: Optional[str] = Field(
-        "bridge", description="Docker network to disconnect from (default: bridge)"
+        None,
+        description=(
+            "Docker network to disconnect from. Defaults to the container's "
+            "actual attached network (merobox-cluster / calimero_web / bridge)."
+        ),
     )
 
 
@@ -429,7 +433,12 @@ class ConnectNodeStepConfig(BaseStepConfig):
     type: Literal["connect_node"] = "connect_node"
     node: str = Field(..., description="Target node container name")
     network: Optional[str] = Field(
-        "bridge", description="Docker network to (re)connect to (default: bridge)"
+        None,
+        description=(
+            "Docker network to (re)connect to. Defaults to merobox-cluster "
+            "(the modern multi-node default); set explicitly for legacy / "
+            "single-node setups that use Docker's default bridge."
+        ),
     )
 
 
@@ -449,7 +458,9 @@ class InjectNetworkFaultStepConfig(BaseStepConfig):
         None, ge=1, description="Added delay in ms (required when fault=delay)"
     )
     interface: Optional[str] = Field(
-        "eth0", description="Container network interface (default: eth0)"
+        "eth0",
+        pattern=r"^[A-Za-z0-9._-]{1,15}$",
+        description="Container network interface (default: eth0; Linux naming rules)",
     )
 
     @model_validator(mode="after")

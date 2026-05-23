@@ -7,11 +7,26 @@ stay focused on the operation they wrap rather than client wiring.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import docker.errors
+from rich.markup import escape
 
 from merobox.commands.utils import console
+
+# Modern multi-node clusters attach nodes to this user-defined bridge.
+# disconnect_node / connect_node fall back to it when the workflow doesn't
+# pin a `network:` and the container exposes no other usable network (e.g.
+# when ConnectNodeStep runs after a full disconnect).
+CLUSTER_NETWORK = "merobox-cluster"
+# Networks that are never valid partition targets even if listed on a
+# container — `host` shares the host stack; `none` is the absence of a NIC.
+_SKIP_NETWORKS = frozenset({"host", "none"})
+# TOML key match for mdns. Tolerates the formatting variants TOML allows
+# (whitespace, case) so a stylistic difference in someone's config.toml
+# can't silently suppress the relay-bypass warning.
+_MDNS_FALSE_RE = re.compile(r"(?im)^\s*mdns\s*=\s*false\s*(?:#.*)?$")
 
 
 def is_binary_mode(manager: Any) -> bool:
@@ -54,6 +69,61 @@ def resolve_container(manager: Any, container_name: str) -> Any | None:
         return None
 
 
+def detect_node_network(container: Any) -> str:
+    """Pick the right Docker network for a partition/heal on this container.
+
+    Workflows can run on Docker's default `bridge`, the modern
+    `merobox-cluster` user-defined bridge (count >= 2 non-auth path), or
+    `calimero_web` (auth-mode). disconnect_node/connect_node must target
+    the one the container is actually on, or the step is a silent no-op.
+
+    Priority:
+      1. `merobox-cluster` if attached — the dominant modern case.
+      2. The single non-default attached network — covers auth (calimero_web)
+         and any custom-network workflow.
+      3. `bridge` — legacy / single-node default.
+
+    When called on a container that has been fully disconnected, returns
+    CLUSTER_NETWORK so a subsequent connect step reattaches to the right
+    bridge by default.
+    """
+    try:
+        container.reload()
+    except Exception:
+        pass
+    networks_dict = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+    candidates = [n for n in networks_dict.keys() if n not in _SKIP_NETWORKS]
+
+    if CLUSTER_NETWORK in candidates:
+        return CLUSTER_NETWORK
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        # Fully disconnected (or never attached to a usable network) — assume
+        # the modern cluster default so connect_node reattaches sanely.
+        return CLUSTER_NETWORK
+    # Ambiguous (multiple non-default networks). bridge is the historical
+    # default; surface a warning so the user can pin `network:` explicitly.
+    console.print(
+        f"[yellow]⚠️  Container attached to multiple networks "
+        f"({', '.join(candidates)}); defaulting partition to `bridge`. "
+        f"Pin `network:` in the step to override.[/yellow]"
+    )
+    return "bridge"
+
+
+def safe_console_error(template: str, **fields: str) -> None:
+    """Print a red error with all interpolated fields escaped against rich markup.
+
+    Container stderr and Docker exception messages can contain text that
+    looks like rich markup tags (`[bold]`, `[/red]`) or terminal escape
+    sequences. Escaping at the interpolation boundary keeps the console
+    output sound regardless of what the container or daemon produces.
+    """
+    escaped = {key: escape(str(value)) for key, value in fields.items()}
+    console.print(f"[red]{template.format(**escaped)}[/red]")
+
+
 def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
     """Emit a yellow warning when a fault-injection step runs on a node with mDNS on.
 
@@ -76,11 +146,11 @@ def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
         result = container.exec_run(["cat", config_path])
         if result.exit_code != 0:
             return
-        text = result.output.decode("utf-8", errors="replace").lower()
+        text = result.output.decode("utf-8", errors="replace")
     except Exception:
         return
 
-    if "mdns = false" in text:
+    if _MDNS_FALSE_RE.search(text):
         return
 
     console.print(

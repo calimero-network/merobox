@@ -154,3 +154,68 @@ class TestInjectFaultStepValidation:
                     "duration": 0,
                 }
             )
+
+    def test_interface_must_match_linux_naming(self):
+        with pytest.raises(ValueError, match="interface"):
+            InjectNetworkFaultStep(
+                {
+                    "type": "inject_network_fault",
+                    "container": "node-1",
+                    "fault": "loss",
+                    "percent": 10,
+                    "duration": 5,
+                    # Shell metachars / spaces are rejected even though
+                    # exec_run passes argv as a list (defense in depth).
+                    "interface": "eth0; rm -rf /",
+                }
+            )
+
+
+class TestDetectNodeNetwork:
+    """detect_node_network picks the right partition target by introspecting
+    the container's actual attached networks."""
+
+    @staticmethod
+    def _container(networks: dict):
+        class FakeContainer:
+            def __init__(self):
+                self.attrs = {"NetworkSettings": {"Networks": networks}}
+
+            def reload(self):
+                pass
+
+        return FakeContainer()
+
+    def test_prefers_merobox_cluster(self):
+        from merobox.commands.bootstrap.steps._docker_utils import (
+            detect_node_network,
+        )
+
+        # bridge present too, but cluster wins.
+        c = self._container({"bridge": {}, "merobox-cluster": {}})
+        assert detect_node_network(c) == "merobox-cluster"
+
+    def test_single_non_default_network_used(self):
+        from merobox.commands.bootstrap.steps._docker_utils import (
+            detect_node_network,
+        )
+
+        c = self._container({"calimero_web": {}})
+        assert detect_node_network(c) == "calimero_web"
+
+    def test_disconnected_container_defaults_to_cluster(self):
+        from merobox.commands.bootstrap.steps._docker_utils import (
+            detect_node_network,
+        )
+
+        # No networks attached → assume modern cluster default for reattach.
+        c = self._container({})
+        assert detect_node_network(c) == "merobox-cluster"
+
+    def test_skips_host_and_none_networks(self):
+        from merobox.commands.bootstrap.steps._docker_utils import (
+            detect_node_network,
+        )
+
+        c = self._container({"host": {}, "none": {}, "bridge": {}})
+        assert detect_node_network(c) == "bridge"

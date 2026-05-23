@@ -11,11 +11,13 @@ with EPERM and this step surfaces a clear error pointing to the cause.
 """
 
 import asyncio
+import re
 from typing import Any
 
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
     resolve_container,
+    safe_console_error,
     warn_if_mdns_enabled,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -23,6 +25,10 @@ from merobox.commands.utils import console
 
 DEFAULT_INTERFACE = "eth0"
 SUPPORTED_FAULTS = ("loss", "delay")
+# Linux interface naming follows kernel rules: alnum plus a few separators,
+# max 15 chars. Restricting the input keeps `tc` argv hygienic — exec_run
+# is shell-free so this is defense in depth, not a primary boundary.
+_INTERFACE_RE = re.compile(r"^[A-Za-z0-9._-]{1,15}$")
 
 
 class InjectNetworkFaultStep(BaseStep):
@@ -67,8 +73,15 @@ class InjectNetworkFaultStep(BaseStep):
                     f"and must be a positive integer"
                 )
 
-        if "interface" in self.config and not isinstance(self.config["interface"], str):
-            raise ValueError(f"Step '{step_name}': 'interface' must be a string")
+        if "interface" in self.config:
+            interface = self.config["interface"]
+            if not isinstance(interface, str):
+                raise ValueError(f"Step '{step_name}': 'interface' must be a string")
+            if not _INTERFACE_RE.match(interface):
+                raise ValueError(
+                    f"Step '{step_name}': 'interface' must match "
+                    f"{_INTERFACE_RE.pattern} (Linux interface naming rules)"
+                )
 
     def _build_netem_args(self) -> list[str]:
         fault = self.config["fault"]
@@ -137,9 +150,11 @@ class InjectNetworkFaultStep(BaseStep):
                     " — looks like NET_ADMIN is missing. Ensure the workflow's "
                     "`nodes:` block does not set `network_admin: false`."
                 )
-            console.print(
-                f"[red]✗ Failed to apply netem on {container_name}: "
-                f"{stderr.strip() or 'unknown error'}{hint}[/red]"
+            safe_console_error(
+                "✗ Failed to apply netem on {container}: {err}{hint}",
+                container=container_name,
+                err=stderr.strip() or "unknown error",
+                hint=hint,
             )
             return False
 
@@ -156,11 +171,12 @@ class InjectNetworkFaultStep(BaseStep):
             # the next inject_network_fault auto-clears via the leading
             # `tc qdisc del`, and restart_container is the manual escape.
             stderr = del_result.output.decode("utf-8", errors="replace")
-            console.print(
-                f"[red]✗ Failed to clear netem on {container_name} "
-                f"({stderr.strip() or 'unknown'}). Stale qdisc remains on "
-                f"the container — subsequent steps may see degraded network. "
-                f"Use restart_container to clear it.[/red]"
+            safe_console_error(
+                "✗ Failed to clear netem on {container} ({err}). Stale qdisc "
+                "remains on the container — subsequent steps may see degraded "
+                "network. Use restart_container to clear it.",
+                container=container_name,
+                err=stderr.strip() or "unknown",
             )
             return True
 

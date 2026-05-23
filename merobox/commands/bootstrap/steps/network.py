@@ -1,8 +1,14 @@
-"""Disconnect / connect step executors for the Docker bridge network.
+"""Disconnect / connect step executors for the container's Docker network.
 
 Used to simulate network partitions in tests. The container keeps running
 and retains all in-memory state, but cannot reach (or be reached by) other
-containers on the default bridge. Re-attach with connect_node.
+containers on its bridge network. Re-attach with connect_node.
+
+Auto-targets the right network for the workflow: `merobox-cluster` for
+multi-node (count >= 2) runs, `calimero_web` for auth-service workflows,
+`bridge` for legacy / single-node setups. Override with explicit `network:`
+if you need to disconnect from something specific (or from a network the
+container is attached to alongside others).
 
 Caveat: this is not a perfect partition. Containers also bind to the host's
 exposed ports, so any peer connecting via host gateway would still see them.
@@ -19,18 +25,23 @@ from typing import Any
 import docker.errors
 
 from merobox.commands.bootstrap.steps._docker_utils import (
+    detect_node_network,
     get_docker_client,
     is_binary_mode,
+    safe_console_error,
     warn_if_mdns_enabled,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
 
-DEFAULT_NETWORK = "bridge"
-
 
 class DisconnectNodeStep(BaseStep):
-    """Disconnect a node container from a Docker network (default: bridge)."""
+    """Disconnect a node container from its Docker network.
+
+    Auto-detects the network from the container's NetworkSettings when
+    `network:` is not set; falls back to merobox-cluster / bridge per
+    detect_node_network's priority.
+    """
 
     def _get_required_fields(self) -> list[str]:
         return ["node"]
@@ -52,15 +63,6 @@ class DisconnectNodeStep(BaseStep):
         node_name = self._resolve_dynamic_value(
             self.config["node"], workflow_results, dynamic_values
         )
-        network_name = self._resolve_dynamic_value(
-            self.config.get("network", DEFAULT_NETWORK),
-            workflow_results,
-            dynamic_values,
-        )
-
-        console.print(
-            f"[yellow]Disconnecting {node_name} from network {network_name}...[/yellow]"
-        )
 
         client = get_docker_client(self.manager)
         try:
@@ -69,14 +71,29 @@ class DisconnectNodeStep(BaseStep):
             console.print(f"[red]✗ Container '{node_name}' not found[/red]")
             return False
 
+        explicit_network = self.config.get("network")
+        if explicit_network is not None:
+            network_name = self._resolve_dynamic_value(
+                explicit_network, workflow_results, dynamic_values
+            )
+        else:
+            network_name = detect_node_network(container)
+
         warn_if_mdns_enabled(container, node_name)
+
+        console.print(
+            f"[yellow]Disconnecting {node_name} from network {network_name}...[/yellow]"
+        )
 
         try:
             network = client.networks.get(network_name)
             network.disconnect(container)
         except Exception as exc:
-            console.print(
-                f"[red]✗ Failed to disconnect {node_name} from {network_name}: {exc}[/red]"
+            safe_console_error(
+                "✗ Failed to disconnect {node} from {network}: {err}",
+                node=node_name,
+                network=network_name,
+                err=exc,
             )
             return False
 
@@ -85,7 +102,11 @@ class DisconnectNodeStep(BaseStep):
 
 
 class ConnectNodeStep(BaseStep):
-    """Connect a node container back to a Docker network (default: bridge)."""
+    """Connect a node container back to a Docker network.
+
+    Auto-targets merobox-cluster when `network:` is not set, since a
+    disconnected container has no NetworkSettings to introspect.
+    """
 
     def _get_required_fields(self) -> list[str]:
         return ["node"]
@@ -107,15 +128,6 @@ class ConnectNodeStep(BaseStep):
         node_name = self._resolve_dynamic_value(
             self.config["node"], workflow_results, dynamic_values
         )
-        network_name = self._resolve_dynamic_value(
-            self.config.get("network", DEFAULT_NETWORK),
-            workflow_results,
-            dynamic_values,
-        )
-
-        console.print(
-            f"[yellow]Connecting {node_name} to network {network_name}...[/yellow]"
-        )
 
         client = get_docker_client(self.manager)
         try:
@@ -124,12 +136,27 @@ class ConnectNodeStep(BaseStep):
             console.print(f"[red]✗ Container '{node_name}' not found[/red]")
             return False
 
+        explicit_network = self.config.get("network")
+        if explicit_network is not None:
+            network_name = self._resolve_dynamic_value(
+                explicit_network, workflow_results, dynamic_values
+            )
+        else:
+            network_name = detect_node_network(container)
+
+        console.print(
+            f"[yellow]Connecting {node_name} to network {network_name}...[/yellow]"
+        )
+
         try:
             network = client.networks.get(network_name)
             network.connect(container)
         except Exception as exc:
-            console.print(
-                f"[red]✗ Failed to connect {node_name} to {network_name}: {exc}[/red]"
+            safe_console_error(
+                "✗ Failed to connect {node} to {network}: {err}",
+                node=node_name,
+                network=network_name,
+                err=exc,
             )
             return False
 
