@@ -4,8 +4,16 @@ name: Sample Calimero Workflow
 # Force pull Docker images even if they exist locally
 force_pull_image: true
 
+# Step ordering mirrors workflow-examples/workflow-groups-example.yml,
+# the known-good namespace + explicit join_context flow against
+# merod:edge. The only deliberate divergence is `base_port` /
+# `base_rpc_port`: this workflow runs alongside the `shared_cluster`
+# session fixture (3 nodes on the default port range starting at 2428),
+# so it must bind a non-overlapping port window. The groups-example
+# Docker job runs on its own GHA runner without that fixture, which is
+# why it can use the defaults.
+
 nodes:
-  chain_id: testnet-1
   count: 2
   image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
@@ -13,17 +21,14 @@ nodes:
   base_rpc_port: 9100
 
 steps:
-  # Step 1: Install the application on the first node
-  # This captures the application ID for use in subsequent steps
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
     path: ./res/kv_store.wasm
     dev: true
     outputs:
-      app_id: applicationId          # Export 'applicationId' field as 'app_id'
+      app_id: applicationId
 
-  # Step 2: Create a namespace using the installed application
   - name: Create Namespace on Node 1
     type: create_namespace
     node: calimero-node-1
@@ -31,46 +36,49 @@ steps:
     outputs:
       namespace_id: namespaceId
 
-  # Step 3: Create a context in the namespace
   - name: Create Context on Node 1
     type: create_context
     node: calimero-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
     outputs:
-      context_id: contextId          # Export 'contextId' field as 'context_id'
-      member_public_key: memberPublicKey  # Export 'memberPublicKey' as 'member_public_key'
+      context_id: contextId
+      member_public_key: memberPublicKey
 
-  # Step 4: Generate an identity on the second node
-  # This captures the public key for use in invitation and joining
   - name: Create Identity on Node 2
     type: create_identity
     node: calimero-node-2
     outputs:
-      public_key: publicKey         # Export 'publicKey' as 'public_key'
+      public_key: publicKey
 
-  # Step 5: Wait for identity creation to complete
   - name: Wait for Identity Creation
     type: wait
     seconds: 5
 
-  # Step 6: Create namespace invitation for second node
-  - name: Invite Node 2 from Node 1
+  - name: Create Namespace Invitation on Node 1
     type: create_namespace_invitation
     node: calimero-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
-      invitation: invitation         # Export 'invitation' as 'invitation'
+      invitation: invitation
 
-  # Step 7: Join namespace from second node
-  - name: Join Context from Node 2
+  - name: Wait for Namespace Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins Namespace
     type: join_namespace
     node: calimero-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
+    outputs:
+      member_identity: memberIdentity
 
-  # Step 8: Execute a contract call to set a key-value pair
-  # Uses the member public key from the context as the executor
+  - name: Node 2 Joins Group Context
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+
   - name: Execute Contract Call - Set Key-Value
     type: call
     node: calimero-node-1
@@ -80,25 +88,18 @@ steps:
       key: hello
       value: world
     outputs:
-      set_result: result            # Export 'result' as 'set_result'
+      set_result: result
 
-  # Step 9: Wait for the set operation to converge across both nodes.
-  # `wait_for_sync` polls each node's DAG heads + root hash and returns as
-  # soon as they converge; replaces a blind 3s sleep which was insufficient
-  # for the cross-node sync timing on recent merod:edge builds (the post-rc.41
-  # sync-manager refactors in core's #2420 / #2424).
   - name: Wait for Set Operation
     type: wait_for_sync
     context_id: '{{context_id}}'
     nodes:
       - calimero-node-1
       - calimero-node-2
-    timeout: 120
+    timeout: 60
     check_interval: 2
     trigger_sync: true
 
-  # Step 10: Execute a view call to retrieve the stored value
-  # Demonstrates cross-node execution using the joined context
   - name: Execute View Call - Get Value
     type: call
     node: calimero-node-2
@@ -107,28 +108,25 @@ steps:
     args:
       key: hello
     outputs:
-      get_result: result            # Export 'result' as 'get_result'
+      get_result: result
 
-  # Step 11: Repeat a set of operations multiple times
-  # Demonstrates the new repeat step functionality
   - name: Repeat Operations Multiple Times
     type: repeat
     count: 3
     outputs:
-      current_iteration: iteration   # Export 'iteration' as 'current_iteration'
+      current_iteration: iteration
     steps:
       - name: Set Key-Value Pair
         type: call
         node: calimero-node-1
         context_id: '{{context_id}}'
-
         method: set
         args:
           key: "iteration_{{current_iteration}}"
           value: "value_{{current_iteration}}"
         outputs:
-          iteration_set_result: result  # Export 'result' as 'iteration_set_result'
-      
+          iteration_set_result: result
+
       - name: Wait for Set Operation
         type: wait_for_sync
         context_id: '{{context_id}}'
@@ -138,19 +136,17 @@ steps:
         timeout: 60
         check_interval: 2
         trigger_sync: true
-      
+
       - name: Get Key-Value Pair
         type: call
         node: calimero-node-2
         context_id: '{{context_id}}'
-
         method: get
         args:
           key: "iteration_{{current_iteration}}"
         outputs:
-          iteration_get_result: result  # Export 'result' as 'iteration_get_result'
+          iteration_get_result: result
 
-# Configuration options
-stop_all_nodes: false   # Stop all nodes at the end of workflow
-restart: false          # Don't restart nodes at the beginning of workflow
+stop_all_nodes: false
+restart: false
 wait_timeout: 60
