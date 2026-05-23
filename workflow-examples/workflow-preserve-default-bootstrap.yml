@@ -1,0 +1,120 @@
+description: >
+  End-to-end test for `preserve_default_bootstrap: true`.
+
+  The default behaviour under `--e2e-mode` is for `apply_e2e_defaults`
+  to clear `bootstrap.nodes` to `[]` for test isolation. Setting
+  `preserve_default_bootstrap: true` opts out, leaving whatever
+  `merod init` wrote in place — the public devnet boot-node from
+  calimero-network/core's stock config.
+
+  Test strategy
+  -------------
+
+  We can't ergonomically introspect the on-disk config.toml from
+  inside a workflow step. So we rely on libp2p emitting log lines
+  about its bootstrap behaviour: when the boot-node list is non-empty,
+  the node dials it on startup, and the dial attempt (or the
+  resulting identify exchange) names the boot-node peer ID in the
+  log stream. If `apply_e2e_defaults` had wiped the list, no such
+  log lines would exist.
+
+  Specifically we assert on the public devnet boot-node peer ID
+  `12D3KooWR5V4zmisVtVdGE6i8jfFwtgRNq5t8eDGxfckKuhXu7Eh`, which is
+  the value `merod init` writes to fresh configs (see
+  `crates/network/primitives/src/config.rs` in calimero-network/core).
+  CI runners are not guaranteed to actually reach the public boot-node,
+  but the dial *attempt* is logged regardless of success — which is
+  exactly the signal we want, since a successful dial is orthogonal to
+  the field's plumbing.
+
+  Counter-checks
+  --------------
+
+  * The node still installs an app and creates a context normally —
+    proves the flag doesn't break the bootstrap-config write path.
+  * `assert_log_absent` for `panicked at` / `FATAL` — guards against
+    the flag introducing a startup crash.
+name: Preserve Default Bootstrap
+
+# Single node — the field only affects how each node's config is
+# written, no multi-node behaviour to exercise.
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: preserve-boot-node
+  base_port: 9040
+  base_rpc_port: 9140
+
+# The opt-out under test.
+preserve_default_bootstrap: true
+
+steps:
+  # Smoke: install an app + create a context. Proves the node's
+  # bootstrap/config write path didn't blow up under the new field.
+  - name: Install Application
+    type: install_application
+    node: preserve-boot-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace
+    type: create_namespace
+    node: preserve-boot-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Context
+    type: create_context
+    node: preserve-boot-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+
+  # Give libp2p time to emit its first round of bootstrap-dial logs.
+  # Default boot-node dial happens within the first few seconds of
+  # startup, but a margin avoids racing the assert step.
+  - name: Wait for bootstrap dial attempts
+    type: wait
+    seconds: 10
+
+  # The core assertion: the boot-node peer ID from `merod init` shows
+  # up in the merod log stream. If `preserve_default_bootstrap` had
+  # been ignored (or apply_e2e_defaults had wiped the list anyway),
+  # this peer ID would not appear because no dial would be attempted.
+  #
+  # !!! BOOT-NODE ROTATION: WHEN YOU CHANGE THE DEFAULT BOOT-NODE !!!
+  # This peer ID must stay in sync with the public devnet boot-node
+  # baked into `crates/network/primitives/src/config.rs` in
+  # calimero-network/core. Rotating the boot-node there without
+  # updating this assertion makes the workflow fail for the wrong
+  # reason (peer ID not found in logs) instead of catching a real
+  # regression. The coupling is intentional: there is no stable
+  # structural log pattern from calimero_network that signals
+  # "bootstrap.nodes was non-empty" on the happy path (the only
+  # bootstrap-related log in calimero_network is `warn!("Failed to
+  # bootstrap Kademlia")` on the error path). Pinning to the peer
+  # ID gives a concrete, falsifiable signal at the cost of having
+  # to update this one line on a rotation. The reviewer-suggested
+  # alternatives (env var, regex over libp2p connection logs) all
+  # either re-introduce the same coupling or weaken the assertion
+  # below the threshold where it would catch a real regression.
+  - name: Assert preserved boot-node was dialed
+    type: assert_log_present
+    nodes: [preserve-boot-node-1]
+    patterns:
+      - "12D3KooWR5V4zmisVtVdGE6i8jfFwtgRNq5t8eDGxfckKuhXu7Eh"
+
+  # Regression guard against the field causing a startup crash.
+  - name: No panics or fatal errors
+    type: assert_log_absent
+    nodes: [preserve-boot-node-1]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true

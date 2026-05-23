@@ -180,6 +180,19 @@ class WorkflowExecutor:
         # Bootstrap nodes can be specified in workflow config to override e2e_mode's empty default
         self.bootstrap_nodes = config.get("bootstrap_nodes", None)
 
+        # When true and e2e_mode is in effect, apply_e2e_defaults skips the
+        # "bootstrap.nodes": [] clear, so the public boot-node from
+        # `merod init` survives. Off by default to preserve test
+        # isolation; opt-in for workflows that need a stable rendezvous
+        # server outside the test cluster.
+        # bool() cast guards against a non-bool truthy in the YAML
+        # (e.g. the string "yes") that Pydantic would have rejected on
+        # the model path — `config` here is the raw dict, not the
+        # validated model.
+        self.preserve_default_bootstrap = bool(
+            config.get("preserve_default_bootstrap", False)
+        )
+
         # Generate unique workflow ID for test isolation (like e2e tests)
         self.workflow_id = str(uuid.uuid4())[:8]
 
@@ -830,6 +843,8 @@ class WorkflowExecutor:
             "e2e_mode": self.e2e_mode,
             "config_path": config_path,
             "bootstrap_nodes": self.bootstrap_nodes,
+            # keep merod-init bootstrap.nodes when True (opt-out of e2e isolation)
+            "preserve_default_bootstrap": self.preserve_default_bootstrap,
         }
         if self.is_binary_mode:
             if self.auth_mode:
@@ -909,6 +924,10 @@ class WorkflowExecutor:
                     "workflow_id": self.workflow_id,
                     "e2e_mode": self.e2e_mode,
                     "bootstrap_nodes": self.bootstrap_nodes,
+                    # Mirror _build_run_node_kwargs so the restart+count
+                    # path doesn't silently drop the opt-out when the
+                    # workflow sets preserve_default_bootstrap: true.
+                    "preserve_default_bootstrap": self.preserve_default_bootstrap,
                 }
                 if not self.is_binary_mode:
                     if "mdns" in nodes_config:

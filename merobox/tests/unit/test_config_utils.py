@@ -5,6 +5,7 @@ from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
     apply_e2e_defaults,
     build_sibling_bootstrap_addrs,
+    read_bootstrap_nodes,
     read_peer_id,
     set_nested_config,
 )
@@ -139,6 +140,105 @@ def test_apply_e2e_defaults_file_not_found():
         assert result is False
 
 
+def test_apply_e2e_defaults_clears_existing_bootstrap_by_default():
+    """The default (preserve_default_bootstrap=False) clears a pre-existing
+    boot-node list — confirming the e2e-isolation guarantee. The
+    `test_apply_e2e_defaults` case above starts from an empty config and
+    therefore doesn't exercise the *clearing* behaviour against a
+    populated list; this test does."""
+    # Synthetic multiaddr — localhost + `12D3KooW` + 44 X's. The peer-id
+    # body is structurally a base58btc-shaped placeholder, not a real
+    # peer; the IP is loopback so there's no coupling to any external
+    # service. The test only cares that `apply_e2e_defaults` sees a
+    # non-empty `bootstrap.nodes` and handles it correctly.
+    devnet_boot = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooW" + "X" * 44
+
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {"bootstrap": {"nodes": [devnet_boot]}}
+
+        with patch("builtins.open", mock_open()):
+            with (
+                patch("pathlib.Path.exists", return_value=True),
+                patch("pathlib.Path.chmod"),
+                patch("pathlib.Path.stat"),
+            ):
+                result = apply_e2e_defaults(
+                    Path("/tmp/config.toml"),
+                    "node1",
+                    workflow_id="test-clear-boot",
+                    # preserve_default_bootstrap omitted = default False
+                )
+
+                assert result is True
+
+                args, _ = mock_toml.dump.call_args
+                config_dict = args[0]
+
+                # Pre-existing boot-node was cleared (the isolation default).
+                assert config_dict["bootstrap"]["nodes"] == []
+                # Clearing the boot-node must NOT skip the discovery/sync
+                # defaults — guards against a refactor regression where
+                # the conditional bootstrap.nodes block accidentally
+                # short-circuits the rest of the e2e_config dict.
+                assert (
+                    config_dict["discovery"]["rendezvous"]["namespace"]
+                    == "calimero/merobox-tests/test-clear-boot"
+                )
+                assert config_dict["discovery"]["mdns"] is True
+                assert config_dict["sync"]["timeout_ms"] == 30000
+                assert config_dict["sync"]["interval_ms"] == 500
+                assert config_dict["sync"]["frequency_ms"] == 1000
+
+
+def test_apply_e2e_defaults_preserve_default_bootstrap():
+    """preserve_default_bootstrap=True keeps whatever bootstrap.nodes was
+    written by `merod init` (the public devnet boot-node), and still
+    applies the rest of the e2e defaults (discovery + sync)."""
+    # Simulate what `merod init` writes by default: a single public
+    # devnet boot-node in the bootstrap list.
+    # Synthetic multiaddr — localhost + `12D3KooW` + 44 X's. The peer-id
+    # body is structurally a base58btc-shaped placeholder, not a real
+    # peer; the IP is loopback so there's no coupling to any external
+    # service. The test only cares that `apply_e2e_defaults` sees a
+    # non-empty `bootstrap.nodes` and handles it correctly.
+    devnet_boot = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooW" + "X" * 44
+    initial_config = {"bootstrap": {"nodes": [devnet_boot]}}
+
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {
+            "bootstrap": {"nodes": list(initial_config["bootstrap"]["nodes"])}
+        }
+
+        with patch("builtins.open", mock_open()):
+            with (
+                patch("pathlib.Path.exists", return_value=True),
+                patch("pathlib.Path.chmod"),
+                patch("pathlib.Path.stat"),
+            ):
+                result = apply_e2e_defaults(
+                    Path("/tmp/config.toml"),
+                    "node1",
+                    workflow_id="test-keep-boot",
+                    preserve_default_bootstrap=True,
+                )
+
+                assert result is True
+
+                args, _ = mock_toml.dump.call_args
+                config_dict = args[0]
+
+                # The boot-node from `merod init` survives — this is the
+                # whole point of the opt-out.
+                assert config_dict["bootstrap"]["nodes"] == [devnet_boot]
+                # Discovery + sync defaults still applied.
+                assert (
+                    config_dict["discovery"]["rendezvous"]["namespace"]
+                    == "calimero/merobox-tests/test-keep-boot"
+                )
+                assert config_dict["discovery"]["mdns"] is True
+                assert config_dict["sync"]["timeout_ms"] == 30000
+
+
 # ---------------------------------------------------------------------------
 # read_peer_id
 # ---------------------------------------------------------------------------
@@ -168,6 +268,54 @@ def test_read_peer_id_file_not_found_returns_none():
     """read_peer_id returns None when the config file does not exist."""
     with patch("pathlib.Path.exists", return_value=False):
         assert read_peer_id(Path("/missing/config.toml")) is None
+
+
+# ---------------------------------------------------------------------------
+# read_bootstrap_nodes
+# ---------------------------------------------------------------------------
+
+
+def test_read_bootstrap_nodes_returns_existing_list():
+    """read_bootstrap_nodes echoes the bootstrap.nodes list verbatim — the
+    cluster-wiring code relies on this to recover the preserved merod-init
+    boot-node before it appends sibling addrs."""
+    devnet = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooW" + "Y" * 44
+    config = {"bootstrap": {"nodes": [devnet]}, "discovery": {"mdns": True}}
+
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = config
+        with patch("builtins.open", mock_open()):
+            with patch("pathlib.Path.exists", return_value=True):
+                assert read_bootstrap_nodes(Path("/tmp/config.toml")) == [devnet]
+
+
+def test_read_bootstrap_nodes_missing_key_returns_empty():
+    """When `apply_e2e_defaults` has cleared the list (the default
+    isolation behaviour) the wiring code must treat the absence the same
+    as an explicit empty list and not raise."""
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {"discovery": {"mdns": True}}
+        with patch("builtins.open", mock_open()):
+            with patch("pathlib.Path.exists", return_value=True):
+                assert read_bootstrap_nodes(Path("/tmp/config.toml")) == []
+
+
+def test_read_bootstrap_nodes_file_not_found_returns_empty():
+    """No config file (e.g. the node hasn't been initialised yet) must
+    return [] so callers can fall through to their own defaults."""
+    with patch("pathlib.Path.exists", return_value=False):
+        assert read_bootstrap_nodes(Path("/missing/config.toml")) == []
+
+
+def test_read_bootstrap_nodes_non_list_value_returns_empty():
+    """Defensive: if the on-disk config has been corrupted and the value
+    is a scalar (or anything non-list), don't propagate the bad shape to
+    the wiring code — return [] and let it fall back."""
+    with patch("merobox.commands.config_utils.toml") as mock_toml:
+        mock_toml.load.return_value = {"bootstrap": {"nodes": "not-a-list"}}
+        with patch("builtins.open", mock_open()):
+            with patch("pathlib.Path.exists", return_value=True):
+                assert read_bootstrap_nodes(Path("/tmp/config.toml")) == []
 
 
 # ---------------------------------------------------------------------------

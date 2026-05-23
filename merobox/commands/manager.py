@@ -23,6 +23,7 @@ from merobox.commands.config_utils import (
     apply_e2e_defaults,
     apply_mdns_setting,
     build_sibling_bootstrap_addrs,
+    read_bootstrap_nodes,
     read_peer_id,
 )
 from merobox.commands.constants import (
@@ -338,6 +339,7 @@ class DockerManager(CleanupMixin):
         network: str = None,  # user-defined Docker network to attach the node to
         mdns: Optional[bool] = None,  # force discovery.mdns in node config
         network_admin: bool = True,  # add NET_ADMIN cap for fault-injection steps
+        preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -715,7 +717,12 @@ class DockerManager(CleanupMixin):
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
                     self._fix_permissions(node_data_dir)
-                    apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(
+                        config_file,
+                        node_name,
+                        workflow_id,
+                        preserve_default_bootstrap=preserve_default_bootstrap,
+                    )
 
                 # Apply bootstrap nodes configuration (works regardless of e2e_mode)
                 if bootstrap_nodes:
@@ -731,7 +738,12 @@ class DockerManager(CleanupMixin):
                     console.print(
                         f"[cyan]Applying e2e defaults to {node_name} for test isolation...[/cyan]"
                     )
-                    apply_e2e_defaults(config_file, node_name, workflow_id)
+                    apply_e2e_defaults(
+                        config_file,
+                        node_name,
+                        workflow_id,
+                        preserve_default_bootstrap=preserve_default_bootstrap,
+                    )
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
@@ -1268,6 +1280,7 @@ class DockerManager(CleanupMixin):
         cors_allowed_origins: list[str] = None,  # explicit CORS origin allowlist
         mdns: Optional[bool] = None,
         network_admin: bool = True,
+        preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1328,6 +1341,7 @@ class DockerManager(CleanupMixin):
                 network=cluster_network,
                 mdns=mdns,
                 network_admin=network_admin,
+                preserve_default_bootstrap=preserve_default_bootstrap,
             )
 
         success_count = 0
@@ -1505,11 +1519,25 @@ class DockerManager(CleanupMixin):
             endpoints = {n: (ip, pid) for n, (ip, pid, _) in resolved.items()}
             restarted: list[str] = []
             for node_name, (_ip, _pid, config_file) in resolved.items():
+                # `apply_bootstrap_nodes` further down REPLACES bootstrap.nodes
+                # wholesale, so anything we want to keep across the wiring step
+                # has to be folded into `existing` here. Read the on-disk list
+                # so a preserved merod-init boot-node (under
+                # `preserve_default_bootstrap=True`) and any prior write from
+                # an explicit workflow `bootstrap_nodes:` field both survive
+                # alongside the sibling addrs we're about to compute.
+                # `dict.fromkeys` keeps insertion order while deduping in case
+                # the workflow's `bootstrap_nodes:` (passed in here as
+                # `base_bootstrap_nodes`) and the on-disk list overlap.
+                existing_on_disk = read_bootstrap_nodes(config_file)
+                merged_existing = list(
+                    dict.fromkeys(list(base_bootstrap_nodes or []) + existing_on_disk)
+                )
                 addrs = build_sibling_bootstrap_addrs(
                     node_name,
                     endpoints,
                     DEFAULT_P2P_PORT,
-                    existing=base_bootstrap_nodes,
+                    existing=merged_existing,
                 )
                 if not addrs:
                     continue

@@ -136,6 +136,36 @@ def apply_mdns_setting(
         return False
 
 
+def read_bootstrap_nodes(config_file: Union[Path, str]) -> list[str]:
+    """Read the current ``bootstrap.nodes`` list from a node's config.toml.
+
+    The list reflects whatever was last written by ``merod init`` (the
+    public devnet boot-node), ``apply_e2e_defaults`` (cleared to ``[]``
+    by default; preserved when ``preserve_default_bootstrap=True``), or
+    ``apply_bootstrap_nodes`` (an explicit workflow-supplied list).
+    Callers that need to *extend* the existing list rather than
+    overwrite it — e.g. cluster-wiring code that appends sibling addrs
+    after the per-node config has already been written — read it here
+    so the preceding writes survive.
+
+    Returns an empty list if the file is missing, the key is absent, or
+    the stored value isn't a list.
+    """
+    try:
+        config_path = Path(config_file)
+        if not config_path.exists():
+            return []
+        with open(config_path, encoding="utf-8") as f:
+            config = toml.load(f)
+        nodes = config.get("bootstrap", {}).get("nodes", [])
+        return list(nodes) if isinstance(nodes, list) else []
+    except Exception as e:
+        console.print(
+            f"[red]✗ Failed to read bootstrap.nodes from {config_file}: {e}[/red]"
+        )
+        return []
+
+
 def read_peer_id(config_file: Union[Path, str]) -> Optional[str]:
     """
     Read the libp2p peer ID from a node's config.toml.
@@ -231,6 +261,7 @@ def apply_e2e_defaults(
     config_file: Union[Path, str],
     node_name: str,
     workflow_id: Optional[str] = None,
+    preserve_default_bootstrap: bool = False,
 ) -> bool:
     """
     Apply e2e-style defaults for reliable testing.
@@ -239,6 +270,11 @@ def apply_e2e_defaults(
         config_file: Path to the config.toml file (Path or str)
         node_name: Name of the node (for logging)
         workflow_id: Optional workflow ID for test isolation. Generated if not provided.
+        preserve_default_bootstrap: When True, skip clearing `bootstrap.nodes`,
+            leaving whatever `merod init` wrote (the public devnet boot-node).
+            Off by default so the e2e defaults remain isolated from any
+            outside network; opt-in for workflows that explicitly want a
+            stable rendezvous server outside the test cluster.
     """
     try:
         # Generate unique workflow ID if not provided
@@ -257,20 +293,30 @@ def apply_e2e_defaults(
         # Apply e2e-style defaults for reliable testing
         # Note: Only bootstrap, discovery, and sync settings are configured here.
         # Protocol-specific config (Ethereum, ICP, etc.) should be handled separately.
-        e2e_config = {
-            # Disable bootstrap nodes for test isolation
-            "bootstrap.nodes": [],
-            # Use unique rendezvous namespace per workflow (like e2e tests)
-            "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-            # Keep mDNS as backup (like e2e tests)
-            "discovery.mdns": True,
-            # Aggressive sync settings from e2e tests for reliable testing
-            "sync.timeout_ms": 30000,  # 30s timeout (matches production)
-            # 500ms between syncs (very aggressive for tests)
-            "sync.interval_ms": 500,
-            # 1s periodic checks (ensures rapid sync in tests)
-            "sync.frequency_ms": 1000,
-        }
+        e2e_config = {}
+
+        # By default, clear bootstrap.nodes to fully isolate the cluster
+        # from any outside network. Workflows can opt out via the
+        # `preserve_default_bootstrap` field to keep whatever `merod
+        # init` wrote (the public devnet boot-node) as a stable
+        # rendezvous server.
+        if not preserve_default_bootstrap:
+            e2e_config["bootstrap.nodes"] = []
+
+        e2e_config.update(
+            {
+                # Use unique rendezvous namespace per workflow (like e2e tests)
+                "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
+                # Keep mDNS as backup (like e2e tests)
+                "discovery.mdns": True,
+                # Aggressive sync settings from e2e tests for reliable testing
+                "sync.timeout_ms": 30000,  # 30s timeout (matches production)
+                # 500ms between syncs (very aggressive for tests)
+                "sync.interval_ms": 500,
+                # 1s periodic checks (ensures rapid sync in tests)
+                "sync.frequency_ms": 1000,
+            }
+        )
 
         # Apply each configuration
         for key, value in e2e_config.items():

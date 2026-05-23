@@ -1260,6 +1260,18 @@ class WorkflowConfig(BaseModel):
     bootstrap_nodes: Optional[list[str]] = Field(
         None, description="Bootstrap nodes to connect to"
     )
+    preserve_default_bootstrap: bool = Field(
+        False,
+        description=(
+            "When `--e2e-mode` is in effect, skip clearing `bootstrap.nodes` "
+            "in apply_e2e_defaults. The default boot-node list that "
+            "`merod init` writes (the public devnet boot-node from "
+            "calimero-network/core) is preserved instead. Useful for "
+            "workflows that need a stable rendezvous server outside the "
+            "test cluster but don't want to hard-code the exact boot-node "
+            "addresses in the workflow YAML."
+        ),
+    )
 
 
 def _format_pydantic_error(error: dict[str, Any]) -> str:
