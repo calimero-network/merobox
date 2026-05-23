@@ -85,6 +85,23 @@ steps:
   # up in the merod log stream. If `preserve_default_bootstrap` had
   # been ignored (or apply_e2e_defaults had wiped the list anyway),
   # this peer ID would not appear because no dial would be attempted.
+  #
+  # !!! BOOT-NODE ROTATION: WHEN YOU CHANGE THE DEFAULT BOOT-NODE !!!
+  # This peer ID must stay in sync with the public devnet boot-node
+  # baked into `crates/network/primitives/src/config.rs` in
+  # calimero-network/core. Rotating the boot-node there without
+  # updating this assertion makes the workflow fail for the wrong
+  # reason (peer ID not found in logs) instead of catching a real
+  # regression. The coupling is intentional: there is no stable
+  # structural log pattern from calimero_network that signals
+  # "bootstrap.nodes was non-empty" on the happy path (the only
+  # bootstrap-related log in calimero_network is `warn!("Failed to
+  # bootstrap Kademlia")` on the error path). Pinning to the peer
+  # ID gives a concrete, falsifiable signal at the cost of having
+  # to update this one line on a rotation. The reviewer-suggested
+  # alternatives (env var, regex over libp2p connection logs) all
+  # either re-introduce the same coupling or weaken the assertion
+  # below the threshold where it would catch a real regression.
   - name: Assert preserved boot-node was dialed
     type: assert_log_present
     nodes: [preserve-boot-node-1]

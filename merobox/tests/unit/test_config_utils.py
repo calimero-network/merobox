@@ -145,7 +145,12 @@ def test_apply_e2e_defaults_clears_existing_bootstrap_by_default():
     `test_apply_e2e_defaults` case above starts from an empty config and
     therefore doesn't exercise the *clearing* behaviour against a
     populated list; this test does."""
-    devnet_boot = "/ip4/63.181.86.34/tcp/4001/p2p/12D3KooW" + "X" * 44
+    # Synthetic multiaddr — localhost + `12D3KooW` + 44 X's. The peer-id
+    # body is structurally a base58btc-shaped placeholder, not a real
+    # peer; the IP is loopback so there's no coupling to any external
+    # service. The test only cares that `apply_e2e_defaults` sees a
+    # non-empty `bootstrap.nodes` and handles it correctly.
+    devnet_boot = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooW" + "X" * 44
 
     with patch("merobox.commands.config_utils.toml") as mock_toml:
         mock_toml.load.return_value = {"bootstrap": {"nodes": [devnet_boot]}}
@@ -190,7 +195,12 @@ def test_apply_e2e_defaults_preserve_default_bootstrap():
     applies the rest of the e2e defaults (discovery + sync)."""
     # Simulate what `merod init` writes by default: a single public
     # devnet boot-node in the bootstrap list.
-    devnet_boot = "/ip4/63.181.86.34/tcp/4001/p2p/12D3KooW" + "X" * 44
+    # Synthetic multiaddr — localhost + `12D3KooW` + 44 X's. The peer-id
+    # body is structurally a base58btc-shaped placeholder, not a real
+    # peer; the IP is loopback so there's no coupling to any external
+    # service. The test only cares that `apply_e2e_defaults` sees a
+    # non-empty `bootstrap.nodes` and handles it correctly.
+    devnet_boot = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooW" + "X" * 44
     initial_config = {"bootstrap": {"nodes": [devnet_boot]}}
 
     with patch("merobox.commands.config_utils.toml") as mock_toml:
