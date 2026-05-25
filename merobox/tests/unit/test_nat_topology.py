@@ -398,10 +398,18 @@ def _make_state_with_bridge_ids(
     )
 
 
-def test_install_host_iptables_isolation_inserts_drop_in_docker_user(monkeypatch):
-    """Insert at position 1 of DOCKER-USER, `-i br-<public> -o
-    br-<lan> -j DROP`, with a `merobox-nat:<lan>` comment so leaked
-    rules are recognisable on a future `iptables -L`."""
+def test_install_host_iptables_isolation_inserts_stateful_drop_in_docker_user(
+    monkeypatch,
+):
+    """Insert at position 1 of DOCKER-USER with stateful conntrack
+    matching: ``-i br-<public> -o br-<lan> -m conntrack --ctstate NEW
+    -j DROP``. The `--ctstate NEW` qualifier is the difference
+    between "drop every public→LAN packet" (which kills the return
+    half of every LAN-initiated TCP handshake — clients can't dial
+    the boot-node at all) and "drop only inbound-initiated
+    connections" (the intended NAT semantics). The `merobox-nat:`
+    comment lets a leaked rule be recognised on a stray
+    `iptables -L` run."""
     state = _make_state_with_bridge_ids()
     captured: list[list[str]] = []
 
@@ -419,6 +427,12 @@ def test_install_host_iptables_isolation_inserts_drop_in_docker_user(monkeypatch
     assert "-i" in rule and "br-pppppppppppp" in rule
     assert "-o" in rule and "br-llllllllllll" in rule
     assert "DROP" in rule
+    # Stateful match — `NEW` MUST be present or we accidentally drop
+    # return traffic for LAN-initiated dials too.
+    assert "conntrack" in rule
+    assert "--ctstate" in rule
+    ctstate_idx = rule.index("--ctstate")
+    assert rule[ctstate_idx + 1] == "NEW"
     comment_idx = rule.index("--comment")
     assert rule[comment_idx + 1] == "merobox-nat:test-lan"
     assert state.host_iptables_rules == [rule]
@@ -443,14 +457,48 @@ def test_install_host_iptables_isolation_raises_on_iptables_failure(monkeypatch)
 
 
 def test_remove_host_iptables_isolation_swaps_insert_for_delete(monkeypatch):
-    """Teardown swaps `-I` + position for `-D` and calls iptables
-    once per installed rule. Exact-argv tracking lets parallel
-    workflows clean up just their own rules even if Docker
-    reassigns bridge interface names between runs."""
+    """Teardown rewrites `-I <chain> <pos> <spec>` to `-D <chain>
+    <spec>` (iptables `-D` doesn't take a position) and calls
+    iptables once per installed rule. Exact-argv tracking lets
+    parallel workflows clean up just their own rules even if Docker
+    reassigns bridge interface names between runs. The fixtures
+    here mirror the real installed shape with conntrack args."""
     state = _make_state_with_bridge_ids()
+    full_spec_a = [
+        "-i",
+        "br-A",
+        "-o",
+        "br-B",
+        "-m",
+        "conntrack",
+        "--ctstate",
+        "NEW",
+        "-j",
+        "DROP",
+        "-m",
+        "comment",
+        "--comment",
+        "merobox-nat:lan-A",
+    ]
+    full_spec_b = [
+        "-i",
+        "br-C",
+        "-o",
+        "br-D",
+        "-m",
+        "conntrack",
+        "--ctstate",
+        "NEW",
+        "-j",
+        "DROP",
+        "-m",
+        "comment",
+        "--comment",
+        "merobox-nat:lan-B",
+    ]
     state.host_iptables_rules = [
-        ["-I", "DOCKER-USER", "1", "-i", "br-A", "-o", "br-B", "-j", "DROP"],
-        ["-I", "DOCKER-USER", "1", "-i", "br-C", "-o", "br-D", "-j", "DROP"],
+        ["-I", "DOCKER-USER", "1", *full_spec_a],
+        ["-I", "DOCKER-USER", "1", *full_spec_b],
     ]
     captured: list[list[str]] = []
     monkeypatch.setattr(
@@ -461,11 +509,87 @@ def test_remove_host_iptables_isolation_swaps_insert_for_delete(monkeypatch):
     _remove_host_iptables_isolation(state)
 
     assert len(captured) == 2
-    for argv in captured:
-        assert "-I" not in argv
-        assert "-D" in argv
-        assert "1" not in argv
-        assert "-j" in argv and "DROP" in argv
+    # `.pop()` drains the list LIFO, so spec_b comes off first.
+    # The position arg ("1") is gone, but everything else in the
+    # spec — including any conntrack args — is preserved verbatim.
+    assert captured[0] == ["-D", "DOCKER-USER", *full_spec_b]
+    assert captured[1] == ["-D", "DOCKER-USER", *full_spec_a]
+    assert state.host_iptables_rules == []
+
+
+def test_remove_host_iptables_isolation_strips_only_position_arg(monkeypatch):
+    """Regression guard: a previous implementation filtered the
+    rule with `[a for a in rule if a != "1"]`, which would also
+    strip a legitimate `"1"` elsewhere in the spec (e.g. a future
+    `--dst-len 1` or `--hashlimit-burst 1` extension). Removal
+    must be position-based — drop rule[2] only."""
+    state = _make_state_with_bridge_ids()
+    state.host_iptables_rules = [
+        # `1` appears twice in the SPEC (positions 5 and 9), plus
+        # once as the iptables position arg at index 2. Only the
+        # index-2 occurrence should be stripped.
+        [
+            "-I",
+            "DOCKER-USER",
+            "1",
+            "-i",
+            "br-A",
+            "--dport",
+            "1",  # legitimate "1" in spec
+            "-o",
+            "br-B",
+            "--sport",
+            "1",  # legitimate "1" in spec
+            "-j",
+            "DROP",
+        ],
+    ]
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        "merobox.topology.nat._run_iptables",
+        lambda argv: (captured.append(argv) or (0, "")),
+    )
+
+    _remove_host_iptables_isolation(state)
+
+    assert len(captured) == 1
+    argv = captured[0]
+    # Both legitimate "1"s survived; only the position arg is gone.
+    assert argv.count("1") == 2
+    assert argv == [
+        "-D",
+        "DOCKER-USER",
+        "-i",
+        "br-A",
+        "--dport",
+        "1",
+        "-o",
+        "br-B",
+        "--sport",
+        "1",
+        "-j",
+        "DROP",
+    ]
+
+
+def test_remove_host_iptables_isolation_skips_malformed_rule(monkeypatch):
+    """A malformed entry (no position arg, wrong chain shape) must
+    NOT be sent to iptables — otherwise we'd issue a `-D` against
+    a chain it was never installed in. Just log and skip."""
+    state = _make_state_with_bridge_ids()
+    state.host_iptables_rules = [
+        # No position arg where `-I` rules require one.
+        ["-A", "DOCKER-USER", "-i", "br-A", "-o", "br-B", "-j", "DROP"],
+    ]
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        "merobox.topology.nat._run_iptables",
+        lambda argv: (captured.append(argv) or (0, "")),
+    )
+
+    _remove_host_iptables_isolation(state)
+
+    assert captured == []
     assert state.host_iptables_rules == []
 
 

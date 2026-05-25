@@ -400,6 +400,21 @@ def _install_host_iptables_isolation(
     """
     public_br = _docker_bridge_iface_name(state.public_network)
     lan_br = _docker_bridge_iface_name(state.lan_network)
+    # CONNTRACK-STATEFUL: only drop packets that are starting a NEW
+    # connection from public→LAN. Established / Related state is
+    # allowed through. Without this, the rule also kills the
+    # SYN-ACK + every other return packet from the boot-node to a
+    # client that the client originated — and the LAN→public TCP
+    # handshake silently times out from the LAN side. The earlier
+    # unconditional DROP shape in this rule produced exactly that
+    # symptom in CI ("Handshake with the remote timed out" on
+    # every client dial to the boot-node).
+    #
+    # `conntrack --ctstate NEW` matches packets that start a fresh
+    # connection (per the kernel's connection-tracking table); the
+    # SYN that initiates an inbound dial qualifies. Return traffic
+    # for a connection initiated from the LAN side is ESTABLISHED
+    # / RELATED, NOT NEW, and falls through to the next rule.
     rule = [
         "-I",
         "DOCKER-USER",
@@ -408,6 +423,10 @@ def _install_host_iptables_isolation(
         public_br,
         "-o",
         lan_br,
+        "-m",
+        "conntrack",
+        "--ctstate",
+        "NEW",
         "-j",
         "DROP",
         "-m",
@@ -419,8 +438,8 @@ def _install_host_iptables_isolation(
         f"merobox-nat:{state.lan_network.name}",
     ]
     console.print(
-        f"[yellow]Installing host iptables rule: DROP {public_br} -> {lan_br}"
-        f"[/yellow]"
+        f"[yellow]Installing host iptables rule: DROP NEW connections "
+        f"{public_br} -> {lan_br}[/yellow]"
     )
     exit_code, output = _run_iptables(rule)
     if exit_code != 0:
@@ -450,9 +469,20 @@ def _remove_host_iptables_isolation(state: NatTopologyState) -> None:
     """
     while state.host_iptables_rules:
         rule = state.host_iptables_rules.pop()
-        # Swap `-I` + position with `-D`. iptables `-D` doesn't take
-        # a position; we drop the `1` argument too.
-        delete_rule = ["-D" if a == "-I" else a for a in rule if a != "1"]
+        # Reconstruct the delete form: iptables `-D <chain> <spec>` —
+        # NO position argument. The install form is `-I <chain>
+        # <pos> <spec>`; we drop the position by index (always
+        # rule[2]) rather than by value, because dropping "1" by
+        # value would also strip a legitimate "1" elsewhere in the
+        # rule spec (e.g. if a future variant pinned `--dst-len 1`
+        # or similar).
+        if len(rule) < 3 or rule[0] != "-I" or not rule[2].isdigit():
+            console.print(
+                f"[yellow]Refusing to remove malformed iptables rule "
+                f"(does not match `-I <chain> <pos> ...` shape): {rule}[/yellow]"
+            )
+            continue
+        delete_rule = ["-D", rule[1], *rule[3:]]
         exit_code, output = _run_iptables(delete_rule)
         if exit_code != 0:
             console.print(
