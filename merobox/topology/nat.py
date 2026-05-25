@@ -401,34 +401,50 @@ def _resolve_boot_node_peer_id(
 ) -> str:
     """Scan the boot-node's stdout for its libp2p peer id.
 
-    The boot-node prints the peer id on startup. Looking it up via
-    log scraping (rather than a `--print-peer-id` mode that doesn't
+    The boot-node's `main.rs` does
+
+        info!("Peer id: {:?}", peer_id);
+
+    very early in startup (right after deriving the keypair). With
+    `{:?}`, `PeerId`'s Debug impl renders as `PeerId("12D3KooW…")`
+    — surrounding quotes included. We extract the `12D3KooW…`
+    substring from inside those quotes; the surrounding tracing
+    decoration (timestamps, level, target) doesn't matter.
+
+    Log scraping (rather than a `--print-peer-id` flag that doesn't
     exist) is acceptable here because the line is emitted within
     the first ~100ms of process start — we'd be waiting on it
-    anyway as a readiness signal.
+    anyway as a readiness signal. A short 30s ceiling is plenty.
     """
+    # `PeerId("12D3KooW…")` — anchor on the prefix that follows
+    # `PeerId(`, allow any non-quote chars up to the closing
+    # `")`, and capture the inside. `12D3KooW` is the Ed25519
+    # multihash prefix base58btc emits for all Calimero/libp2p
+    # default keypairs.
+    peer_re = re.compile(r'PeerId\("(12D3KooW[^"]+)"\)')
     deadline = time.monotonic() + 30.0
     while time.monotonic() < deadline:
         try:
             logs = container.logs(tail=200).decode("utf-8", errors="replace")
         except Exception:
             logs = ""
-        # Boot-node prints `local peer id: 12D3KooW...` shortly after
-        # binding the listener. Match anywhere in the line so log
-        # format tweaks (timestamps, level prefixes) don't break us.
-        # `removesuffix` (not rstrip) — rstrip strips ALL matching
-        # trailing chars and would eat content from a peer id that
-        # legitimately ends in `.` or `,` (base58 includes neither
-        # today, but the defensive single-char strip costs nothing).
-        for line in logs.splitlines():
-            if "local peer id" in line.lower():
-                # Extract the trailing `12D3KooW...` token.
-                for token in line.split():
-                    if token.startswith("12D3KooW") and len(token) >= 52:
-                        return token.removesuffix(",").removesuffix(".")
+        match = peer_re.search(logs)
+        if match:
+            return match.group(1)
         time.sleep(0.5)
+
+    # Surface the boot-node's actual log tail so a future format
+    # change is obvious from the failure message, rather than
+    # opaquely manifesting as a 30s timeout the operator has to
+    # `docker logs` themselves to diagnose.
+    try:
+        tail = container.logs(tail=50).decode("utf-8", errors="replace")
+    except Exception:
+        tail = "<unable to read logs>"
     raise RuntimeError(
-        f"Boot-node {container.name} didn't print its peer id within 30s"
+        f"Boot-node {container.name} didn't print its peer id within 30s.\n"
+        f'Expected log shape: `Peer id: PeerId("12D3KooW…")`.\n'
+        f"Last 50 log lines from the container:\n{tail}"
     )
 
 

@@ -240,6 +240,107 @@ def test_slugify_workflow_name_deterministic_across_calls():
     assert slugify_workflow_name("My Test") == slugify_workflow_name("My Test")
 
 
+# ---------------------------------------------------------------------------
+# _resolve_boot_node_peer_id matcher
+# ---------------------------------------------------------------------------
+#
+# The original CI failure on this workflow was a 30s timeout in
+# this scanner: the matcher was looking for the substring `local peer
+# id`, but the actual log line from boot-node's main.rs is
+# `Peer id: PeerId("12D3KooW…")` (note: no "local" prefix, and the
+# id is rendered inside Debug-quotes). These cases pin the matcher
+# against several real-world log-line shapes so a regression on the
+# regex can't reintroduce the timeout silently.
+
+import re  # noqa: E402  (test-local import to keep the unrelated test groups clean)
+
+from merobox.topology.nat import _resolve_boot_node_peer_id  # noqa: E402
+
+_PEER_ID = "12D3KooWR5V4zmisVtVdGE6i8jfFwtgRNq5t8eDGxfckKuhXu7Eh"
+
+
+def _make_container_with_logs(log_text: str) -> MagicMock:
+    """Return a mock container whose `.logs(tail=…)` returns the
+    given text as bytes. Mirrors what docker-py returns for a real
+    container's stdout/stderr."""
+    container = MagicMock()
+    container.logs.return_value = log_text.encode("utf-8")
+    return container
+
+
+def test_resolve_boot_node_peer_id_matches_actual_boot_node_log_shape():
+    """The exact format boot-node's main.rs emits: tracing prefix +
+    `Peer id: PeerId("…")`. This is the line we get in CI on the
+    real binary, and the regression target — earlier matcher missed
+    it and the workflow timed out at 30s."""
+    log = (
+        "2026-05-25T11:55:56.123456Z  INFO boot_node: "
+        f'Peer id: PeerId("{_PEER_ID}")\n'
+    )
+    container = _make_container_with_logs(log)
+    assert _resolve_boot_node_peer_id(container) == _PEER_ID
+
+
+def test_resolve_boot_node_peer_id_returns_first_match_with_surrounding_noise():
+    """The line lands in the middle of a busy log; tracing prefix +
+    later lines about listeners / identify must not confuse the
+    extraction."""
+    log = (
+        "2026-05-25T11:55:55.999999Z  INFO boot_node: starting up\n"
+        "2026-05-25T11:55:56.001234Z  INFO boot_node: "
+        f'Peer id: PeerId("{_PEER_ID}")\n'
+        "2026-05-25T11:55:56.123456Z  INFO boot_node: "
+        '  Listening on "/ip4/0.0.0.0/tcp/4001"\n'
+    )
+    container = _make_container_with_logs(log)
+    assert _resolve_boot_node_peer_id(container) == _PEER_ID
+
+
+def test_resolve_boot_node_peer_id_raises_with_log_tail_on_timeout(monkeypatch):
+    """When the matcher never fires the operator must see the
+    actual log tail in the error — opaque "didn't print … within
+    30s" used to send people to `docker logs` to figure out what
+    the real output was."""
+    # Shrink the wait so the test doesn't hang for 30s. Make the
+    # mocked clock jump from 0 → past-deadline on the second call,
+    # which is what the inner `while time.monotonic() < deadline`
+    # check inspects after the first sleep-noop.
+    #
+    # Counter-based mock (not iter) so subsequent reads after the
+    # deadline keep returning a past-deadline value rather than
+    # raising StopIteration; the function also calls monotonic
+    # one final time inside the `raise` path's log-fetch.
+    clock = {"now": 0.0}
+
+    def _fake_monotonic():
+        clock["now"] += 31.0  # jump past the 30s deadline on first call
+        return clock["now"]
+
+    monkeypatch.setattr("merobox.topology.nat.time.monotonic", _fake_monotonic)
+    monkeypatch.setattr("merobox.topology.nat.time.sleep", lambda _s: None)
+
+    container = _make_container_with_logs(
+        "INFO boot_node: unrelated startup chatter\n"
+        "INFO boot_node: no peer id here\n"
+    )
+    with pytest.raises(RuntimeError, match="didn't print its peer id") as excinfo:
+        _resolve_boot_node_peer_id(container)
+    # The error message must include the actual log content so
+    # operators don't have to docker-log it themselves.
+    assert "unrelated startup chatter" in str(excinfo.value)
+
+
+def test_resolve_boot_node_peer_id_re_matches_inside_debug_quotes():
+    """Sanity-pin the regex shape directly so a future refactor of
+    `_resolve_boot_node_peer_id` doesn't silently change the
+    matching algorithm."""
+    # The regex is internal but pinned by behavior above.
+    sample = f'Peer id: PeerId("{_PEER_ID}"), some trailing junk'
+    match = re.search(r'PeerId\("(12D3KooW[^"]+)"\)', sample)
+    assert match is not None
+    assert match.group(1) == _PEER_ID
+
+
 def test_bootstrap_multiaddrs_are_well_formed_libp2p():
     """Each addr should start with `/ip4/` and end with `/p2p/<peer_id>`
     — that's what merod's libp2p parser accepts in `bootstrap.nodes`."""
