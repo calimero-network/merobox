@@ -320,8 +320,7 @@ class WorkflowExecutor:
                         console.print(
                             "[red]❌ Failed to stop workflow nodes - stopping workflow[/red]"
                         )
-                        if stop_all_nodes:
-                            self._stop_nodes_on_failure()
+                        self._handle_failure_exit(stop_all_nodes)
                         return False
                     console.print("[green]✓ Workflow nodes stopped[/green]")
                     time.sleep(2)  # Give time for cleanup
@@ -339,8 +338,7 @@ class WorkflowExecutor:
                     console.print(
                         "[red]❌ Node management failed - stopping workflow[/red]"
                     )
-                    if stop_all_nodes:
-                        self._stop_nodes_on_failure()
+                    self._handle_failure_exit(stop_all_nodes)
                     return False
 
                 # Step 3: Wait for nodes to be ready
@@ -349,8 +347,7 @@ class WorkflowExecutor:
                 )
                 if not await self._wait_for_nodes_ready():
                     console.print("[red]❌ Nodes not ready - stopping workflow[/red]")
-                    if stop_all_nodes:
-                        self._stop_nodes_on_failure()
+                    self._handle_failure_exit(stop_all_nodes)
                     return False
 
                 # Step 3b: Authenticate with nodes if embedded auth is enabled
@@ -366,8 +363,7 @@ class WorkflowExecutor:
                         console.print(
                             "[red]❌ Failed to authenticate with nodes - stopping workflow[/red]"
                         )
-                        if stop_all_nodes:
-                            self._stop_nodes_on_failure()
+                        self._handle_failure_exit(stop_all_nodes)
                         return False
             else:
                 console.print(
@@ -380,8 +376,7 @@ class WorkflowExecutor:
             )
             if not await self._execute_workflow_steps():
                 console.print("[red]❌ Workflow steps failed - stopping workflow[/red]")
-                if stop_all_nodes:
-                    self._stop_nodes_on_failure()
+                self._handle_failure_exit(stop_all_nodes)
                 return False
 
             # Step 5: Stop all nodes if requested (at end) - only if we have local nodes
@@ -439,9 +434,7 @@ class WorkflowExecutor:
 
         except Exception as e:
             console.print(f"\n[red]❌ Workflow failed with error: {str(e)}[/red]")
-            stop_all_nodes = self.config.get("stop_all_nodes", False)
-            if stop_all_nodes:
-                self._stop_nodes_on_failure()
+            self._handle_failure_exit(self.config.get("stop_all_nodes", False))
             return False
 
     async def _execute_dry_run(self, workflow_name: str) -> bool:
@@ -696,10 +689,39 @@ class WorkflowExecutor:
 
         return variables
 
+    def _handle_failure_exit(self, stop_all_nodes: bool) -> None:
+        """Cleanup hook called from every workflow-failure early-return.
+
+        Two concerns, gated independently:
+
+        1. `stop_all_nodes` (workflow YAML, operator's intent for
+           client merods) — only honour it when explicitly true.
+           Defaults to false so an interactive operator can leave
+           the cluster alive for debugging.
+        2. NAT topology teardown (merobox-private infra: boot-node,
+           gateway, bridges) — always run. There's no use case for
+           leaving these behind; a leak across runs makes the next
+           workflow's slug-collision detection mis-fire on leftover
+           resources it doesn't own.
+
+        Centralising the cleanup here so the call sites don't have
+        to remember to invoke both — earlier versions only called
+        `_stop_nodes_on_failure` and silently skipped NAT teardown
+        when `stop_all_nodes: false` was set.
+        """
+        if stop_all_nodes:
+            self._stop_nodes_on_failure()
+        self._teardown_nat_topology_if_present()
+
     def _stop_nodes_on_failure(self) -> None:
         """
-        Stop all nodes when workflow fails, if stop_all_nodes is configured.
-        This ensures nodes are cleaned up even on failure.
+        Stop all merod client nodes when workflow fails and
+        `stop_all_nodes: true` is set.
+
+        NAT topology infra (boot-node, gateway, bridges) is torn
+        down separately by ``_handle_failure_exit`` so the cleanup
+        runs unconditionally, regardless of the operator's
+        `stop_all_nodes` choice for the clients.
         """
         console.print(
             "\n[bold yellow]Stopping all nodes due to workflow failure (stop_all_nodes=true)...[/bold yellow]"
@@ -708,14 +730,6 @@ class WorkflowExecutor:
             console.print("[red]Failed to stop all nodes[/red]")
         else:
             console.print("[green]✓ All nodes stopped[/green]")
-        # NAT topology owns containers + networks the normal
-        # node-management path doesn't know about (the boot-node and
-        # gateway aren't merod containers, and the two bridges were
-        # created by `setup_nat_topology`). Tear them down here so a
-        # workflow failure doesn't leak state into the next run.
-        # No-op when `topology:` wasn't set or setup didn't reach a
-        # state object.
-        self._teardown_nat_topology_if_present()
 
     def _teardown_nat_topology_if_present(self) -> None:
         """Stop the NAT-topology containers + networks if any were
@@ -726,6 +740,21 @@ class WorkflowExecutor:
         successful teardown.
         """
         if self._nat_state is None:
+            return
+        # Manager is `Optional` in the executor's constructor —
+        # remote-only workflows, dry runs, and binary-mode call
+        # sites can all reach here with no Docker client. We
+        # rejected `topology:` in those modes earlier, so a None
+        # manager at this point would be an internal inconsistency,
+        # but it's cheap to defend: silently dropping the teardown
+        # would leak boot-node + gateway + bridges across runs.
+        if self.manager is None or getattr(self.manager, "client", None) is None:
+            console.print(
+                "[yellow]Skipping NAT topology teardown: manager / docker client "
+                "unavailable (likely a binary-mode or remote-only path that should "
+                "have refused `topology:` earlier — investigate)[/yellow]"
+            )
+            self._nat_state = None
             return
         try:
             from merobox.topology import teardown_nat_topology
@@ -946,7 +975,18 @@ class WorkflowExecutor:
         # cycle: topology pulls in DockerClient handlers which pull in
         # the executor's parent module on some merobox install layouts.
 
-        topology_cfg = self.topology or {}
+        # `self.topology` is read from the raw YAML dict in
+        # `__init__` (no Pydantic round-trip in the current
+        # executor path), but callers that construct
+        # `WorkflowExecutor` from a validated `WorkflowConfig` would
+        # land a Pydantic model here. Normalise to a dict either
+        # way so the `.get(...)` accesses below don't need to know
+        # which shape they got.
+        topology_raw = self.topology or {}
+        if hasattr(topology_raw, "model_dump"):
+            topology_cfg = topology_raw.model_dump()
+        else:
+            topology_cfg = topology_raw
         if topology_cfg.get("type") != "nat":
             console.print(
                 f"[red]❌ Unsupported topology type "
@@ -957,10 +997,22 @@ class WorkflowExecutor:
         boot_node_cfg = topology_cfg.get("boot_node") or {}
         boot_node_image_override = boot_node_cfg.get("image")
 
+        # Docker container + network names are restricted to the
+        # regex `[a-zA-Z0-9][a-zA-Z0-9_.-]*`. Workflow `name:` is a
+        # free-form display string ("NAT Topology — Cone Mode
+        # Smoke", spaces + em-dash + mixed case) that Docker rejects
+        # unaltered. Slugify here so the resource prefix is stable
+        # across reruns of the same workflow and collision-free
+        # with parallel workflows (the slug embeds the original
+        # name's structure, not just a hash).
+        from merobox.topology.nat import slugify_workflow_name
+
+        workflow_slug = slugify_workflow_name(self.config.get("name", "merobox-nat"))
+
         try:
             self._nat_state = setup_nat_topology(
                 self.manager.client,
-                workflow_name=self.config.get("name", "merobox-nat"),
+                workflow_name=workflow_slug,
                 nat_mode=nat_mode,
                 boot_node_image_override=boot_node_image_override,
             )
@@ -1020,12 +1072,17 @@ class WorkflowExecutor:
             # `network` (a positional/keyword on the manager); the
             # cluster-mode network logic is bypassed because the
             # `topology` branch took us out of the
-            # `run_multiple_nodes` path. mDNS is meaningless on an
-            # `--internal` bridge (no multicast across bridges), so
-            # disable it unconditionally for this topology.
+            # `run_multiple_nodes` path.
             run_node_kwargs["network"] = lan_network_name
-            run_node_kwargs["mdns"] = False
+            # Apply per-node and top-level fault overrides FIRST,
+            # then force `mdns=False` last so the override can't
+            # bring mDNS back. mDNS is non-negotiable in NAT
+            # topology — the LAN bridge is `--internal`, no
+            # multicast crosses it, and even if it did, mDNS
+            # discovery would short-circuit the relay path the
+            # topology exists to test.
             self._apply_fault_kwargs(run_node_kwargs, None, nodes_config)
+            run_node_kwargs["mdns"] = False
             if not self.manager.run_node(**run_node_kwargs):
                 return False
             self._nat_state.client_names.append(node_name)
@@ -1074,8 +1131,18 @@ class WorkflowExecutor:
                     "(NAT routing needs the docker bridge + iptables container)[/red]"
                 )
                 return False
+            # Match the resolution order used by the normal
+            # cluster-mode path below: CLI `--image` overrides the
+            # workflow's `nodes.image`, which overrides the manager
+            # default. Passing `self.image` straight through would
+            # silently drop the workflow's pin and use the manager
+            # default — surprising for any workflow that wants to
+            # pin merod to a specific tag.
+            client_image = (
+                self.image if self.image is not None else nodes_config.get("image")
+            )
             return await self._start_nodes_nat_topology(
-                nodes_config, restart, image=self.image
+                nodes_config, restart, image=client_image
             )
 
         base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)

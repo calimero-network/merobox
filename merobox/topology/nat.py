@@ -27,6 +27,7 @@ Public entrypoints:
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,6 +62,41 @@ DEFAULT_BOOT_NODE_VERSION = "0.8.0"
 # Boot-node's `--port` default. The image's Dockerfile EXPOSEs the
 # same value; if you bump this, change both.
 BOOT_NODE_PORT = 4001
+
+
+# Docker container + network names accept `[a-zA-Z0-9][a-zA-Z0-9_.-]*`;
+# anything outside that set has to be stripped or replaced before the
+# name is used as a resource prefix. Workflow display names
+# ("NAT Topology — Cone Mode Smoke") routinely include spaces,
+# em-dashes, and other Unicode that Docker rejects. The slugifier
+# below maps each unsafe char to `-`, collapses runs, lowercases,
+# trims leading/trailing dashes, and finally guarantees the leading
+# char is alphanumeric. Empty / all-unsafe inputs collapse to
+# `merobox-nat`.
+_SLUG_REPLACE = re.compile(r"[^a-zA-Z0-9_.-]+")
+_SLUG_COLLAPSE = re.compile(r"-+")
+
+
+def slugify_workflow_name(name: str) -> str:
+    """Map a free-form workflow ``name:`` to a Docker-safe slug.
+
+    Used as the prefix for the NAT topology's container + network
+    names. The transformation is deterministic — the same workflow
+    name slugs to the same result across runs, so a rerun finds and
+    cleans up leftovers from a previous crashed run before recreating.
+    """
+    if not name:
+        return "merobox-nat"
+    slug = _SLUG_REPLACE.sub("-", name.strip())
+    slug = _SLUG_COLLAPSE.sub("-", slug)
+    slug = slug.strip("-.").lower()
+    # Docker requires the first char be alphanumeric (no leading
+    # dot/dash/underscore). Strip any remainder and fall back to the
+    # default if nothing's left.
+    while slug and not slug[0].isalnum():
+        slug = slug[1:]
+    return slug or "merobox-nat"
+
 
 # How long to wait for clients to register a relay reservation with
 # the boot-node before giving up. Sized for a single CI runner under
@@ -147,10 +183,15 @@ def _build_image_if_missing(
         f"[yellow]Building {tag} from {dockerfile_dir} "
         f"(first-use, future runs reuse the cached image)...[/yellow]"
     )
-    # `decode=True` so docker-py yields each layer's stdout as a dict
-    # rather than raw bytes; we discard the stream but iterate it so
-    # the build runs to completion (the underlying call is a
-    # generator).
+    # `client.images.build()` returns `(image, build_log_generator)`.
+    # The generator yields already-parsed JSON dicts from the build
+    # stream (docker-py handles `decode=True` for us on this
+    # high-level API — `decode=True` is only an explicit kwarg on
+    # the lower-level `client.api.build`). We iterate the generator
+    # to (a) drive the build to completion (it's lazy) and (b) trap
+    # `{"error": …}` chunks so a failed layer surfaces as a Python
+    # exception rather than as a phantom-success that fails later
+    # when the missing image is needed.
     _image, build_logs = client.images.build(
         path=str(dockerfile_dir),
         tag=tag,
@@ -195,6 +236,23 @@ def _ensure_network(
                 f"[yellow]Network {name} exists with internal={existing_internal}, "
                 f"recreating with internal={internal}[/yellow]"
             )
+            # Docker refuses `network.remove()` while any container is
+            # still attached — common after a crashed previous run
+            # where teardown didn't finish. Disconnect each attached
+            # container first (with force=True so paused / dead
+            # containers don't block); errors are tolerated because
+            # the worst case is that `remove` below raises with a
+            # clearer message about why.
+            net.reload()
+            attached = (net.attrs or {}).get("Containers", {}) or {}
+            for container_id in list(attached.keys()):
+                try:
+                    net.disconnect(container_id, force=True)
+                except Exception as e:
+                    console.print(
+                        f"[yellow]  failed to disconnect {container_id[:12]} from "
+                        f"{name}: {e}[/yellow]"
+                    )
             net.remove()
         else:
             console.print(f"[cyan]✓ Network {name} already exists[/cyan]")
@@ -358,12 +416,16 @@ def _resolve_boot_node_peer_id(
         # Boot-node prints `local peer id: 12D3KooW...` shortly after
         # binding the listener. Match anywhere in the line so log
         # format tweaks (timestamps, level prefixes) don't break us.
+        # `removesuffix` (not rstrip) — rstrip strips ALL matching
+        # trailing chars and would eat content from a peer id that
+        # legitimately ends in `.` or `,` (base58 includes neither
+        # today, but the defensive single-char strip costs nothing).
         for line in logs.splitlines():
             if "local peer id" in line.lower():
                 # Extract the trailing `12D3KooW...` token.
                 for token in line.split():
                     if token.startswith("12D3KooW") and len(token) >= 52:
-                        return token.rstrip(",").rstrip(".")
+                        return token.removesuffix(",").removesuffix(".")
         time.sleep(0.5)
     raise RuntimeError(
         f"Boot-node {container.name} didn't print its peer id within 30s"
@@ -480,6 +542,11 @@ def wait_for_relay_reservations(
 
     deadline = time.monotonic() + timeout_seconds
     pending = set(state.client_names)
+    # Track containers that have disappeared mid-wait so we report
+    # every one at the end rather than bailing on the first.
+    # Returning False early would mask a multi-client crash and
+    # leave the operator to find the others manually.
+    disappeared: set[str] = set()
     console.print(
         f"[yellow]Waiting up to {timeout_seconds}s for relay reservations on "
         f"{len(pending)} client(s)...[/yellow]"
@@ -491,15 +558,18 @@ def wait_for_relay_reservations(
                 container = client.containers.get(name)
             except docker.errors.NotFound:
                 # The container disappeared while we were waiting —
-                # almost certainly a crash during startup. Surface
-                # the loss; the workflow is going to fail downstream
-                # regardless, but better to report it here than make
-                # the operator hunt.
+                # almost certainly a crash during startup. Record
+                # the loss so we can report every disappeared client
+                # at the end; don't bail on the first one (others
+                # might also have crashed and the operator deserves
+                # the full list).
                 console.print(
                     f"[red]✗ Client container {name} disappeared "
                     f"while waiting for relay reservation[/red]"
                 )
-                return False
+                disappeared.add(name)
+                pending.discard(name)
+                continue
             try:
                 tail = container.logs(tail=400).decode("utf-8", errors="replace")
             except Exception:
@@ -509,6 +579,15 @@ def wait_for_relay_reservations(
                 console.print(f"[green]✓ {name} registered a relay reservation[/green]")
         if pending:
             time.sleep(RELAY_READINESS_POLL_INTERVAL_SECONDS)
+
+    # Any client that disappeared is a hard failure regardless of
+    # whether the others reached the reservation signal.
+    if disappeared:
+        console.print(
+            f"[red]✗ {len(disappeared)} client(s) disappeared during the "
+            f"readiness wait: {sorted(disappeared)}[/red]"
+        )
+        return False
 
     if pending:
         console.print(

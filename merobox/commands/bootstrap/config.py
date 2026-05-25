@@ -1305,7 +1305,16 @@ class NatTopologyConfig(BaseModel):
     )
 
 
-TopologyConfig = Union[NatTopologyConfig]
+# `TopologyConfig` is currently `NatTopologyConfig` directly, not
+# wrapped in `Union[...]` — a single-element Union is idiomatically
+# equivalent and some type checkers warn on it. When a second
+# topology variant lands (e.g. `MeshTopologyConfig` with multiple
+# relays, `WireguardTopologyConfig`, etc.) switch to
+# `Union[NatTopologyConfig, NewVariant]` AND add a discriminator
+# field shared by every variant so Pydantic can pick the right
+# class. Until then the alias keeps call-sites future-proof in
+# annotation form without paying the lint cost today.
+TopologyConfig = NatTopologyConfig
 
 
 class WorkflowConfig(BaseModel):

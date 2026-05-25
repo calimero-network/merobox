@@ -34,7 +34,22 @@ RUN set -eux; \
     url="https://github.com/calimero-network/boot-node/releases/download/${BOOT_NODE_VERSION}/${asset}"; \
     curl -fSL --retry 3 -o /tmp/boot-node "${url}"; \
     chmod +x /tmp/boot-node; \
-    /tmp/boot-node --help >/dev/null 2>&1 || true
+    # Smoke-test the downloaded binary so the image fails to build
+    # if the asset is for the wrong arch, the download was truncated,
+    # or GitHub served us an HTML error page. `--help` exits 0 on
+    # success and non-zero on missing flag — we accept either; what
+    # we care about is that the process actually launches, which
+    # `--version` would normally cover but `boot-node --version`
+    # isn't supported, so we use `--help` and accept any exit code
+    # other than the dynamic-loader-failure ones (127, 128+N for
+    # signals, etc.). The `[ $? -lt 127 ]` check is intentional: a
+    # wrong-arch binary fails with 126 (Exec format error) under
+    # bash, dynamic-loader errors yield 127, signals yield 128+; we
+    # treat any of those as a build failure.
+    /tmp/boot-node --help >/dev/null 2>&1; rc=$?; \
+    if [ "$rc" -ge 126 ]; then \
+        echo "boot-node smoke-test failed (exit $rc) — wrong arch?" >&2; exit 1; \
+    fi
 
 # Runtime stage: keep only the binary + minimal CA bundle. Boot-node
 # doesn't need much at runtime (no DNS resolution to outside domains

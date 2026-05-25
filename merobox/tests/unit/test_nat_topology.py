@@ -21,6 +21,7 @@ from merobox.topology.nat import (
     NAT_GATEWAY_IMAGE_TAG,
     NatTopologyState,
     boot_node_bootstrap_multiaddrs,
+    slugify_workflow_name,
 )
 
 # ---------------------------------------------------------------------------
@@ -176,6 +177,67 @@ def test_bootstrap_multiaddrs_uses_state_ip_and_peer_id():
     for a in addrs:
         assert "172.99.99.99" in a
         assert "12D3KooW" + "Z" * 44 in a
+
+
+# ---------------------------------------------------------------------------
+# slugify_workflow_name
+# ---------------------------------------------------------------------------
+#
+# The CI failure that motivated this whole helper was Docker rejecting a
+# container named "NAT Topology — Cone Mode Smoke-boot-node" because of
+# the spaces and em-dash. These cases exercise every category of input
+# the slugifier has to deal with so the rejection can't re-happen
+# silently.
+
+
+def test_slugify_workflow_name_handles_spaces_and_em_dash():
+    """The motivating real-world case: a display name with spaces +
+    em-dash + mixed case must yield a Docker-safe slug."""
+    assert (
+        slugify_workflow_name("NAT Topology — Cone Mode Smoke")
+        == "nat-topology-cone-mode-smoke"
+    )
+
+
+def test_slugify_workflow_name_collapses_runs_of_separators():
+    """Multiple unsafe chars in a row should collapse to a single
+    hyphen; otherwise long names produce ugly `---` runs."""
+    assert slugify_workflow_name("foo --- bar") == "foo-bar"
+    assert slugify_workflow_name("a  b   c") == "a-b-c"
+
+
+def test_slugify_workflow_name_strips_leading_and_trailing_separators():
+    """Docker requires the first char to be alphanumeric. A leading
+    separator (`.`, `-`, `_`) after substitution must be stripped."""
+    assert slugify_workflow_name("--- leading") == "leading"
+    assert slugify_workflow_name("trailing ---") == "trailing"
+    assert slugify_workflow_name("...both...") == "both"
+
+
+def test_slugify_workflow_name_preserves_safe_chars():
+    """Underscores, dots, and digits are all allowed in Docker
+    resource names and should pass through unchanged."""
+    # The slugifier lowercases everything, so capital `V` in `v0.6.18`
+    # is kept as `v`. Dots + digits + underscores survive intact.
+    assert slugify_workflow_name("test_run_v0.6.18") == "test_run_v0.6.18"
+
+
+def test_slugify_workflow_name_falls_back_for_unusable_input():
+    """Empty / whitespace-only / all-unsafe inputs collapse to the
+    default prefix rather than raising."""
+    assert slugify_workflow_name("") == "merobox-nat"
+    assert slugify_workflow_name("   ") == "merobox-nat"
+    # An all-unsafe input (`!@#$`) leaves nothing after substitution
+    # and stripping; the fallback prevents an empty Docker name from
+    # ever reaching the daemon.
+    assert slugify_workflow_name("!@#$") == "merobox-nat"
+
+
+def test_slugify_workflow_name_deterministic_across_calls():
+    """The slugifier is pure — same input always produces the same
+    output. The cluster-wiring teardown path relies on this for the
+    leftover-from-prior-run detection."""
+    assert slugify_workflow_name("My Test") == slugify_workflow_name("My Test")
 
 
 def test_bootstrap_multiaddrs_are_well_formed_libp2p():
