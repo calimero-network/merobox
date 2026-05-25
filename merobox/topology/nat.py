@@ -51,6 +51,15 @@ from merobox.commands.utils import console
 
 BOOT_NODE_IMAGE_TAG = "merobox/boot-node:local"
 NAT_GATEWAY_IMAGE_TAG = "merobox/nat-gateway:local"
+# Thin wrapper on top of the stock merod image that adds iproute2.
+# NAT-topology clients need to install a default route pointing at
+# the NAT gateway after startup (the LAN bridge is `--internal`, so
+# the container has no default route by default and `ip route add`
+# is the way to give it one). `merod:edge` is debian-bookworm-slim
+# without iproute2 — building this wrapper once on first use keeps
+# the runtime mutation simple (`docker exec ip route add …`) and
+# avoids the netns-sharing sidecar dance.
+MEROD_NAT_CLIENT_IMAGE_TAG = "merobox/merod-nat-client:local"
 
 # Default version of the boot-node binary baked into the boot-node
 # image. Bump in lockstep with the calimero-network/boot-node release
@@ -492,6 +501,11 @@ def setup_nat_topology(
             build_args={"BOOT_NODE_VERSION": DEFAULT_BOOT_NODE_VERSION},
         )
     _build_image_if_missing(client, "nat-gateway", NAT_GATEWAY_IMAGE_TAG)
+    # Wrapper image that's just merod + iproute2. Built once on
+    # first use; the executor will pass this tag as the client
+    # `image` for NAT-topology clients so they have `ip route` for
+    # the post-start default-route injection.
+    _build_image_if_missing(client, "merod-nat-client", MEROD_NAT_CLIENT_IMAGE_TAG)
 
     # Step 2: networks. Names are workflow-scoped so parallel
     # workflows don't clobber each other.
@@ -612,6 +626,81 @@ def wait_for_relay_reservations(
         )
         return False
     return True
+
+
+def inject_default_route_into_client(
+    client: docker.DockerClient,
+    state: NatTopologyState,
+    client_container_name: str,
+) -> None:
+    """Add a default route to the named client container pointing at
+    the NAT gateway's LAN-side IP.
+
+    Why this exists
+    ---------------
+
+    The LAN bridge is created with ``internal=True``: no default
+    gateway, no route to anything outside Docker. That blocks the
+    INBOUND direction (public-bridge containers can't dial into the
+    LAN — exactly what we want for NAT semantics), but it also
+    blocks the OUTBOUND direction unless we explicitly install a
+    route. Without a route, every dial to the boot-node returns
+    ``Network is unreachable (os error 101)`` and clients never
+    reach the boot-node to register a relay reservation.
+
+    The fix: install a default route pointing at the NAT gateway's
+    LAN-side IP. The gateway then MASQUERADEs LAN→public traffic
+    onto the public bridge. Inbound from public to LAN is still
+    blocked at the Docker daemon level because ``internal=True``
+    doesn't install host iptables rules for that direction — so
+    autonat's dial-back probe from the boot-node fails, clients
+    decide they're NAT'd, and the relay-reservation flow kicks in.
+
+    How
+    ---
+
+    Clients run a thin ``merobox/merod-nat-client:local`` image
+    that's just stock merod + iproute2 (built on first use in
+    ``setup_nat_topology``). With iproute2 inside the container,
+    a plain ``docker exec`` runs ``ip route add`` in the client's
+    own network namespace.
+
+    ``ip route replace`` (not ``add``) so a rerun after a partial
+    failure doesn't error out on an existing route; replace is
+    idempotent.
+    """
+    gateway_lan_ip = _resolve_container_ip(
+        state.nat_gateway_container, state.lan_network.name
+    )
+    console.print(
+        f"[yellow]Injecting default route into {client_container_name} "
+        f"via NAT gateway at {gateway_lan_ip}[/yellow]"
+    )
+    try:
+        container = client.containers.get(client_container_name)
+    except docker.errors.NotFound as e:
+        raise RuntimeError(
+            f"Cannot inject default route: client container "
+            f"{client_container_name!r} not found"
+        ) from e
+
+    exit_code, output = container.exec_run(
+        ["ip", "route", "replace", "default", "via", gateway_lan_ip],
+        # Route changes need NET_ADMIN, which the client containers
+        # are already started with (merobox's `network_admin=True`
+        # default for fault-injection workflows).
+        privileged=False,
+    )
+    if exit_code != 0:
+        decoded = (
+            output.decode("utf-8", errors="replace")
+            if isinstance(output, bytes)
+            else str(output)
+        )
+        raise RuntimeError(
+            f"Failed to install default route in {client_container_name} "
+            f"(gateway {gateway_lan_ip}, exit {exit_code}): {decoded}"
+        )
 
 
 def boot_node_bootstrap_multiaddrs(state: NatTopologyState) -> list[str]:

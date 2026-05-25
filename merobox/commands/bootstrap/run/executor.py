@@ -1055,6 +1055,35 @@ class WorkflowExecutor:
                 "are always spawned fresh on the LAN bridge[/yellow]"
             )
 
+        # NAT-topology clients run a thin wrapper image
+        # (`merobox/merod-nat-client:local`) that's stock merod +
+        # iproute2. We need iproute2 inside the container because
+        # the LAN bridge is `--internal` and gives the client no
+        # default route — we have to `docker exec ip route add`
+        # one in pointing at the NAT gateway, otherwise the client
+        # has no path to the boot-node and the workflow times out
+        # at the readiness gate (`Network is unreachable os err
+        # 101`). Workflow `nodes.image` is intentionally ignored
+        # here so the wrapper is consistent across runs; if a
+        # workflow needs a pinned merod version, the wrapper's
+        # Dockerfile takes a `BASE_IMAGE` build-arg the operator
+        # can rebuild once.
+        from merobox.topology.nat import (
+            MEROD_NAT_CLIENT_IMAGE_TAG,
+            inject_default_route_into_client,
+        )
+
+        nat_client_image = MEROD_NAT_CLIENT_IMAGE_TAG
+        if image is not None and image != MEROD_NAT_CLIENT_IMAGE_TAG:
+            console.print(
+                f"[yellow]NAT topology overrides workflow `nodes.image` "
+                f"({image!r}) with {MEROD_NAT_CLIENT_IMAGE_TAG} so clients "
+                f"have iproute2 for the post-start route injection. To pin "
+                f"a specific merod version, rebuild the wrapper image with "
+                f"`docker build --build-arg BASE_IMAGE=<your-merod-tag>` "
+                f"on `merobox/topology/images/merod-nat-client`.[/yellow]"
+            )
+
         for i in range(count):
             node_name = f"{prefix}-{i + 1}"
             port = base_port + i
@@ -1063,7 +1092,7 @@ class WorkflowExecutor:
                 node_name,
                 port=port,
                 rpc_port=rpc_port,
-                image=image,
+                image=nat_client_image,
                 use_image_entrypoint=use_image_entrypoint,
             )
             # Force the LAN bridge as the container's network so the
@@ -1086,6 +1115,22 @@ class WorkflowExecutor:
             if not self.manager.run_node(**run_node_kwargs):
                 return False
             self._nat_state.client_names.append(node_name)
+
+            # Install the default route NOW (right after the
+            # container is up, before any merod-side libp2p dialing
+            # gets going). The route is what bridges the gap
+            # between `internal=True`-blocked outbound + the NAT
+            # gateway sitting on both bridges. Without it, every
+            # merod dial to the boot-node returns
+            # `Network is unreachable (os err 101)` and the
+            # readiness gate times out.
+            try:
+                inject_default_route_into_client(
+                    self.manager.client, self._nat_state, node_name
+                )
+            except Exception as e:
+                console.print(f"[red]❌ {e}[/red]")
+                return False
 
         console.print(
             f"[green]✓ NAT topology up: {count} client(s) on "
