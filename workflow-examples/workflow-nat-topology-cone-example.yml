@@ -1,0 +1,181 @@
+description: >
+  Smoke test for `topology: { type: nat, nat_mode: cone }`.
+
+  Spawns the four-piece NAT topology:
+
+      [ <wf>-public bridge ]                        [ <wf>-lan (internal) ]
+       boot-node container  <- nat-gateway ->  client-1, client-2
+
+  The boot-node runs the released calimero-network/boot-node binary
+  (relay server + rendezvous server + Kademlia DHT). The gateway
+  installs `iptables MASQUERADE` so client-side outbound packets
+  reach the public bridge; clients are unreachable from the public
+  side except via the boot-node's relay circuit. That's the
+  precondition for exercising the relay-reservation-recovery code
+  in calimero-network/core#2446 — without this topology the code
+  path is dead because direct dialing always works.
+
+  What this workflow verifies
+  ---------------------------
+
+    1. Setup succeeds: the boot-node + gateway + N clients all
+       come up, the readiness gate observes a
+       `ReservationReqAccepted` for every client. Verified by
+       merobox itself — if any client fails to register, the
+       workflow fails before reaching the first step.
+
+    2. Two clients can find each other through the relay: client-1
+       creates a context, client-2 joins, they exchange a delta.
+       The peer-to-peer hop happens via the relay circuit because
+       clients have no direct route to each other (the LAN bridge
+       is `--internal`, so the only outbound route is through the
+       gateway, which goes to the public bridge where neither
+       client listens).
+
+    3. `assert_log_present` confirms the relay path was actually
+       exercised by scanning each client's log for the relayed
+       multiaddr shape `/p2p-circuit/`.
+
+  This workflow does NOT test recovery — that's the next sibling
+  workflow (`workflow-nat-topology-recovery-example.yml`, in a
+  follow-up). This file is the smoke test that the topology
+  primitive itself works end-to-end.
+name: NAT Topology — Cone Mode Smoke
+
+# NAT topology defines its own networks + boot-node; the normal
+# cluster-wiring path is skipped under this branch. `restart: true`
+# is meaningless here and explicitly ignored by the executor (logs a
+# warning if set).
+topology:
+  type: nat
+  nat_mode: cone
+
+force_pull_image: false
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: nat-client
+  base_port: 9070
+  base_rpc_port: 9170
+
+steps:
+  # ---------- Smoke: app install + context creation + join ----------
+
+  - name: Install application on client-1
+    type: install_application
+    node: nat-client-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace on client-1
+    type: create_namespace
+    node: nat-client-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create context in namespace on client-1
+    type: create_context
+    node: nat-client-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      ctx_id: contextId
+
+  - name: Create namespace invitation for client-2
+    type: create_namespace_invitation
+    node: nat-client-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  # NAT topology takes longer to converge than a direct-dial cluster:
+  # the relay-circuit establishment runs a per-namespace mesh-formation
+  # round across the relay rather than peer-to-peer. 20s is generous;
+  # the typical case finishes in 5-8.
+  - name: Wait for relay-circuit gossip
+    type: wait
+    seconds: 20
+
+  - name: Client-2 joins namespace via the relay
+    type: join_namespace
+    node: nat-client-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - name: Client-2 joins context via group membership
+    type: join_context
+    node: nat-client-2
+    context_id: '{{ctx_id}}'
+
+  # ---------- Verify: write + read across the relay ----------
+
+  - name: Write key on client-1
+    type: call
+    node: nat-client-1
+    context_id: '{{ctx_id}}'
+    method: set
+    args:
+      key: smoke
+      value: relayed_through_boot_node
+
+  - name: Wait for relay-mediated sync
+    type: wait_for_sync
+    context_id: '{{ctx_id}}'
+    group_id: '{{namespace_id}}'
+    nodes:
+      - nat-client-1
+      - nat-client-2
+    timeout: 60
+    trigger_sync: true
+
+  - name: Read key on client-2
+    type: call
+    node: nat-client-2
+    context_id: '{{ctx_id}}'
+    method: get
+    args:
+      key: smoke
+    outputs:
+      received: result
+
+  - name: Assert the relayed value matches
+    type: assert
+    statements:
+      - "contains({{received}}, 'relayed_through_boot_node')"
+
+  # ---------- Assert the path actually went through the relay ----------
+  #
+  # `/p2p-circuit/` in a multiaddr is the libp2p marker that the
+  # connection is going via a relay. If both clients found a direct
+  # route (which they shouldn't in a `--internal` LAN), this
+  # substring wouldn't show up in either log.
+
+  - name: Confirm client-1 advertised a relayed address
+    type: assert_log_present
+    nodes: [nat-client-1]
+    patterns:
+      - "/p2p-circuit/"
+
+  - name: Confirm client-2 used the relay circuit
+    type: assert_log_present
+    nodes: [nat-client-2]
+    patterns:
+      - "/p2p-circuit/"
+
+  # Regression guard against the new topology code blowing up at
+  # startup or runtime.
+  - name: No panics or fatal errors
+    type: assert_log_absent
+    nodes:
+      - nat-client-1
+      - nat-client-2
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true

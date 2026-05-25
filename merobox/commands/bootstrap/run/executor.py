@@ -193,6 +193,19 @@ class WorkflowExecutor:
             config.get("preserve_default_bootstrap", False)
         )
 
+        # Topology config — `None` means "use the normal cluster-mode
+        # path (one Docker bridge, sibling-dial)". A dict means a
+        # multi-bridge / NAT-relay topology defined by the workflow.
+        # Stored as the raw dict here so the Pydantic-side schema
+        # owns the validation; the executor branches on
+        # `self.topology` being non-None in `_start_nodes`.
+        self.topology = config.get("topology")
+        # The NAT-topology setup returns a state object the executor
+        # holds onto so teardown can clean up the boot-node, gateway,
+        # and networks at workflow exit. Stays `None` for non-NAT
+        # workflows.
+        self._nat_state = None
+
         # Generate unique workflow ID for test isolation (like e2e tests)
         self.workflow_id = str(uuid.uuid4())[:8]
 
@@ -389,10 +402,16 @@ class WorkflowExecutor:
                     console.print(
                         "[cyan]Nodes will continue running for future workflows[/cyan]"
                     )
+                # Tear down NAT-topology infra (boot-node, gateway,
+                # bridges) on success too. `stop_all_nodes` covers
+                # the client merods that the normal manager knows
+                # about; the topology pieces are merobox-owned.
+                self._teardown_nat_topology_if_present()
             else:
                 console.print(
                     "\n[bold blue]Step 5: Skipped (no local nodes to stop)[/bold blue]"
                 )
+                self._teardown_nat_topology_if_present()
 
             # Step 6: Nuke on end if requested
             if nuke_on_end:
@@ -689,6 +708,33 @@ class WorkflowExecutor:
             console.print("[red]Failed to stop all nodes[/red]")
         else:
             console.print("[green]✓ All nodes stopped[/green]")
+        # NAT topology owns containers + networks the normal
+        # node-management path doesn't know about (the boot-node and
+        # gateway aren't merod containers, and the two bridges were
+        # created by `setup_nat_topology`). Tear them down here so a
+        # workflow failure doesn't leak state into the next run.
+        # No-op when `topology:` wasn't set or setup didn't reach a
+        # state object.
+        self._teardown_nat_topology_if_present()
+
+    def _teardown_nat_topology_if_present(self) -> None:
+        """Stop the NAT-topology containers + networks if any were
+        stood up for this workflow.
+
+        Safe to call multiple times; the second call is a no-op
+        because `self._nat_state` is cleared after the first
+        successful teardown.
+        """
+        if self._nat_state is None:
+            return
+        try:
+            from merobox.topology import teardown_nat_topology
+
+            teardown_nat_topology(self.manager.client, self._nat_state)
+        except Exception as e:
+            console.print(f"[yellow]NAT topology teardown raised: {e}[/yellow]")
+        finally:
+            self._nat_state = None
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
@@ -874,6 +920,138 @@ class WorkflowExecutor:
             elif key in nodes_config:
                 run_node_kwargs[key] = nodes_config[key]
 
+    async def _start_nodes_nat_topology(
+        self,
+        nodes_config: dict,
+        restart: bool,
+        image: Optional[str],
+    ) -> bool:
+        """Bring up the NAT topology and spawn N client nodes on it.
+
+        Called instead of the normal cluster-mode `_start_nodes` body
+        when the workflow declares `topology: { type: nat }`. The
+        NAT setup creates a public bridge with a boot-node, an
+        `--internal` LAN bridge with a NAT gateway, and the client
+        containers land on the LAN bridge with `bootstrap_nodes`
+        pointing at the boot-node's public address. Direct sibling
+        wiring is NOT performed — the whole point is to force
+        traffic through the relay.
+
+        Returns False on any failure; the executor's exit path
+        invokes `teardown_nat_topology` regardless via the stored
+        `_nat_state`.
+        """
+        from merobox.topology import setup_nat_topology  # local to avoid
+
+        # cycle: topology pulls in DockerClient handlers which pull in
+        # the executor's parent module on some merobox install layouts.
+
+        topology_cfg = self.topology or {}
+        if topology_cfg.get("type") != "nat":
+            console.print(
+                f"[red]❌ Unsupported topology type "
+                f"{topology_cfg.get('type')!r}; only 'nat' is implemented[/red]"
+            )
+            return False
+        nat_mode = topology_cfg.get("nat_mode", "cone")
+        boot_node_cfg = topology_cfg.get("boot_node") or {}
+        boot_node_image_override = boot_node_cfg.get("image")
+
+        try:
+            self._nat_state = setup_nat_topology(
+                self.manager.client,
+                workflow_name=self.config.get("name", "merobox-nat"),
+                nat_mode=nat_mode,
+                boot_node_image_override=boot_node_image_override,
+            )
+        except Exception as e:
+            console.print(f"[red]❌ NAT topology setup failed: {e}[/red]")
+            return False
+
+        # Compute the bootstrap multiaddrs the clients need. These
+        # override anything the workflow's `bootstrap_nodes:` field
+        # would have set — the whole topology is built around this
+        # being the only reachable rendezvous server.
+        from merobox.topology.nat import boot_node_bootstrap_multiaddrs
+
+        client_bootstrap_nodes = boot_node_bootstrap_multiaddrs(self._nat_state)
+
+        # Stash the overrides on self so the per-node start path
+        # picks them up. The existing `_build_run_node_kwargs` reads
+        # `self.bootstrap_nodes`; replacing it here is the smallest
+        # diff that gets clients onto the right config.
+        self.bootstrap_nodes = client_bootstrap_nodes
+
+        # The LAN network is what each client container attaches to.
+        # `_wire_cluster_bootstrap_peers` IS NOT invoked under this
+        # path — siblings shouldn't have each other's addresses in
+        # bootstrap.nodes, the boot-node alone is the rendezvous.
+        # The normal run_multiple_nodes wiring is gated on
+        # `topology is None` by the manager; here we go through the
+        # individual-node path with the cluster network forced to
+        # the LAN bridge.
+        lan_network_name = self._nat_state.lan_network.name
+        count = nodes_config["count"]
+        prefix = nodes_config.get("prefix", "calimero-node")
+        base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
+        base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
+        use_image_entrypoint = nodes_config.get("use_image_entrypoint", False)
+
+        if restart:
+            console.print(
+                "[yellow]NAT topology mode ignores `restart: true` — clients "
+                "are always spawned fresh on the LAN bridge[/yellow]"
+            )
+
+        for i in range(count):
+            node_name = f"{prefix}-{i + 1}"
+            port = base_port + i
+            rpc_port = base_rpc_port + i
+            run_node_kwargs = self._build_run_node_kwargs(
+                node_name,
+                port=port,
+                rpc_port=rpc_port,
+                image=image,
+                use_image_entrypoint=use_image_entrypoint,
+            )
+            # Force the LAN bridge as the container's network so the
+            # client has no route to the public bridge except via
+            # the NAT gateway. The `run_node` kwarg name is
+            # `network` (a positional/keyword on the manager); the
+            # cluster-mode network logic is bypassed because the
+            # `topology` branch took us out of the
+            # `run_multiple_nodes` path. mDNS is meaningless on an
+            # `--internal` bridge (no multicast across bridges), so
+            # disable it unconditionally for this topology.
+            run_node_kwargs["network"] = lan_network_name
+            run_node_kwargs["mdns"] = False
+            self._apply_fault_kwargs(run_node_kwargs, None, nodes_config)
+            if not self.manager.run_node(**run_node_kwargs):
+                return False
+            self._nat_state.client_names.append(node_name)
+
+        console.print(
+            f"[green]✓ NAT topology up: {count} client(s) on "
+            f"{lan_network_name}, boot-node reachable at "
+            f"{client_bootstrap_nodes[0]}[/green]"
+        )
+
+        # Readiness gate. Without this the workflow's first step
+        # would race the clients' libp2p stacks coming up + dialling
+        # the boot-node + completing the reservation handshake.
+        # Returning False here surfaces the timeout as a workflow
+        # failure rather than letting downstream steps fail mid-flight
+        # with confusing peer-not-found errors.
+        from merobox.topology.nat import wait_for_relay_reservations
+
+        if not wait_for_relay_reservations(self.manager.client, self._nat_state):
+            console.print(
+                "[red]❌ NAT topology never reached the relay-reservation "
+                "readiness gate — see per-client logs[/red]"
+            )
+            return False
+        return True
+
     async def _start_nodes(self, restart: bool) -> bool:
         """Start the configured nodes."""
         nodes_config = self.config.get("nodes", {})
@@ -881,6 +1059,24 @@ class WorkflowExecutor:
         if not nodes_config:
             console.print("[red]No nodes configuration found[/red]")
             return False
+
+        # Branch on `topology:` BEFORE the normal cluster-mode path.
+        # NAT topology stands up its own networks + boot-node +
+        # gateway and the clients land on the LAN bridge with their
+        # bootstrap.nodes pointing at the boot-node's public address.
+        # The normal cluster-bootstrap-wiring step (sibling addrs)
+        # is intentionally skipped — the whole point of NAT topology
+        # is to make direct dials between clients impossible.
+        if self.topology is not None:
+            if self.is_binary_mode:
+                console.print(
+                    "[red]❌ topology: { type: nat } is Docker-mode only "
+                    "(NAT routing needs the docker bridge + iptables container)[/red]"
+                )
+                return False
+            return await self._start_nodes_nat_topology(
+                nodes_config, restart, image=self.image
+            )
 
         base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
         base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
