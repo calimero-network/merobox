@@ -1056,16 +1056,13 @@ class WorkflowExecutor:
             )
 
         # NAT-topology clients use the workflow's `nodes.image` (or
-        # the merobox default if unset). Earlier iterations swapped
-        # in a custom wrapper because the LAN bridge was created
-        # with `internal=True` and clients had to `docker exec ip
-        # route add` after startup — iproute2 isn't in stock merod.
-        # We dropped that approach: the LAN bridge is now non-
-        # internal (Docker IPAM auto-allocates IPs, default routes
-        # land for free), and the host iptables DROP rule installed
-        # by `setup_nat_topology` is what enforces the relay path
-        # instead. With Docker handling routes, the wrapper + post-
-        # start `ip route add` aren't needed; stock merod works.
+        # the merobox default if unset). Stock merod is fine — we
+        # don't need iproute2 inside the client container because
+        # the default-route override below uses a sidecar that
+        # shares the client's network namespace and brings its own
+        # `ip` binary (the `merobox/nat-gateway:local` image, which
+        # is already cached locally and already ships iproute2).
+        from merobox.topology.nat import inject_default_route_into_client
 
         for i in range(count):
             node_name = f"{prefix}-{i + 1}"
@@ -1080,10 +1077,6 @@ class WorkflowExecutor:
             )
             # Force the LAN bridge as the container's network so the
             # client lands on the same subnet as the NAT gateway.
-            # Cross-bridge traffic to/from the boot-node is then
-            # gated by the host iptables rule installed during
-            # `setup_nat_topology`: LAN→public ACCEPT (default
-            # Docker), public→LAN DROP.
             run_node_kwargs["network"] = lan_network_name
             # Apply per-node and top-level fault overrides FIRST,
             # then force `mdns=False` last so the override can't
@@ -1095,6 +1088,28 @@ class WorkflowExecutor:
             if not self.manager.run_node(**run_node_kwargs):
                 return False
             self._nat_state.client_names.append(node_name)
+            # Override the client's default route to point at the
+            # NAT gateway. Without this, packets to the boot-node go
+            # out via Docker's auto-injected default route (the LAN
+            # bridge's host-side IP) and get DROPped by Docker's own
+            # `DOCKER-ISOLATION-STAGE-2` chain because the
+            # destination is on a different bridge. With it, the
+            # packet stays L2 within the LAN bridge until it hits
+            # the gateway, which forwards into the public bridge
+            # inside its own netns — outside Docker's isolation
+            # chain. A failure here is fatal; silently proceeding
+            # would let downstream workflow steps fail with
+            # confusing peer-not-found timeouts.
+            try:
+                inject_default_route_into_client(
+                    self.manager.client, self._nat_state, node_name
+                )
+            except RuntimeError as e:
+                console.print(
+                    f"[red]❌ Could not route {node_name} through the NAT "
+                    f"gateway: {e}[/red]"
+                )
+                return False
 
         console.print(
             f"[green]✓ NAT topology up: {count} client(s) on "

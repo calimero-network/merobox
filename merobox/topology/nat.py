@@ -28,8 +28,6 @@ Public entrypoints:
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,14 +139,6 @@ class NatTopologyState:
     # handles so a transient Docker reconnect doesn't invalidate the
     # references.
     client_names: list[str] = field(default_factory=list)
-    # Host iptables rules installed by `setup_nat_topology` to force
-    # all inter-client traffic through the boot-node relay. Each
-    # entry is the exact arg list passed to `iptables ...` (the `-I`
-    # add form); teardown turns each into its matching `-D` remove
-    # by swapping the verb. Tracking the exact rule lets us tear
-    # down precisely what we installed even if Docker reassigns the
-    # bridge interface name on a parallel run.
-    host_iptables_rules: list[list[str]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -277,220 +267,139 @@ def _ensure_network(
 
 
 # ---------------------------------------------------------------------------
-# Host iptables isolation
+# Client default-route injection
 # ---------------------------------------------------------------------------
 #
-# To exercise the relay-reservation code path (the whole point of NAT
-# topology), client containers must appear UNREACHABLE from the boot-
-# node's autonat dial-back probe. The Docker `--internal=True` bridge
-# would do that natively but breaks IP allocation on the gateway's
-# second-network attachment (see `_ensure_network`'s rationale).
+# Docker bridge isolation is stricter than I'd assumed in earlier
+# iterations: the daemon installs `DOCKER-ISOLATION-STAGE-2` rules that
+# DROP any forward between two different Docker bridges. So even with
+# both networks created as ``internal=False`` and a NAT gateway
+# straddling them, a client on the LAN bridge cannot reach the boot-
+# node on the public bridge VIA THE HOST. Docker's own isolation chain
+# discards the packet before any user FORWARD rule fires.
 #
-# Workaround: leave both bridges non-internal so Docker's IPAM works
-# normally, then install a host-side iptables rule that DROPs traffic
-# from the public bridge to the LAN bridge. Effect:
+# The only way to traverse a Docker bridge boundary is through a
+# container with veths in BOTH bridges — i.e., the NAT gateway. For
+# that to happen, the client's default route has to point at the
+# gateway's LAN-side IP. Docker installs the LAN bridge's host-side
+# IP as the default route by default, which is wrong for our purpose;
+# we explicitly replace it with the gateway's LAN IP.
 #
-#   * Clients on LAN can still reach boot-node on public via Docker's
-#     default LAN→public ACCEPT (route, MASQUERADE on the way out
-#     through the host's NAT). The relay-reservation handshake
-#     succeeds.
-#   * Boot-node CAN'T direct-dial clients on LAN — the host's DOCKER-
-#     USER iptables chain DROPs the packet before it reaches the LAN
-#     bridge. libp2p autonat decides clients are unreachable and the
-#     reservation flow fires.
+# Implementation: spawn a one-shot privileged sidecar that shares the
+# client's network namespace (``--network container:<client>`` +
+# ``CAP_NET_ADMIN``) and runs ``ip route replace``. Reuses the bundled
+# ``merobox/nat-gateway:local`` image — it's already built locally and
+# already ships iproute2 — so no extra image is needed and the stock
+# merod container doesn't have to be rebuilt with iproute2 inside.
 #
-# Implementation: shells out to `iptables` via `subprocess`. CI runners
-# (GitHub Actions ubuntu-latest) have passwordless sudo for the runner
-# user; locally, `merobox bootstrap run` against a NAT-topology
-# workflow needs `sudo` or root. The error message below makes this
-# explicit if the rule install fails with permission denied.
+# Why this replaces the earlier host-iptables approach
+# ----------------------------------------------------
+#
+# A previous iteration tried to enforce NAT semantics by installing a
+# host-side DROP rule on `DOCKER-USER` that filtered public→LAN
+# traffic. That solved the wrong problem: cross-bridge traffic was
+# already being dropped by Docker's own isolation chain, so clients
+# couldn't reach the boot-node at all (CI showed "Handshake with the
+# remote timed out" on every dial). With proper route injection, the
+# NAT gateway IS the cross-bridge path, and its lack of inbound port
+# forwarding naturally drops autonat dial-backs from the boot-node —
+# we get the asymmetric reachability the test wants without needing
+# any host iptables manipulation.
 
 
-def _docker_bridge_iface_name(network: docker.models.networks.Network) -> str:
-    """Map a Docker network handle to the host-side bridge interface
-    name.
-
-    Docker installs bridges named ``br-<first-12-chars-of-network-id>``
-    on the host. The network ID is available on the model directly.
-    Trims to 12 chars because ``ip link`` interface names are bounded
-    at 15 chars and Docker reserves a 3-char prefix.
-    """
-    return f"br-{network.id[:12]}"
-
-
-def _run_iptables(rule_argv: list[str]) -> tuple[int, str]:
-    """Run a single ``iptables`` command, surfacing exit + stderr.
-
-    Returns ``(exit_code, combined_stderr_stdout)``. The caller decides
-    whether to treat non-zero as fatal (rule install) or best-effort
-    (rule remove during teardown). A missing binary or permission
-    denied is signaled by exit codes >= 100 with a helpful message in
-    the second tuple element.
-    """
-    iptables = shutil.which("iptables")
-    if iptables is None:
-        return (
-            127,
-            "iptables not found on PATH — NAT topology requires "
-            "iptables on the host kernel (Linux only; not available "
-            "via Docker Desktop on macOS/Windows because their LinuxKit "
-            "VM doesn't expose iptables to the host).",
-        )
-    argv = [iptables, *rule_argv]
-    # We try non-interactive sudo first (CI runner passwordless sudo,
-    # plus local root just runs through). If that fails because sudo
-    # isn't on PATH or denies, fall back to running iptables directly
-    # (works if the user already has CAP_NET_ADMIN).
-    sudo = shutil.which("sudo")
-    if sudo is not None:
-        try:
-            r = subprocess.run(
-                [sudo, "-n", *argv],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10,
-            )
-            if r.returncode == 0:
-                return (0, "")
-            # Non-zero from sudo could be permission denied or a real
-            # iptables failure. Re-try without sudo to differentiate;
-            # if that ALSO fails, the original sudo output is more
-            # diagnostic.
-            sudo_output = (r.stderr or r.stdout or "").strip()
-        except Exception as e:
-            sudo_output = f"sudo subprocess raised: {e}"
-    else:
-        sudo_output = ""
-    try:
-        r = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-        if r.returncode == 0:
-            return (0, "")
-        bare_output = (r.stderr or r.stdout or "").strip()
-        # Surface both attempts so the operator sees the full picture.
-        joined = f"sudo iptables: {sudo_output}\n" f"iptables (no sudo): {bare_output}"
-        return (r.returncode, joined)
-    except Exception as e:
-        return (128, f"iptables subprocess raised: {e}")
-
-
-def _install_host_iptables_isolation(
+def inject_default_route_into_client(
+    client: docker.DockerClient,
     state: NatTopologyState,
+    client_container_name: str,
 ) -> None:
-    """Install the host-side iptables DROP rule that makes clients
-    unreachable from the public bridge.
+    """Replace the named client's default route to point at the NAT
+    gateway's LAN-side IP.
 
-    The rule lives in ``DOCKER-USER`` so it takes precedence over
-    Docker's own bridge-routing ACCEPT rules. Inserted at position 1
-    so it fires before any later rules. The exact `iptables` arg list
-    is captured in `state.host_iptables_rules` so teardown removes
-    precisely what was installed.
+    Without this, the client tries to reach the boot-node via Docker's
+    auto-injected default route (the LAN bridge's host-side gateway),
+    which Docker's `DOCKER-ISOLATION-STAGE-2` chain then DROPs because
+    the destination is on a different bridge. The result is silent
+    handshake timeouts — the worst possible failure mode for a smoke
+    test, because the workflow looks like it's running.
 
-    Raises ``RuntimeError`` if the install fails — the workflow can't
-    achieve its stated relay-only semantics without this, and silently
-    proceeding would produce a test that looks like it's exercising
-    the relay path while clients direct-dial each other behind the
-    operator's back.
+    With this, packets exit the client into the LAN bridge, get
+    delivered L2 to the NAT gateway container (which is on the same
+    bridge), and the gateway forwards them via its own veth on the
+    public bridge — entirely inside the gateway's network namespace,
+    so Docker's host-level FORWARD chain never sees the cross-bridge
+    hop.
+
+    Implementation: a one-shot privileged sidecar sharing the
+    client's netns runs `ip route replace`. The sidecar image is
+    `merobox/nat-gateway:local` because it's already built locally,
+    already in the image cache, and already ships iproute2. The
+    sidecar exits as soon as the route replace returns; no
+    long-running process, no port collision concern, no rebuild of
+    the merod image with iproute2.
+
+    Raises ``RuntimeError`` if the sidecar fails — silent fallback
+    here would produce a workflow that LOOKS like it's exercising
+    the relay path while every dial silently times out instead.
     """
-    public_br = _docker_bridge_iface_name(state.public_network)
-    lan_br = _docker_bridge_iface_name(state.lan_network)
-    # CONNTRACK-STATEFUL: only drop packets that are starting a NEW
-    # connection from public→LAN. Established / Related state is
-    # allowed through. Without this, the rule also kills the
-    # SYN-ACK + every other return packet from the boot-node to a
-    # client that the client originated — and the LAN→public TCP
-    # handshake silently times out from the LAN side. The earlier
-    # unconditional DROP shape in this rule produced exactly that
-    # symptom in CI ("Handshake with the remote timed out" on
-    # every client dial to the boot-node).
-    #
-    # `conntrack --ctstate NEW` matches packets that start a fresh
-    # connection (per the kernel's connection-tracking table); the
-    # SYN that initiates an inbound dial qualifies. Return traffic
-    # for a connection initiated from the LAN side is ESTABLISHED
-    # / RELATED, NOT NEW, and falls through to the next rule.
-    rule = [
-        "-I",
-        "DOCKER-USER",
-        "1",
-        "-i",
-        public_br,
-        "-o",
-        lan_br,
-        "-m",
-        "conntrack",
-        "--ctstate",
-        "NEW",
-        "-j",
-        "DROP",
-        "-m",
-        "comment",
-        "--comment",
-        # Embed the workflow slug so a future operator running
-        # `iptables -L DOCKER-USER` can see what installed the rule
-        # and what to remove if cleanup ever leaks.
-        f"merobox-nat:{state.lan_network.name}",
-    ]
-    console.print(
-        f"[yellow]Installing host iptables rule: DROP NEW connections "
-        f"{public_br} -> {lan_br}[/yellow]"
+    gateway_lan_ip = _resolve_container_ip(
+        state.nat_gateway_container, state.lan_network.name
     )
-    exit_code, output = _run_iptables(rule)
-    if exit_code != 0:
+    console.print(
+        f"[yellow]Injecting default route into {client_container_name} "
+        f"via NAT gateway at {gateway_lan_ip}[/yellow]"
+    )
+    try:
+        # Make sure the client container actually exists before we
+        # spawn a sidecar that pins to its netns — `docker run
+        # --network container:NAME` would fail with an unhelpful
+        # "No such container" if it didn't, well into the API call
+        # and after a brief image-pull pause. Doing the lookup first
+        # gives a clean error.
+        client.containers.get(client_container_name)
+    except docker.errors.NotFound as e:
         raise RuntimeError(
-            "Failed to install host iptables isolation rule (the NAT "
-            "topology relies on this rule to make clients unreachable "
-            "from the boot-node's autonat probe). Common causes:\n"
-            "  * Running outside Linux (Docker Desktop's LinuxKit VM "
-            "    doesn't expose iptables).\n"
-            "  * No passwordless sudo + no CAP_NET_ADMIN on the user.\n"
-            "  * `iptables` binary not installed on the host PATH.\n"
-            f"Exit code: {exit_code}. Subprocess output:\n{output}"
+            f"Cannot inject default route: client container "
+            f"{client_container_name!r} not found"
+        ) from e
+    try:
+        client.containers.run(
+            NAT_GATEWAY_IMAGE_TAG,
+            command=[
+                "sh",
+                "-c",
+                f"ip route replace default via {gateway_lan_ip}",
+            ],
+            # Sharing the client's network namespace is what lets
+            # `ip route` see and modify the client's routing table.
+            # The sidecar gets the client's loopback + LAN-bridge
+            # veth and no other interfaces.
+            network_mode=f"container:{client_container_name}",
+            cap_add=["NET_ADMIN"],
+            remove=True,
+            detach=False,
+            # Surface stderr in the exception below if the sidecar
+            # exits non-zero — `ip route` itself logs the actual
+            # reason (RTNETLINK errors, etc.) on stderr.
+            stdout=True,
+            stderr=True,
         )
-    # Track the EXACT argv we installed so teardown removes the same
-    # entry (in case parallel workflows have similar rules).
-    state.host_iptables_rules.append(rule)
-    console.print("[green]✓ Host iptables isolation rule installed[/green]")
-
-
-def _remove_host_iptables_isolation(state: NatTopologyState) -> None:
-    """Remove every iptables rule the topology installed.
-
-    Best-effort: errors are logged but don't propagate. A leaked rule
-    is recoverable (operator can `iptables -F DOCKER-USER` or grep for
-    `merobox-nat:` in the chain), but failing teardown loudly would
-    mask the actual workflow result.
-    """
-    while state.host_iptables_rules:
-        rule = state.host_iptables_rules.pop()
-        # Reconstruct the delete form: iptables `-D <chain> <spec>` —
-        # NO position argument. The install form is `-I <chain>
-        # <pos> <spec>`; we drop the position by index (always
-        # rule[2]) rather than by value, because dropping "1" by
-        # value would also strip a legitimate "1" elsewhere in the
-        # rule spec (e.g. if a future variant pinned `--dst-len 1`
-        # or similar).
-        if len(rule) < 3 or rule[0] != "-I" or not rule[2].isdigit():
-            console.print(
-                f"[yellow]Refusing to remove malformed iptables rule "
-                f"(does not match `-I <chain> <pos> ...` shape): {rule}[/yellow]"
-            )
-            continue
-        delete_rule = ["-D", rule[1], *rule[3:]]
-        exit_code, output = _run_iptables(delete_rule)
-        if exit_code != 0:
-            console.print(
-                f"[yellow]Best-effort iptables cleanup failed "
-                f"(exit {exit_code}): {output}[/yellow]"
-            )
-        else:
-            console.print("[green]✓ Removed host iptables isolation rule[/green]")
+    except docker.errors.ContainerError as e:
+        stderr = (
+            e.stderr.decode("utf-8", errors="replace") if e.stderr else "<no stderr>"
+        )
+        raise RuntimeError(
+            f"Failed to install default route in {client_container_name} "
+            f"(gateway {gateway_lan_ip}, exit {e.exit_status}): {stderr}"
+        ) from e
+    except docker.errors.APIError as e:
+        raise RuntimeError(
+            f"Docker API error installing default route in "
+            f"{client_container_name} via NAT gateway at {gateway_lan_ip}: {e}"
+        ) from e
+    console.print(
+        f"[green]✓ Default route in {client_container_name} now via "
+        f"{gateway_lan_ip}[/green]"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -776,22 +685,16 @@ def setup_nat_topology(
     # across CI runs; the workflow could never get past the gateway
     # IP-resolution step.
     #
-    # Falling back to `internal=False` is a deliberate trade-off:
-    #
-    # * Clients CAN reach boot-node via the gateway (good — the
-    #   relay-reservation flow needs outbound).
-    # * Clients are technically reachable directly from the public
-    #   bridge via Docker's host-level routing too (bad — autonat's
-    #   probe may succeed and the relay path stays dead code).
-    #
-    # The first-iteration goal is "primitive works end-to-end and
-    # the workflow infrastructure is reusable"; strict isolation is
-    # documented as out-of-scope for this iteration in the spec doc.
-    # A future PR can address by either (a) injecting host-level
-    # iptables FORWARD rules that block public→LAN routing, or
-    # (b) making clients listen only on their LAN-bridge interface
-    # (so autonat dial-backs targeting their advertised address
-    # bypass any direct route Docker happens to install).
+    # Falling back to `internal=False` is fine for our purposes:
+    # Docker's `DOCKER-ISOLATION-STAGE-2` chain already blocks the
+    # cross-bridge LAN→public path through the host, so even with
+    # the LAN bridge "non-internal" the client can't reach the
+    # public bridge directly via the host. The only cross-bridge
+    # path is through the NAT gateway container (which has veths in
+    # both bridges and forwards inside its own netns) — exactly the
+    # path the test wants to exercise. We make the client USE that
+    # path by injecting a default-route override post-startup; see
+    # `inject_default_route_into_client`.
     lan_network = _ensure_network(client, f"{workflow_name}-lan", internal=False)
 
     # Step 3: boot-node.
@@ -817,7 +720,7 @@ def setup_nat_topology(
         f"/ip4/{boot_node_public_ip}/tcp/{BOOT_NODE_PORT}/p2p/{boot_node_peer_id}[/green]"
     )
 
-    state = NatTopologyState(
+    return NatTopologyState(
         public_network=public_network,
         lan_network=lan_network,
         boot_node_container=boot_node,
@@ -825,14 +728,6 @@ def setup_nat_topology(
         boot_node_public_ip=boot_node_public_ip,
         nat_gateway_container=gateway,
     )
-
-    # Install the host iptables DROP rule LAST, after the bridges
-    # have IDs we can reference. This is what actually forces the
-    # relay path — without it, both bridges are non-internal and
-    # Docker's default ACCEPT lets the boot-node direct-dial clients.
-    # See `_install_host_iptables_isolation` for the full rationale.
-    _install_host_iptables_isolation(state)
-    return state
 
 
 def wait_for_relay_reservations(
@@ -945,17 +840,13 @@ def teardown_nat_topology(
 
     Client containers are stopped by the normal node-management
     teardown path; this function only owns the boot-node, gateway,
-    and the two networks. Errors on each step are logged but not
-    propagated — partial teardown is better than an exception
-    leaving even more state behind.
+    and the two networks. The default-route sidecars injected via
+    `inject_default_route_into_client` are short-lived `--rm`
+    containers that have already exited by the time we get here.
+    Errors on each step are logged but not propagated — partial
+    teardown is better than an exception leaving even more state
+    behind.
     """
-    # Remove iptables rules FIRST, before any containers / networks
-    # go away. If the bridge interface disappears mid-teardown, the
-    # `-D` removal would error out and leak the rule. Doing it first
-    # also means a partial-teardown failure later still leaves the
-    # iptables state clean.
-    _remove_host_iptables_isolation(state)
-
     for container in (state.nat_gateway_container, state.boot_node_container):
         try:
             container.stop(timeout=5)

@@ -350,261 +350,171 @@ def test_bootstrap_multiaddrs_are_well_formed_libp2p():
 
 
 # ---------------------------------------------------------------------------
-# Host iptables isolation helpers
+# inject_default_route_into_client
 # ---------------------------------------------------------------------------
 #
-# These rules force the relay path: without them Docker's default
-# inter-bridge ACCEPT lets the boot-node direct-dial clients (autonat
-# decides reachable → no relay reservation → readiness gate times
-# out). The tests pin the install/remove rule shapes so a refactor
-# can't silently drop the isolation.
+# The default-route override is what makes the NAT topology actually
+# route through the gateway — without it, Docker's bridge-isolation
+# chain DROPs the cross-bridge traffic and clients can't reach the
+# boot-node at all. These tests pin the sidecar shape so a refactor
+# can't silently break that.
+
+
+from docker import errors as docker_errors  # noqa: E402
 
 from merobox.topology.nat import (  # noqa: E402
-    _docker_bridge_iface_name,
-    _install_host_iptables_isolation,
-    _remove_host_iptables_isolation,
+    inject_default_route_into_client,
 )
 
 
-def test_docker_bridge_iface_name_uses_first_12_chars_of_network_id():
-    """Docker's host-side bridge interface is `br-<first-12-chars-of-id>`.
-    iptables `-i`/`-o` selectors must match exactly or the rule never
-    fires."""
-    net = MagicMock()
-    net.id = "abcdef0123456789deadbeef" + "f" * 40
-    assert _docker_bridge_iface_name(net) == "br-abcdef012345"
+def _make_state_with_gateway_lan_ip(lan_ip: str = "172.30.0.2") -> NatTopologyState:
+    """State with a NAT gateway whose LAN-side `IPAddress` is mocked.
 
-
-def _make_state_with_bridge_ids(
-    public_id: str = "p" * 64,
-    lan_id: str = "l" * 64,
-) -> NatTopologyState:
-    """NatTopologyState with mocked Network handles whose `.id` we
-    control — `_docker_bridge_iface_name` reads them to compute the
-    iptables `-i`/`-o` selectors."""
+    `inject_default_route_into_client` calls `_resolve_container_ip` on
+    the gateway against the LAN network's name; we mock the gateway's
+    `NetworkSettings.Networks[<lan>].IPAddress` to make that resolve
+    immediately."""
     public_net = MagicMock()
-    public_net.id = public_id
     public_net.name = "test-public"
     lan_net = MagicMock()
-    lan_net.id = lan_id
     lan_net.name = "test-lan"
+    gateway = MagicMock()
+    # `_resolve_container_ip` calls `container.reload()` then reads
+    # `attrs["NetworkSettings"]["Networks"][<lan_name>]["IPAddress"]`.
+    gateway.attrs = {
+        "NetworkSettings": {"Networks": {"test-lan": {"IPAddress": lan_ip}}}
+    }
     return NatTopologyState(
         public_network=public_net,
         lan_network=lan_net,
         boot_node_container=MagicMock(),
         boot_node_peer_id="12D3KooW" + "X" * 44,
         boot_node_public_ip="172.30.1.5",
-        nat_gateway_container=MagicMock(),
+        nat_gateway_container=gateway,
     )
 
 
-def test_install_host_iptables_isolation_inserts_stateful_drop_in_docker_user(
-    monkeypatch,
-):
-    """Insert at position 1 of DOCKER-USER with stateful conntrack
-    matching: ``-i br-<public> -o br-<lan> -m conntrack --ctstate NEW
-    -j DROP``. The `--ctstate NEW` qualifier is the difference
-    between "drop every public→LAN packet" (which kills the return
-    half of every LAN-initiated TCP handshake — clients can't dial
-    the boot-node at all) and "drop only inbound-initiated
-    connections" (the intended NAT semantics). The `merobox-nat:`
-    comment lets a leaked rule be recognised on a stray
-    `iptables -L` run."""
-    state = _make_state_with_bridge_ids()
-    captured: list[list[str]] = []
+def test_inject_default_route_spawns_sidecar_with_expected_shape():
+    """Happy path: sidecar runs the nat-gateway image, shares the
+    client's netns, has CAP_NET_ADMIN, and invokes `ip route replace
+    default via <gateway-lan-ip>`. Each pinned detail matters —
+    wrong image means no `ip`; wrong netns means modifying the wrong
+    container's routes; missing CAP_NET_ADMIN means `ip route` fails
+    with EPERM."""
+    state = _make_state_with_gateway_lan_ip(lan_ip="172.30.0.99")
+    client = MagicMock()
+    # `containers.get(name)` is the existence-check that runs before
+    # the sidecar is spawned; succeed silently.
+    client.containers.get.return_value = MagicMock()
 
-    def fake_run_iptables(argv):
-        captured.append(argv)
-        return (0, "")
+    inject_default_route_into_client(client, state, "nat-client-1")
 
-    monkeypatch.setattr("merobox.topology.nat._run_iptables", fake_run_iptables)
+    client.containers.get.assert_called_once_with("nat-client-1")
+    client.containers.run.assert_called_once()
+    _, kwargs = client.containers.run.call_args
+    args = client.containers.run.call_args.args
+    # Image must be the nat-gateway image — it's the only one we
+    # know ships iproute2 + is already cached locally.
+    assert args[0] == NAT_GATEWAY_IMAGE_TAG
+    # Command: sh -c "ip route replace default via <gateway-ip>".
+    assert kwargs["command"] == [
+        "sh",
+        "-c",
+        "ip route replace default via 172.30.0.99",
+    ]
+    # Pin to the client's netns — modifies the right routing table.
+    assert kwargs["network_mode"] == "container:nat-client-1"
+    # CAP_NET_ADMIN — required for `ip route` to succeed inside
+    # the sidecar (otherwise it errors with `Operation not permitted`).
+    assert kwargs["cap_add"] == ["NET_ADMIN"]
+    # `--rm`-equivalent: the sidecar disappears after exit so we
+    # don't leak it across runs.
+    assert kwargs["remove"] is True
+    assert kwargs["detach"] is False
 
-    _install_host_iptables_isolation(state)
 
-    assert len(captured) == 1
-    rule = captured[0]
-    assert rule[:3] == ["-I", "DOCKER-USER", "1"]
-    assert "-i" in rule and "br-pppppppppppp" in rule
-    assert "-o" in rule and "br-llllllllllll" in rule
-    assert "DROP" in rule
-    # Stateful match — `NEW` MUST be present or we accidentally drop
-    # return traffic for LAN-initiated dials too.
-    assert "conntrack" in rule
-    assert "--ctstate" in rule
-    ctstate_idx = rule.index("--ctstate")
-    assert rule[ctstate_idx + 1] == "NEW"
-    comment_idx = rule.index("--comment")
-    assert rule[comment_idx + 1] == "merobox-nat:test-lan"
-    assert state.host_iptables_rules == [rule]
+def test_inject_default_route_raises_when_client_container_missing():
+    """If the client container doesn't exist, fail loudly BEFORE
+    we try to spawn a sidecar against `container:<missing-name>`
+    (which would otherwise produce a confusing Docker API error
+    several seconds in)."""
+    state = _make_state_with_gateway_lan_ip()
+    client = MagicMock()
+    client.containers.get.side_effect = docker_errors.NotFound("no such container")
 
-
-def test_install_host_iptables_isolation_raises_on_iptables_failure(monkeypatch):
-    """Non-zero exit aborts setup with a diagnostic error — silently
-    proceeding would produce a test that looks like it's exercising
-    the relay path while clients bypass it."""
-    state = _make_state_with_bridge_ids()
-    monkeypatch.setattr(
-        "merobox.topology.nat._run_iptables",
-        lambda _argv: (1, "iptables: Permission denied"),
-    )
     with pytest.raises(RuntimeError) as excinfo:
-        _install_host_iptables_isolation(state)
+        inject_default_route_into_client(client, state, "ghost-client")
     msg = str(excinfo.value)
-    assert "Permission denied" in msg
-    # Failed install must NOT leave a phantom entry in state else
-    # teardown would try to delete a rule that doesn't exist.
-    assert state.host_iptables_rules == []
+    assert "ghost-client" in msg
+    assert "not found" in msg
+    # The sidecar must NOT have been launched.
+    client.containers.run.assert_not_called()
 
 
-def test_remove_host_iptables_isolation_swaps_insert_for_delete(monkeypatch):
-    """Teardown rewrites `-I <chain> <pos> <spec>` to `-D <chain>
-    <spec>` (iptables `-D` doesn't take a position) and calls
-    iptables once per installed rule. Exact-argv tracking lets
-    parallel workflows clean up just their own rules even if Docker
-    reassigns bridge interface names between runs. The fixtures
-    here mirror the real installed shape with conntrack args."""
-    state = _make_state_with_bridge_ids()
-    full_spec_a = [
-        "-i",
-        "br-A",
-        "-o",
-        "br-B",
-        "-m",
-        "conntrack",
-        "--ctstate",
-        "NEW",
-        "-j",
-        "DROP",
-        "-m",
-        "comment",
-        "--comment",
-        "merobox-nat:lan-A",
-    ]
-    full_spec_b = [
-        "-i",
-        "br-C",
-        "-o",
-        "br-D",
-        "-m",
-        "conntrack",
-        "--ctstate",
-        "NEW",
-        "-j",
-        "DROP",
-        "-m",
-        "comment",
-        "--comment",
-        "merobox-nat:lan-B",
-    ]
-    state.host_iptables_rules = [
-        ["-I", "DOCKER-USER", "1", *full_spec_a],
-        ["-I", "DOCKER-USER", "1", *full_spec_b],
-    ]
-    captured: list[list[str]] = []
-    monkeypatch.setattr(
-        "merobox.topology.nat._run_iptables",
-        lambda argv: (captured.append(argv) or (0, "")),
+def test_inject_default_route_raises_with_sidecar_stderr_on_container_error():
+    """`ip route replace` failing inside the sidecar surfaces as a
+    `ContainerError`. The wrapper turns that into a `RuntimeError`
+    with the stderr embedded so the operator can see WHY the route
+    install failed (RTNETLINK errors are common: bad gateway IP,
+    missing destination network, etc.)."""
+    state = _make_state_with_gateway_lan_ip(lan_ip="10.0.0.1")
+    client = MagicMock()
+    client.containers.get.return_value = MagicMock()
+    client.containers.run.side_effect = docker_errors.ContainerError(
+        container=MagicMock(),
+        exit_status=2,
+        command="ip route replace default via 10.0.0.1",
+        image=NAT_GATEWAY_IMAGE_TAG,
+        stderr=b"RTNETLINK answers: Network is unreachable",
     )
 
-    _remove_host_iptables_isolation(state)
-
-    assert len(captured) == 2
-    # `.pop()` drains the list LIFO, so spec_b comes off first.
-    # The position arg ("1") is gone, but everything else in the
-    # spec — including any conntrack args — is preserved verbatim.
-    assert captured[0] == ["-D", "DOCKER-USER", *full_spec_b]
-    assert captured[1] == ["-D", "DOCKER-USER", *full_spec_a]
-    assert state.host_iptables_rules == []
+    with pytest.raises(RuntimeError) as excinfo:
+        inject_default_route_into_client(client, state, "nat-client-1")
+    msg = str(excinfo.value)
+    assert "nat-client-1" in msg
+    assert "10.0.0.1" in msg
+    assert "exit 2" in msg
+    assert "Network is unreachable" in msg
 
 
-def test_remove_host_iptables_isolation_strips_only_position_arg(monkeypatch):
-    """Regression guard: a previous implementation filtered the
-    rule with `[a for a in rule if a != "1"]`, which would also
-    strip a legitimate `"1"` elsewhere in the spec (e.g. a future
-    `--dst-len 1` or `--hashlimit-burst 1` extension). Removal
-    must be position-based — drop rule[2] only."""
-    state = _make_state_with_bridge_ids()
-    state.host_iptables_rules = [
-        # `1` appears twice in the SPEC (positions 5 and 9), plus
-        # once as the iptables position arg at index 2. Only the
-        # index-2 occurrence should be stripped.
-        [
-            "-I",
-            "DOCKER-USER",
-            "1",
-            "-i",
-            "br-A",
-            "--dport",
-            "1",  # legitimate "1" in spec
-            "-o",
-            "br-B",
-            "--sport",
-            "1",  # legitimate "1" in spec
-            "-j",
-            "DROP",
-        ],
-    ]
-    captured: list[list[str]] = []
-    monkeypatch.setattr(
-        "merobox.topology.nat._run_iptables",
-        lambda argv: (captured.append(argv) or (0, "")),
-    )
+def test_inject_default_route_raises_with_diagnostic_on_docker_api_error():
+    """A Docker daemon error (e.g. daemon stopped, OOM-killer reaped
+    a container) surfaces as `APIError`. Wrap it with enough context
+    (client name, gateway IP) to debug from logs alone."""
+    state = _make_state_with_gateway_lan_ip(lan_ip="172.30.0.77")
+    client = MagicMock()
+    client.containers.get.return_value = MagicMock()
+    client.containers.run.side_effect = docker_errors.APIError("daemon unavailable")
 
-    _remove_host_iptables_isolation(state)
-
-    assert len(captured) == 1
-    argv = captured[0]
-    # Both legitimate "1"s survived; only the position arg is gone.
-    assert argv.count("1") == 2
-    assert argv == [
-        "-D",
-        "DOCKER-USER",
-        "-i",
-        "br-A",
-        "--dport",
-        "1",
-        "-o",
-        "br-B",
-        "--sport",
-        "1",
-        "-j",
-        "DROP",
-    ]
+    with pytest.raises(RuntimeError) as excinfo:
+        inject_default_route_into_client(client, state, "nat-client-2")
+    msg = str(excinfo.value)
+    assert "nat-client-2" in msg
+    assert "172.30.0.77" in msg
+    assert "daemon unavailable" in msg
 
 
-def test_remove_host_iptables_isolation_skips_malformed_rule(monkeypatch):
-    """A malformed entry (no position arg, wrong chain shape) must
-    NOT be sent to iptables — otherwise we'd issue a `-D` against
-    a chain it was never installed in. Just log and skip."""
-    state = _make_state_with_bridge_ids()
-    state.host_iptables_rules = [
-        # No position arg where `-I` rules require one.
-        ["-A", "DOCKER-USER", "-i", "br-A", "-o", "br-B", "-j", "DROP"],
-    ]
-    captured: list[list[str]] = []
-    monkeypatch.setattr(
-        "merobox.topology.nat._run_iptables",
-        lambda argv: (captured.append(argv) or (0, "")),
-    )
+def test_inject_default_route_resolves_gateway_ip_from_lan_network():
+    """The gateway IP we install is the one Docker assigned to the
+    gateway on the LAN bridge — NOT the public bridge. Sanity-check
+    the lookup so a future refactor that swaps argument order to
+    `_resolve_container_ip` can't silently start installing the
+    public-side IP (which the client can't reach without traversing
+    the host's `DOCKER-ISOLATION-STAGE-2` chain — i.e., the bug
+    we're trying to avoid)."""
+    state = _make_state_with_gateway_lan_ip(lan_ip="172.30.0.42")
+    # If the resolver mistakenly used the PUBLIC network name, this
+    # would surface as a KeyError when the test runs.
+    state.nat_gateway_container.attrs["NetworkSettings"]["Networks"]["test-public"] = {
+        "IPAddress": "172.99.99.99"
+    }
+    client = MagicMock()
+    client.containers.get.return_value = MagicMock()
 
-    _remove_host_iptables_isolation(state)
+    inject_default_route_into_client(client, state, "nat-client-1")
 
-    assert captured == []
-    assert state.host_iptables_rules == []
-
-
-def test_remove_host_iptables_isolation_tolerates_remove_errors(monkeypatch):
-    """A non-zero `-D` exit (rule already gone, bridge vanished)
-    logs but doesn't propagate. A propagating exception would mask
-    the workflow's actual result."""
-    state = _make_state_with_bridge_ids()
-    state.host_iptables_rules = [
-        ["-I", "DOCKER-USER", "1", "-i", "br-X", "-o", "br-Y", "-j", "DROP"],
-    ]
-    monkeypatch.setattr(
-        "merobox.topology.nat._run_iptables",
-        lambda _argv: (1, "iptables: No chain/target/match by that name"),
-    )
-    # Must NOT raise
-    _remove_host_iptables_isolation(state)
-    assert state.host_iptables_rules == []
+    _, kwargs = client.containers.run.call_args
+    # LAN IP made it into the command; public IP must NOT appear.
+    cmd = " ".join(kwargs["command"])
+    assert "172.30.0.42" in cmd
+    assert "172.99.99.99" not in cmd
