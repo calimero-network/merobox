@@ -371,7 +371,15 @@ def _spawn_nat_gateway(
         detach=True,
     )
     # Attach the LAN bridge as a second interface (becomes eth1).
+    # `connect()` is synchronous at the Docker API level but the
+    # daemon's network-state update propagates asynchronously to
+    # `container.attrs`; downstream callers that need the LAN IP
+    # poll via `_resolve_container_ip` (which now retries up to
+    # 30s) to absorb the race.
     lan_network.connect(container)
+    # Reload immediately so the second-network entry is visible to
+    # the next code path that introspects `container.attrs`. Cheap.
+    container.reload()
     return container
 
 
@@ -383,14 +391,35 @@ def _spawn_nat_gateway(
 def _resolve_container_ip(
     container: docker.models.containers.Container,
     network_name: str,
+    timeout_seconds: float = 30.0,
 ) -> str:
     """Fetch a container's IPv4 on the named network.
 
     docker-py keeps the network attachment metadata on the container
-    attrs but only after a `reload()`. The first lookup right after
-    `run()` returns empty; this helper polls briefly.
+    attrs but only after a `reload()`. There are TWO distinct delays
+    we have to absorb:
+
+    1. **First-network attachment** (the one passed to
+       ``containers.run(network=…)``): Docker assigns an IP
+       synchronously as part of container creation, but it doesn't
+       always land in the *first* `container.attrs["NetworkSettings"]`
+       fetched via `.reload()` — small race between the create call
+       returning and the daemon's network-state update. Sub-second.
+
+    2. **Second-network attachment** (via `network.connect(container)`
+       after the container is already running): the daemon processes
+       the attachment on a separate path that can take noticeably
+       longer, especially on `--internal=True` bridges where it has
+       to allocate from a fresh subnet without a gateway. We've
+       observed up to ~6s in CI; the previous 5s ceiling was the
+       reason the cone-mode workflow failed with `gateway didn't
+       acquire an IP on …-lan within 5 seconds`.
+
+    30s default ceiling covers a slow CI runner with headroom; if a
+    real failure mode emerges the diagnostic at the bottom helps
+    distinguish "never attached" from "attached but no IP".
     """
-    deadline = time.monotonic() + 5.0
+    deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         container.reload()
         networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
@@ -398,10 +427,19 @@ def _resolve_container_ip(
         ip = net.get("IPAddress")
         if ip:
             return ip
-        time.sleep(0.1)
+        time.sleep(0.2)
+    # Surface what Docker DID know about the container's networks
+    # so a future failure is diagnosable from the error alone.
+    try:
+        container.reload()
+        attached = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+    except Exception:
+        attached = {}
+    known = ", ".join(sorted(attached.keys())) or "<none>"
     raise RuntimeError(
-        f"Container {container.name} didn't acquire an IP on {network_name} "
-        f"within 5 seconds"
+        f"Container {container.name} didn't acquire an IP on "
+        f"{network_name} within {timeout_seconds:.0f} seconds "
+        f"(attached networks per docker: {known})"
     )
 
 
