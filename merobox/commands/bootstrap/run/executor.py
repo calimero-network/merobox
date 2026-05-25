@@ -1055,34 +1055,17 @@ class WorkflowExecutor:
                 "are always spawned fresh on the LAN bridge[/yellow]"
             )
 
-        # NAT-topology clients run a thin wrapper image
-        # (`merobox/merod-nat-client:local`) that's stock merod +
-        # iproute2. We need iproute2 inside the container because
-        # the LAN bridge is `--internal` and gives the client no
-        # default route — we have to `docker exec ip route add`
-        # one in pointing at the NAT gateway, otherwise the client
-        # has no path to the boot-node and the workflow times out
-        # at the readiness gate (`Network is unreachable os err
-        # 101`). Workflow `nodes.image` is intentionally ignored
-        # here so the wrapper is consistent across runs; if a
-        # workflow needs a pinned merod version, the wrapper's
-        # Dockerfile takes a `BASE_IMAGE` build-arg the operator
-        # can rebuild once.
-        from merobox.topology.nat import (
-            MEROD_NAT_CLIENT_IMAGE_TAG,
-            inject_default_route_into_client,
-        )
-
-        nat_client_image = MEROD_NAT_CLIENT_IMAGE_TAG
-        if image is not None and image != MEROD_NAT_CLIENT_IMAGE_TAG:
-            console.print(
-                f"[yellow]NAT topology overrides workflow `nodes.image` "
-                f"({image!r}) with {MEROD_NAT_CLIENT_IMAGE_TAG} so clients "
-                f"have iproute2 for the post-start route injection. To pin "
-                f"a specific merod version, rebuild the wrapper image with "
-                f"`docker build --build-arg BASE_IMAGE=<your-merod-tag>` "
-                f"on `merobox/topology/images/merod-nat-client`.[/yellow]"
-            )
+        # NAT-topology clients use the workflow's `nodes.image` (or
+        # the merobox default if unset). Earlier iterations swapped
+        # in a custom wrapper because the LAN bridge was created
+        # with `internal=True` and clients had to `docker exec ip
+        # route add` after startup — iproute2 isn't in stock merod.
+        # We dropped that approach: the LAN bridge is now non-
+        # internal (Docker IPAM auto-allocates IPs, default routes
+        # land for free), and the host iptables DROP rule installed
+        # by `setup_nat_topology` is what enforces the relay path
+        # instead. With Docker handling routes, the wrapper + post-
+        # start `ip route add` aren't needed; stock merod works.
 
         for i in range(count):
             node_name = f"{prefix}-{i + 1}"
@@ -1092,45 +1075,26 @@ class WorkflowExecutor:
                 node_name,
                 port=port,
                 rpc_port=rpc_port,
-                image=nat_client_image,
+                image=image,
                 use_image_entrypoint=use_image_entrypoint,
             )
             # Force the LAN bridge as the container's network so the
-            # client has no route to the public bridge except via
-            # the NAT gateway. The `run_node` kwarg name is
-            # `network` (a positional/keyword on the manager); the
-            # cluster-mode network logic is bypassed because the
-            # `topology` branch took us out of the
-            # `run_multiple_nodes` path.
+            # client lands on the same subnet as the NAT gateway.
+            # Cross-bridge traffic to/from the boot-node is then
+            # gated by the host iptables rule installed during
+            # `setup_nat_topology`: LAN→public ACCEPT (default
+            # Docker), public→LAN DROP.
             run_node_kwargs["network"] = lan_network_name
             # Apply per-node and top-level fault overrides FIRST,
             # then force `mdns=False` last so the override can't
-            # bring mDNS back. mDNS is non-negotiable in NAT
-            # topology — the LAN bridge is `--internal`, no
-            # multicast crosses it, and even if it did, mDNS
-            # discovery would short-circuit the relay path the
-            # topology exists to test.
+            # bring mDNS back. mDNS would short-circuit peer
+            # discovery within the LAN bridge and bypass the relay
+            # path the topology exists to test.
             self._apply_fault_kwargs(run_node_kwargs, None, nodes_config)
             run_node_kwargs["mdns"] = False
             if not self.manager.run_node(**run_node_kwargs):
                 return False
             self._nat_state.client_names.append(node_name)
-
-            # Install the default route NOW (right after the
-            # container is up, before any merod-side libp2p dialing
-            # gets going). The route is what bridges the gap
-            # between `internal=True`-blocked outbound + the NAT
-            # gateway sitting on both bridges. Without it, every
-            # merod dial to the boot-node returns
-            # `Network is unreachable (os err 101)` and the
-            # readiness gate times out.
-            try:
-                inject_default_route_into_client(
-                    self.manager.client, self._nat_state, node_name
-                )
-            except Exception as e:
-                console.print(f"[red]❌ {e}[/red]")
-                return False
 
         console.print(
             f"[green]✓ NAT topology up: {count} client(s) on "
