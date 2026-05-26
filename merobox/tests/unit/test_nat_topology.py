@@ -587,3 +587,51 @@ def test_pick_gateway_lan_ip_reloads_network_before_reading_attrs():
     net = _mock_lan_network_with_subnet("192.168.50.0/24")
     _pick_gateway_lan_ip(net)
     net.reload.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _pick_lan_subnet
+# ---------------------------------------------------------------------------
+#
+# Subnet has to be user-configured (Docker rejects ipv4_address= on
+# auto-subnetted networks), but it can't collide with neighbouring
+# workflows on the same host. Determinism per workflow name solves
+# both — same name yields same subnet (rerun finds its own leftovers);
+# different names yield different subnets (parallel CI doesn't trip
+# over itself).
+
+
+from merobox.topology.nat import _pick_lan_subnet  # noqa: E402
+
+
+def test_pick_lan_subnet_is_deterministic_per_workflow_name():
+    """Same workflow name must yield the same subnet across calls —
+    otherwise a rerun would create a NEW subnet and leave leftover
+    state on the previous one."""
+    assert _pick_lan_subnet("nat-topology-cone-mode-smoke") == _pick_lan_subnet(
+        "nat-topology-cone-mode-smoke"
+    )
+
+
+def test_pick_lan_subnet_varies_across_workflow_names():
+    """Different workflow names should land on different subnets so
+    parallel runs don't collide. (Probability of collision is ~1/256
+    per pair, so this can theoretically flake on adversarial naming
+    — but the two real workflow names we ship don't, which is what
+    the assertion checks here.)"""
+    cone = _pick_lan_subnet("nat-topology-cone-mode-smoke")
+    sym = _pick_lan_subnet("nat-topology-symmetric-mode-smoke")
+    assert cone != sym
+
+
+def test_pick_lan_subnet_returns_valid_rfc1918_24():
+    """Subnet shape: `172.30.<octet>.0/24`. RFC1918 private; /24 is
+    enough address space for the gateway + 250+ clients (we'll never
+    spin up more than a handful)."""
+    import ipaddress
+
+    subnet = _pick_lan_subnet("any-workflow")
+    network = ipaddress.IPv4Network(subnet)
+    assert network.prefixlen == 24
+    assert subnet.startswith("172.30.")
+    assert subnet.endswith(".0/24")

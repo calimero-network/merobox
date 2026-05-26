@@ -226,6 +226,7 @@ def _ensure_network(
     client: docker.DockerClient,
     name: str,
     internal: bool,
+    subnet: str | None = None,
 ) -> docker.models.networks.Network:
     """Get-or-create a Docker bridge network.
 
@@ -233,6 +234,16 @@ def _ensure_network(
     network has no default gateway and no route to anything outside
     Docker, which is what makes the LAN bridge non-routable from the
     public side.
+
+    `subnet` optionally pins the network's IPAM subnet. Pinning is
+    REQUIRED if any caller later wants to attach a container with
+    `network.connect(container, ipv4_address=X)` — Docker rejects
+    the explicit IP with `"user specified IP address is supported
+    only when connecting to networks with user configured subnets"`
+    unless the IPAM config was user-specified at creation time. We
+    pin the LAN network's subnet for that reason; the public
+    network leaves it auto-assigned (no static IPs ever requested
+    there).
     """
     try:
         net = client.networks.get(name)
@@ -241,10 +252,23 @@ def _ensure_network(
         # silently swapped.
         attrs = net.attrs or {}
         existing_internal = bool(attrs.get("Internal", False))
-        if existing_internal != internal:
+        # Recreate if either internal flag mismatches OR the subnet
+        # constraint changed. A leftover network with no user-pinned
+        # subnet would fail every subsequent ipv4_address request,
+        # so we have to scrub it.
+        existing_subnet = None
+        ipam_config = (attrs.get("IPAM") or {}).get("Config") or []
+        if ipam_config and "Subnet" in ipam_config[0]:
+            existing_subnet = ipam_config[0]["Subnet"]
+        needs_recreate = existing_internal != internal or (
+            subnet is not None and existing_subnet != subnet
+        )
+        if needs_recreate:
             console.print(
-                f"[yellow]Network {name} exists with internal={existing_internal}, "
-                f"recreating with internal={internal}[/yellow]"
+                f"[yellow]Network {name} exists with "
+                f"internal={existing_internal}, subnet={existing_subnet!r}; "
+                f"recreating with internal={internal}, subnet={subnet!r}"
+                f"[/yellow]"
             )
             # Docker refuses `network.remove()` while any container is
             # still attached — common after a crashed previous run
@@ -270,8 +294,21 @@ def _ensure_network(
     except docker.errors.NotFound:
         pass
 
-    console.print(f"[yellow]Creating network: {name} (internal={internal})[/yellow]")
-    net = client.networks.create(name=name, driver="bridge", internal=internal)
+    console.print(
+        f"[yellow]Creating network: {name} "
+        f"(internal={internal}, subnet={subnet!r})[/yellow]"
+    )
+    create_kwargs: dict = {"name": name, "driver": "bridge", "internal": internal}
+    if subnet is not None:
+        # `docker.types.IPAMConfig` wraps the IPAM pool shape the
+        # Docker API expects. Gateway is intentionally left unset
+        # so Docker picks the first usable address (`.1`) as the
+        # bridge's host-side gateway — the same default as auto-
+        # assigned networks; only the subnet itself is pinned.
+        create_kwargs["ipam"] = docker.types.IPAMConfig(
+            pool_configs=[docker.types.IPAMPool(subnet=subnet)]
+        )
+    net = client.networks.create(**create_kwargs)
     console.print(f"[green]✓ Created network: {name}[/green]")
     return net
 
@@ -463,6 +500,30 @@ def _spawn_boot_node(
         # the image handle the rest. No env vars, no mounts.
     )
     return container
+
+
+def _pick_lan_subnet(workflow_name: str) -> str:
+    """Choose a deterministic LAN-bridge subnet for the workflow.
+
+    The subnet has to be user-configured (not Docker-auto-assigned)
+    because `_spawn_nat_gateway` connects the gateway with
+    `ipv4_address=`, and Docker rejects explicit IPs on
+    auto-subnetted networks. Determinism per workflow name lets a
+    rerun pick up the same subnet a previous crashed run created;
+    different workflow names yield different subnets so parallel
+    workflows don't collide.
+
+    Layout: `172.30.<hash & 0xff>.0/24`. The 172.16.0.0/12 range is
+    RFC1918 private and rarely in use on CI runners (which use
+    172.17.x for the default Docker bridge). 256 distinct subnets
+    is plenty — collisions would only matter if a single host ran
+    more than ~256 NAT workflows in parallel, which we're nowhere
+    near.
+    """
+    import hashlib
+
+    octet = int(hashlib.sha256(workflow_name.encode()).hexdigest(), 16) & 0xFF
+    return f"172.30.{octet}.0/24"
 
 
 def _pick_gateway_lan_ip(lan_network: docker.models.networks.Network) -> str:
@@ -760,7 +821,18 @@ def setup_nat_topology(
     # path the test wants to exercise. We make the client USE that
     # path by injecting a default-route override post-startup; see
     # `inject_default_route_into_client`.
-    lan_network = _ensure_network(client, f"{workflow_name}-lan", internal=False)
+    lan_network = _ensure_network(
+        client,
+        f"{workflow_name}-lan",
+        internal=False,
+        # User-configured subnet is REQUIRED because the gateway
+        # gets attached with an explicit `ipv4_address=` (see
+        # `_spawn_nat_gateway`). The actual subnet doesn't matter
+        # — picking a deterministic-per-workflow value from a
+        # private range keeps parallel workflows from colliding
+        # while still letting reruns find their own leftover state.
+        subnet=_pick_lan_subnet(workflow_name),
+    )
 
     # Step 3: boot-node.
     boot_node = _spawn_boot_node(client, boot_node_image, public_network, workflow_name)
