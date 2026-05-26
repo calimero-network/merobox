@@ -1109,8 +1109,8 @@ class WorkflowExecutor:
         # don't need iproute2 inside the client container because
         # the default-route override below uses a sidecar that
         # shares the client's network namespace and brings its own
-        # `ip` binary (the `merobox/nat-gateway:local` image, which
-        # is already cached locally and already ships iproute2).
+        # `ip` binary (a stock `alpine:3.19` container with
+        # iproute2 installed inline via apk).
         from merobox.topology.nat import (
             inject_default_route_into_client,
             wait_for_client_reachability,
