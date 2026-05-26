@@ -30,6 +30,7 @@ Public entrypoints:
 from __future__ import annotations
 
 import re
+import shlex
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -512,16 +513,22 @@ def wait_for_client_reachability(
         f"({state.boot_node_public_ip}:{BOOT_NODE_PORT}) until reachable "
         f"(up to {timeout_seconds:.0f}s)...[/yellow]"
     )
+    # `shlex.quote` defangs the IP / port before they hit the shell.
+    # In practice both come from Docker's IPAM and BOOT_NODE_PORT is a
+    # module constant, so neither is user-controlled today; but the
+    # `sh -c` form is one refactor away from being passed a workflow-
+    # configured override, and keeping the shell-safety property
+    # local to the call site is much cheaper than tracking trust
+    # boundaries across the executor.
+    safe_ip = shlex.quote(state.boot_node_public_ip)
+    safe_port = shlex.quote(str(BOOT_NODE_PORT))
     while time.monotonic() < deadline:
         attempt += 1
         try:
             out = client.containers.run(
                 NAT_GATEWAY_IMAGE_TAG,
                 entrypoint=["sh", "-c"],
-                command=[
-                    f"timeout 2 nc -zv {state.boot_node_public_ip} "
-                    f"{BOOT_NODE_PORT} 2>&1"
-                ],
+                command=[f"timeout 2 nc -zv {safe_ip} {safe_port} 2>&1"],
                 network_mode=f"container:{client_container_name}",
                 cap_add=["NET_ADMIN"],
                 remove=True,
@@ -821,14 +828,22 @@ def _resolve_container_ip(
     distinguish "never attached" from "attached but no IP".
     """
     deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
+    poll_interval = 0.2
+    while True:
         container.reload()
         networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
         net = networks.get(network_name) or {}
         ip = net.get("IPAddress")
         if ip:
             return ip
-        time.sleep(0.2)
+        # Check the deadline BEFORE sleeping. Without this the loop
+        # can over-run the timeout by up to one poll-interval (200ms)
+        # because the last sleep happens unconditionally — minor for
+        # the 30s default but matters if a caller passes a tight
+        # deadline.
+        if time.monotonic() + poll_interval >= deadline:
+            break
+        time.sleep(poll_interval)
     # Surface what Docker DID know about the container's networks
     # so a future failure is diagnosable from the error alone.
     try:
@@ -1278,14 +1293,24 @@ def _dump_topology_diagnostics(
     # bridge isolation is broken; nothing the client does can
     # rescue this.) From INSIDE a client (via shared-netns sidecar),
     # can we ping the gateway? Reach the boot-node?
+    #
+    # All IP / port values entering the shell command below come from
+    # Docker's IPAM and merobox module constants — none of them are
+    # workflow-configured today. shlex.quote them anyway so a future
+    # refactor that lets the operator override e.g. the boot-node IP
+    # doesn't introduce a shell-injection path through the diagnostic
+    # dump.
+    safe_bn_ip = shlex.quote(state.boot_node_public_ip)
+    safe_bn_port = shlex.quote(str(BOOT_NODE_PORT))
+    safe_gw_ip = shlex.quote(state.gateway_lan_ip)
     try:
         ec, out = state.nat_gateway_container.exec_run(
             [
                 "sh",
                 "-c",
                 (
-                    f"echo '--- gw -> boot-node ({state.boot_node_public_ip}) ---';"
-                    f" (timeout 3 nc -zv {state.boot_node_public_ip} {BOOT_NODE_PORT}"
+                    f"echo '--- gw -> boot-node ({safe_bn_ip}) ---';"
+                    f" (timeout 3 nc -zv {safe_bn_ip} {safe_bn_port}"
                     "   2>&1 || true);"
                     " echo '--- gw -> public bridge default gateway ---';"
                     " (timeout 3 ping -c 1 -W 2 -I eth0 8.8.8.8 2>&1 | head -5 || true);"
@@ -1309,11 +1334,11 @@ def _dump_topology_diagnostics(
                 entrypoint=["sh", "-c"],
                 command=[
                     (
-                        f"echo '--- client -> gateway ({state.gateway_lan_ip}) ---';"
-                        f" (timeout 3 ping -c 1 -W 2 {state.gateway_lan_ip} 2>&1"
+                        f"echo '--- client -> gateway ({safe_gw_ip}) ---';"
+                        f" (timeout 3 ping -c 1 -W 2 {safe_gw_ip} 2>&1"
                         "   | head -5 || true);"
-                        f" echo '--- client -> boot-node ({state.boot_node_public_ip}) ---';"
-                        f" (timeout 3 nc -zv {state.boot_node_public_ip} {BOOT_NODE_PORT}"
+                        f" echo '--- client -> boot-node ({safe_bn_ip}) ---';"
+                        f" (timeout 3 nc -zv {safe_bn_ip} {safe_bn_port}"
                         "   2>&1 || true);"
                     ),
                 ],

@@ -1027,12 +1027,14 @@ class WorkflowExecutor:
         from merobox.topology.nat import boot_node_bootstrap_multiaddrs
 
         client_bootstrap_nodes = boot_node_bootstrap_multiaddrs(self._nat_state)
-
-        # Stash the overrides on self so the per-node start path
-        # picks them up. The existing `_build_run_node_kwargs` reads
-        # `self.bootstrap_nodes`; replacing it here is the smallest
-        # diff that gets clients onto the right config.
-        self.bootstrap_nodes = client_bootstrap_nodes
+        # NOTE: we do NOT mutate `self.bootstrap_nodes` here even
+        # though `_build_run_node_kwargs` reads from it — the same
+        # WorkflowExecutor instance can be reused across runs
+        # (per-step retries, test suites that reuse one executor for
+        # several workflows), and a mutation would silently leak the
+        # boot-node multiaddrs into the next run's config. Instead,
+        # we override the `bootstrap_nodes` entry in the per-node
+        # kwargs dict produced by `_build_run_node_kwargs` below.
 
         # The LAN network is what each client container attaches to.
         # `_wire_cluster_bootstrap_peers` IS NOT invoked under this
@@ -1081,6 +1083,12 @@ class WorkflowExecutor:
             # Force the LAN bridge as the container's network so the
             # client lands on the same subnet as the NAT gateway.
             run_node_kwargs["network"] = lan_network_name
+            # Override the bootstrap nodes for this client: every
+            # NAT'd client points at the boot-node as its sole
+            # rendezvous server. Overriding the kwargs dict (rather
+            # than `self.bootstrap_nodes`) keeps the executor's
+            # bootstrap_nodes state untouched for the next run.
+            run_node_kwargs["bootstrap_nodes"] = client_bootstrap_nodes
             # Apply per-node and top-level fault overrides FIRST,
             # then force `mdns=False` last so the override can't
             # bring mDNS back. mDNS would short-circuit peer
@@ -1090,7 +1098,6 @@ class WorkflowExecutor:
             run_node_kwargs["mdns"] = False
             if not self.manager.run_node(**run_node_kwargs):
                 return False
-            self._nat_state.client_names.append(node_name)
             # Override the client's default route to point at the
             # NAT gateway. Without this, packets to the boot-node go
             # out via Docker's auto-injected default route (the LAN
@@ -1132,6 +1139,15 @@ class WorkflowExecutor:
                     f"the NAT gateway: {e}[/red]"
                 )
                 return False
+            # Mark the client as fully-wired ONLY after route +
+            # reachability succeed. If we appended right after
+            # `run_node`, a failure in inject or reachability would
+            # leave a half-spawned container tracked in client_names
+            # — confusing for teardown (which would try to stop it
+            # cleanly) and for the readiness gate (which would block
+            # waiting for a reservation from a container that never
+            # actually got onto the network).
+            self._nat_state.client_names.append(node_name)
 
         console.print(
             f"[green]✓ NAT topology up: {count} client(s) on "
