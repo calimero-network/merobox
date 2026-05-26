@@ -756,6 +756,35 @@ class WorkflowExecutor:
             )
             self._nat_state = None
             return
+        # Stop and remove any client containers tracked in state
+        # FIRST, before tearing down the networks they're attached
+        # to. The teardown_nat_topology function itself only owns
+        # the boot-node + gateway + networks (per its docstring) —
+        # client cleanup is the executor's responsibility, normally
+        # handled by `stop_all_nodes=True` on workflow exit. But
+        # this codepath fires on mid-flight failures BEFORE the
+        # outer caller's stop_all_nodes runs (and in some failure
+        # modes the outer path doesn't run at all), so we have to
+        # reap clients here too. Best-effort: a failing stop on one
+        # client shouldn't block the rest of teardown.
+        for client_name in list(self._nat_state.client_names):
+            try:
+                container = self.manager.client.containers.get(client_name)
+            except Exception:
+                # Container already gone — fine.
+                continue
+            try:
+                container.stop(timeout=5)
+            except Exception as e:
+                console.print(
+                    f"[yellow]NAT teardown: failed to stop {client_name}: {e}[/yellow]"
+                )
+            try:
+                container.remove(force=True)
+            except Exception as e:
+                console.print(
+                    f"[yellow]NAT teardown: failed to remove {client_name}: {e}[/yellow]"
+                )
         try:
             from merobox.topology import teardown_nat_topology
 
@@ -1125,6 +1154,14 @@ class WorkflowExecutor:
                 # safe.
                 self._teardown_nat_topology_if_present()
                 return False
+            # Track the just-spawned client IMMEDIATELY (before
+            # inject + reachability). If either of those later
+            # steps fails, the container is up but unfinished —
+            # we want teardown to stop it. Tracking it here costs
+            # nothing on success (the loop continues normally),
+            # and gives the teardown path full coverage of every
+            # container that ever made it past `run_node`.
+            self._nat_state.client_names.append(node_name)
             # Override the client's default route to point at the
             # NAT gateway. Without this, packets to the boot-node go
             # out via Docker's auto-injected default route (the LAN
@@ -1168,15 +1205,10 @@ class WorkflowExecutor:
                 )
                 self._teardown_nat_topology_if_present()
                 return False
-            # Mark the client as fully-wired ONLY after route +
-            # reachability succeed. If we appended right after
-            # `run_node`, a failure in inject or reachability would
-            # leave a half-spawned container tracked in client_names
-            # — confusing for teardown (which would try to stop it
-            # cleanly) and for the readiness gate (which would block
-            # waiting for a reservation from a container that never
-            # actually got onto the network).
-            self._nat_state.client_names.append(node_name)
+            # client_names was populated immediately after run_node
+            # above; nothing left to track at this point — the
+            # client is fully wired and ready for the readiness
+            # gate further down.
 
         console.print(
             f"[green]✓ NAT topology up: {count} client(s) on "
