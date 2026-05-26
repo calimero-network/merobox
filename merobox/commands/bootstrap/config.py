@@ -1316,18 +1316,17 @@ class NatTopologyConfig(BaseModel):
 # needs an explicit `Field(discriminator=...)` so it can pick the
 # right class from the YAML `type:` value — without that, every
 # variant's optional fields would be treated as candidates and
-# parsing errors would be unhelpfully vague. Concretely:
+# parsing errors would be unhelpfully vague. Migration steps:
 #
-#   class NatTopologyConfig(BaseModel):
-#       type: Literal["nat"]
-#       ...
-#   class MeshTopologyConfig(BaseModel):
-#       type: Literal["mesh"]
-#       ...
-#   TopologyConfig = Annotated[
-#       Union[NatTopologyConfig, MeshTopologyConfig],
-#       Field(discriminator="type"),
-#   ]
+# 1. Each variant gets a literal type tag: `type: Literal["nat"]`
+#    on `NatTopologyConfig`, `type: Literal["mesh"]` on the new
+#    `MeshTopologyConfig`, etc. The tag is what Pydantic
+#    dispatches on.
+# 2. Redefine the alias as a discriminated Union:
+#    `TopologyConfig = Annotated[Union[NatTopologyConfig, ...],
+#    Field(discriminator="type")]`
+# 3. Workflow YAMLs already use a `type:` key, so no schema
+#    migration on the operator side.
 #
 # Until that work happens, the bare alias keeps call-sites
 # future-proof in annotation form without paying the lint cost.
