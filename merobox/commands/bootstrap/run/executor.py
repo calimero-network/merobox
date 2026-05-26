@@ -1149,15 +1149,16 @@ class WorkflowExecutor:
         # circuit-relay-v2 reservation with the boot-node. This is
         # the test's whole point — proving the relay path is alive
         # end-to-end. Today merod doesn't auto-trigger a reservation
-        # when autonat reports the NAT'd address (see
-        # calimero-network/core#2475 — relay-reservation gated
-        # behind the `advertise_address` branch), so this gate
-        # times out. The merobox topology infrastructure itself is
-        # complete and proven by the connectivity probes earlier in
-        # the setup; we keep the strict gate here so the workflow
-        # surfaces the merod-side gap rather than silently passing
-        # a weaker assertion. Once #2475 lands, the workflow goes
-        # green without any code change here.
+        # when autonat reports the NAT'd address: the relay-
+        # reservation request is gated behind the
+        # `advertise_address` branch in merod's discovery module,
+        # so a NAT'd node with no advertised external address never
+        # opens the HOP stream to its relay candidate. The merobox
+        # topology infrastructure itself is complete and proven by
+        # the connectivity probes earlier in setup; the strict gate
+        # here surfaces the merod-side gap rather than silently
+        # passing a weaker assertion. When that gap is closed
+        # upstream, this gate goes green with no code change here.
         #
         # A weaker connection-only signal lives at
         # `wait_for_clients_connected_to_boot_node` for one-off
@@ -1169,9 +1170,11 @@ class WorkflowExecutor:
         if not wait_for_relay_reservations(self.manager.client, self._nat_state):
             console.print(
                 "[red]❌ NAT topology never reached the relay-reservation "
-                "readiness gate — see per-client logs. If you're seeing "
-                "this on a fresh `merod:edge`, calimero-network/core#2475 "
-                "is likely the culprit.[/red]"
+                "readiness gate — see per-client logs. If `Connection "
+                "established` to the boot-node is in the log but no "
+                "`ReservationReqAccepted` is, the merod build under test "
+                "is missing the autonat-failure → relay-reservation "
+                "trigger.[/red]"
             )
             return False
         return True

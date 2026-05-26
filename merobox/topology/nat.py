@@ -10,8 +10,10 @@ calimero-network/boot-node binary wrapped in a thin image). The
 gateway straddles both bridges and runs `iptables MASQUERADE` so
 clients can REACH the public bridge but cannot be REACHED from it
 directly — they must register a relay reservation on the boot-node
-to be findable. That's the precondition for exercising the relay-
-reservation-recovery code path in calimero-network/core#2446.
+to be findable. That's the precondition for exercising merod's
+relay-reservation flow + the recovery-on-expiry code path: only
+peers behind a NAT actually go through the reservation code, so a
+flat single-bridge topology can't trigger it.
 
 Public entrypoints:
 
@@ -1037,15 +1039,15 @@ def wait_for_clients_connected_to_boot_node(
         Docker plumbing is fine and the timeout is happening
         further up the stack.
       * Programmatic checks where the caller already accepts that
-        the relay-reservation flow is broken (e.g.,
-        calimero-network/core#2475 not yet shipped) and just wants
-        the L3 reachability assertion.
+        the relay-reservation flow is broken in the merod build
+        under test, and just wants the L3 reachability assertion.
 
     The executor's actual readiness gate uses the stricter
     `wait_for_relay_reservations` — without it, the smoke test
     would silently pass while the very bug it was built to expose
-    (the merod-side `advertise_address` gating from
-    core#2475) goes undetected.
+    (the merod-side gap that prevents the
+    autonat-failure → relay-reservation trigger from firing when
+    no external address is advertised) goes undetected.
 
     Returns True when every client has at least one matching
     "Connection established" line referring to the boot-node's peer
@@ -1084,13 +1086,15 @@ def wait_for_relay_reservations(
     THIS is the executor's readiness gate. It currently times out
     on every NAT-topology workflow run because merod's relay-
     reservation flow is gated behind the `advertise_address` branch
-    in `crates/network/src/discovery.rs` (see core#2475). The
+    in `crates/network/src/discovery.rs`: a NAT'd merod with no
+    advertised external address never opens the HOP stream to its
+    relay candidate, so no reservation is ever requested. The
     topology infrastructure is fully functional — clients reach
     the boot-node, exchange Identify, autonat correctly reports
-    NAT'd — but no reservation is ever requested. The strict gate
-    here ensures the workflow surfaces that gap rather than
-    silently passing on a weaker assertion. Once core#2475 ships,
-    every run of this workflow goes green with no code change here.
+    NAT'd. The strict gate here ensures the workflow surfaces that
+    merod-side gap rather than silently passing on a weaker
+    assertion. Once the merod fix ships, every run of this workflow
+    goes green with no code change here.
 
     Returns True when every client has at least one Accepted; False
     on timeout. Caller decides whether to fail the workflow (CI
