@@ -45,7 +45,20 @@ RUN set -eux; \
         *) echo "unsupported arch: ${arch}" >&2; exit 1 ;; \
     esac; \
     url="https://github.com/calimero-network/boot-node/releases/download/${BOOT_NODE_VERSION}/${asset}"; \
-    curl -fSL --retry 3 -o /tmp/boot-node "${url}"; \
+    # `--retry 3` alone only retries on transient errors (timeouts,
+    # connection refused). GitHub release downloads from anonymous
+    # IPs get rate-limited with HTTP 429 or 403, which curl treats
+    # as a hard failure under `-f` — exit 22 — and skips the retry.
+    # `--retry-all-errors` (curl 7.71+) extends the retry to HTTP
+    # error responses, and `--retry-delay 5` gives the rate-limit
+    # bucket time to refill. A user-agent string also helps avoid
+    # heuristic anti-abuse blocks on bare default-UA curl. Bump
+    # max-time to 120s so a slow CI link doesn't trip on the
+    # 14MB binary.
+    curl -fSL --retry 5 --retry-all-errors --retry-delay 5 \
+         --max-time 120 \
+         -H "User-Agent: merobox-boot-node-build/0.1" \
+         -o /tmp/boot-node "${url}"; \
     # Verify the SHA-256 BEFORE chmod+exec. If the upstream is
     # compromised or the download is truncated, fail loudly here
     # rather than running a tampered binary inside the topology.
