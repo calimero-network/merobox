@@ -368,29 +368,24 @@ from merobox.topology.nat import (  # noqa: E402
 
 
 def _make_state_with_gateway_lan_ip(lan_ip: str = "172.30.0.2") -> NatTopologyState:
-    """State with a NAT gateway whose LAN-side `IPAddress` is mocked.
+    """State with the gateway's LAN IP pre-set on the state directly.
 
-    `inject_default_route_into_client` calls `_resolve_container_ip` on
-    the gateway against the LAN network's name; we mock the gateway's
-    `NetworkSettings.Networks[<lan>].IPAddress` to make that resolve
-    immediately."""
+    `inject_default_route_into_client` reads `state.gateway_lan_ip`
+    rather than introspecting the container, so the fixture just
+    stashes the IP there. Container `attrs` are no longer touched
+    by the inject path."""
     public_net = MagicMock()
     public_net.name = "test-public"
     lan_net = MagicMock()
     lan_net.name = "test-lan"
-    gateway = MagicMock()
-    # `_resolve_container_ip` calls `container.reload()` then reads
-    # `attrs["NetworkSettings"]["Networks"][<lan_name>]["IPAddress"]`.
-    gateway.attrs = {
-        "NetworkSettings": {"Networks": {"test-lan": {"IPAddress": lan_ip}}}
-    }
     return NatTopologyState(
         public_network=public_net,
         lan_network=lan_net,
         boot_node_container=MagicMock(),
         boot_node_peer_id="12D3KooW" + "X" * 44,
         boot_node_public_ip="172.30.1.5",
-        nat_gateway_container=gateway,
+        nat_gateway_container=MagicMock(),
+        gateway_lan_ip=lan_ip,
     )
 
 
@@ -494,27 +489,101 @@ def test_inject_default_route_raises_with_diagnostic_on_docker_api_error():
     assert "daemon unavailable" in msg
 
 
-def test_inject_default_route_resolves_gateway_ip_from_lan_network():
-    """The gateway IP we install is the one Docker assigned to the
-    gateway on the LAN bridge — NOT the public bridge. Sanity-check
-    the lookup so a future refactor that swaps argument order to
-    `_resolve_container_ip` can't silently start installing the
-    public-side IP (which the client can't reach without traversing
-    the host's `DOCKER-ISOLATION-STAGE-2` chain — i.e., the bug
-    we're trying to avoid)."""
+def test_inject_default_route_uses_state_gateway_ip_verbatim():
+    """The gateway IP threaded into the sidecar's `ip route` command
+    is the one captured at `setup_nat_topology` time (pre-assigned
+    via `ipv4_address=` at connect-time, not read back from
+    `container.attrs`). The IPAM-population race that broke earlier
+    iterations only mattered when we polled `container.attrs`; with
+    pre-assigned + stashed-on-state, the test asserts the exact
+    string flows through unchanged."""
     state = _make_state_with_gateway_lan_ip(lan_ip="172.30.0.42")
-    # If the resolver mistakenly used the PUBLIC network name, this
-    # would surface as a KeyError when the test runs.
-    state.nat_gateway_container.attrs["NetworkSettings"]["Networks"]["test-public"] = {
-        "IPAddress": "172.99.99.99"
-    }
     client = MagicMock()
     client.containers.get.return_value = MagicMock()
 
     inject_default_route_into_client(client, state, "nat-client-1")
 
     _, kwargs = client.containers.run.call_args
-    # LAN IP made it into the command; public IP must NOT appear.
     cmd = " ".join(kwargs["command"])
     assert "172.30.0.42" in cmd
-    assert "172.99.99.99" not in cmd
+
+
+def test_inject_default_route_raises_when_state_has_no_gateway_ip():
+    """Empty `state.gateway_lan_ip` means setup didn't run, didn't
+    finish, or was corrupted — refuse to inject. Otherwise we'd
+    spawn a sidecar that runs `ip route replace default via ` (no
+    target) and either errors with a confusing RTNETLINK message or
+    silently no-ops, depending on iproute2 build."""
+    state = _make_state_with_gateway_lan_ip(lan_ip="")
+    client = MagicMock()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        inject_default_route_into_client(client, state, "nat-client-1")
+    msg = str(excinfo.value)
+    assert "nat-client-1" in msg
+    assert "gateway_lan_ip" in msg or "gateway IP" in msg
+    # Make sure we bailed BEFORE consulting Docker.
+    client.containers.get.assert_not_called()
+    client.containers.run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _pick_gateway_lan_ip
+# ---------------------------------------------------------------------------
+#
+# The gateway's LAN IP is pre-assigned (not read back from
+# `container.attrs`) so the test pins the picking convention: second
+# usable address in the network's subnet — `.1` belongs to Docker's
+# bridge-gateway interface.
+
+
+from merobox.topology.nat import _pick_gateway_lan_ip  # noqa: E402
+
+
+def _mock_lan_network_with_subnet(subnet: str) -> MagicMock:
+    """LAN-network mock whose `attrs["IPAM"]["Config"][0]["Subnet"]`
+    returns the given subnet after `reload()`."""
+    net = MagicMock()
+    net.name = "test-lan"
+    net.attrs = {"IPAM": {"Config": [{"Subnet": subnet}]}}
+    return net
+
+
+def test_pick_gateway_lan_ip_picks_second_address_of_subnet():
+    """For a `/24`, the gateway takes `.2`. `.0` is the network
+    address (unusable) and `.1` is the bridge's host-side IP — both
+    are reserved by Docker, so `.2` is the first free slot."""
+    net = _mock_lan_network_with_subnet("172.30.0.0/24")
+    assert _pick_gateway_lan_ip(net) == "172.30.0.2"
+
+
+def test_pick_gateway_lan_ip_works_for_larger_subnet():
+    """A `/16` still picks `.0.2`. The convention is `.network+2`,
+    not `.network+1`-of-the-last-octet, so larger subnets are
+    fine."""
+    net = _mock_lan_network_with_subnet("10.0.0.0/16")
+    assert _pick_gateway_lan_ip(net) == "10.0.0.2"
+
+
+def test_pick_gateway_lan_ip_raises_if_subnet_missing():
+    """An IPAM config without a subnet (driver=null, or a malformed
+    network attrs payload) raises with a diagnostic — silently
+    falling back to a default subnet would risk colliding with the
+    runner's host network and dropping unrelated traffic."""
+    net = MagicMock()
+    net.name = "broken-lan"
+    net.attrs = {"IPAM": {"Config": []}}
+    with pytest.raises(RuntimeError) as excinfo:
+        _pick_gateway_lan_ip(net)
+    assert "broken-lan" in str(excinfo.value)
+    assert "subnet" in str(excinfo.value).lower()
+
+
+def test_pick_gateway_lan_ip_reloads_network_before_reading_attrs():
+    """The network attrs are populated by the daemon after creation
+    and only show up after a `reload()` call. Verify the reload
+    happens — otherwise a freshly-created network would yield
+    `attrs={}` and the `Config[0]` lookup would explode."""
+    net = _mock_lan_network_with_subnet("192.168.50.0/24")
+    _pick_gateway_lan_ip(net)
+    net.reload.assert_called_once()

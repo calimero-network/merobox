@@ -132,6 +132,16 @@ class NatTopologyState:
     boot_node_peer_id: str
     boot_node_public_ip: str
     nat_gateway_container: docker.models.containers.Container
+    # The gateway's IP on the LAN bridge, captured at connect-time.
+    # We pre-assign this rather than reading it back from
+    # `container.attrs["NetworkSettings"]["Networks"][...]["IPAddress"]`
+    # because Docker's daemon doesn't reliably populate that field
+    # after a `network.connect()` on a second bridge — CI observed
+    # the IP staying empty for ≥30s even with create+connect+start
+    # ordering. By specifying `ipv4_address=` at connect-time we
+    # bypass the IPAM-population race entirely: we already know the
+    # IP we asked for.
+    gateway_lan_ip: str = ""
     # Client containers are spawned by the existing `NodeManager`
     # path; this list only holds the IDs so teardown can stop them
     # explicitly when the workflow ends without going through the
@@ -341,9 +351,17 @@ def inject_default_route_into_client(
     here would produce a workflow that LOOKS like it's exercising
     the relay path while every dial silently times out instead.
     """
-    gateway_lan_ip = _resolve_container_ip(
-        state.nat_gateway_container, state.lan_network.name
-    )
+    if not state.gateway_lan_ip:
+        # Should never happen — `setup_nat_topology` populates this
+        # eagerly. Catch it loudly rather than launching a sidecar
+        # that would default-route to the empty string.
+        raise RuntimeError(
+            "NatTopologyState.gateway_lan_ip is empty; the NAT "
+            "topology setup did not complete cleanly. Refusing to "
+            "inject a route into "
+            f"{client_container_name!r} without a known gateway IP."
+        )
+    gateway_lan_ip = state.gateway_lan_ip
     console.print(
         f"[yellow]Injecting default route into {client_container_name} "
         f"via NAT gateway at {gateway_lan_ip}[/yellow]"
@@ -447,6 +465,42 @@ def _spawn_boot_node(
     return container
 
 
+def _pick_gateway_lan_ip(lan_network: docker.models.networks.Network) -> str:
+    """Pick a deterministic LAN-side IP for the NAT gateway.
+
+    Reads the LAN network's IPAM subnet, returns the second usable
+    address (``.2`` for a /24, etc.). The first usable address
+    (``.1``) is reserved by Docker for the bridge's host-side
+    interface (the LAN bridge's gateway). Picking ``.2`` is safe
+    because the gateway is always the first container attached to
+    the LAN network — Docker's IPAM allocates clients starting at
+    ``.3`` from there.
+
+    Why we pre-pick rather than read back: docker-py's
+    `network.connect(container, ipv4_address=X)` accepts an
+    explicit IP, while `network.connect(container)` lets Docker
+    pick and the assigned IP only lands in `container.attrs` after
+    an asynchronous daemon update that CI showed taking >30s
+    (sometimes never inside our budget). Specifying the IP turns
+    a race into a known.
+    """
+    import ipaddress
+
+    lan_network.reload()
+    ipam_config = (lan_network.attrs.get("IPAM") or {}).get("Config") or []
+    if not ipam_config or "Subnet" not in ipam_config[0]:
+        raise RuntimeError(
+            f"LAN network {lan_network.name!r} has no IPAM subnet in attrs; "
+            f"cannot pre-assign a gateway IP. This usually means the network "
+            f"was created in a way that bypassed Docker's IPAM "
+            f"(driver=null?). Recreate with `driver=bridge` and try again."
+        )
+    network = ipaddress.IPv4Network(ipam_config[0]["Subnet"])
+    # `.0` is the network address, `.1` is the bridge gateway by
+    # convention, so `.2` is the first non-reserved address.
+    return str(network.network_address + 2)
+
+
 def _spawn_nat_gateway(
     client: docker.DockerClient,
     image: str,
@@ -454,25 +508,24 @@ def _spawn_nat_gateway(
     lan_network: docker.models.networks.Network,
     nat_mode: str,
     workflow_name: str,
-) -> docker.models.containers.Container:
+) -> tuple[docker.models.containers.Container, str]:
     """Start the NAT-gateway container straddling both bridges.
 
-    Both networks must be attached BEFORE the container starts so
-    Docker allocates both IPs as part of the startup network setup.
-    Earlier iterations called `containers.run(network=public)`
-    followed by `lan_network.connect(container)` — but `connect()`
-    on a RUNNING container goes through a separate daemon path
-    that allocates the second IP asynchronously, and on CI runners
-    we observed the LAN-side `IPAddress` never populating in
-    `container.attrs` even after a 30s poll. Routing primitives
-    downstream need that LAN IP synchronously, so we do:
+    Returns the container handle AND its LAN-side IP. The IP is
+    pre-assigned via `ipv4_address=` at connect-time rather than
+    read back from `container.attrs`, because docker-py / dockerd
+    asynchronously populate the per-network `IPAddress` field
+    after `network.connect()` and CI observed that field staying
+    empty for >30s on the second-network attachment (sometimes
+    never inside our budget). Specifying the IP eliminates the
+    race: we already know what we asked for.
 
-        create (paused) → connect LAN → start
+    Sequence:
+        create (paused) → connect LAN with ipv4_address → start
 
-    With both networks attached at start time, the daemon's normal
-    container-startup flow allocates both IPs together and they're
-    both visible after a single `reload()`. CAP_NET_ADMIN is
-    required for the container's internal MASQUERADE setup.
+    Attaching the LAN bridge BEFORE start means the container
+    boots with both interfaces wired up. CAP_NET_ADMIN is required
+    for the container's internal iptables MASQUERADE setup.
     """
     container_name = f"{workflow_name}-nat-gateway"
     try:
@@ -484,8 +537,10 @@ def _spawn_nat_gateway(
     except docker.errors.NotFound:
         pass
 
+    gateway_lan_ip = _pick_gateway_lan_ip(lan_network)
     console.print(
-        f"[yellow]Starting NAT gateway {container_name} (mode={nat_mode})[/yellow]"
+        f"[yellow]Starting NAT gateway {container_name} "
+        f"(mode={nat_mode}, lan_ip={gateway_lan_ip})[/yellow]"
     )
     container = client.containers.create(
         image=image,
@@ -509,14 +564,15 @@ def _spawn_nat_gateway(
         cap_add=["NET_ADMIN"],
         detach=True,
     )
-    # Attach the LAN bridge BEFORE start so Docker allocates the
-    # LAN IP as part of the startup network setup.
-    lan_network.connect(container)
+    # Attach the LAN bridge with an explicit IP BEFORE start —
+    # eliminates the IPAM-population race entirely.
+    lan_network.connect(container, ipv4_address=gateway_lan_ip)
     container.start()
-    # Reload immediately so both network entries are visible to the
-    # next code path that introspects `container.attrs`. Cheap.
+    # Reload so subsequent reads of `container.attrs` see both
+    # network entries. Doesn't matter for the LAN IP (we already
+    # know it) but useful for diagnostics.
     container.reload()
-    return container
+    return container, gateway_lan_ip
 
 
 # ---------------------------------------------------------------------------
@@ -710,8 +766,10 @@ def setup_nat_topology(
     boot_node = _spawn_boot_node(client, boot_node_image, public_network, workflow_name)
 
     # Step 4: NAT gateway. After this returns, the LAN network has
-    # outbound routing to the public network.
-    gateway = _spawn_nat_gateway(
+    # outbound routing to the public network. The gateway's LAN-side
+    # IP is pre-assigned (not read back) so we know it without
+    # waiting on Docker's async IPAM-population path.
+    gateway, gateway_lan_ip = _spawn_nat_gateway(
         client,
         NAT_GATEWAY_IMAGE_TAG,
         public_network,
@@ -736,6 +794,7 @@ def setup_nat_topology(
         boot_node_peer_id=boot_node_peer_id,
         boot_node_public_ip=boot_node_public_ip,
         nat_gateway_container=gateway,
+        gateway_lan_ip=gateway_lan_ip,
     )
 
 
