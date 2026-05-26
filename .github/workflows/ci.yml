@@ -71,17 +71,23 @@ jobs:
       - uses: actions/checkout@v4
       - id: set
         run: |
-          # Binary mode: all workflows except fuzzy, auth-related, and the
-          # whole fault-injection family. The fault primitives are
-          # Docker-specific (the steps short-circuit on is_binary_mode) and
-          # the paired docker-inspect assertion scripts would fail outright
-          # in binary mode where no container exists.
+          # Binary mode: all workflows except fuzzy, auth-related, the
+          # whole fault-injection family, and NAT-topology workflows.
+          # The fault primitives are Docker-specific (the steps short-
+          # circuit on is_binary_mode) and the paired docker-inspect
+          # assertion scripts would fail outright in binary mode where
+          # no container exists. NAT topology requires Docker bridges
+          # + an iptables-running gateway container; the executor
+          # refuses `topology: { type: nat }` in binary mode and
+          # returns a clear error, but CI counts that refusal as a
+          # workflow failure, so just don't run them.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
             grep -v cached-frontends | \
             grep -v fault-injection | \
+            grep -v nat-topology | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
 

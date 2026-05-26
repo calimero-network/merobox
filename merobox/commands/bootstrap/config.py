@@ -1197,6 +1197,142 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Topology configurations
+# ---------------------------------------------------------------------------
+#
+# The default cluster mode (sibling addresses on a single Docker bridge,
+# wired via `_wire_cluster_bootstrap_peers`) is enough for tests that
+# just need two nodes talking. Some tests — specifically the relay-
+# reservation recovery code path in core#2446 — need a topology where
+# nodes physically cannot reach each other directly and MUST go
+# through a relay. That's what `topology: { type: nat }` provides.
+#
+# Schema design: small enum + bag of mode-specific fields. New modes
+# (e.g. `mesh` with multiple relays, `wireguard`-tunneled, etc.) plug
+# in as a new variant of `TopologyConfig.type` rather than overloading
+# the existing one. Mutually exclusive with the normal cluster-mode
+# `nodes:` wiring — the executor branches on `topology` being present.
+
+
+class NatBootNodeConfig(BaseModel):
+    """Settings for the dedicated relay/boot-node container that sits
+    on the public side of a NAT topology.
+
+    The boot-node binary (calimero-network/boot-node) is the relay
+    server — merod itself only ships the relay *client* behaviour,
+    so the NAT topology can't use a stock merod container for this
+    role. The image is built on-demand by merobox from the released
+    `boot-node-x86_64-unknown-linux` asset unless an explicit one
+    is supplied via `image`.
+    """
+
+    image: Optional[str] = Field(
+        None,
+        description=(
+            "Docker image for the boot-node container. When unset, "
+            "merobox builds one from the latest released "
+            "calimero-network/boot-node binary on first use and "
+            "caches it locally as `merobox/boot-node:local`."
+        ),
+    )
+    keypair: Optional[str] = Field(
+        None,
+        description=(
+            "Optional path to a libp2p keypair JSON to mount into the "
+            "boot-node container. When unset the boot-node generates "
+            "a fresh keypair on each startup — fine for one-shot CI "
+            "runs, less so for tests that need a stable peer ID "
+            "across container restarts."
+        ),
+    )
+
+
+class NatTopologyConfig(BaseModel):
+    """Two-bridge topology with a public boot-node, a NAT gateway,
+    and N client nodes on an `--internal` LAN bridge.
+
+    Why two bridges
+    ---------------
+
+    The client nodes' Docker network is created with `--internal`,
+    which means it has no route to anything outside Docker (no
+    default gateway, no NAT to the host). The boot-node sits on a
+    regular bridge that does have outside connectivity. A separate
+    gateway container straddles both bridges and runs iptables to
+    NAT packets from the LAN bridge out to the public bridge.
+
+    With this setup the clients physically cannot dial each other
+    via /ip4 of the public bridge — they have to register a relay
+    reservation on the boot-node and accept relayed traffic
+    through it. That's the code path #2446 fixed.
+
+    NAT modes
+    ---------
+
+    `cone` — `iptables MASQUERADE` (the default Docker NAT behaviour).
+    Outbound port mapping is consistent per (source IP, source port);
+    a remote peer that observes a client's NAT'd address from one
+    exchange can use the same address to reach the client from
+    another exchange. Good for testing the happy-path relay
+    recovery flow; libp2p's DCUtR hole-punching may also succeed
+    here.
+
+    `symmetric` — `iptables MASQUERADE --random-fully` (when the
+    kernel supports it). Outbound port is randomised per
+    destination, so no STUN-style port prediction works. DCUtR
+    hole-punching fails reliably; the client is reachable ONLY
+    via the relay. The strictest test of the relay-only path.
+    """
+
+    type: Literal["nat"] = "nat"
+    nat_mode: Literal["cone", "symmetric"] = Field(
+        "cone",
+        description=(
+            "NAT translation mode for the gateway container. `cone` "
+            "uses plain MASQUERADE; `symmetric` adds --random-fully "
+            "so port prediction fails. See class doc for the "
+            "trade-offs."
+        ),
+    )
+    boot_node: NatBootNodeConfig = Field(
+        default_factory=NatBootNodeConfig,
+        description=(
+            "Configuration for the boot-node container. See "
+            "`NatBootNodeConfig` for fields; defaults are usable "
+            "out of the box (auto-built image, fresh keypair)."
+        ),
+    )
+
+
+# `TopologyConfig` is a bare alias today, not a discriminated
+# union. There's only one topology variant (`NatTopologyConfig`),
+# and a single-element Union is idiomatically equivalent + draws
+# type-checker warnings, so we don't pay that cost yet.
+#
+# When the SECOND topology variant lands (e.g. `MeshTopologyConfig`
+# with multiple relays, `WireguardTopologyConfig`, etc.) the
+# migration is NOT just `TopologyConfig = Union[A, B]`. Pydantic
+# needs an explicit `Field(discriminator=...)` so it can pick the
+# right class from the YAML `type:` value — without that, every
+# variant's optional fields would be treated as candidates and
+# parsing errors would be unhelpfully vague. Migration steps:
+#
+# 1. Each variant gets a literal type tag: `type: Literal["nat"]`
+#    on `NatTopologyConfig`, `type: Literal["mesh"]` on the new
+#    `MeshTopologyConfig`, etc. The tag is what Pydantic
+#    dispatches on.
+# 2. Redefine the alias as a discriminated Union:
+#    `TopologyConfig = Annotated[Union[NatTopologyConfig, ...],
+#    Field(discriminator="type")]`
+# 3. Workflow YAMLs already use a `type:` key, so no schema
+#    migration on the operator side.
+#
+# Until that work happens, the bare alias keeps call-sites
+# future-proof in annotation form without paying the lint cost.
+TopologyConfig = NatTopologyConfig
+
+
 class WorkflowConfig(BaseModel):
     """Complete workflow configuration schema."""
 
@@ -1270,6 +1406,27 @@ class WorkflowConfig(BaseModel):
             "workflows that need a stable rendezvous server outside the "
             "test cluster but don't want to hard-code the exact boot-node "
             "addresses in the workflow YAML."
+        ),
+    )
+
+    # Topology — see TopologyConfig types above for the full schema.
+    # Default (`None`) means "use the normal cluster-mode wiring": one
+    # Docker bridge, every node dials its siblings directly. Setting
+    # this to a `NatTopologyConfig` switches startup to the multi-
+    # bridge NAT path; `nodes:` is reinterpreted as "client nodes",
+    # the boot-node and gateway are spawned automatically, and the
+    # cluster-bootstrap-wiring step is skipped (clients point at the
+    # boot-node instead). Mutually exclusive with the cluster-wiring
+    # codepath — picking one disables the other.
+    topology: Optional[TopologyConfig] = Field(
+        None,
+        description=(
+            "Multi-bridge / NAT topology selector. Default cluster mode "
+            "(all nodes on one Docker bridge) is enough for tests that "
+            "just need peer-to-peer connectivity; NAT topology is "
+            "required to exercise the relay-reservation recovery code "
+            "in calimero-network/core#2446 because that code path is "
+            "dead unless clients physically can't dial each other."
         ),
     )
 

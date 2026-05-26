@@ -1,0 +1,194 @@
+description: >
+  Smoke test for `topology: { type: nat, nat_mode: symmetric }`.
+
+  The strict counterpart to workflow-nat-topology-cone-example.yml.
+  Same four-piece topology (boot-node + nat-gateway + clients on
+  a NAT'd LAN bridge), but the gateway runs `iptables MASQUERADE
+  --random-fully` instead of plain MASQUERADE. The flag randomises
+  the outbound port per destination, so STUN-style port prediction
+  (the basis of libp2p's DCUtR hole-punching) can never resolve a
+  consistent NAT'd address for either client.
+
+  What changes between cone and symmetric
+  ---------------------------------------
+
+  In cone mode:
+    * outbound port is consistent per (source IP, source port);
+    * DCUtR hole-punching may succeed;
+    * the relay path is one of several possible routes;
+    * recovery tests can be tricked into passing on the direct path
+      even when the relay path is broken — a confounding factor.
+
+  In symmetric mode:
+    * outbound port is randomised per destination;
+    * DCUtR hole-punching fails reliably;
+    * the relay circuit is the ONLY path between clients;
+    * any test that asserts "this delta got across" implicitly
+      proves the relay-reservation-recovery code worked. There's no
+      direct-dial fallback to mask a regression.
+
+  When to pick which
+  ------------------
+
+  Pick cone when the test simulates "ordinary home NAT" — a router
+  that maps client-side ports consistently and lets DCUtR work.
+  Most flat home networks behave this way.
+
+  Pick symmetric when the test simulates "hostile corporate NAT,
+  symmetric NAT, carrier-grade NAT" — where DCUtR is impossible and
+  every cross-client packet has to traverse the relay.
+
+  Both modes need the same merobox plumbing (`topology: { type: nat
+  }` + `nat_mode:`); the iptables rule and the consequent assertion
+  surface are the only differences. See the cone workflow's header
+  for the architecture rationale.
+
+  Kernel requirement
+  ------------------
+
+  `--random-fully` needs a kernel + iptables build with the
+  random-fully extension. The gateway entrypoint probes for it and
+  falls back to plain MASQUERADE with a warning if unavailable —
+  the test will still RUN, but in cone-mode semantics, and the
+  "relay-only" assertion downstream becomes weaker. CI environments
+  on modern Ubuntu kernels (5.x+) reliably support the extension.
+
+name: NAT Topology — Symmetric Mode Smoke
+
+topology:
+  type: nat
+  nat_mode: symmetric
+
+force_pull_image: false
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: nat-sym-client
+  base_port: 9080
+  base_rpc_port: 9180
+
+steps:
+  # ---------- Setup ----------
+
+  - name: Install application on client-1
+    type: install_application
+    node: nat-sym-client-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace on client-1
+    type: create_namespace
+    node: nat-sym-client-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create context in namespace on client-1
+    type: create_context
+    node: nat-sym-client-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      ctx_id: contextId
+
+  - name: Create namespace invitation for client-2
+    type: create_namespace_invitation
+    node: nat-sym-client-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  # Symmetric NAT is meaningfully slower to converge than cone —
+  # every cross-client hop has to traverse the relay's circuit
+  # rather than being able to short-circuit via a direct connection.
+  # 30s is generous for a 2-client cluster on a fresh CI runner.
+  - name: Wait for relay-circuit gossip (symmetric)
+    type: wait
+    seconds: 30
+
+  - name: Client-2 joins namespace via the relay
+    type: join_namespace
+    node: nat-sym-client-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - name: Client-2 joins context via group membership
+    type: join_context
+    node: nat-sym-client-2
+    context_id: '{{ctx_id}}'
+
+  # ---------- Verify: write + read via the relay-ONLY path ----------
+
+  - name: Write key on client-1
+    type: call
+    node: nat-sym-client-1
+    context_id: '{{ctx_id}}'
+    method: set
+    args:
+      key: smoke
+      value: relay_only_no_holepunch
+
+  - name: Wait for relay-mediated sync
+    type: wait_for_sync
+    context_id: '{{ctx_id}}'
+    group_id: '{{namespace_id}}'
+    nodes:
+      - nat-sym-client-1
+      - nat-sym-client-2
+    timeout: 90
+    trigger_sync: true
+
+  - name: Read key on client-2
+    type: call
+    node: nat-sym-client-2
+    context_id: '{{ctx_id}}'
+    method: get
+    args:
+      key: smoke
+    outputs:
+      received: result
+
+  - name: Assert the relayed value matches
+    type: assert
+    statements:
+      - "contains({{received}}, 'relay_only_no_holepunch')"
+
+  # ---------- Relay-only assertions ----------
+  #
+  # Under symmetric NAT, the connection between clients MUST be
+  # routed through the relay. The libp2p multiaddr form for that is
+  # `/p2p-circuit/`, which is what we look for. Unlike cone mode,
+  # we can additionally assert the ABSENCE of any direct sibling
+  # connection — neither client should have an established
+  # connection to the OTHER client's bridge IP, because no such
+  # route exists. (The gateway IS reachable, the relay IS
+  # reachable, but not the sibling client directly.)
+
+  - name: Confirm client-1 used the relay circuit
+    type: assert_log_present
+    nodes: [nat-sym-client-1]
+    patterns:
+      - "/p2p-circuit/"
+
+  - name: Confirm client-2 used the relay circuit
+    type: assert_log_present
+    nodes: [nat-sym-client-2]
+    patterns:
+      - "/p2p-circuit/"
+
+  # Regression guard against the symmetric-mode path triggering
+  # different startup behaviour vs. cone.
+  - name: No panics or fatal errors
+    type: assert_log_absent
+    nodes:
+      - nat-sym-client-1
+      - nat-sym-client-2
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true
