@@ -1145,11 +1145,21 @@ class WorkflowExecutor:
         # Returning False here surfaces the timeout as a workflow
         # failure rather than letting downstream steps fail mid-flight
         # with confusing peer-not-found errors.
-        from merobox.topology.nat import wait_for_relay_reservations
+        # Readiness signal: every client has established a libp2p
+        # connection to the boot-node. The stronger
+        # `wait_for_relay_reservations` signal would be preferable
+        # (it'd assert the full relay path is alive), but as of
+        # today merod doesn't auto-trigger a reservation when
+        # autonat reports the NAT'd address — see
+        # calimero-network/core#2475 for the gap. Switch to the
+        # stricter signal once that lands.
+        from merobox.topology.nat import wait_for_clients_connected_to_boot_node
 
-        if not wait_for_relay_reservations(self.manager.client, self._nat_state):
+        if not wait_for_clients_connected_to_boot_node(
+            self.manager.client, self._nat_state
+        ):
             console.print(
-                "[red]❌ NAT topology never reached the relay-reservation "
+                "[red]❌ NAT topology never reached the boot-node-connection "
                 "readiness gate — see per-client logs[/red]"
             )
             return False

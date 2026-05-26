@@ -1016,6 +1016,60 @@ def setup_nat_topology(
     )
 
 
+def wait_for_clients_connected_to_boot_node(
+    client: docker.DockerClient,
+    state: NatTopologyState,
+    timeout_seconds: int = RELAY_READINESS_TIMEOUT_SECONDS,
+) -> bool:
+    """Block until every client has established a libp2p connection
+    to the boot-node, or the timeout elapses.
+
+    Why this and NOT `wait_for_relay_reservations`
+    -----------------------------------------------
+
+    The original intent was to gate readiness on
+    `ReservationReqAccepted` — the signal that the client has
+    successfully registered a circuit-relay-v2 reservation with the
+    boot-node. That's the signal you'd want once the relay path is
+    actually exercised end-to-end. But as of today, merod doesn't
+    auto-trigger a reservation when autonat reports a NAT'd
+    address: relay-reservation is gated behind the
+    `advertise_address` branch in `crates/network/src/discovery.rs`
+    (see calimero-network/core#2475). Without an advertised
+    external address, no reservation is ever requested — so the
+    smoke test would hang for 90s every run while the merod side
+    of the gap remains open.
+
+    The connection-established signal IS reachable today: clients
+    successfully dial the boot-node through the NAT gateway, do a
+    yamux handshake, exchange Identify, and Calimero logs
+    "Connection established" at DEBUG. That proves the topology
+    infrastructure works end-to-end (route injection + NAT MASQUERADE
+    + per-iface forwarding + bridge plumbing).
+
+    Once core#2475 lands, switch the executor's readiness gate from
+    `wait_for_clients_connected_to_boot_node` to
+    `wait_for_relay_reservations` (which we keep below for that
+    purpose) so the smoke test also asserts the relay path.
+
+    Returns True when every client has at least one matching
+    "Connection established" line referring to the boot-node's peer
+    id; False on timeout. Caller decides whether to fail the
+    workflow."""
+    return _wait_for_log_line(
+        client,
+        state,
+        # The exact shape emitted by Calimero's swarm handler:
+        #   `Connection established  peer_id=PeerId("<bn>") endpoint=Dialer ...`
+        # We match on `peer_id=Some(PeerId("<bn>"))` because the
+        # SwarmEvent's `peer_id` is `Some<PeerId>` in the underlying
+        # tracing emit (see `calimero_network::handlers::stream::swarm`).
+        f'peer_id=Some(PeerId("{state.boot_node_peer_id}"))',
+        signal_name="boot-node connection",
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def wait_for_relay_reservations(
     client: docker.DockerClient,
     state: NatTopologyState,
@@ -1032,10 +1086,45 @@ def wait_for_relay_reservations(
     (`apply_e2e_defaults`'s `RUST_LOG`), so the line lands in
     stdout without any extra config.
 
+    NOTE: this is currently NOT wired into the executor's readiness
+    gate — see `wait_for_clients_connected_to_boot_node` for why
+    (core#2475 gap). Once core ships the relay-reservation trigger,
+    swap the executor's call site to this function and the smoke
+    test will assert the strictly stronger property.
+
     Returns True when every client has at least one Accepted; False
     on timeout. Caller decides whether to fail the workflow (CI
     should; an interactive `bootstrap run` might prefer a warning).
     """
+    return _wait_for_log_line(
+        client,
+        state,
+        "ReservationReqAccepted",
+        signal_name="relay reservation",
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _wait_for_log_line(
+    client: docker.DockerClient,
+    state: NatTopologyState,
+    needle: str,
+    *,
+    signal_name: str,
+    timeout_seconds: int,
+) -> bool:
+    """Poll every client's container logs for ``needle`` (substring
+    match) until each has at least one hit, or ``timeout_seconds``
+    elapses. On timeout, dump topology diagnostics to console.
+
+    ``signal_name`` appears in the console messages — e.g.,
+    "relay reservation" or "boot-node connection" — so the operator
+    can tell at a glance which readiness gate fired.
+
+    Returns True if every client matched; False on timeout. A
+    client container disappearing mid-wait counts as a failure for
+    that client only, but the wait continues for the others so the
+    final error reports every casualty."""
     if not state.client_names:
         # Nothing to wait on — caller hasn't spawned clients yet, or
         # this is a boot-node-only smoke test. Trivially ready.
@@ -1049,7 +1138,7 @@ def wait_for_relay_reservations(
     # leave the operator to find the others manually.
     disappeared: set[str] = set()
     console.print(
-        f"[yellow]Waiting up to {timeout_seconds}s for relay reservations on "
+        f"[yellow]Waiting up to {timeout_seconds}s for {signal_name} on "
         f"{len(pending)} client(s)...[/yellow]"
     )
 
@@ -1058,15 +1147,9 @@ def wait_for_relay_reservations(
             try:
                 container = client.containers.get(name)
             except docker.errors.NotFound:
-                # The container disappeared while we were waiting —
-                # almost certainly a crash during startup. Record
-                # the loss so we can report every disappeared client
-                # at the end; don't bail on the first one (others
-                # might also have crashed and the operator deserves
-                # the full list).
                 console.print(
                     f"[red]✗ Client container {name} disappeared "
-                    f"while waiting for relay reservation[/red]"
+                    f"while waiting for {signal_name}[/red]"
                 )
                 disappeared.add(name)
                 pending.discard(name)
@@ -1075,31 +1158,28 @@ def wait_for_relay_reservations(
                 tail = container.logs(tail=400).decode("utf-8", errors="replace")
             except Exception:
                 tail = ""
-            if "ReservationReqAccepted" in tail:
+            if needle in tail:
                 pending.discard(name)
-                console.print(f"[green]✓ {name} registered a relay reservation[/green]")
+                console.print(f"[green]✓ {name} reached {signal_name} signal[/green]")
         if pending:
             time.sleep(RELAY_READINESS_POLL_INTERVAL_SECONDS)
 
-    # Any client that disappeared is a hard failure regardless of
-    # whether the others reached the reservation signal.
     if disappeared:
         console.print(
             f"[red]✗ {len(disappeared)} client(s) disappeared during the "
-            f"readiness wait: {sorted(disappeared)}[/red]"
+            f"{signal_name} wait: {sorted(disappeared)}[/red]"
         )
         return False
 
     if pending:
         console.print(
-            f"[red]✗ Timed out waiting for relay reservation on: "
+            f"[red]✗ Timed out waiting for {signal_name} on: "
             f"{sorted(pending)}[/red]"
         )
         # On timeout, dump everything that helps diagnose WHY no
-        # reservation showed up. Cheap to gather, expensive to
-        # have to add later when the next CI failure lands. Each
-        # block is best-effort; a missing piece shouldn't suppress
-        # the others.
+        # signal showed up. Cheap to gather, expensive to have to
+        # add later when the next CI failure lands. Each block is
+        # best-effort; a missing piece shouldn't suppress the others.
         _dump_topology_diagnostics(client, state)
         return False
     return True
