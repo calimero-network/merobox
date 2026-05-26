@@ -450,7 +450,11 @@ def test_inject_default_route_spawns_sidecar_with_expected_shape():
     # with a hostname containing spaces would be safely quoted.
     assert "ip route replace default via 172.30.0.99" in cmd
     assert "ip route show default" in cmd
-    assert "grep -q '^default via 172.30.0.99'" in cmd
+    # `grep -Fxq` (fixed-string, exact-match, quiet) — defeats the
+    # regex-metacharacter misinterpretation that default grep does
+    # with the `.` chars in IPv4 dotted-quad form.
+    assert "grep -Fxq" in cmd
+    assert "default via 172.30.0.99" in cmd
     # Pin to the client's netns — modifies the right routing table.
     assert kwargs["network_mode"] == "container:nat-client-1"
     # CAP_NET_ADMIN — required for `ip route` to succeed inside

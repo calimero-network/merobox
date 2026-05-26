@@ -1115,6 +1115,15 @@ class WorkflowExecutor:
             self._apply_fault_kwargs(run_node_kwargs, None, nodes_config)
             run_node_kwargs["mdns"] = False
             if not self.manager.run_node(**run_node_kwargs):
+                # `run_node` failed for THIS client; the boot-node
+                # + gateway + networks (+ any previously-spawned
+                # clients) are still up. Tear them down here so the
+                # caller doesn't have to remember to call our
+                # teardown. The teardown is idempotent and the
+                # outer caller's `stop_all_nodes=True` path also
+                # gets called normally — duplicate teardown is
+                # safe.
+                self._teardown_nat_topology_if_present()
                 return False
             # Override the client's default route to point at the
             # NAT gateway. Without this, packets to the boot-node go
@@ -1137,6 +1146,7 @@ class WorkflowExecutor:
                     f"[red]❌ Could not route {node_name} through the NAT "
                     f"gateway: {e}[/red]"
                 )
+                self._teardown_nat_topology_if_present()
                 return False
             # Even with the route installed, the kernel's
             # forwarding path (per-iface state, ARP cache, neighbour
@@ -1156,6 +1166,7 @@ class WorkflowExecutor:
                     f"[red]❌ {node_name} cannot reach the boot-node via "
                     f"the NAT gateway: {e}[/red]"
                 )
+                self._teardown_nat_topology_if_present()
                 return False
             # Mark the client as fully-wired ONLY after route +
             # reachability succeed. If we appended right after
@@ -1210,6 +1221,7 @@ class WorkflowExecutor:
                 "is missing the autonat-failure → relay-reservation "
                 "trigger.[/red]"
             )
+            self._teardown_nat_topology_if_present()
             return False
         return True
 

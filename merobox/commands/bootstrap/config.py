@@ -1305,15 +1305,32 @@ class NatTopologyConfig(BaseModel):
     )
 
 
-# `TopologyConfig` is currently `NatTopologyConfig` directly, not
-# wrapped in `Union[...]` — a single-element Union is idiomatically
-# equivalent and some type checkers warn on it. When a second
-# topology variant lands (e.g. `MeshTopologyConfig` with multiple
-# relays, `WireguardTopologyConfig`, etc.) switch to
-# `Union[NatTopologyConfig, NewVariant]` AND add a discriminator
-# field shared by every variant so Pydantic can pick the right
-# class. Until then the alias keeps call-sites future-proof in
-# annotation form without paying the lint cost today.
+# `TopologyConfig` is a bare alias today, not a discriminated
+# union. There's only one topology variant (`NatTopologyConfig`),
+# and a single-element Union is idiomatically equivalent + draws
+# type-checker warnings, so we don't pay that cost yet.
+#
+# When the SECOND topology variant lands (e.g. `MeshTopologyConfig`
+# with multiple relays, `WireguardTopologyConfig`, etc.) the
+# migration is NOT just `TopologyConfig = Union[A, B]`. Pydantic
+# needs an explicit `Field(discriminator=...)` so it can pick the
+# right class from the YAML `type:` value — without that, every
+# variant's optional fields would be treated as candidates and
+# parsing errors would be unhelpfully vague. Concretely:
+#
+#   class NatTopologyConfig(BaseModel):
+#       type: Literal["nat"]
+#       ...
+#   class MeshTopologyConfig(BaseModel):
+#       type: Literal["mesh"]
+#       ...
+#   TopologyConfig = Annotated[
+#       Union[NatTopologyConfig, MeshTopologyConfig],
+#       Field(discriminator="type"),
+#   ]
+#
+# Until that work happens, the bare alias keeps call-sites
+# future-proof in annotation form without paying the lint cost.
 TopologyConfig = NatTopologyConfig
 
 

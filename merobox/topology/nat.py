@@ -456,11 +456,22 @@ def inject_default_route_into_client(
             # route really did land, the grep matches and the
             # sidecar exits 0; if it didn't, grep exits 1 and the
             # outer ContainerError surfaces a useful error.
+            #
+            # `grep -F` (fixed-string mode) is important: the
+            # gateway IP contains `.` characters which are regex
+            # metacharacters in default grep mode. Without `-F`,
+            # the pattern `172.30.0.99` would also match
+            # `172X30X0X99` — false positives that could mask a
+            # real route-install failure. The match is anchored to
+            # the start of the line via `--regexp` because `-F`
+            # disables the `^` anchor; instead we test the prefix
+            # via cut + string-equal.
             command=[
                 f"set -e; "
                 f"ip route replace default via {shlex.quote(gateway_lan_ip)}; "
-                f"ip route show default | grep -q "
-                f"'^default via {shlex.quote(gateway_lan_ip)}'"
+                f"ip route show default "
+                f"| awk '{{print $1, $2, $3}}' "
+                f"| grep -Fxq {shlex.quote(f'default via {gateway_lan_ip}')}"
             ],
             # Sharing the client's network namespace is what lets
             # `ip route` see and modify the client's routing table.
@@ -1039,29 +1050,32 @@ def setup_nat_topology(
     # path the test wants to exercise. We make the client USE that
     # path by injecting a default-route override post-startup; see
     # `inject_default_route_into_client`.
-    lan_network = _ensure_network(
-        client,
-        f"{workflow_name}-lan",
-        internal=False,
-        # User-configured subnet is REQUIRED because the gateway
-        # gets attached with an explicit `ipv4_address=` (see
-        # `_spawn_nat_gateway`). The actual subnet doesn't matter
-        # — picking a deterministic-per-workflow value from a
-        # private range keeps parallel workflows from colliding
-        # while still letting reruns find their own leftover state.
-        subnet=_pick_lan_subnet(workflow_name),
-    )
-
-    # Step 3+: bring up boot-node, gateway, and resolve identifiers.
-    # Wrap in try/except so a failure at ANY of these steps cleans
-    # up whatever earlier steps succeeded. Without this, a flaky
-    # `_resolve_boot_node_peer_id` (for instance) would leave the
-    # boot-node + gateway containers + the two networks running
-    # forever — the workflow caller's teardown path only fires
-    # when `setup_nat_topology` returns successfully.
+    #
+    # Step 3+: bring up the LAN network, boot-node, gateway, and
+    # resolve identifiers. Wrap from LAN-network creation onward in
+    # try/except so a failure at ANY of these steps cleans up
+    # whatever earlier steps succeeded (including the LAN network
+    # itself if its creation succeeded but a later step raised).
+    # public_network creation is OUTSIDE the try: if it fails, no
+    # resources to clean up; if it succeeds and a later step
+    # raises, the except path will tear it down too.
+    lan_network = None
     boot_node = None
     gateway = None
     try:
+        lan_network = _ensure_network(
+            client,
+            f"{workflow_name}-lan",
+            internal=False,
+            # User-configured subnet is REQUIRED because the gateway
+            # gets attached with an explicit `ipv4_address=` (see
+            # `_spawn_nat_gateway`). The actual subnet doesn't matter
+            # — picking a deterministic-per-workflow value from a
+            # private range keeps parallel workflows from colliding
+            # while still letting reruns find their own leftover state.
+            subnet=_pick_lan_subnet(workflow_name),
+        )
+
         # Step 3: boot-node.
         boot_node = _spawn_boot_node(
             client, boot_node_image, public_network, workflow_name
@@ -1111,6 +1125,12 @@ def setup_nat_topology(
                     f"[yellow]  cleanup: failed to remove {component.name}: {e}[/yellow]"
                 )
         for net in (lan_network, public_network):
+            # Skip networks that never made it past create (None) —
+            # without this, `net.reload()` on the LAN side would
+            # AttributeError if `_ensure_network` raised before
+            # returning a network handle.
+            if net is None:
+                continue
             try:
                 net.reload()
                 attached = (net.attrs or {}).get("Containers", {}) or {}
