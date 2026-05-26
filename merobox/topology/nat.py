@@ -800,6 +800,24 @@ def _pick_gateway_lan_ip(lan_network: docker.models.networks.Network) -> str:
     return str(network.network_address + 2)
 
 
+def _decode_exec_output(output: bytes | str | None) -> str:
+    """Normalize `container.exec_run(...)` output for error strings.
+
+    With `demux=False`, docker-py returns either bytes (stdout +
+    stderr combined) or None (no output emitted, e.g. for a
+    silently-failing exec). The naive `output.decode()` raises
+    on None; the naive `str(output)` would surface the literal
+    string `'None'` in our error messages. This helper picks the
+    right branch and substitutes a clearer sentinel when output
+    is missing.
+    """
+    if output is None:
+        return "<no output>"
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return str(output)
+
+
 def _spawn_nat_gateway(
     client: docker.DockerClient,
     public_network: docker.models.networks.Network,
@@ -922,16 +940,28 @@ def _spawn_nat_gateway(
         "ip6tables",
         "iproute2",
     ]
+    # Interface-name invariant.
+    # The exec steps below (per-iface forwarding loop, eth1
+    # verify, iptables `-o eth0`) assume Docker named the public
+    # network `eth0` and the LAN network `eth1`. For bridge
+    # networks under the default Linux kernel netdev driver this
+    # is universal: `eth0` is the first network attached at
+    # `containers.create(network=...)` time, `eth1` is the
+    # second attached via `network.connect(...)` before start.
+    # That ordering is what _this function_ does, deterministically,
+    # so the invariant holds for every gateway we spawn. If a
+    # future Docker engine or non-bridge driver renames interfaces,
+    # the eth1-forwarding verify step below will fail with a
+    # clear `read=''` error rather than silently MASQUERADE-ing
+    # off the wrong interface. We deliberately do NOT resolve
+    # interfaces dynamically (via MAC-match against container
+    # attrs) — the added complexity buys nothing for the bridge-
+    # driver case that's the only one merobox supports today.
     apk_ec, apk_out = container.exec_run(apk_cmd, demux=False)
     if apk_ec != 0:
-        decoded = (
-            apk_out.decode("utf-8", errors="replace")
-            if isinstance(apk_out, bytes)
-            else str(apk_out)
-        )
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to apk add "
-            f"iptables (exit {apk_ec}): {decoded}"
+            f"iptables (exit {apk_ec}): {_decode_exec_output(apk_out)}"
         )
 
     # Belt-and-suspenders per-interface forwarding enable.
@@ -963,14 +993,10 @@ def _spawn_nat_gateway(
         # The `|| true` above means the script itself never exits
         # non-zero, so a non-zero here means `sh` itself failed —
         # worth surfacing rather than swallowing.
-        decoded = (
-            fwd_out.decode("utf-8", errors="replace")
-            if isinstance(fwd_out, bytes)
-            else str(fwd_out)
-        )
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to enable "
-            f"per-interface forwarding (exit {fwd_ec}): {decoded}"
+            f"per-interface forwarding (exit {fwd_ec}): "
+            f"{_decode_exec_output(fwd_out)}"
         )
 
     # Verify eth1 specifically — that's the interface the LAN
@@ -984,11 +1010,7 @@ def _spawn_nat_gateway(
         ["cat", "/proc/sys/net/ipv4/conf/eth1/forwarding"],
         demux=False,
     )
-    verify_decoded = (
-        verify_out.decode("utf-8", errors="replace").strip()
-        if isinstance(verify_out, bytes)
-        else str(verify_out).strip()
-    )
+    verify_decoded = _decode_exec_output(verify_out).strip()
     if verify_ec != 0 or verify_decoded != "1":
         raise RuntimeError(
             f"NAT gateway {container_name!r}: eth1 forwarding is "
@@ -1026,11 +1048,26 @@ def _spawn_nat_gateway(
 
     ipt_ec, ipt_out = container.exec_run(iptables_cmd, demux=False)
     if ipt_ec != 0:
-        decoded = (
-            ipt_out.decode("utf-8", errors="replace")
-            if isinstance(ipt_out, bytes)
-            else str(ipt_out)
-        )
+        # Tear down the half-spawned gateway before re-raising.
+        # Without this, the container would be left running with
+        # `sleep infinity` and NO MASQUERADE rule installed —
+        # downstream teardown does eventually catch it (it's
+        # labelled with `merobox.workflow`), but leaving the
+        # cleanup until a later phase makes diagnostic dumps
+        # noisier and risks a partial-failure path where the
+        # caller doesn't run teardown at all (e.g. interactive
+        # CLI flow). Best-effort: any cleanup error is reported
+        # to the console but never overrides the original
+        # RuntimeError.
+        decoded = _decode_exec_output(ipt_out)
+        try:
+            container.remove(force=True)
+        except Exception as cleanup_exc:
+            console.print(
+                f"[yellow]NAT gateway {container_name!r}: "
+                f"cleanup after iptables failure also failed: "
+                f"{cleanup_exc}[/yellow]"
+            )
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to install "
             f"iptables MASQUERADE ({nat_mode}, exit {ipt_ec}): "

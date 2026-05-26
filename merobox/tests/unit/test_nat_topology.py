@@ -138,16 +138,52 @@ def test_boot_node_image_tag_is_local_namespaced():
     assert BOOT_NODE_IMAGE_TAG.endswith(":local")
 
 
-def test_gateway_base_image_is_stock_alpine():
+def test_gateway_base_image_default_is_stock_alpine(monkeypatch):
     """The NAT-gateway role uses a stock alpine image with
     iptables installed inline via `apk add` at first run — NOT
     a wrapper image with a bundled Dockerfile. Bundling broke
     under PyInstaller (non-`.py` files weren't included in the
     frozen binary); inlining the iptables setup via `exec_run`
-    sidesteps the bundling problem entirely. Pin the version so
-    a future alpine bump that drops `apk add iptables` (very
-    unlikely but) gets caught at test time rather than CI."""
-    assert GATEWAY_BASE_IMAGE == "alpine:3.19"
+    sidesteps the bundling problem entirely.
+
+    With the `MEROBOX_NAT_GATEWAY_IMAGE` env override, a CI that
+    wants a digest-pinned image can opt into one without a
+    merobox release; this test asserts the DEFAULT (no env var)
+    stays on `alpine:3.19` so a future bump is a deliberate
+    source-level change rather than an accidental drift.
+    """
+    monkeypatch.delenv("MEROBOX_NAT_GATEWAY_IMAGE", raising=False)
+    import importlib
+
+    import merobox.topology.nat as nat_module
+
+    importlib.reload(nat_module)
+    try:
+        assert nat_module.GATEWAY_BASE_IMAGE == "alpine:3.19"
+    finally:
+        # Restore the module's state for any later tests that
+        # imported the (env-free) default.
+        importlib.reload(nat_module)
+
+
+def test_gateway_base_image_env_override(monkeypatch):
+    """`MEROBOX_NAT_GATEWAY_IMAGE` lets CI pin to a digest
+    (e.g. `alpine@sha256:<digest>`) without shipping a merobox
+    release. Override is read at module-load time, so this test
+    sets the env var and reloads the module to exercise the
+    full override path."""
+    pinned = "alpine@sha256:" + "0" * 64
+    monkeypatch.setenv("MEROBOX_NAT_GATEWAY_IMAGE", pinned)
+    import importlib
+
+    import merobox.topology.nat as nat_module
+
+    importlib.reload(nat_module)
+    try:
+        assert nat_module.GATEWAY_BASE_IMAGE == pinned
+    finally:
+        monkeypatch.delenv("MEROBOX_NAT_GATEWAY_IMAGE", raising=False)
+        importlib.reload(nat_module)
 
 
 # ---------------------------------------------------------------------------
