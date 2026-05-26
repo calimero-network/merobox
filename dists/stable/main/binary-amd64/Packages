@@ -1,16 +1,16 @@
 Package: merobox
-Version: 0.6.18-1
+Version: 0.6.19-1
 Architecture: amd64
 Maintainer: Calimero Ltd. <engineering@calimero.network>
 Homepage: https://github.com/calimero-network/merobox
 Depends: libc6
 Priority: optional
 Section: utils
-Filename: pool/main/m/merobox/merobox_0.6.18-1_amd64.deb
-Size: 34263950
-SHA256: 3ee48f476183f487e9c81927740ef645f9db9330c39552e779812f46796593f9
-SHA1: 950c34c597bc4e1fc4e8ee94834e757458c13026
-MD5sum: d6921abb5d3e251f0bec86655fbbd7a6
+Filename: pool/main/m/merobox/merobox_0.6.19-1_amd64.deb
+Size: 34293218
+SHA256: d53831b5fd061917157e83347490b198f8fdaf4bc27c6a5f16261300fd3f8ff6
+SHA1: 98a885a73e0ece495ee9af5c8078a09a63082c93
+MD5sum: a32c4b3095dc686bb5d55ce8d9a69b3c
 Description: A CLI tool for managing Calimero nodes
  Merobox is a command-line tool for managing Calimero network nodes.
  It provides commands for installing,
