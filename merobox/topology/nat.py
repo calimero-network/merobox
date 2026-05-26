@@ -627,16 +627,25 @@ def _spawn_nat_gateway(
             # explicitly to make the contract visible.
             "PUBLIC_IFACE": "eth0",
         },
-        # `net.ipv4.ip_forward=1` MUST be set at namespace-creation
-        # time so the kernel forwards LAN→public packets. In-
-        # container `sysctl -w` fails silently on some Docker
-        # configurations (read-only /proc/sys for some sysctls
-        # even with NET_ADMIN) — which would crash the entrypoint
-        # script and leave a dead gateway, manifesting as `No
-        # route to host (os error 113)` on every client dial.
-        # Setting it via the Docker API at create-time sidesteps
-        # all that.
-        sysctls={"net.ipv4.ip_forward": "1"},
+        # `net.ipv4.ip_forward=1` is the master switch, but Linux
+        # also requires PER-INTERFACE forwarding to be enabled on
+        # the input interface (`net.ipv4.conf.<iface>.forwarding`).
+        # Per-iface flags inherit from `default.forwarding` AT the
+        # moment the interface is attached — and for the LAN-side
+        # eth1 added via `network.connect()` post-create, the
+        # inheritance was timing-dependent enough that CI saw
+        # eth1.forwarding=0 even with the master switch set, which
+        # makes the kernel return ICMP "network unreachable" to
+        # clients (the immediate `punt!` from `nc` we diagnosed).
+        # Setting BOTH master + default at create-time pins the
+        # inheritance for any interface attached afterwards. The
+        # entrypoint also writes every present per-iface flag in
+        # a loop, as a belt-and-suspenders fallback.
+        sysctls={
+            "net.ipv4.ip_forward": "1",
+            "net.ipv4.conf.all.forwarding": "1",
+            "net.ipv4.conf.default.forwarding": "1",
+        },
         # iptables + sysctl ip_forward both need NET_ADMIN. The
         # rest of the container is otherwise unprivileged.
         cap_add=["NET_ADMIN"],
@@ -1033,6 +1042,9 @@ def _dump_topology_diagnostics(
                 (
                     "echo '--- ip_forward ---';"
                     " cat /proc/sys/net/ipv4/ip_forward;"
+                    " echo '--- per-iface forwarding ---';"
+                    " for f in /proc/sys/net/ipv4/conf/*/forwarding;"
+                    '   do printf \'%s = \' "$f"; cat "$f"; done;'
                     " echo '--- FORWARD chain ---';"
                     " iptables -L FORWARD -nv;"
                     " echo '--- nat table ---';"

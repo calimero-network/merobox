@@ -33,13 +33,22 @@ echo "[merobox/nat-gateway] starting with NAT_MODE=${NAT_MODE} PUBLIC_IFACE=${PU
 # this the kernel drops packets between interfaces regardless of
 # what iptables says.
 #
-# The container is spawned with `--sysctl net.ipv4.ip_forward=1`
-# (set by merobox at create-time), so the in-container write below
-# is redundant in the normal case. Keep it as a fallback for
-# operators running this image outside the merobox topology — but
-# tolerate failure, because some Docker configurations restrict
-# in-container sysctl writes even with NET_ADMIN, and we don't
-# want to crash the entrypoint over a redundant write.
+# `net.ipv4.ip_forward` is the master switch, but Linux ALSO
+# requires per-interface forwarding to be enabled on the INPUT
+# interface (see `net.ipv4.conf.<iface>.forwarding`). The master
+# switch is set via `--sysctl net.ipv4.ip_forward=1` at container
+# create-time, but per-iface flags inherit from
+# `net.ipv4.conf.default.forwarding` AT THE MOMENT THE INTERFACE
+# IS ATTACHED — and for the LAN-side eth1, which is added via
+# `network.connect()` post-create, the inheritance was timing-
+# dependent. Result: master switch =1, eth1 per-iface forwarding =0,
+# kernel sends "network unreachable" ICMPs back to clients (the
+# `punt!` we saw in CI diagnostics).
+#
+# Belt-and-suspenders: explicitly enable both master + every
+# attached interface's per-iface forwarding here, in the entry-
+# point that runs AFTER all interfaces are wired up. Per-iface
+# sysctls become writable from inside the netns under NET_ADMIN.
 if ! sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1; then
     echo "[merobox/nat-gateway] WARN: in-container sysctl write failed; expecting --sysctl on container create to have set ip_forward already" >&2
     if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" != "1" ]; then
@@ -47,6 +56,19 @@ if ! sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1; then
         exit 1
     fi
 fi
+# Per-interface forwarding for every attached interface, including
+# `all` and `default` (which gate the inheritance). The loop is
+# tolerant of write failures — `lo`'s forwarding sometimes can't
+# be written, and that's fine.
+for iface_dir in /proc/sys/net/ipv4/conf/*/forwarding; do
+    if ! echo 1 > "${iface_dir}" 2>/dev/null; then
+        echo "[merobox/nat-gateway] WARN: could not set ${iface_dir}=1 (probably benign for lo)" >&2
+    fi
+done
+echo "[merobox/nat-gateway] per-iface forwarding state:"
+for iface_dir in /proc/sys/net/ipv4/conf/*/forwarding; do
+    echo "  ${iface_dir} = $(cat "${iface_dir}")"
+done
 
 # Wipe any leftover NAT rules in case the container is being reused
 # (shouldn't happen in CI but cheap to defend against).
