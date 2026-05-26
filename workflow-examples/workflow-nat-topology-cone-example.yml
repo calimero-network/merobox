@@ -3,17 +3,22 @@ description: >
 
   Spawns the four-piece NAT topology:
 
-      [ <wf>-public bridge ]                        [ <wf>-lan (internal) ]
+      [ <wf>-public bridge ]                        [ <wf>-lan bridge ]
        boot-node container  <- nat-gateway ->  client-1, client-2
 
   The boot-node runs the released calimero-network/boot-node binary
   (relay server + rendezvous server + Kademlia DHT). The gateway
   installs `iptables MASQUERADE` so client-side outbound packets
   reach the public bridge; clients are unreachable from the public
-  side except via the boot-node's relay circuit. That's the
-  precondition for exercising the relay-reservation-recovery code
-  in calimero-network/core#2446 — without this topology the code
-  path is dead because direct dialing always works.
+  side because the only path back is through the gateway, which
+  drops inbound connections to MASQUERADE'd ports (no listener).
+  The clients are forced to use the gateway as their next hop via
+  a default-route override injected post-startup; cross-bridge
+  isolation through the HOST is enforced by Docker's own
+  `DOCKER-ISOLATION-STAGE-2` chain. That's the precondition for
+  exercising the relay-reservation-recovery code path — without
+  this topology the code is dead because direct dialing always
+  works.
 
   What this workflow verifies
   ---------------------------
@@ -27,10 +32,10 @@ description: >
     2. Two clients can find each other through the relay: client-1
        creates a context, client-2 joins, they exchange a delta.
        The peer-to-peer hop happens via the relay circuit because
-       clients have no direct route to each other (the LAN bridge
-       is `--internal`, so the only outbound route is through the
-       gateway, which goes to the public bridge where neither
-       client listens).
+       clients have no direct route to each other — outbound goes
+       to the gateway (default-route override), which MASQUERADEs
+       onto the public bridge, where neither sibling has a
+       listener.
 
     3. `assert_log_present` confirms the relay path was actually
        exercised by scanning each client's log for the relayed

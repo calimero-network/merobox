@@ -49,9 +49,15 @@ For (1) to ever happen, the node must be **not directly reachable**
 by its peers. On a shared Docker bridge, nodes always have direct
 sibling routes, so they never register reservations, and the
 recovery code stays as dead code in CI. The NAT topology removes
-the direct route — clients on the `--internal` bridge cannot be
-reached from the public bridge except via the boot-node's relay
-circuit, so reservations are mandatory.
+the direct route — clients on the LAN bridge cannot reach the
+public bridge directly because Docker's `DOCKER-ISOLATION-STAGE-2`
+chain DROPs cross-bridge forwarding through the host. The only
+cross-bridge path is through the NAT gateway container (veths in
+both bridges, forwards inside its own netns, MASQUERADEs source).
+Clients are wired to use the gateway via a default-route override
+injected post-startup. Boot-node dial-backs to the MASQUERADE'd
+source port hit a no-listener wall, autonat marks clients NAT'd,
+relay reservations become mandatory.
 
 Use `topology: { type: nat }` when:
 
@@ -96,8 +102,13 @@ For workflow named `<wf>`:
 
 1. **Public bridge** `<wf>-public` — regular Docker bridge with
    outside connectivity.
-2. **LAN bridge** `<wf>-lan` — `--internal` Docker bridge with no
-   route outside Docker.
+2. **LAN bridge** `<wf>-lan` — Docker bridge with a workflow-pinned
+   subnet (so the NAT gateway can be attached with an explicit
+   `ipv4_address`). The bridge itself is `--internal=False` for
+   IPAM compatibility, but cross-bridge isolation is enforced by
+   Docker's own `DOCKER-ISOLATION-STAGE-2` chain plus the
+   client-side default-route override that forces all egress
+   through the NAT gateway container.
 3. **Boot-node container** `<wf>-boot-node` on the public bridge.
    Wraps the released `calimero-network/boot-node` binary
    (relay-server + rendezvous-server + Kademlia DHT). Default

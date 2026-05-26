@@ -277,11 +277,16 @@ def _ensure_network(
             # still attached — common after a crashed previous run
             # where teardown didn't finish. Disconnect each attached
             # container first (with force=True so paused / dead
-            # containers don't block); errors are tolerated because
-            # the worst case is that `remove` below raises with a
-            # clearer message about why.
+            # containers don't block). Track which disconnects
+            # failed so we don't silently call `net.remove()` and
+            # let Docker raise a misleading "in use" error: if any
+            # disconnect failed, we ABORT with a diagnostic listing
+            # the residual containers, so the operator can
+            # intervene rather than the workflow proceeding past a
+            # broken precondition.
             net.reload()
             attached = (net.attrs or {}).get("Containers", {}) or {}
+            failed_disconnects: list[tuple[str, str]] = []
             for container_id in list(attached.keys()):
                 try:
                     net.disconnect(container_id, force=True)
@@ -290,6 +295,16 @@ def _ensure_network(
                         f"[yellow]  failed to disconnect {container_id[:12]} from "
                         f"{name}: {e}[/yellow]"
                     )
+                    failed_disconnects.append((container_id, str(e)))
+            if failed_disconnects:
+                raise RuntimeError(
+                    f"Cannot recreate network {name!r}: "
+                    f"{len(failed_disconnects)} container(s) still attached "
+                    f"after force-disconnect attempts. "
+                    f"Residuals: {[c[:12] for c, _ in failed_disconnects]}. "
+                    f"Run `docker network disconnect -f {name} <id>` manually, "
+                    f"or `docker network rm {name}` and rerun."
+                )
             net.remove()
         else:
             console.print(f"[cyan]✓ Network {name} already exists[/cyan]")
@@ -433,7 +448,20 @@ def inject_default_route_into_client(
             # makes the sidecar do exactly one thing: install the
             # default route, then exit.
             entrypoint=["sh", "-c"],
-            command=[f"ip route replace default via {gateway_lan_ip}"],
+            # `set -e` + an explicit verification step after the route
+            # install. `ip route replace` is broadcasting-friendly —
+            # it returns 0 even for malformed targets that the kernel
+            # silently rejects, so we follow up with `ip route show
+            # default` and grep for the expected gateway. If the
+            # route really did land, the grep matches and the
+            # sidecar exits 0; if it didn't, grep exits 1 and the
+            # outer ContainerError surfaces a useful error.
+            command=[
+                f"set -e; "
+                f"ip route replace default via {shlex.quote(gateway_lan_ip)}; "
+                f"ip route show default | grep -q "
+                f"'^default via {shlex.quote(gateway_lan_ip)}'"
+            ],
             # Sharing the client's network namespace is what lets
             # `ip route` see and modify the client's routing table.
             # The sidecar gets the client's loopback + LAN-bridge
@@ -541,10 +569,24 @@ def wait_for_client_reachability(
                 if isinstance(out, bytes)
                 else str(out)
             )
-            # busybox nc -zv prints "<ip> (<ip>:<port>) open" on
-            # success. Any other output (including "punt!" on
-            # failure) means the probe didn't succeed.
-            if "open" in last_output.lower():
+            # busybox nc -zv prints the success line in a
+            # well-defined shape:
+            #
+            #   <ip> (<ip>:<port>) open
+            #
+            # A bare `"open" in last_output.lower()` substring
+            # match would false-positive on error text that
+            # happens to contain "open" — e.g., the Operating-
+            # system path mentioned in some perror strings, or a
+            # future busybox locale where "ENOTOPEN" et al. get
+            # spelled out. Match on the structured form: the
+            # exact boot-node IP+port followed by `open` at the
+            # end of the line. False-negative risk is bounded to
+            # busybox-nc changing its output format, which would
+            # also break the symmetric `punt!` failure branch and
+            # be caught by a CI regression.
+            success_marker = f"({state.boot_node_public_ip}:{BOOT_NODE_PORT}) open"
+            if success_marker in last_output:
                 console.print(
                     f"[green]✓ {client_container_name} reached boot-node "
                     f"after {attempt} probe(s)[/green]"
@@ -879,12 +921,25 @@ def _resolve_boot_node_peer_id(
     the first ~100ms of process start — we'd be waiting on it
     anyway as a readiness signal. A short 30s ceiling is plenty.
     """
-    # `PeerId("12D3KooW…")` — anchor on the prefix that follows
-    # `PeerId(`, allow any non-quote chars up to the closing
-    # `")`, and capture the inside. `12D3KooW` is the Ed25519
-    # multihash prefix base58btc emits for all Calimero/libp2p
-    # default keypairs.
-    peer_re = re.compile(r'PeerId\("(12D3KooW[^"]+)"\)')
+    # `PeerId("<id>")` — Debug-format from libp2p. The inner peer
+    # id is base58btc-encoded multihash; the leading character set
+    # depends on the keypair algorithm:
+    #
+    #   * Ed25519  → `12D3KooW…`  (the Calimero default)
+    #   * RSA      → `Qm…` / `12…` depending on key size
+    #   * secp256k1 → `16U…` / `1A…`
+    #   * Future libp2p multihash codes → any base58btc char
+    #
+    # The previous regex hard-coded `12D3KooW`, which would silently
+    # fail to extract a peer id from a boot-node built with a non-
+    # default keypair (e.g., an operator overriding the boot-node
+    # image with a stable RSA key for production tests). Match on
+    # the structural envelope (`PeerId("…")`) and require the
+    # captured string to look like a base58btc multihash (1-9, A-H,
+    # J-N, P-Z, a-k, m-z — 58 chars, base58btc alphabet) of typical
+    # peer-id length (≥40 chars). Tight enough to reject log noise,
+    # loose enough to accept any libp2p-emitted peer id.
+    peer_re = re.compile(r'PeerId\("([1-9A-HJ-NP-Za-km-z]{40,})"\)')
     deadline = time.monotonic() + 30.0
     while time.monotonic() < deadline:
         try:
@@ -906,7 +961,7 @@ def _resolve_boot_node_peer_id(
         tail = "<unable to read logs>"
     raise RuntimeError(
         f"Boot-node {container.name} didn't print its peer id within 30s.\n"
-        f'Expected log shape: `Peer id: PeerId("12D3KooW…")`.\n'
+        f'Expected log shape: `Peer id: PeerId("<base58btc-multihash>")`.\n'
         f"Last 50 log lines from the container:\n{tail}"
     )
 
@@ -997,26 +1052,80 @@ def setup_nat_topology(
         subnet=_pick_lan_subnet(workflow_name),
     )
 
-    # Step 3: boot-node.
-    boot_node = _spawn_boot_node(client, boot_node_image, public_network, workflow_name)
+    # Step 3+: bring up boot-node, gateway, and resolve identifiers.
+    # Wrap in try/except so a failure at ANY of these steps cleans
+    # up whatever earlier steps succeeded. Without this, a flaky
+    # `_resolve_boot_node_peer_id` (for instance) would leave the
+    # boot-node + gateway containers + the two networks running
+    # forever — the workflow caller's teardown path only fires
+    # when `setup_nat_topology` returns successfully.
+    boot_node = None
+    gateway = None
+    try:
+        # Step 3: boot-node.
+        boot_node = _spawn_boot_node(
+            client, boot_node_image, public_network, workflow_name
+        )
 
-    # Step 4: NAT gateway. After this returns, the LAN network has
-    # outbound routing to the public network. The gateway's LAN-side
-    # IP is pre-assigned (not read back) so we know it without
-    # waiting on Docker's async IPAM-population path.
-    gateway, gateway_lan_ip = _spawn_nat_gateway(
-        client,
-        NAT_GATEWAY_IMAGE_TAG,
-        public_network,
-        lan_network,
-        nat_mode,
-        workflow_name,
-    )
+        # Step 4: NAT gateway. After this returns, the LAN network
+        # has outbound routing to the public network. The gateway's
+        # LAN-side IP is pre-assigned (not read back) so we know it
+        # without waiting on Docker's async IPAM-population path.
+        gateway, gateway_lan_ip = _spawn_nat_gateway(
+            client,
+            NAT_GATEWAY_IMAGE_TAG,
+            public_network,
+            lan_network,
+            nat_mode,
+            workflow_name,
+        )
 
-    # Step 5: resolve boot-node's IP + peer id. Clients need both
-    # to build their bootstrap multiaddr.
-    boot_node_public_ip = _resolve_container_ip(boot_node, public_network.name)
-    boot_node_peer_id = _resolve_boot_node_peer_id(boot_node)
+        # Step 5: resolve boot-node's IP + peer id. Clients need
+        # both to build their bootstrap multiaddr.
+        boot_node_public_ip = _resolve_container_ip(boot_node, public_network.name)
+        boot_node_peer_id = _resolve_boot_node_peer_id(boot_node)
+    except Exception as setup_err:
+        console.print(
+            f"[red]✗ NAT topology setup failed: {setup_err}; "
+            f"cleaning up partial resources...[/red]"
+        )
+        # Best-effort cleanup of whatever made it up. Each step is
+        # tolerant of `None` (component never created) and exceptions
+        # (the cleanup itself failing — we still want to try the
+        # others). The exception is re-raised at the end so the
+        # caller sees the ORIGINAL setup failure, not whatever
+        # happened during cleanup.
+        for component in (gateway, boot_node):
+            if component is None:
+                continue
+            try:
+                component.stop(timeout=5)
+            except Exception as e:
+                console.print(
+                    f"[yellow]  cleanup: failed to stop {component.name}: {e}[/yellow]"
+                )
+            try:
+                component.remove(force=True)
+            except Exception as e:
+                console.print(
+                    f"[yellow]  cleanup: failed to remove {component.name}: {e}[/yellow]"
+                )
+        for net in (lan_network, public_network):
+            try:
+                net.reload()
+                attached = (net.attrs or {}).get("Containers", {}) or {}
+                for container_id in list(attached.keys()):
+                    try:
+                        net.disconnect(container_id, force=True)
+                    except Exception:
+                        pass
+                net.remove()
+            except Exception as e:
+                console.print(
+                    f"[yellow]  cleanup: failed to remove {net.name}: {e}[/yellow]"
+                )
+        raise
+
     console.print(
         f"[green]✓ Boot-node ready at "
         f"/ip4/{boot_node_public_ip}/tcp/{BOOT_NODE_PORT}/p2p/{boot_node_peer_id}[/green]"
@@ -1403,6 +1512,17 @@ def teardown_nat_topology(
     Errors on each step are logged but not propagated — partial
     teardown is better than an exception leaving even more state
     behind.
+
+    Ordering matters: networks must be EMPTY before they can be
+    removed. The original sequence (stop+remove containers, then
+    remove networks) relied on Docker auto-cleaning network
+    membership when a container is removed — and that DOES happen
+    in the normal case, but a client container that the workflow
+    executor failed to clean up (any leftover from
+    `_start_nodes_nat_topology` returning False) would still be
+    attached to the LAN network and silently block the network's
+    `remove()`. We now disconnect every container Docker still
+    reports as attached BEFORE attempting the network removal.
     """
     for container in (state.nat_gateway_container, state.boot_node_container):
         try:
@@ -1417,7 +1537,23 @@ def teardown_nat_topology(
     if remove_networks:
         for net in (state.lan_network, state.public_network):
             try:
+                # Reload to get the current set of attached
+                # containers — anything still here is a leftover
+                # the workflow executor couldn't clean up (e.g.,
+                # client containers from a failed run that returned
+                # False before reaching stop_all_nodes). Disconnect
+                # them with force=True so `net.remove()` below has
+                # a clean slate.
                 net.reload()
+                stragglers = (net.attrs or {}).get("Containers", {}) or {}
+                for container_id in list(stragglers.keys()):
+                    try:
+                        net.disconnect(container_id, force=True)
+                    except Exception as e:
+                        console.print(
+                            f"[yellow]  failed to disconnect {container_id[:12]} "
+                            f"from {net.name}: {e}[/yellow]"
+                        )
                 net.remove()
             except Exception as e:
                 console.print(

@@ -1045,6 +1045,24 @@ class WorkflowExecutor:
         # individual-node path with the cluster network forced to
         # the LAN bridge.
         lan_network_name = self._nat_state.lan_network.name
+        # NAT topology currently only supports the `count:` form for
+        # `nodes:`. Workflows that define individual nodes
+        # (`nodes: [{name: a, ...}, {name: b, ...}]`) would silently
+        # be ignored — the loop below reads `nodes_config["count"]`
+        # unconditionally. Surface that as a clear error rather than
+        # spawning zero clients and timing out in the readiness gate
+        # with no diagnostic.
+        if "count" not in nodes_config:
+            keys = sorted(nodes_config.keys())
+            console.print(
+                "[red]❌ NAT topology requires `nodes:` to use the "
+                f"`count:` form (saw keys: {keys}). The individual-node "
+                "list form is not currently supported — every NAT client "
+                "is spawned with the same image+config from the "
+                "boot-node-derived bootstrap multiaddr. File an issue "
+                "if you need per-client overrides.[/red]"
+            )
+            return False
         count = nodes_config["count"]
         prefix = nodes_config.get("prefix", "calimero-node")
         base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)

@@ -3,7 +3,7 @@ description: >
 
   The strict counterpart to workflow-nat-topology-cone-example.yml.
   Same four-piece topology (boot-node + nat-gateway + clients on
-  `--internal` LAN), but the gateway runs `iptables MASQUERADE
+  a NAT'd LAN bridge), but the gateway runs `iptables MASQUERADE
   --random-fully` instead of plain MASQUERADE. The flag randomises
   the outbound port per destination, so STUN-style port prediction
   (the basis of libp2p's DCUtR hole-punching) can never resolve a

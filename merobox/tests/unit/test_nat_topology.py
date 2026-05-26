@@ -332,12 +332,31 @@ def test_resolve_boot_node_peer_id_raises_with_log_tail_on_timeout(monkeypatch):
 def test_resolve_boot_node_peer_id_re_matches_inside_debug_quotes():
     """Sanity-pin the regex shape directly so a future refactor of
     `_resolve_boot_node_peer_id` doesn't silently change the
-    matching algorithm."""
-    # The regex is internal but pinned by behavior above.
+    matching algorithm. The accepted shape is base58btc multihash
+    (1-9, A-H, J-N, P-Z, a-k, m-z) of ≥40 chars — broad enough to
+    accept any libp2p-emitted PeerId, not just the Ed25519
+    `12D3KooW…` shape."""
+    pattern = r'PeerId\("([1-9A-HJ-NP-Za-km-z]{40,})"\)'
     sample = f'Peer id: PeerId("{_PEER_ID}"), some trailing junk'
-    match = re.search(r'PeerId\("(12D3KooW[^"]+)"\)', sample)
+    match = re.search(pattern, sample)
     assert match is not None
     assert match.group(1) == _PEER_ID
+
+
+def test_resolve_boot_node_peer_id_re_accepts_non_ed25519_prefix():
+    """Regression guard against re-anchoring the regex on `12D3KooW`.
+    libp2p keypair algorithms other than Ed25519 produce different
+    base58btc prefixes (`Qm…` for RSA, `16U…` for secp256k1, etc.).
+    Pin that the regex accepts them — otherwise an operator pinning
+    the boot-node image to a stable RSA key would silently fail
+    peer-id extraction with the same misleading log shape."""
+    pattern = r'PeerId\("([1-9A-HJ-NP-Za-km-z]{40,})"\)'
+    # A plausibly-shaped RSA peer id (base58btc, ≥40 chars, leading Qm).
+    rsa_peer_id = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+    sample = f'Peer id: PeerId("{rsa_peer_id}")'
+    match = re.search(pattern, sample)
+    assert match is not None
+    assert match.group(1) == rsa_peer_id
 
 
 def test_bootstrap_multiaddrs_are_well_formed_libp2p():
@@ -417,7 +436,21 @@ def test_inject_default_route_spawns_sidecar_with_expected_shape():
     # sidecar MUST override entrypoint+command so it skips the
     # image's gateway-init path and does ONLY the route install.
     assert kwargs["entrypoint"] == ["sh", "-c"]
-    assert kwargs["command"] == ["ip route replace default via 172.30.0.99"]
+    # Command shape: `set -e; ip route replace; ip route show |
+    # grep`. The trailing grep is the "did the route actually
+    # land?" verification — `ip route replace` returns 0 even on
+    # silently-rejected targets, so the explicit show+grep is
+    # what surfaces a route-install failure as a non-zero sidecar
+    # exit.
+    assert len(kwargs["command"]) == 1
+    cmd = kwargs["command"][0]
+    assert "set -e" in cmd
+    # shlex.quote on a plain IP returns it unchanged (no shell-meta
+    # chars), but the wrapper still calls it so a future override
+    # with a hostname containing spaces would be safely quoted.
+    assert "ip route replace default via 172.30.0.99" in cmd
+    assert "ip route show default" in cmd
+    assert "grep -q '^default via 172.30.0.99'" in cmd
     # Pin to the client's netns — modifies the right routing table.
     assert kwargs["network_mode"] == "container:nat-client-1"
     # CAP_NET_ADMIN — required for `ip route` to succeed inside
@@ -636,3 +669,122 @@ def test_pick_lan_subnet_returns_valid_rfc1918_24():
     assert network.prefixlen == 24
     assert subnet.startswith("172.30.")
     assert subnet.endswith(".0/24")
+
+
+# ---------------------------------------------------------------------------
+# teardown_nat_topology
+# ---------------------------------------------------------------------------
+#
+# Critical operational invariants:
+#   * Stop+remove the boot-node and gateway containers (we own them).
+#   * Disconnect any residual containers from the LAN/public networks
+#     BEFORE attempting `net.remove()` — otherwise Docker refuses with
+#     "network has active endpoints" and the next workflow run can't
+#     create its own network with the same name.
+#   * Errors on individual steps are logged but not re-raised —
+#     partial teardown is better than leaving cleanup half-done.
+
+from merobox.topology.nat import teardown_nat_topology  # noqa: E402
+
+
+def _make_state_with_teardown_handles() -> NatTopologyState:
+    """State whose containers + networks are MagicMocks we can
+    inspect to verify the teardown sequence."""
+    public_net = MagicMock()
+    public_net.name = "test-public"
+    public_net.attrs = {"Containers": {}}
+    lan_net = MagicMock()
+    lan_net.name = "test-lan"
+    lan_net.attrs = {"Containers": {}}
+    boot = MagicMock()
+    boot.name = "test-boot-node"
+    gw = MagicMock()
+    gw.name = "test-gateway"
+    return NatTopologyState(
+        public_network=public_net,
+        lan_network=lan_net,
+        boot_node_container=boot,
+        boot_node_peer_id="12D3KooW" + "X" * 44,
+        boot_node_public_ip="172.30.1.5",
+        nat_gateway_container=gw,
+        gateway_lan_ip="172.30.0.2",
+    )
+
+
+def test_teardown_stops_and_removes_owned_containers():
+    """Boot-node + gateway are both stopped + removed exactly once
+    each. Order is gateway-first (closer to the leaves of the
+    bridge graph) then boot-node — matches the spawn order's
+    reverse."""
+    state = _make_state_with_teardown_handles()
+    teardown_nat_topology(MagicMock(), state, remove_networks=False)
+    state.nat_gateway_container.stop.assert_called_once()
+    state.nat_gateway_container.remove.assert_called_once_with(force=True)
+    state.boot_node_container.stop.assert_called_once()
+    state.boot_node_container.remove.assert_called_once_with(force=True)
+
+
+def test_teardown_disconnects_stragglers_before_removing_network():
+    """If the workflow executor failed mid-run and left leftover
+    containers attached to the LAN network, the teardown must
+    force-disconnect them BEFORE calling `net.remove()`. Otherwise
+    Docker refuses with `network has active endpoints` and the next
+    workflow run finds a stale network with the same name."""
+    state = _make_state_with_teardown_handles()
+    # Two containers still attached to the LAN bridge after a
+    # crashed earlier run.
+    state.lan_network.attrs = {
+        "Containers": {
+            "leftover-client-1-id": {"Name": "leftover-client-1"},
+            "leftover-client-2-id": {"Name": "leftover-client-2"},
+        }
+    }
+    teardown_nat_topology(MagicMock(), state, remove_networks=True)
+    # Each leftover got force-disconnected from the LAN bridge.
+    disconnect_calls = [c.args[0] for c in state.lan_network.disconnect.call_args_list]
+    assert set(disconnect_calls) == {
+        "leftover-client-1-id",
+        "leftover-client-2-id",
+    }
+    # All `disconnect` calls were force=True.
+    for call in state.lan_network.disconnect.call_args_list:
+        assert call.kwargs.get("force") is True
+    # Network removal happened AFTER disconnect — pin the order
+    # via mock_calls.
+    method_order = [
+        name
+        for name, _, _ in state.lan_network.mock_calls
+        if name in ("reload", "disconnect", "remove")
+    ]
+    assert method_order.index("disconnect") < method_order.index("remove")
+
+
+def test_teardown_skips_network_removal_when_remove_networks_false():
+    """`remove_networks=False` must not touch the networks. Used by
+    callers that want to retain the bridges across runs (e.g., a
+    debugging shell that's still attached)."""
+    state = _make_state_with_teardown_handles()
+    teardown_nat_topology(MagicMock(), state, remove_networks=False)
+    state.lan_network.remove.assert_not_called()
+    state.public_network.remove.assert_not_called()
+    state.lan_network.disconnect.assert_not_called()
+    state.public_network.disconnect.assert_not_called()
+
+
+def test_teardown_tolerates_individual_step_failures():
+    """A container stop that raises must not abort the rest of
+    teardown — every remaining container/network still gets its
+    cleanup attempt. Otherwise a single flaky `stop()` leaves
+    leaked state."""
+    state = _make_state_with_teardown_handles()
+    state.nat_gateway_container.stop.side_effect = RuntimeError("boom")
+    # Must NOT propagate.
+    teardown_nat_topology(MagicMock(), state, remove_networks=True)
+    # gateway.remove still attempted despite stop failing.
+    state.nat_gateway_container.remove.assert_called_once_with(force=True)
+    # boot-node still got its cleanup.
+    state.boot_node_container.stop.assert_called_once()
+    state.boot_node_container.remove.assert_called_once_with(force=True)
+    # Networks still removed.
+    state.lan_network.remove.assert_called_once()
+    state.public_network.remove.assert_called_once()

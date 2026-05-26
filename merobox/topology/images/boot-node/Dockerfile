@@ -17,6 +17,19 @@
 FROM debian:bookworm-slim AS download
 
 ARG BOOT_NODE_VERSION=0.8.0
+# SHA-256 checksums of the upstream GitHub-release binaries.
+# Pinning per-arch defends against:
+#   * a compromised release artifact (someone replacing the asset
+#     post-publish without bumping the version),
+#   * GitHub serving a truncated download (CDN edge issue),
+#   * GitHub serving an HTML error page (transient 5xx wrapped as
+#     200 OK in some flows — curl wouldn't catch it because the
+#     bytes "look" like a valid response).
+# Override per-arch via Docker build-args when bumping
+# BOOT_NODE_VERSION. Get the canonical values with e.g.:
+#   curl -sL https://github.com/calimero-network/boot-node/releases/download/${VER}/boot-node-x86_64-unknown-linux | shasum -a 256
+ARG BOOT_NODE_SHA256_X86_64=c82b06e1c81a1cfcf1dce0fd38459e7242b905e72ac01bee2b95fb160072a924
+ARG BOOT_NODE_SHA256_AARCH64=fa83e8f0547cbb85424a4ffbbc90879f346da0570957af6c8cb033319c60daa6
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
@@ -27,25 +40,37 @@ RUN apt-get update \
 RUN set -eux; \
     arch="$(uname -m)"; \
     case "${arch}" in \
-        x86_64)  asset="boot-node-x86_64-unknown-linux" ;; \
-        aarch64) asset="boot-node-aarch64-unknown-linux" ;; \
+        x86_64)  asset="boot-node-x86_64-unknown-linux"; expected_sha="${BOOT_NODE_SHA256_X86_64}" ;; \
+        aarch64) asset="boot-node-aarch64-unknown-linux"; expected_sha="${BOOT_NODE_SHA256_AARCH64}" ;; \
         *) echo "unsupported arch: ${arch}" >&2; exit 1 ;; \
     esac; \
     url="https://github.com/calimero-network/boot-node/releases/download/${BOOT_NODE_VERSION}/${asset}"; \
     curl -fSL --retry 3 -o /tmp/boot-node "${url}"; \
+    # Verify the SHA-256 BEFORE chmod+exec. If the upstream is
+    # compromised or the download is truncated, fail loudly here
+    # rather than running a tampered binary inside the topology.
+    actual_sha="$(sha256sum /tmp/boot-node | awk '{print $1}')"; \
+    if [ "${actual_sha}" != "${expected_sha}" ]; then \
+        echo "boot-node SHA-256 mismatch for ${asset}:" >&2; \
+        echo "  expected: ${expected_sha}" >&2; \
+        echo "  actual:   ${actual_sha}" >&2; \
+        echo "Either the upstream release changed (bump BOOT_NODE_SHA256_${arch^^} to match) or the download is corrupt." >&2; \
+        exit 1; \
+    fi; \
     chmod +x /tmp/boot-node; \
     # Smoke-test the downloaded binary so the image fails to build
-    # if the asset is for the wrong arch, the download was truncated,
-    # or GitHub served us an HTML error page. `--help` exits 0 on
-    # success and non-zero on missing flag — we accept either; what
-    # we care about is that the process actually launches, which
-    # `--version` would normally cover but `boot-node --version`
-    # isn't supported, so we use `--help` and accept any exit code
-    # other than the dynamic-loader-failure ones (127, 128+N for
-    # signals, etc.). The `[ $? -lt 127 ]` check is intentional: a
-    # wrong-arch binary fails with 126 (Exec format error) under
-    # bash, dynamic-loader errors yield 127, signals yield 128+; we
-    # treat any of those as a build failure.
+    # if the asset is for the wrong arch despite the matching hash
+    # (e.g., someone bumped the arch-specific sha to the wrong
+    # value). `--help` exits 0 on success and non-zero on missing
+    # flag — we accept either; what we care about is that the
+    # process actually launches, which `--version` would normally
+    # cover but `boot-node --version` isn't supported, so we use
+    # `--help` and accept any exit code other than the dynamic-
+    # loader-failure ones (127, 128+N for signals, etc.). The
+    # `[ $? -lt 127 ]` check is intentional: a wrong-arch binary
+    # fails with 126 (Exec format error) under bash, dynamic-
+    # loader errors yield 127, signals yield 128+; we treat any of
+    # those as a build failure.
     /tmp/boot-node --help >/dev/null 2>&1; rc=$?; \
     if [ "$rc" -ge 126 ]; then \
         echo "boot-node smoke-test failed (exit $rc) — wrong arch?" >&2; exit 1; \
