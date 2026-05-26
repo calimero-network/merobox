@@ -627,6 +627,16 @@ def _spawn_nat_gateway(
             # explicitly to make the contract visible.
             "PUBLIC_IFACE": "eth0",
         },
+        # `net.ipv4.ip_forward=1` MUST be set at namespace-creation
+        # time so the kernel forwards LAN→public packets. In-
+        # container `sysctl -w` fails silently on some Docker
+        # configurations (read-only /proc/sys for some sysctls
+        # even with NET_ADMIN) — which would crash the entrypoint
+        # script and leave a dead gateway, manifesting as `No
+        # route to host (os error 113)` on every client dial.
+        # Setting it via the Docker API at create-time sidesteps
+        # all that.
+        sysctls={"net.ipv4.ip_forward": "1"},
         # iptables + sysctl ip_forward both need NET_ADMIN. The
         # rest of the container is otherwise unprivileged.
         cap_add=["NET_ADMIN"],
@@ -640,6 +650,24 @@ def _spawn_nat_gateway(
     # network entries. Doesn't matter for the LAN IP (we already
     # know it) but useful for diagnostics.
     container.reload()
+    # Sanity-check: gateway must actually be running. If the
+    # entrypoint exited (e.g., MASQUERADE install failed), the
+    # whole topology is broken downstream — clients would dial
+    # through a dead gateway and get EHOSTUNREACH. Fail loudly
+    # here instead.
+    status = container.attrs.get("State", {}).get("Status", "unknown")
+    if status != "running":
+        # Pull the entrypoint's stderr into the exception so the
+        # operator can see WHY the gateway died.
+        try:
+            tail = container.logs(tail=200).decode("utf-8", errors="replace")
+        except Exception:
+            tail = "<could not read gateway logs>"
+        raise RuntimeError(
+            f"NAT gateway container {container_name!r} exited "
+            f"during startup (status={status!r}); its entrypoint "
+            f"failed. Logs:\n{tail}"
+        )
     return container, gateway_lan_ip
 
 
@@ -956,8 +984,74 @@ def wait_for_relay_reservations(
             f"[red]✗ Timed out waiting for relay reservation on: "
             f"{sorted(pending)}[/red]"
         )
+        # On timeout, dump everything that helps diagnose WHY no
+        # reservation showed up. Cheap to gather, expensive to
+        # have to add later when the next CI failure lands. Each
+        # block is best-effort; a missing piece shouldn't suppress
+        # the others.
+        _dump_topology_diagnostics(client, state)
         return False
     return True
+
+
+def _dump_topology_diagnostics(
+    client: docker.DockerClient,
+    state: NatTopologyState,
+) -> None:
+    """Print gateway logs, client routes, boot-node listening
+    addresses, and gateway iptables — every datum needed to pin
+    down a relay-reservation timeout. Called from the readiness-gate
+    failure path; safe to call ad hoc as well."""
+    console.print("[yellow]── NAT topology diagnostics ──[/yellow]")
+    # Gateway logs (entrypoint output: iptables rules, ip routes,
+    # any FATAL the script emitted).
+    try:
+        state.nat_gateway_container.reload()
+        gw_status = state.nat_gateway_container.attrs.get("State", {}).get(
+            "Status", "?"
+        )
+        gw_logs = state.nat_gateway_container.logs(tail=200).decode(
+            "utf-8", errors="replace"
+        )
+        console.print(
+            f"[yellow]NAT gateway container status={gw_status}; logs:\n"
+            f"{gw_logs}[/yellow]"
+        )
+    except Exception as e:
+        console.print(f"[yellow]Failed to read gateway logs: {e}[/yellow]")
+    # Per-client routes (does the default route still point at the
+    # gateway?). One-shot sidecar with shared netns, like the route
+    # injection itself — except this one just reads.
+    for name in state.client_names:
+        try:
+            out = client.containers.run(
+                NAT_GATEWAY_IMAGE_TAG,
+                entrypoint=["sh", "-c"],
+                command=["ip route show; ip addr show"],
+                network_mode=f"container:{name}",
+                cap_add=["NET_ADMIN"],
+                remove=True,
+                detach=False,
+                stdout=True,
+                stderr=True,
+            )
+            decoded = (
+                out.decode("utf-8", errors="replace") if isinstance(out, bytes) else out
+            )
+            console.print(f"[yellow]Client {name} netns state:\n{decoded}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Failed to dump {name} netns state: {e}[/yellow]")
+    # Boot-node listening addresses — we want to see what merod's
+    # libp2p stack is actually advertising. Looking for `/p2p/` and
+    # `relay` in particular.
+    try:
+        bn_logs = state.boot_node_container.logs(tail=80).decode(
+            "utf-8", errors="replace"
+        )
+        console.print(f"[yellow]Boot-node logs (tail):\n{bn_logs}[/yellow]")
+    except Exception as e:
+        console.print(f"[yellow]Failed to read boot-node logs: {e}[/yellow]")
+    console.print("[yellow]── end diagnostics ──[/yellow]")
 
 
 def boot_node_bootstrap_multiaddrs(state: NatTopologyState) -> list[str]:

@@ -32,7 +32,21 @@ echo "[merobox/nat-gateway] starting with NAT_MODE=${NAT_MODE} PUBLIC_IFACE=${PU
 # IPv4 forwarding off by default in the alpine container; without
 # this the kernel drops packets between interfaces regardless of
 # what iptables says.
-sysctl -w net.ipv4.ip_forward=1 >/dev/null
+#
+# The container is spawned with `--sysctl net.ipv4.ip_forward=1`
+# (set by merobox at create-time), so the in-container write below
+# is redundant in the normal case. Keep it as a fallback for
+# operators running this image outside the merobox topology — but
+# tolerate failure, because some Docker configurations restrict
+# in-container sysctl writes even with NET_ADMIN, and we don't
+# want to crash the entrypoint over a redundant write.
+if ! sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1; then
+    echo "[merobox/nat-gateway] WARN: in-container sysctl write failed; expecting --sysctl on container create to have set ip_forward already" >&2
+    if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" != "1" ]; then
+        echo "[merobox/nat-gateway] FATAL: net.ipv4.ip_forward is NOT 1 — gateway cannot forward; refusing to start" >&2
+        exit 1
+    fi
+fi
 
 # Wipe any leftover NAT rules in case the container is being reused
 # (shouldn't happen in CI but cheap to defend against).
