@@ -411,12 +411,13 @@ def test_inject_default_route_spawns_sidecar_with_expected_shape():
     # Image must be the nat-gateway image — it's the only one we
     # know ships iproute2 + is already cached locally.
     assert args[0] == NAT_GATEWAY_IMAGE_TAG
-    # Command: sh -c "ip route replace default via <gateway-ip>".
-    assert kwargs["command"] == [
-        "sh",
-        "-c",
-        "ip route replace default via 172.30.0.99",
-    ]
+    # The nat-gateway image has an ENTRYPOINT that runs
+    # `sysctl -w net.ipv4.ip_forward=1` (fine for the gateway role,
+    # fatal in a shared-netns sidecar where /proc/sys is RO). The
+    # sidecar MUST override entrypoint+command so it skips the
+    # image's gateway-init path and does ONLY the route install.
+    assert kwargs["entrypoint"] == ["sh", "-c"]
+    assert kwargs["command"] == ["ip route replace default via 172.30.0.99"]
     # Pin to the client's netns — modifies the right routing table.
     assert kwargs["network_mode"] == "container:nat-client-1"
     # CAP_NET_ADMIN — required for `ip route` to succeed inside

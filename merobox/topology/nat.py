@@ -419,11 +419,18 @@ def inject_default_route_into_client(
     try:
         client.containers.run(
             NAT_GATEWAY_IMAGE_TAG,
-            command=[
-                "sh",
-                "-c",
-                f"ip route replace default via {gateway_lan_ip}",
-            ],
+            # Override the image's ENTRYPOINT. The nat-gateway image
+            # ships an ENTRYPOINT script that runs `sysctl -w
+            # net.ipv4.ip_forward=1` + installs iptables MASQUERADE
+            # — fine when the container plays the gateway role with
+            # its OWN netns, but fatal in this sidecar context where
+            # we share the client's netns (sysctl errors with
+            # `Read-only file system` and we never get to the route
+            # install). Passing a fresh entrypoint+command pair
+            # makes the sidecar do exactly one thing: install the
+            # default route, then exit.
+            entrypoint=["sh", "-c"],
+            command=[f"ip route replace default via {gateway_lan_ip}"],
             # Sharing the client's network namespace is what lets
             # `ip route` see and modify the client's routing table.
             # The sidecar gets the client's loopback + LAN-bridge
