@@ -457,10 +457,22 @@ def _spawn_nat_gateway(
 ) -> docker.models.containers.Container:
     """Start the NAT-gateway container straddling both bridges.
 
-    docker-py only lets `run()` attach to ONE network at create
-    time, so we start on the public bridge then `connect` the LAN
-    bridge afterwards. Capability NET_ADMIN is required for the
-    container's iptables setup.
+    Both networks must be attached BEFORE the container starts so
+    Docker allocates both IPs as part of the startup network setup.
+    Earlier iterations called `containers.run(network=public)`
+    followed by `lan_network.connect(container)` — but `connect()`
+    on a RUNNING container goes through a separate daemon path
+    that allocates the second IP asynchronously, and on CI runners
+    we observed the LAN-side `IPAddress` never populating in
+    `container.attrs` even after a 30s poll. Routing primitives
+    downstream need that LAN IP synchronously, so we do:
+
+        create (paused) → connect LAN → start
+
+    With both networks attached at start time, the daemon's normal
+    container-startup flow allocates both IPs together and they're
+    both visible after a single `reload()`. CAP_NET_ADMIN is
+    required for the container's internal MASQUERADE setup.
     """
     container_name = f"{workflow_name}-nat-gateway"
     try:
@@ -475,7 +487,7 @@ def _spawn_nat_gateway(
     console.print(
         f"[yellow]Starting NAT gateway {container_name} (mode={nat_mode})[/yellow]"
     )
-    container = client.containers.run(
+    container = client.containers.create(
         image=image,
         name=container_name,
         network=public_network.name,
@@ -485,11 +497,11 @@ def _spawn_nat_gateway(
         },
         environment={
             "NAT_MODE": nat_mode,
-            # PUBLIC_IFACE: the first attached interface in the
-            # container is eth0 (the public bridge here, by start
-            # order). The container's entrypoint also defaults to
-            # eth0, but we set it explicitly to make the contract
-            # visible.
+            # PUBLIC_IFACE: by the order networks were attached at
+            # create+connect time, the public bridge becomes eth0
+            # and the LAN bridge becomes eth1. The container's
+            # entrypoint defaults to eth0 too, but we set it
+            # explicitly to make the contract visible.
             "PUBLIC_IFACE": "eth0",
         },
         # iptables + sysctl ip_forward both need NET_ADMIN. The
@@ -497,15 +509,12 @@ def _spawn_nat_gateway(
         cap_add=["NET_ADMIN"],
         detach=True,
     )
-    # Attach the LAN bridge as a second interface (becomes eth1).
-    # `connect()` is synchronous at the Docker API level but the
-    # daemon's network-state update propagates asynchronously to
-    # `container.attrs`; downstream callers that need the LAN IP
-    # poll via `_resolve_container_ip` (which now retries up to
-    # 30s) to absorb the race.
+    # Attach the LAN bridge BEFORE start so Docker allocates the
+    # LAN IP as part of the startup network setup.
     lan_network.connect(container)
-    # Reload immediately so the second-network entry is visible to
-    # the next code path that introspects `container.attrs`. Cheap.
+    container.start()
+    # Reload immediately so both network entries are visible to the
+    # next code path that introspects `container.attrs`. Cheap.
     container.reload()
     return container
 
