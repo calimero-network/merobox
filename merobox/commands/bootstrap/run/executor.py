@@ -1145,22 +1145,33 @@ class WorkflowExecutor:
         # Returning False here surfaces the timeout as a workflow
         # failure rather than letting downstream steps fail mid-flight
         # with confusing peer-not-found errors.
-        # Readiness signal: every client has established a libp2p
-        # connection to the boot-node. The stronger
-        # `wait_for_relay_reservations` signal would be preferable
-        # (it'd assert the full relay path is alive), but as of
-        # today merod doesn't auto-trigger a reservation when
-        # autonat reports the NAT'd address — see
-        # calimero-network/core#2475 for the gap. Switch to the
-        # stricter signal once that lands.
-        from merobox.topology.nat import wait_for_clients_connected_to_boot_node
+        # Readiness signal: every client has registered a libp2p
+        # circuit-relay-v2 reservation with the boot-node. This is
+        # the test's whole point — proving the relay path is alive
+        # end-to-end. Today merod doesn't auto-trigger a reservation
+        # when autonat reports the NAT'd address (see
+        # calimero-network/core#2475 — relay-reservation gated
+        # behind the `advertise_address` branch), so this gate
+        # times out. The merobox topology infrastructure itself is
+        # complete and proven by the connectivity probes earlier in
+        # the setup; we keep the strict gate here so the workflow
+        # surfaces the merod-side gap rather than silently passing
+        # a weaker assertion. Once #2475 lands, the workflow goes
+        # green without any code change here.
+        #
+        # A weaker connection-only signal lives at
+        # `wait_for_clients_connected_to_boot_node` for one-off
+        # diagnostic use; we deliberately do NOT use it as the gate
+        # because it'd mask the very bug the topology was built to
+        # expose.
+        from merobox.topology.nat import wait_for_relay_reservations
 
-        if not wait_for_clients_connected_to_boot_node(
-            self.manager.client, self._nat_state
-        ):
+        if not wait_for_relay_reservations(self.manager.client, self._nat_state):
             console.print(
-                "[red]❌ NAT topology never reached the boot-node-connection "
-                "readiness gate — see per-client logs[/red]"
+                "[red]❌ NAT topology never reached the relay-reservation "
+                "readiness gate — see per-client logs. If you're seeing "
+                "this on a fresh `merod:edge`, calimero-network/core#2475 "
+                "is likely the culprit.[/red]"
             )
             return False
         return True

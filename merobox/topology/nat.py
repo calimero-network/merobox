@@ -1024,33 +1024,28 @@ def wait_for_clients_connected_to_boot_node(
     """Block until every client has established a libp2p connection
     to the boot-node, or the timeout elapses.
 
-    Why this and NOT `wait_for_relay_reservations`
-    -----------------------------------------------
+    Diagnostic-only — NOT the readiness gate
+    ----------------------------------------
 
-    The original intent was to gate readiness on
-    `ReservationReqAccepted` — the signal that the client has
-    successfully registered a circuit-relay-v2 reservation with the
-    boot-node. That's the signal you'd want once the relay path is
-    actually exercised end-to-end. But as of today, merod doesn't
-    auto-trigger a reservation when autonat reports a NAT'd
-    address: relay-reservation is gated behind the
-    `advertise_address` branch in `crates/network/src/discovery.rs`
-    (see calimero-network/core#2475). Without an advertised
-    external address, no reservation is ever requested — so the
-    smoke test would hang for 90s every run while the merod side
-    of the gap remains open.
+    This is a WEAKER signal than `wait_for_relay_reservations`:
+    it just asserts "topology infrastructure works" (route injection
+    + MASQUERADE + per-iface forwarding + bridge plumbing all
+    landed correctly), not "the relay path is alive end-to-end."
 
-    The connection-established signal IS reachable today: clients
-    successfully dial the boot-node through the NAT gateway, do a
-    yamux handshake, exchange Identify, and Calimero logs
-    "Connection established" at DEBUG. That proves the topology
-    infrastructure works end-to-end (route injection + NAT MASQUERADE
-    + per-iface forwarding + bridge plumbing).
+    Use cases:
+      * Debugging a workflow failure interactively, to confirm the
+        Docker plumbing is fine and the timeout is happening
+        further up the stack.
+      * Programmatic checks where the caller already accepts that
+        the relay-reservation flow is broken (e.g.,
+        calimero-network/core#2475 not yet shipped) and just wants
+        the L3 reachability assertion.
 
-    Once core#2475 lands, switch the executor's readiness gate from
-    `wait_for_clients_connected_to_boot_node` to
-    `wait_for_relay_reservations` (which we keep below for that
-    purpose) so the smoke test also asserts the relay path.
+    The executor's actual readiness gate uses the stricter
+    `wait_for_relay_reservations` — without it, the smoke test
+    would silently pass while the very bug it was built to expose
+    (the merod-side `advertise_address` gating from
+    core#2475) goes undetected.
 
     Returns True when every client has at least one matching
     "Connection established" line referring to the boot-node's peer
@@ -1086,11 +1081,16 @@ def wait_for_relay_reservations(
     (`apply_e2e_defaults`'s `RUST_LOG`), so the line lands in
     stdout without any extra config.
 
-    NOTE: this is currently NOT wired into the executor's readiness
-    gate — see `wait_for_clients_connected_to_boot_node` for why
-    (core#2475 gap). Once core ships the relay-reservation trigger,
-    swap the executor's call site to this function and the smoke
-    test will assert the strictly stronger property.
+    THIS is the executor's readiness gate. It currently times out
+    on every NAT-topology workflow run because merod's relay-
+    reservation flow is gated behind the `advertise_address` branch
+    in `crates/network/src/discovery.rs` (see core#2475). The
+    topology infrastructure is fully functional — clients reach
+    the boot-node, exchange Identify, autonat correctly reports
+    NAT'd — but no reservation is ever requested. The strict gate
+    here ensures the workflow surfaces that gap rather than
+    silently passing on a weaker assertion. Once core#2475 ships,
+    every run of this workflow goes green with no code change here.
 
     Returns True when every client has at least one Accepted; False
     on timeout. Caller decides whether to fail the workflow (CI
