@@ -29,6 +29,7 @@ Public entrypoints:
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import time
@@ -69,7 +70,21 @@ BOOT_NODE_IMAGE_TAG = "merobox/boot-node:local"
 # Alpine 3.19 is small (~7 MB) and ubiquitously cached; the `apk
 # add iptables iproute2` adds ~5 s on first run but is no worse
 # than the previous Docker build step would have been.
-GATEWAY_BASE_IMAGE = "alpine:3.19"
+#
+# Override via `MEROBOX_NAT_GATEWAY_IMAGE` if you want to pin to a
+# specific digest for reproducibility (recommended in production
+# CI):
+#
+#     docker pull alpine:3.19
+#     docker inspect alpine:3.19 --format '{{index .RepoDigests 0}}'
+#     export MEROBOX_NAT_GATEWAY_IMAGE=alpine@sha256:<digest>
+#
+# We default to the floating tag rather than baking a digest into
+# the source so we don't have to ship a merobox release every
+# time alpine gets a patch refresh, but the override is wired
+# through every call site (sidecars + gateway) so a single env
+# var is enough for full pinning.
+GATEWAY_BASE_IMAGE = os.environ.get("MEROBOX_NAT_GATEWAY_IMAGE", "alpine:3.19")
 
 # Default version of the boot-node binary baked into the boot-node
 # image. Bump in lockstep with the calimero-network/boot-node release
@@ -234,6 +249,38 @@ def _build_image_if_missing(
         if isinstance(chunk, dict) and "error" in chunk:
             raise RuntimeError(f"Failed to build {tag}: {chunk.get('error')}")
     console.print(f"[green]✓ Built {tag}[/green]")
+
+
+def _pull_image_if_missing(
+    client: docker.DockerClient,
+    tag: str,
+) -> None:
+    """Ensure a remote image is locally present, pulling on miss.
+
+    docker-py's `containers.create()` does NOT auto-pull (unlike
+    `containers.run()`, which does). When we use the create + start
+    sequence for containers that need pre-start network attachment,
+    a missing image surfaces as a 404 from the daemon mid-create.
+    Explicit pull avoids the 404 and gives a clean diagnostic on
+    actual fetch failure (network down, image moved, etc.).
+    """
+    try:
+        client.images.get(tag)
+        console.print(f"[cyan]✓ Image {tag} already present[/cyan]")
+        return
+    except docker.errors.NotFound:
+        pass
+
+    console.print(f"[yellow]Pulling {tag} (first-use)...[/yellow]")
+    try:
+        client.images.pull(tag)
+    except docker.errors.APIError as e:
+        raise RuntimeError(
+            f"Failed to pull image {tag!r}: {e}. "
+            f"Check Docker daemon connectivity and that the tag exists "
+            f"on its registry."
+        ) from e
+    console.print(f"[green]✓ Pulled {tag}[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -783,7 +830,8 @@ def _spawn_nat_gateway(
 
     Sequence:
         create (paused) → connect LAN with ipv4_address → start
-        → exec apk add → exec iptables MASQUERADE rule
+        → exec apk add → exec per-iface forwarding enable + eth1
+        verify → exec iptables MASQUERADE rule
 
     Attaching the LAN bridge BEFORE start means the container
     boots with both interfaces wired up; the IP is pre-assigned
@@ -884,6 +932,72 @@ def _spawn_nat_gateway(
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to apk add "
             f"iptables (exit {apk_ec}): {decoded}"
+        )
+
+    # Belt-and-suspenders per-interface forwarding enable.
+    # The create-time `default.forwarding=1` sysctl should make
+    # any interface attached after-the-fact inherit forwarding=1,
+    # but CI has empirically seen the inheritance race under load
+    # (eth1 ending up with forwarding=0 even though `default` is
+    # 1), which silently caused the kernel to drop forwarded
+    # packets and presented as cryptic ICMP "network unreachable"
+    # at the client. Walking the per-iface tree here — AFTER
+    # `container.start()` returned and AFTER the LAN-network
+    # attachment fully landed — guarantees every interface that
+    # actually exists has forwarding pinned to 1 regardless of
+    # what `default` was at attach-time.
+    #
+    # `2>/dev/null || true` per-file because /proc lists pseudo-
+    # interfaces (e.g. `all`, `default`) that are already covered
+    # by the sysctl and pre-existing entries that ignore writes.
+    fwd_ec, fwd_out = container.exec_run(
+        [
+            "sh",
+            "-c",
+            "for f in /proc/sys/net/ipv4/conf/*/forwarding; do "
+            "echo 1 > $f 2>/dev/null || true; done",
+        ],
+        demux=False,
+    )
+    if fwd_ec != 0:
+        # The `|| true` above means the script itself never exits
+        # non-zero, so a non-zero here means `sh` itself failed —
+        # worth surfacing rather than swallowing.
+        decoded = (
+            fwd_out.decode("utf-8", errors="replace")
+            if isinstance(fwd_out, bytes)
+            else str(fwd_out)
+        )
+        raise RuntimeError(
+            f"NAT gateway {container_name!r}: failed to enable "
+            f"per-interface forwarding (exit {fwd_ec}): {decoded}"
+        )
+
+    # Verify eth1 specifically — that's the interface the LAN
+    # bridge is attached to and the one that matters for the
+    # NAT-forwarding semantics this gateway exists to provide.
+    # If forwarding is off on eth1 despite the sysctl + loop
+    # above, MASQUERADE will install but packets will still be
+    # dropped; fail loudly here so the surfaced error points at
+    # the actual cause.
+    verify_ec, verify_out = container.exec_run(
+        ["cat", "/proc/sys/net/ipv4/conf/eth1/forwarding"],
+        demux=False,
+    )
+    verify_decoded = (
+        verify_out.decode("utf-8", errors="replace").strip()
+        if isinstance(verify_out, bytes)
+        else str(verify_out).strip()
+    )
+    if verify_ec != 0 or verify_decoded != "1":
+        raise RuntimeError(
+            f"NAT gateway {container_name!r}: eth1 forwarding is "
+            f"not enabled (read={verify_decoded!r}, exit "
+            f"{verify_ec}). This means the LAN bridge attachment "
+            f"either landed without inheriting the master "
+            f"forwarding sysctl OR a host-level `net.ipv4."
+            f"conf.eth1.forwarding=0` is overriding the "
+            f"container sysctl namespace."
         )
 
     # Install the MASQUERADE rule per `nat_mode`. For symmetric
@@ -1101,12 +1215,23 @@ def setup_nat_topology(
     if nat_mode not in ("cone", "symmetric"):
         raise ValueError(f"nat_mode must be 'cone' or 'symmetric', got {nat_mode!r}")
 
-    # Step 1: images. Only the boot-node image needs an explicit
-    # build/pull pass — the NAT-gateway role uses a stock
-    # `alpine:3.19` container that Docker will pull on first
-    # `containers.create()` call, and the iptables setup happens
-    # via `exec_run` from `_spawn_nat_gateway` (no Dockerfile
-    # bundling required).
+    # Step 1: images.
+    #
+    # boot-node: still built locally from the bundled Dockerfile
+    # for now (moving to a pre-built GHCR image is tracked
+    # separately). Skip the build if the operator passed an
+    # explicit image override.
+    #
+    # alpine: stock base for the nat-gateway role + the per-client
+    # default-route injection sidecars + the diagnostic-dump
+    # sidecars. We MUST pull it explicitly: docker-py's
+    # `containers.create()` (which `_spawn_nat_gateway` uses, so
+    # it can attach the LAN bridge BEFORE start) does NOT auto-pull
+    # on a missing image, unlike `containers.run()`. A missing
+    # alpine:3.19 on a fresh CI runner would surface as
+    # `404 Client Error ... No such image: alpine:3.19` from the
+    # daemon mid-create. Explicit pull at setup time gives a
+    # clean diagnostic if the registry is unreachable.
     boot_node_image = boot_node_image_override or BOOT_NODE_IMAGE_TAG
     if not boot_node_image_override:
         _build_image_if_missing(
@@ -1115,6 +1240,7 @@ def setup_nat_topology(
             BOOT_NODE_IMAGE_TAG,
             build_args={"BOOT_NODE_VERSION": DEFAULT_BOOT_NODE_VERSION},
         )
+    _pull_image_if_missing(client, GATEWAY_BASE_IMAGE)
 
     # Step 2: networks. Names are workflow-scoped so parallel
     # workflows don't clobber each other.
