@@ -1062,7 +1062,10 @@ class WorkflowExecutor:
         # shares the client's network namespace and brings its own
         # `ip` binary (the `merobox/nat-gateway:local` image, which
         # is already cached locally and already ships iproute2).
-        from merobox.topology.nat import inject_default_route_into_client
+        from merobox.topology.nat import (
+            inject_default_route_into_client,
+            wait_for_client_reachability,
+        )
 
         for i in range(count):
             node_name = f"{prefix}-{i + 1}"
@@ -1108,6 +1111,25 @@ class WorkflowExecutor:
                 console.print(
                     f"[red]❌ Could not route {node_name} through the NAT "
                     f"gateway: {e}[/red]"
+                )
+                return False
+            # Even with the route installed, the kernel's
+            # forwarding path (per-iface state, ARP cache, neighbour
+            # table) can take a second or two to settle on CI
+            # runners. Poll a TCP probe until the client can
+            # actually reach the boot-node before moving on —
+            # otherwise merod's libp2p stack races the warmup,
+            # caches an early peer-unreachable error in its
+            # address book, and never recovers within the 90s
+            # reservation window.
+            try:
+                wait_for_client_reachability(
+                    self.manager.client, self._nat_state, node_name
+                )
+            except RuntimeError as e:
+                console.print(
+                    f"[red]❌ {node_name} cannot reach the boot-node via "
+                    f"the NAT gateway: {e}[/red]"
                 )
                 return False
 

@@ -464,6 +464,108 @@ def inject_default_route_into_client(
     )
 
 
+# Max time to wait for the client's `nc -zv <boot-node>:4001` to
+# return "open" after the default-route injection. CI showed the
+# forwarding path settles intermittently — first probe sometimes
+# hits ICMP unreachable while ARP / forwarding state stabilises;
+# a second probe ~1-2s later succeeds. 20s is generous for a slow
+# CI runner without inflating the overall topology-setup budget.
+NAT_CONNECTIVITY_PROBE_TIMEOUT_SECONDS = 20
+NAT_CONNECTIVITY_PROBE_INTERVAL_SECONDS = 1.0
+
+
+def wait_for_client_reachability(
+    client: docker.DockerClient,
+    state: NatTopologyState,
+    client_container_name: str,
+    *,
+    timeout_seconds: float = NAT_CONNECTIVITY_PROBE_TIMEOUT_SECONDS,
+) -> None:
+    """Poll a TCP probe from the client to the boot-node until it
+    succeeds or `timeout_seconds` elapse.
+
+    Why
+    ---
+    `inject_default_route_into_client` returns as soon as the
+    sidecar's `ip route replace` exits, but the kernel's forwarding
+    path (per-iface forwarding, ARP cache, neighbour table) can
+    take an additional second or two to settle. CI observed roughly
+    1-in-3 retries where the first post-injection probe returned
+    EHOSTUNREACH (busybox-nc's instant "punt!"); a probe ~1s later
+    returned `open`. Without this polling step, merod inside the
+    client races the forwarding-path warmup and caches the early
+    failure as "peer unreachable" in its address book, never
+    actually getting a relay reservation in the 90s readiness
+    window.
+
+    Raises RuntimeError if the probe never succeeds within the
+    timeout — same shape as the other setup failures so the
+    executor's failure path handles it uniformly.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    last_output = "<no probe attempted yet>"
+    attempt = 0
+    console.print(
+        f"[yellow]Probing {client_container_name} → boot-node "
+        f"({state.boot_node_public_ip}:{BOOT_NODE_PORT}) until reachable "
+        f"(up to {timeout_seconds:.0f}s)...[/yellow]"
+    )
+    while time.monotonic() < deadline:
+        attempt += 1
+        try:
+            out = client.containers.run(
+                NAT_GATEWAY_IMAGE_TAG,
+                entrypoint=["sh", "-c"],
+                command=[
+                    f"timeout 2 nc -zv {state.boot_node_public_ip} "
+                    f"{BOOT_NODE_PORT} 2>&1"
+                ],
+                network_mode=f"container:{client_container_name}",
+                cap_add=["NET_ADMIN"],
+                remove=True,
+                detach=False,
+                stdout=True,
+                stderr=True,
+            )
+            last_output = (
+                out.decode("utf-8", errors="replace")
+                if isinstance(out, bytes)
+                else str(out)
+            )
+            # busybox nc -zv prints "<ip> (<ip>:<port>) open" on
+            # success. Any other output (including "punt!" on
+            # failure) means the probe didn't succeed.
+            if "open" in last_output.lower():
+                console.print(
+                    f"[green]✓ {client_container_name} reached boot-node "
+                    f"after {attempt} probe(s)[/green]"
+                )
+                return
+        except docker.errors.ContainerError as e:
+            # `nc` returns non-zero on connection failure; the
+            # docker-py wrapper raises ContainerError. That's the
+            # normal failure path here, not an exceptional one —
+            # capture the stderr and try again.
+            last_output = (
+                e.stderr.decode("utf-8", errors="replace")
+                if e.stderr
+                else f"<no stderr; exit {e.exit_status}>"
+            )
+        except docker.errors.APIError as e:
+            # Daemon-level error is unusual; surface it loudly.
+            raise RuntimeError(
+                f"Docker API error while probing {client_container_name} "
+                f"→ boot-node: {e}"
+            ) from e
+        time.sleep(NAT_CONNECTIVITY_PROBE_INTERVAL_SECONDS)
+    raise RuntimeError(
+        f"{client_container_name} could not reach the boot-node "
+        f"({state.boot_node_public_ip}:{BOOT_NODE_PORT}) within "
+        f"{timeout_seconds:.0f}s after {attempt} probe(s). "
+        f"Last probe output:\n{last_output}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Boot-node + gateway containers
 # ---------------------------------------------------------------------------
