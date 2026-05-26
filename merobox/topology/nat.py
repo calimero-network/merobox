@@ -1019,6 +1019,40 @@ def _dump_topology_diagnostics(
         )
     except Exception as e:
         console.print(f"[yellow]Failed to read gateway logs: {e}[/yellow]")
+    # Gateway runtime state: ip_forward sysctl value (the
+    # entrypoint's WARN-on-failure path can hide a 0), FORWARD
+    # chain hit counters (default policy + per-rule), iptables-save
+    # for a complete picture. exec_run is in the container's
+    # NETNS but a fresh process — captures the live state at
+    # diagnostic time, not just the startup snapshot.
+    try:
+        ec, out = state.nat_gateway_container.exec_run(
+            [
+                "sh",
+                "-c",
+                (
+                    "echo '--- ip_forward ---';"
+                    " cat /proc/sys/net/ipv4/ip_forward;"
+                    " echo '--- FORWARD chain ---';"
+                    " iptables -L FORWARD -nv;"
+                    " echo '--- nat table ---';"
+                    " iptables -t nat -L -nv;"
+                    " echo '--- iptables-save ---';"
+                    " iptables-save;"
+                    " echo '--- conntrack (best effort) ---';"
+                    " (conntrack -L 2>&1 | head -20)"
+                    "  || echo 'conntrack tool not installed in gateway image';"
+                ),
+            ],
+        )
+        decoded = (
+            out.decode("utf-8", errors="replace")
+            if isinstance(out, bytes)
+            else str(out)
+        )
+        console.print(f"[yellow]Gateway runtime state (exit {ec}):\n{decoded}[/yellow]")
+    except Exception as e:
+        console.print(f"[yellow]Failed to dump gateway runtime state: {e}[/yellow]")
     # Per-client routes (does the default route still point at the
     # gateway?). One-shot sidecar with shared netns, like the route
     # injection itself — except this one just reads.
@@ -1041,6 +1075,65 @@ def _dump_topology_diagnostics(
             console.print(f"[yellow]Client {name} netns state:\n{decoded}[/yellow]")
         except Exception as e:
             console.print(f"[yellow]Failed to dump {name} netns state: {e}[/yellow]")
+    # End-to-end connectivity probes. From INSIDE the gateway, can
+    # we reach the boot-node? (If not, gateway-side routing or
+    # bridge isolation is broken; nothing the client does can
+    # rescue this.) From INSIDE a client (via shared-netns sidecar),
+    # can we ping the gateway? Reach the boot-node?
+    try:
+        ec, out = state.nat_gateway_container.exec_run(
+            [
+                "sh",
+                "-c",
+                (
+                    f"echo '--- gw -> boot-node ({state.boot_node_public_ip}) ---';"
+                    f" (timeout 3 nc -zv {state.boot_node_public_ip} {BOOT_NODE_PORT}"
+                    "   2>&1 || true);"
+                    " echo '--- gw -> public bridge default gateway ---';"
+                    " (timeout 3 ping -c 1 -W 2 -I eth0 8.8.8.8 2>&1 | head -5 || true);"
+                ),
+            ],
+        )
+        decoded = (
+            out.decode("utf-8", errors="replace")
+            if isinstance(out, bytes)
+            else str(out)
+        )
+        console.print(
+            f"[yellow]Gateway → boot-node probe (exit {ec}):\n{decoded}[/yellow]"
+        )
+    except Exception as e:
+        console.print(f"[yellow]Gateway connectivity probe failed: {e}[/yellow]")
+    for name in state.client_names[:1]:  # first client is enough
+        try:
+            out = client.containers.run(
+                NAT_GATEWAY_IMAGE_TAG,
+                entrypoint=["sh", "-c"],
+                command=[
+                    (
+                        f"echo '--- client -> gateway ({state.gateway_lan_ip}) ---';"
+                        f" (timeout 3 ping -c 1 -W 2 {state.gateway_lan_ip} 2>&1"
+                        "   | head -5 || true);"
+                        f" echo '--- client -> boot-node ({state.boot_node_public_ip}) ---';"
+                        f" (timeout 3 nc -zv {state.boot_node_public_ip} {BOOT_NODE_PORT}"
+                        "   2>&1 || true);"
+                    ),
+                ],
+                network_mode=f"container:{name}",
+                cap_add=["NET_ADMIN"],
+                remove=True,
+                detach=False,
+                stdout=True,
+                stderr=True,
+            )
+            decoded = (
+                out.decode("utf-8", errors="replace") if isinstance(out, bytes) else out
+            )
+            console.print(
+                f"[yellow]Client {name} → boot-node probe:\n{decoded}[/yellow]"
+            )
+        except Exception as e:
+            console.print(f"[yellow]Client {name} probe failed: {e}[/yellow]")
     # Boot-node listening addresses — we want to see what merod's
     # libp2p stack is actually advertising. Looking for `/p2p/` and
     # `relay` in particular.
