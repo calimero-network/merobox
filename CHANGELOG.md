@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.23] - 2026-05-27
+
+### Added
+
+- `cascade` boolean field on the `upgrade_group` workflow step
+  (default `false`). When `true`, dispatches the same
+  `CascadeTargetApplicationSet` op as `cascade_namespace_application`
+  but lets the step accept an optional `migrate_method` for callers
+  that need cascade + per-context migration in a single step. Carries
+  the same `calimero-client-py >= 0.6.15` pre-flight guard the
+  dedicated cascade step uses, gated behind `cascade=true` so existing
+  non-cascade callers still work on older client-py installs.
+  Closes the gap that left
+  `workflows/app-migration/01-namespace-cascade-migration.yml` (in
+  `calimero-network/core`) silently dropping `cascade: true` and
+  failing on the server-side "no contexts to upgrade" check.
+
+## [0.6.22] - 2026-05-27
+
 ### Added
 
 - `workflow-examples/workflow-cascade-namespace-example.yml` — smoke
