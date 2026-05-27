@@ -18,9 +18,9 @@ from merobox.commands.bootstrap.config import (
 )
 from merobox.topology.nat import (
     BOOT_NODE_IMAGE_TAG,
-    NAT_GATEWAY_IMAGE_TAG,
     NatTopologyState,
     boot_node_bootstrap_multiaddrs,
+    gateway_base_image,
     slugify_workflow_name,
 )
 
@@ -125,15 +125,49 @@ def test_nat_topology_serialises_boot_node_keypair_path():
 # ---------------------------------------------------------------------------
 
 
-def test_default_image_tags_are_local_namespaced():
-    """Both bundled images live under the `merobox/` prefix so an
-    accidental rebuild can't clobber a third-party image with the
-    same short name."""
-    for tag in (BOOT_NODE_IMAGE_TAG, NAT_GATEWAY_IMAGE_TAG):
-        assert tag.startswith("merobox/"), tag
-        # `:local` makes it obvious to operators that these are
-        # locally-built / not a published registry image.
-        assert tag.endswith(":local"), tag
+def test_boot_node_image_tag_is_ghcr_pull():
+    """The boot-node image is pulled from
+    `ghcr.io/calimero-network/boot-node` — the registry tag
+    published by the boot-node repo's `release.yml`. We pin the
+    `:edge` tag specifically (mirroring how merobox pulls
+    `ghcr.io/calimero-network/merod:edge` for clients), so a
+    fresh boot-node release flows through to merobox without a
+    merobox-side bump. If the constant ever drifts off the GHCR
+    namespace we catch it here rather than at first-pull (which
+    would 404 mid-`setup_nat_topology` instead of failing fast
+    in the unit suite)."""
+    assert BOOT_NODE_IMAGE_TAG.startswith("ghcr.io/calimero-network/boot-node")
+    assert BOOT_NODE_IMAGE_TAG.endswith(":edge")
+
+
+def test_gateway_base_image_default_is_stock_alpine(monkeypatch):
+    """The NAT-gateway role uses a stock alpine image with
+    iptables installed inline via `apk add` at first run — NOT
+    a wrapper image with a bundled Dockerfile. Bundling broke
+    under PyInstaller (non-`.py` files weren't included in the
+    frozen binary); inlining the iptables setup via `exec_run`
+    sidesteps the bundling problem entirely.
+
+    With the `MEROBOX_NAT_GATEWAY_IMAGE` env override, a CI that
+    wants a digest-pinned image can opt into one without a
+    merobox release; this test asserts the DEFAULT (no env var)
+    stays on `alpine:3.19` so a future bump is a deliberate
+    source-level change rather than an accidental drift.
+    """
+    monkeypatch.delenv("MEROBOX_NAT_GATEWAY_IMAGE", raising=False)
+    assert gateway_base_image() == "alpine:3.19"
+
+
+def test_gateway_base_image_env_override(monkeypatch):
+    """`MEROBOX_NAT_GATEWAY_IMAGE` lets CI pin to a digest
+    (e.g. `alpine@sha256:<digest>`) without shipping a merobox
+    release. The override is resolved per-call rather than at
+    module-import, so monkeypatch alone is enough — no
+    `importlib.reload` dance, and the override stays scoped to
+    this test by pytest's monkeypatch cleanup."""
+    pinned = "alpine@sha256:" + "0" * 64
+    monkeypatch.setenv("MEROBOX_NAT_GATEWAY_IMAGE", pinned)
+    assert gateway_base_image() == pinned
 
 
 # ---------------------------------------------------------------------------
@@ -427,14 +461,15 @@ def test_inject_default_route_spawns_sidecar_with_expected_shape():
     client.containers.run.assert_called_once()
     _, kwargs = client.containers.run.call_args
     args = client.containers.run.call_args.args
-    # Image must be the nat-gateway image — it's the only one we
-    # know ships iproute2 + is already cached locally.
-    assert args[0] == NAT_GATEWAY_IMAGE_TAG
-    # The nat-gateway image has an ENTRYPOINT that runs
-    # `sysctl -w net.ipv4.ip_forward=1` (fine for the gateway role,
-    # fatal in a shared-netns sidecar where /proc/sys is RO). The
-    # sidecar MUST override entrypoint+command so it skips the
-    # image's gateway-init path and does ONLY the route install.
+    # Image must be the stock alpine base — we install iproute2
+    # inline via apk inside the sidecar's command, rather than
+    # depending on a wrapper image that bundles a Dockerfile (which
+    # broke under PyInstaller frozen builds because non-`.py`
+    # files aren't bundled by default).
+    assert args[0] == gateway_base_image()
+    # Stock alpine has no ENTRYPOINT we'd need to override, but
+    # we still pass `sh -c` because the command is a multi-step
+    # script (apk add + ip route replace + verification grep).
     assert kwargs["entrypoint"] == ["sh", "-c"]
     # Command shape: `set -e; ip route replace; ip route show |
     # grep`. The trailing grep is the "did the route actually
@@ -445,6 +480,11 @@ def test_inject_default_route_spawns_sidecar_with_expected_shape():
     assert len(kwargs["command"]) == 1
     cmd = kwargs["command"][0]
     assert "set -e" in cmd
+    # Inline iproute2 install — stock alpine ships busybox `ip`
+    # but its output format differs from iproute2's, and the
+    # downstream `ip route show default | awk | grep` parse
+    # depends on the iproute2 shape.
+    assert "apk add --no-cache iproute2" in cmd
     # shlex.quote on a plain IP returns it unchanged (no shell-meta
     # chars), but the wrapper still calls it so a future override
     # with a hostname containing spaces would be safely quoted.
@@ -497,7 +537,7 @@ def test_inject_default_route_raises_with_sidecar_stderr_on_container_error():
         container=MagicMock(),
         exit_status=2,
         command="ip route replace default via 10.0.0.1",
-        image=NAT_GATEWAY_IMAGE_TAG,
+        image=gateway_base_image(),
         stderr=b"RTNETLINK answers: Network is unreachable",
     )
 

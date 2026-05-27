@@ -29,11 +29,11 @@ Public entrypoints:
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import docker
 import docker.errors
@@ -45,25 +45,107 @@ from merobox.commands.utils import console
 # ---------------------------------------------------------------------------
 # Image identifiers
 # ---------------------------------------------------------------------------
+
+# The boot-node image is pulled from GHCR. The
+# calimero-network/boot-node repo's `release.yml` publishes a
+# multi-arch image (linux/amd64 + linux/arm64) on every version
+# bump, with three tags per release:
 #
-# Images are built on first use from the Dockerfiles in
-# `merobox/topology/images/<name>/`. Once built they're cached locally
-# as `merobox/<name>:local` so subsequent runs skip the build entirely.
-# Operators can also build + tag them out-of-band and the build will
-# short-circuit.
+#     ghcr.io/calimero-network/boot-node:<version>   (immutable)
+#     ghcr.io/calimero-network/boot-node:latest
+#     ghcr.io/calimero-network/boot-node:edge        (← what we pin)
+#
+# Pinning `:edge` mirrors how merobox already pulls
+# `ghcr.io/calimero-network/merod:edge` for client containers —
+# the test-topology always tracks the most recent published
+# release rather than an arbitrary historical pin. If a workflow
+# needs a specific release for reproducibility it can override
+# via `topology.boot_node.image` (see
+# `boot_node_image_override` plumbing in `setup_nat_topology`).
+#
+# The previous incarnation built `merobox/boot-node:local` from a
+# bundled `merobox/topology/images/boot-node/Dockerfile` at
+# first-use. That broke under PyInstaller frozen builds (non-`.py`
+# files aren't bundled by default), and was already on the
+# "retire and pull from GHCR" list before this PR. Now retired:
+# the bundled Dockerfile is gone, the build helper is gone, and
+# this constant points straight at the pull tag.
+BOOT_NODE_IMAGE_TAG = "ghcr.io/calimero-network/boot-node:edge"
 
-BOOT_NODE_IMAGE_TAG = "merobox/boot-node:local"
-NAT_GATEWAY_IMAGE_TAG = "merobox/nat-gateway:local"
+# The NAT-gateway container is a stock Alpine container with
+# iptables + iproute2 added at first-run via `apk add` against the
+# already-pulled image. We deliberately do NOT ship a wrapper image
+# for this role:
+#   * The previous incarnation built a `merobox/nat-gateway:local`
+#     image from a bundled Dockerfile, which broke under PyInstaller
+#     frozen builds because non-`.py` files aren't bundled by
+#     default.
+#   * The actual work the wrapper did (sysctl, iptables, sleep) is
+#     three subprocess calls that we issue via `exec_run` from the
+#     Python side in `_spawn_nat_gateway`. No image-build step, no
+#     Dockerfile to maintain.
+# Alpine 3.19 is small (~7 MB) and ubiquitously cached; the `apk
+# add iptables iproute2` adds ~5 s on first run but is no worse
+# than the previous Docker build step would have been.
+#
+# Tradeoff worth flagging: the inlined-gateway design swaps a
+# build-time package install (baked into the wrapper image) for a
+# RUNTIME `apk add` against Alpine's package mirrors. Air-gapped
+# CI runners or environments where the upstream mirror is blocked
+# will fail at the `apk add` step in `_spawn_nat_gateway` with a
+# diagnostic that points at this comment. Mitigations, in order
+# of escalation: (a) prewarm the gateway image with iptables /
+# ip6tables / iproute2 already installed (`docker run --rm
+# alpine:3.19 apk add --no-cache iptables ip6tables iproute2 &&
+# docker commit ...`), then point `MEROBOX_NAT_GATEWAY_IMAGE` at
+# the prewarmed image, (b) point apk at an internal mirror via
+# an override image whose `/etc/apk/repositories` lists it, or
+# (c) publish a `merobox-nat-gateway` image and pin
+# `MEROBOX_NAT_GATEWAY_IMAGE` to it. We don't ship (c) by
+# default because it would re-introduce the bundled-image
+# pattern that this PR exists to retire.
+#
+# Override via `MEROBOX_NAT_GATEWAY_IMAGE` if you want to pin to a
+# specific digest for reproducibility (recommended in production
+# CI):
+#
+#     docker pull alpine:3.19
+#     docker inspect alpine:3.19 --format '{{index .RepoDigests 0}}'
+#     export MEROBOX_NAT_GATEWAY_IMAGE=alpine@sha256:<digest>
+#
+# We default to the floating tag rather than baking a digest into
+# the source so we don't have to ship a merobox release every
+# time alpine gets a patch refresh, but the override is wired
+# through every call site (sidecars + gateway) so a single env
+# var is enough for full pinning.
+#
+# Resolved lazily (per-call rather than at module-import) so the
+# env var can be set AFTER the module is imported — important
+# for both the test suite (no `importlib.reload` dance needed)
+# and operator workflows that import merobox as a library and
+# then configure env from a settings file before spawning a
+# topology. The default branch is hot-path only on a missed env
+# lookup, so the per-call cost is negligible.
+_GATEWAY_DEFAULT_IMAGE = "alpine:3.19"
 
-# Default version of the boot-node binary baked into the boot-node
-# image. Bump in lockstep with the calimero-network/boot-node release
-# that's also deployed to the devnet, so test behaviour matches what
-# real clients see. Override per-workflow via
-# `topology.boot_node.image` if a specific build is required.
-DEFAULT_BOOT_NODE_VERSION = "0.8.0"
 
-# Boot-node's `--port` default. The image's Dockerfile EXPOSEs the
-# same value; if you bump this, change both.
+def gateway_base_image() -> str:
+    """Image to use for the NAT-gateway role and its sidecars.
+
+    Honors the `MEROBOX_NAT_GATEWAY_IMAGE` env var at call-time,
+    so tests can flip the override without reloading the module
+    and operators can set it after import. See the comment above
+    `_GATEWAY_DEFAULT_IMAGE` for the rationale.
+    """
+    return os.environ.get("MEROBOX_NAT_GATEWAY_IMAGE", _GATEWAY_DEFAULT_IMAGE)
+
+
+# Boot-node's `--port` default. The published image's Dockerfile
+# EXPOSEs the same value; if upstream bumps this, change both. We
+# don't pin a binary version here anymore — the `:edge` tag of the
+# published image always tracks the latest boot-node release, and
+# workflows that need a specific release override
+# `BOOT_NODE_IMAGE_TAG` directly via `topology.boot_node.image`.
 BOOT_NODE_PORT = 4001
 
 
@@ -155,28 +237,22 @@ class NatTopologyState:
 
 
 # ---------------------------------------------------------------------------
-# Image building
+# Image pulling
 # ---------------------------------------------------------------------------
 
 
-def _images_root() -> Path:
-    """Path to the bundled `merobox/topology/images/` directory."""
-    return Path(__file__).parent / "images"
-
-
-def _build_image_if_missing(
+def _pull_image_if_missing(
     client: docker.DockerClient,
-    image_subdir: str,
     tag: str,
-    build_args: dict[str, str] | None = None,
 ) -> None:
-    """Ensure the named image exists locally, building it from the
-    bundled Dockerfile if not.
+    """Ensure a remote image is locally present, pulling on miss.
 
-    A pre-existing tag (built out-of-band, or left over from a prior
-    workflow run) is treated as authoritative — we don't rebuild on
-    every workflow start. To force a rebuild, `docker rmi <tag>` and
-    re-run.
+    docker-py's `containers.create()` does NOT auto-pull (unlike
+    `containers.run()`, which does). When we use the create + start
+    sequence for containers that need pre-start network attachment,
+    a missing image surfaces as a 404 from the daemon mid-create.
+    Explicit pull avoids the 404 and gives a clean diagnostic on
+    actual fetch failure (network down, image moved, etc.).
     """
     try:
         client.images.get(tag)
@@ -185,39 +261,16 @@ def _build_image_if_missing(
     except docker.errors.NotFound:
         pass
 
-    dockerfile_dir = _images_root() / image_subdir
-    if not (dockerfile_dir / "Dockerfile").exists():
+    console.print(f"[yellow]Pulling {tag} (first-use)...[/yellow]")
+    try:
+        client.images.pull(tag)
+    except docker.errors.APIError as e:
         raise RuntimeError(
-            f"No Dockerfile at {dockerfile_dir}. The merobox install "
-            f"is incomplete — reinstall the package."
-        )
-
-    console.print(
-        f"[yellow]Building {tag} from {dockerfile_dir} "
-        f"(first-use, future runs reuse the cached image)...[/yellow]"
-    )
-    # `client.images.build()` returns `(image, build_log_generator)`.
-    # The generator yields already-parsed JSON dicts from the build
-    # stream (docker-py handles `decode=True` for us on this
-    # high-level API — `decode=True` is only an explicit kwarg on
-    # the lower-level `client.api.build`). We iterate the generator
-    # to (a) drive the build to completion (it's lazy) and (b) trap
-    # `{"error": …}` chunks so a failed layer surfaces as a Python
-    # exception rather than as a phantom-success that fails later
-    # when the missing image is needed.
-    _image, build_logs = client.images.build(
-        path=str(dockerfile_dir),
-        tag=tag,
-        buildargs=build_args or {},
-        rm=True,
-        forcerm=True,
-        # Older Docker versions error if buildkit isn't enabled and
-        # `--platform` is set; we let Docker pick the platform.
-    )
-    for chunk in build_logs:
-        if isinstance(chunk, dict) and "error" in chunk:
-            raise RuntimeError(f"Failed to build {tag}: {chunk.get('error')}")
-    console.print(f"[green]✓ Built {tag}[/green]")
+            f"Failed to pull image {tag!r}: {e}. "
+            f"Check Docker daemon connectivity and that the tag exists "
+            f"on its registry."
+        ) from e
+    console.print(f"[green]✓ Pulled {tag}[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -352,10 +405,9 @@ def _ensure_network(
 #
 # Implementation: spawn a one-shot privileged sidecar that shares the
 # client's network namespace (``--network container:<client>`` +
-# ``CAP_NET_ADMIN``) and runs ``ip route replace``. Reuses the bundled
-# ``merobox/nat-gateway:local`` image — it's already built locally and
-# already ships iproute2 — so no extra image is needed and the stock
-# merod container doesn't have to be rebuilt with iproute2 inside.
+# ``CAP_NET_ADMIN``) and runs ``ip route replace``. Uses a stock
+# ``alpine:3.19`` image with iproute2 installed inline via ``apk``;
+# the merod container itself doesn't need iproute2 inside.
 #
 # Why this replaces the earlier host-iptables approach
 # ----------------------------------------------------
@@ -396,11 +448,13 @@ def inject_default_route_into_client(
 
     Implementation: a one-shot privileged sidecar sharing the
     client's netns runs `ip route replace`. The sidecar image is
-    `merobox/nat-gateway:local` because it's already built locally,
-    already in the image cache, and already ships iproute2. The
-    sidecar exits as soon as the route replace returns; no
-    long-running process, no port collision concern, no rebuild of
-    the merod image with iproute2.
+    `alpine:3.19` (the same image we use for the NAT gateway
+    role); `iproute2` is installed inline via `apk` because the
+    busybox `ip` shipped with stock alpine has subtly different
+    output formatting for `ip route show`. The sidecar exits as
+    soon as the route replace + verification grep return; no
+    long-running process, no port collision concern, no merod
+    image rebuild.
 
     Raises ``RuntimeError`` if the sidecar fails — silent fallback
     here would produce a workflow that LOOKS like it's exercising
@@ -436,38 +490,37 @@ def inject_default_route_into_client(
         ) from e
     try:
         client.containers.run(
-            NAT_GATEWAY_IMAGE_TAG,
-            # Override the image's ENTRYPOINT. The nat-gateway image
-            # ships an ENTRYPOINT script that runs `sysctl -w
-            # net.ipv4.ip_forward=1` + installs iptables MASQUERADE
-            # — fine when the container plays the gateway role with
-            # its OWN netns, but fatal in this sidecar context where
-            # we share the client's netns (sysctl errors with
-            # `Read-only file system` and we never get to the route
-            # install). Passing a fresh entrypoint+command pair
-            # makes the sidecar do exactly one thing: install the
-            # default route, then exit.
+            gateway_base_image(),
+            # Stock alpine has busybox's limited `ip` command but no
+            # iproute2 — `ip route replace` works either way (busybox
+            # `ip` is sufficient for adding a default route), but we
+            # also need to VERIFY the route landed via `ip route
+            # show default | grep`, and busybox `ip route show` is
+            # subtly different in output format. Install iproute2
+            # explicitly so the route-install + verification both
+            # use the canonical `ip` binary. Adds ~3s per sidecar
+            # invocation for the apk fetch; acceptable for the
+            # one-shot topology-setup phase.
             entrypoint=["sh", "-c"],
-            # `set -e` + an explicit verification step after the route
-            # install. `ip route replace` is broadcasting-friendly —
-            # it returns 0 even for malformed targets that the kernel
-            # silently rejects, so we follow up with `ip route show
-            # default` and grep for the expected gateway. If the
-            # route really did land, the grep matches and the
-            # sidecar exits 0; if it didn't, grep exits 1 and the
-            # outer ContainerError surfaces a useful error.
+            # `set -e` + apk install + route replace + explicit
+            # verification step. `ip route replace` is broadcasting-
+            # friendly — it returns 0 even for malformed targets
+            # that the kernel silently rejects, so we follow up
+            # with `ip route show default` and grep for the
+            # expected gateway. If the route really did land, the
+            # grep matches and the sidecar exits 0; if it didn't,
+            # grep exits 1 and the outer ContainerError surfaces
+            # a useful error.
             #
             # `grep -F` (fixed-string mode) is important: the
             # gateway IP contains `.` characters which are regex
             # metacharacters in default grep mode. Without `-F`,
             # the pattern `172.30.0.99` would also match
             # `172X30X0X99` — false positives that could mask a
-            # real route-install failure. The match is anchored to
-            # the start of the line via `--regexp` because `-F`
-            # disables the `^` anchor; instead we test the prefix
-            # via cut + string-equal.
+            # real route-install failure.
             command=[
                 f"set -e; "
+                f"apk add --no-cache iproute2 > /dev/null; "
                 f"ip route replace default via {shlex.quote(gateway_lan_ip)}; "
                 f"ip route show default "
                 f"| awk '{{print $1, $2, $3}}' "
@@ -565,7 +618,11 @@ def wait_for_client_reachability(
         attempt += 1
         try:
             out = client.containers.run(
-                NAT_GATEWAY_IMAGE_TAG,
+                gateway_base_image(),
+                # Alpine's busybox already ships `nc` and `timeout`,
+                # so we don't need any extra package install for
+                # this probe. `nc -zv` keeps the "<ip> (<ip>:<port>)
+                # open" output shape we match on below.
                 entrypoint=["sh", "-c"],
                 command=[f"timeout 2 nc -zv {safe_ip} {safe_port} 2>&1"],
                 network_mode=f"container:{client_container_name}",
@@ -733,9 +790,75 @@ def _pick_gateway_lan_ip(lan_network: docker.models.networks.Network) -> str:
     return str(network.network_address + 2)
 
 
+def _destroy_half_spawned_gateway(
+    container: docker.models.containers.Container,
+    public_network: docker.models.networks.Network,
+    lan_network: docker.models.networks.Network,
+) -> None:
+    """Tear down a partially-set-up NAT gateway container.
+
+    Used when an exec step inside `_spawn_nat_gateway` (`apk add`,
+    per-interface forwarding, eth1 verify, or iptables) fails: the
+    container is up (`sleep infinity`) and wired to both bridges,
+    but doesn't have the NAT semantics the caller needs. Leaving
+    it running would (a) burn a container slot on the runner, (b)
+    block future `_ensure_network` calls from removing/recreating
+    the two networks (Docker refuses to remove a network with an
+    attached endpoint), and (c) make the surfaced RuntimeError
+    actionable only after the user manually `docker rm`-s.
+
+    Disconnect-then-remove rather than just `remove(force=True)`:
+    while `remove(force=True)` is supposed to disconnect on its
+    own, a daemon hiccup can leave the network with a dangling
+    endpoint even after the container record is gone. Explicit
+    disconnect is cheap insurance — if it fails we still try the
+    remove. Every step is best-effort; nothing propagates past
+    this function (the caller already has the original
+    RuntimeError it wants to surface).
+    """
+    container_name = getattr(container, "name", "<unknown>")
+    for network in (public_network, lan_network):
+        try:
+            network.disconnect(container, force=True)
+        except Exception as disconnect_exc:
+            # `force=True` makes disconnect tolerate
+            # "endpoint not found" style errors, but a daemon
+            # outage can still raise — log and keep going.
+            console.print(
+                f"[yellow]NAT gateway {container_name!r}: "
+                f"disconnect from {network.name!r} failed: "
+                f"{disconnect_exc}[/yellow]"
+            )
+    try:
+        container.remove(force=True)
+    except Exception as cleanup_exc:
+        console.print(
+            f"[yellow]NAT gateway {container_name!r}: "
+            f"remove failed after partial-spawn cleanup: "
+            f"{cleanup_exc}[/yellow]"
+        )
+
+
+def _decode_exec_output(output: bytes | str | None) -> str:
+    """Normalize `container.exec_run(...)` output for error strings.
+
+    With `demux=False`, docker-py returns either bytes (stdout +
+    stderr combined) or None (no output emitted, e.g. for a
+    silently-failing exec). The naive `output.decode()` raises
+    on None; the naive `str(output)` would surface the literal
+    string `'None'` in our error messages. This helper picks the
+    right branch and substitutes a clearer sentinel when output
+    is missing.
+    """
+    if output is None:
+        return "<no output>"
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return str(output)
+
+
 def _spawn_nat_gateway(
     client: docker.DockerClient,
-    image: str,
     public_network: docker.models.networks.Network,
     lan_network: docker.models.networks.Network,
     nat_mode: str,
@@ -743,21 +866,36 @@ def _spawn_nat_gateway(
 ) -> tuple[docker.models.containers.Container, str]:
     """Start the NAT-gateway container straddling both bridges.
 
-    Returns the container handle AND its LAN-side IP. The IP is
-    pre-assigned via `ipv4_address=` at connect-time rather than
-    read back from `container.attrs`, because docker-py / dockerd
-    asynchronously populate the per-network `IPAddress` field
-    after `network.connect()` and CI observed that field staying
-    empty for >30s on the second-network attachment (sometimes
-    never inside our budget). Specifying the IP eliminates the
-    race: we already know what we asked for.
+    Returns the container handle AND its LAN-side IP.
+
+    The gateway is just a stock `alpine:3.19` container with
+    iptables + iproute2 added via `apk` at first-run; we
+    deliberately do NOT ship our own image for this role anymore.
+    The previous incarnation built a `merobox/nat-gateway:local`
+    image from a bundled Dockerfile + entrypoint script, but:
+
+      * The Dockerfile-bundling approach breaks under PyInstaller
+        frozen builds (the merobox CLI ships as a single binary
+        on releases; non-`.py` files would need explicit
+        `--add-data` entries in the .spec, which adds maintenance
+        for what's essentially a 50-line bash wrapper).
+      * The actual work the wrapper did (sysctl, iptables, then
+        sleep) is just three subprocess calls that we can issue
+        from the merobox Python side via `exec_run` against a
+        stock alpine container — no image-build step, no
+        Dockerfile to maintain, no PyInstaller bundling concern.
 
     Sequence:
         create (paused) → connect LAN with ipv4_address → start
+        → exec apk add → exec per-iface forwarding enable + eth1
+        verify → exec iptables MASQUERADE rule
 
     Attaching the LAN bridge BEFORE start means the container
-    boots with both interfaces wired up. CAP_NET_ADMIN is required
-    for the container's internal iptables MASQUERADE setup.
+    boots with both interfaces wired up; the IP is pre-assigned
+    via `ipv4_address=` to bypass docker-py's async
+    IPAM-population path (which CI saw take >30s on second-
+    network attachments). CAP_NET_ADMIN is required for the
+    in-container iptables + sysctl writes.
     """
     container_name = f"{workflow_name}-nat-gateway"
     try:
@@ -775,43 +913,47 @@ def _spawn_nat_gateway(
         f"(mode={nat_mode}, lan_ip={gateway_lan_ip})[/yellow]"
     )
     container = client.containers.create(
-        image=image,
+        image=gateway_base_image(),
         name=container_name,
         network=public_network.name,
+        # `sleep infinity` keeps the container alive while we
+        # exec_run the apk + iptables setup. Equivalent to the
+        # old entrypoint's `tail -f /dev/null` but uses
+        # busybox-sleep so we don't depend on /dev/null being
+        # writable.
+        command=["sleep", "infinity"],
+        # Force-clear any ENTRYPOINT the image declares. Stock
+        # alpine has none, but `MEROBOX_NAT_GATEWAY_IMAGE` lets
+        # operators swap in any image, and an image with
+        # `ENTRYPOINT ["something"]` would silently turn our
+        # `command` into arguments to that entrypoint rather
+        # than the process we actually want to run. Passing the
+        # empty-list explicit clear (Docker idiom: `--entrypoint=""`
+        # on the CLI) makes the `command=` above authoritative
+        # regardless of what the image declares.
+        entrypoint=[],
         labels={
             "merobox.role": "nat-gateway",
             "merobox.workflow": workflow_name,
         },
-        environment={
-            "NAT_MODE": nat_mode,
-            # PUBLIC_IFACE: by the order networks were attached at
-            # create+connect time, the public bridge becomes eth0
-            # and the LAN bridge becomes eth1. The container's
-            # entrypoint defaults to eth0 too, but we set it
-            # explicitly to make the contract visible.
-            "PUBLIC_IFACE": "eth0",
-        },
         # `net.ipv4.ip_forward=1` is the master switch, but Linux
         # also requires PER-INTERFACE forwarding to be enabled on
         # the input interface (`net.ipv4.conf.<iface>.forwarding`).
-        # Per-iface flags inherit from `default.forwarding` AT the
-        # moment the interface is attached — and for the LAN-side
-        # eth1 added via `network.connect()` post-create, the
-        # inheritance was timing-dependent enough that CI saw
-        # eth1.forwarding=0 even with the master switch set, which
-        # makes the kernel return ICMP "network unreachable" to
-        # clients (the immediate `punt!` from `nc` we diagnosed).
-        # Setting BOTH master + default at create-time pins the
-        # inheritance for any interface attached afterwards. The
-        # entrypoint also writes every present per-iface flag in
-        # a loop, as a belt-and-suspenders fallback.
+        # Per-iface flags inherit from `default.forwarding` AT
+        # the moment the interface is attached — and for the
+        # LAN-side eth1 added via `network.connect()`
+        # post-create, the inheritance was timing-dependent
+        # enough that CI saw eth1.forwarding=0 even with the
+        # master switch set, which makes the kernel return ICMP
+        # "network unreachable" to clients. Setting BOTH master
+        # + default at create-time pins the inheritance for any
+        # interface attached afterwards.
         sysctls={
             "net.ipv4.ip_forward": "1",
             "net.ipv4.conf.all.forwarding": "1",
             "net.ipv4.conf.default.forwarding": "1",
         },
-        # iptables + sysctl ip_forward both need NET_ADMIN. The
-        # rest of the container is otherwise unprivileged.
+        # iptables + sysctl ip_forward both need NET_ADMIN.
         cap_add=["NET_ADMIN"],
         detach=True,
     )
@@ -819,28 +961,201 @@ def _spawn_nat_gateway(
     # eliminates the IPAM-population race entirely.
     lan_network.connect(container, ipv4_address=gateway_lan_ip)
     container.start()
-    # Reload so subsequent reads of `container.attrs` see both
-    # network entries. Doesn't matter for the LAN IP (we already
-    # know it) but useful for diagnostics.
     container.reload()
-    # Sanity-check: gateway must actually be running. If the
-    # entrypoint exited (e.g., MASQUERADE install failed), the
-    # whole topology is broken downstream — clients would dial
-    # through a dead gateway and get EHOSTUNREACH. Fail loudly
-    # here instead.
+
+    # Sanity-check container is up before we exec_run into it.
     status = container.attrs.get("State", {}).get("Status", "unknown")
     if status != "running":
-        # Pull the entrypoint's stderr into the exception so the
-        # operator can see WHY the gateway died.
         try:
             tail = container.logs(tail=200).decode("utf-8", errors="replace")
         except Exception:
             tail = "<could not read gateway logs>"
+        image_in_use = gateway_base_image()
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
         raise RuntimeError(
             f"NAT gateway container {container_name!r} exited "
-            f"during startup (status={status!r}); its entrypoint "
-            f"failed. Logs:\n{tail}"
+            f"during startup (status={status!r}, "
+            f"image={image_in_use!r}). If this is a non-default "
+            f"`MEROBOX_NAT_GATEWAY_IMAGE`, check whether the "
+            f"override image's ENTRYPOINT/CMD shape lets our "
+            f"`sleep infinity` actually run — stock alpine has "
+            f"no ENTRYPOINT so this is implicit; we also pass "
+            f"`entrypoint=[]` to clear any declared ENTRYPOINT, "
+            f"but an image whose binary at `entrypoint=[]` "
+            f"resolution fails (e.g. wrong arch) would still "
+            f"exit here. Logs:\n{tail}"
         )
+
+    # Install iptables + iproute2 inside the running container.
+    # Alpine's busybox ships a `ip` command, but its iptables
+    # subset is minimal and lacks `--random-fully` (needed for
+    # the symmetric NAT mode). Pulling iproute2 explicitly so
+    # the diagnostic dumps later (`ip route`, `ip link`, etc.)
+    # work consistently across both modes.
+    apk_cmd = [
+        "apk",
+        "add",
+        "--no-cache",
+        "iptables",
+        "ip6tables",
+        "iproute2",
+    ]
+    # Interface-name invariant.
+    # The exec steps below (per-iface forwarding loop, eth1
+    # verify, iptables `-o eth0`) assume Docker named the public
+    # network `eth0` and the LAN network `eth1`. For bridge
+    # networks under the default Linux kernel netdev driver this
+    # is universal: `eth0` is the first network attached at
+    # `containers.create(network=...)` time, `eth1` is the
+    # second attached via `network.connect(...)` before start.
+    # That ordering is what _this function_ does, deterministically,
+    # so the invariant holds for every gateway we spawn. If a
+    # future Docker engine or non-bridge driver renames interfaces,
+    # the eth1-forwarding verify step below will fail with a
+    # clear `read=''` error rather than silently MASQUERADE-ing
+    # off the wrong interface. We deliberately do NOT resolve
+    # interfaces dynamically (via MAC-match against container
+    # attrs) — the added complexity buys nothing for the bridge-
+    # driver case that's the only one merobox supports today.
+    apk_ec, apk_out = container.exec_run(apk_cmd, demux=False)
+    if apk_ec != 0:
+        decoded = _decode_exec_output(apk_out)
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
+        # Most `apk add` failures in this path are network-shaped:
+        # the inlined-gateway design (see the comment above
+        # `_GATEWAY_DEFAULT_IMAGE`) trades build-time image bloat
+        # for a runtime Alpine-mirror dependency at first spawn.
+        # If CI is running in an air-gapped or offline-rerun
+        # environment, the path forward is to either (a) prewarm
+        # the runner with `docker run --rm <image> apk add
+        # --no-cache iptables ip6tables iproute2` before the
+        # workflow, (b) point apk at an internal mirror via the
+        # `MEROBOX_NAT_GATEWAY_IMAGE` override (an image with
+        # mirrors baked into `/etc/apk/repositories`), or (c)
+        # publish a `merobox-nat-gateway` image and pin it. We
+        # surface the hint here so an operator's first
+        # diagnostic doesn't require finding this comment.
+        raise RuntimeError(
+            f"NAT gateway {container_name!r}: failed to apk add "
+            f"iptables (exit {apk_ec}): {decoded}.\n"
+            f"This step requires reachable Alpine package "
+            f"mirrors at workflow-start time. On offline or "
+            f"air-gapped CI: prewarm the gateway image with "
+            f"iptables/iproute2 installed, or set "
+            f"MEROBOX_NAT_GATEWAY_IMAGE to a custom image with "
+            f"`/etc/apk/repositories` pointing at an internal "
+            f"mirror."
+        )
+
+    # Belt-and-suspenders per-interface forwarding enable.
+    # The create-time `default.forwarding=1` sysctl should make
+    # any interface attached after-the-fact inherit forwarding=1,
+    # but CI has empirically seen the inheritance race under load
+    # (eth1 ending up with forwarding=0 even though `default` is
+    # 1), which silently caused the kernel to drop forwarded
+    # packets and presented as cryptic ICMP "network unreachable"
+    # at the client. Walking the per-iface tree here — AFTER
+    # `container.start()` returned and AFTER the LAN-network
+    # attachment fully landed — guarantees every interface that
+    # actually exists has forwarding pinned to 1 regardless of
+    # what `default` was at attach-time.
+    #
+    # `2>/dev/null || true` per-file because /proc lists pseudo-
+    # interfaces (e.g. `all`, `default`) that are already covered
+    # by the sysctl and pre-existing entries that ignore writes.
+    # Shell-safety: `$f` is quoted so a future kernel path with a
+    # space (vanishingly unlikely under /proc but cheap defense)
+    # still works. `[ -e "$f" ]` guards the no-match case: under
+    # POSIX sh without nullglob, an empty glob leaves the loop
+    # variable bound to the literal pattern, and we don't want
+    # to attempt a write to a literal `*` path even just to fall
+    # through `|| true`.
+    fwd_ec, fwd_out = container.exec_run(
+        [
+            "sh",
+            "-c",
+            "for f in /proc/sys/net/ipv4/conf/*/forwarding; do "
+            '[ -e "$f" ] && echo 1 > "$f" 2>/dev/null || true; done',
+        ],
+        demux=False,
+    )
+    if fwd_ec != 0:
+        # The `|| true` above means the script itself never exits
+        # non-zero, so a non-zero here means `sh` itself failed —
+        # worth surfacing rather than swallowing.
+        decoded = _decode_exec_output(fwd_out)
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
+        raise RuntimeError(
+            f"NAT gateway {container_name!r}: failed to enable "
+            f"per-interface forwarding (exit {fwd_ec}): {decoded}"
+        )
+
+    # Verify eth1 specifically — that's the interface the LAN
+    # bridge is attached to and the one that matters for the
+    # NAT-forwarding semantics this gateway exists to provide.
+    # If forwarding is off on eth1 despite the sysctl + loop
+    # above, MASQUERADE will install but packets will still be
+    # dropped; fail loudly here so the surfaced error points at
+    # the actual cause.
+    verify_ec, verify_out = container.exec_run(
+        ["cat", "/proc/sys/net/ipv4/conf/eth1/forwarding"],
+        demux=False,
+    )
+    verify_decoded = _decode_exec_output(verify_out).strip()
+    if verify_ec != 0 or verify_decoded != "1":
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
+        raise RuntimeError(
+            f"NAT gateway {container_name!r}: eth1 forwarding is "
+            f"not enabled (read={verify_decoded!r}, exit "
+            f"{verify_ec}). This means the LAN bridge attachment "
+            f"either landed without inheriting the master "
+            f"forwarding sysctl OR a host-level `net.ipv4."
+            f"conf.eth1.forwarding=0` is overriding the "
+            f"container sysctl namespace."
+        )
+
+    # Install the MASQUERADE rule per `nat_mode`. For symmetric
+    # we try `--random-fully` first; if iptables rejects the
+    # flag (older kernel without iptables-extensions support),
+    # we fall back to plain MASQUERADE BUT FAIL the spawn —
+    # silently running cone semantics under a symmetric label
+    # would mask DCUtR-related regressions in downstream tests.
+    masquerade_base = [
+        "iptables",
+        "-t",
+        "nat",
+        "-A",
+        "POSTROUTING",
+        "-o",
+        "eth0",
+        "-j",
+        "MASQUERADE",
+    ]
+    if nat_mode == "cone":
+        iptables_cmd = masquerade_base
+    elif nat_mode == "symmetric":
+        iptables_cmd = masquerade_base + ["--random-fully"]
+    else:
+        raise ValueError(f"nat_mode must be 'cone' or 'symmetric', got {nat_mode!r}")
+
+    ipt_ec, ipt_out = container.exec_run(iptables_cmd, demux=False)
+    if ipt_ec != 0:
+        decoded = _decode_exec_output(ipt_out)
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
+        raise RuntimeError(
+            f"NAT gateway {container_name!r}: failed to install "
+            f"iptables MASQUERADE ({nat_mode}, exit {ipt_ec}): "
+            f"{decoded}.\n"
+            f"For symmetric mode, this most often means the host "
+            f"kernel + iptables build lacks the `random-fully` "
+            f"extension. Use `nat_mode: cone` or upgrade the "
+            f"runner to a kernel/iptables that supports it."
+        )
+
+    console.print(
+        f"[green]✓ NAT gateway {container_name} up at "
+        f"{gateway_lan_ip} (mode={nat_mode})[/green]"
+    )
     return container, gateway_lan_ip
 
 
@@ -992,7 +1307,7 @@ def setup_nat_topology(
 
     Order of operations matters:
 
-      1. Build (or reuse) the boot-node + nat-gateway images.
+      1. Pull the boot-node + alpine base images on miss.
       2. Create the two networks (public + LAN-internal).
       3. Start the boot-node on the public network.
       4. Start the NAT gateway straddling both networks; the
@@ -1012,15 +1327,31 @@ def setup_nat_topology(
         raise ValueError(f"nat_mode must be 'cone' or 'symmetric', got {nat_mode!r}")
 
     # Step 1: images.
+    #
+    # boot-node: pulled from GHCR (ghcr.io/calimero-network/boot-
+    # node:edge by default). Override via `topology.boot_node.image`
+    # in the workflow yaml if a specific release or dev-build is
+    # required. We pull the default tag explicitly; for operator
+    # overrides we leave the pull to whatever path the operator
+    # set up (`docker pull` themselves, locally-built image, etc.)
+    # so a `merobox/boot-node:dev-local` override doesn't trigger
+    # a 404 against GHCR.
+    #
+    # alpine: stock base for the nat-gateway role + the per-client
+    # default-route injection sidecars + the diagnostic-dump
+    # sidecars. We MUST pull it explicitly for the same reason as
+    # boot-node: docker-py's `containers.create()` (which
+    # `_spawn_nat_gateway` uses, so it can attach the LAN bridge
+    # BEFORE start) does NOT auto-pull on a missing image, unlike
+    # `containers.run()`. A missing alpine:3.19 on a fresh CI
+    # runner would surface as `404 Client Error ... No such image:
+    # alpine:3.19` from the daemon mid-create. Explicit pull at
+    # setup time gives a clean diagnostic if the registry is
+    # unreachable.
     boot_node_image = boot_node_image_override or BOOT_NODE_IMAGE_TAG
     if not boot_node_image_override:
-        _build_image_if_missing(
-            client,
-            "boot-node",
-            BOOT_NODE_IMAGE_TAG,
-            build_args={"BOOT_NODE_VERSION": DEFAULT_BOOT_NODE_VERSION},
-        )
-    _build_image_if_missing(client, "nat-gateway", NAT_GATEWAY_IMAGE_TAG)
+        _pull_image_if_missing(client, BOOT_NODE_IMAGE_TAG)
+    _pull_image_if_missing(client, gateway_base_image())
 
     # Step 2: networks. Names are workflow-scoped so parallel
     # workflows don't clobber each other.
@@ -1087,7 +1418,6 @@ def setup_nat_topology(
         # without waiting on Docker's async IPAM-population path.
         gateway, gateway_lan_ip = _spawn_nat_gateway(
             client,
-            NAT_GATEWAY_IMAGE_TAG,
             public_network,
             lan_network,
             nat_mode,
@@ -1401,9 +1731,15 @@ def _dump_topology_diagnostics(
     for name in state.client_names:
         try:
             out = client.containers.run(
-                NAT_GATEWAY_IMAGE_TAG,
+                gateway_base_image(),
                 entrypoint=["sh", "-c"],
-                command=["ip route show; ip addr show"],
+                # `apk add` first because stock alpine's busybox
+                # `ip` differs subtly from iproute2's; we want
+                # iproute2 to keep the diagnostic output stable.
+                command=[
+                    "apk add --no-cache iproute2 > /dev/null; "
+                    "ip route show; ip addr show"
+                ],
                 network_mode=f"container:{name}",
                 cap_add=["NET_ADMIN"],
                 remove=True,
@@ -1459,8 +1795,10 @@ def _dump_topology_diagnostics(
     for name in state.client_names[:1]:  # first client is enough
         try:
             out = client.containers.run(
-                NAT_GATEWAY_IMAGE_TAG,
+                gateway_base_image(),
                 entrypoint=["sh", "-c"],
+                # ping and nc are in busybox, no apk needed for the
+                # probe itself.
                 command=[
                     (
                         f"echo '--- client -> gateway ({safe_gw_ip}) ---';"
