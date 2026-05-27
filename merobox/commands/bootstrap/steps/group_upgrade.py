@@ -268,17 +268,25 @@ class CascadeNamespaceApplicationStep(BaseStep):
         # is below the minimum. Resolution happens once at module load
         # (see _resolve_client_py_version); None means we couldn't parse
         # the installed version string, in which case we fall through
-        # and let the RPC-level TypeError surface.
+        # and let the RPC-level TypeError surface. Honors
+        # expected_failure so a workflow that intentionally tests the
+        # version-check path (e.g., pinned-to-old-client regression
+        # case) gets the same expected/unexpected accounting as any
+        # other step-level failure.
         if (
             _CLIENT_PY_VERSION is not None
             and _CLIENT_PY_VERSION < _CASCADE_MIN_CLIENT_VERSION
         ):
-            console.print(
-                f"[red]cascade_namespace_application requires "
-                f"calimero-client-py >= "
-                f"{'.'.join(str(p) for p in _CASCADE_MIN_CLIENT_VERSION)} "
-                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}[/red]"
+            min_str = ".".join(str(p) for p in _CASCADE_MIN_CLIENT_VERSION)
+            msg = (
+                f"cascade_namespace_application requires "
+                f"calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
+            if self._is_expected_failure():
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
             return False
 
         # Node resolution + client construction + RPC all share the
