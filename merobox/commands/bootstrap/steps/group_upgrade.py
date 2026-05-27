@@ -5,7 +5,6 @@ Covers signing-key rotation and the upgrade state machine
 (initiate -> poll status -> retry on failure).
 """
 
-import inspect
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -238,32 +237,45 @@ class CascadeNamespaceApplicationStep(BaseStep):
             else None
         )
 
-        rpc_url, client_node_name = self._resolve_node_for_client(node_name)
-        client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-
         # Pre-flight: surface an actionable error if the installed
         # calimero-client-py is too old to accept the `cascade` kwarg.
-        # Sits OUTSIDE the API-call try/except so the workflow author
-        # sees "requires >= 0.6.15" directly rather than a generic
-        # "cascade_namespace_application failed" wrapping a TypeError.
-        # If introspection isn't available (pyo3 may not expose
-        # signatures on all platforms), fall through and let the natural
-        # error surface.
+        # Runs BEFORE client construction so a version-mismatch costs
+        # nothing. importlib.metadata is the canonical way to read an
+        # installed package's version; if it's unreadable (development
+        # install without metadata, etc.) we fall through and let the
+        # RPC-level TypeError surface naturally.
         try:
-            has_cascade = (
-                "cascade" in inspect.signature(client.upgrade_group).parameters
+            from importlib.metadata import (
+                PackageNotFoundError as _PkgNotFound,
             )
-        except (TypeError, ValueError):
-            has_cascade = True
-        if not has_cascade:
-            console.print(
-                f"[red]cascade_namespace_application requires "
-                f"calimero-client-py >= 0.6.15 on {node_name} "
-                f"(cascade kwarg not found on upgrade_group)[/red]"
+            from importlib.metadata import (
+                version as _pkg_version,
             )
-            return False
 
+            installed = _pkg_version("calimero-client-py")
+            parts = tuple(int(p) for p in installed.split(".")[:3])
+            if parts < (0, 6, 15):
+                console.print(
+                    f"[red]cascade_namespace_application requires "
+                    f"calimero-client-py >= 0.6.15 (installed: {installed}) "
+                    f"on {node_name}[/red]"
+                )
+                return False
+        except (_PkgNotFound, ValueError, ImportError):
+            # Metadata unreadable; the RPC will naturally raise TypeError
+            # if cascade isn't supported, which the try/except below
+            # surfaces (less actionable than the message above, but still
+            # observable).
+            pass
+
+        # Node resolution + client construction + RPC all share the
+        # try/except so connection errors, auth failures, and RPC errors
+        # all funnel through expected_failure handling consistently with
+        # sibling steps (UpgradeGroupStep, RegisterGroupSigningKeyStep,
+        # GetGroupUpgradeStatusStep).
         try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
             api_result = client.upgrade_group(
                 group_id=namespace_id,
                 target_application_id=target_application_id,
