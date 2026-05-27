@@ -5,14 +5,14 @@ Covers signing-key rotation and the upgrade state machine
 (initiate -> poll status -> retry on failure).
 """
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
-
 
 # Cascade requires the calimero-client-py `cascade` kwarg on
 # `upgrade_group` (added in 0.6.15). Resolved ONCE at import time so a
