@@ -91,16 +91,26 @@ steps:
 
   # Phase 4: Verify both the namespace root and the descendant
   # subgroup now point at v2. get_group_info returns the GroupMeta,
-  # which carries target_application_id.
-  - name: Verify Namespace Root at v2
+  # which carries target_application_id (camelCase in the API).
+  - name: Read Namespace Root Info
     type: get_group_info
     node: calimero-node-1
     group_id: '{{ns_id}}'
+    outputs:
+      ns_root_target_app: targetApplicationId
 
-  - name: Verify Descendant Subgroup at v2
+  - name: Read Descendant Subgroup Info
     type: get_group_info
     node: calimero-node-1
     group_id: '{{sub_id}}'
+    outputs:
+      sub_target_app: targetApplicationId
+
+  - name: Assert Cascade Landed (Both Groups at v2)
+    type: json_assert
+    statements:
+      - 'equal("{{ns_root_target_app}}", "{{app_v2}}")'
+      - 'equal("{{sub_target_app}}", "{{app_v2}}")'
 
   # Phase 5: Teardown
   - name: Delete Subgroup

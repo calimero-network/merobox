@@ -200,6 +200,25 @@ class CascadeNamespaceApplicationStep(BaseStep):
                 f"Step '{step_name}': 'migrate_method' must be a string if provided"
             )
 
+    def _get_exportable_variables(self):
+        return [
+            (
+                "groupId",
+                "cascade_namespace_application_group_id_{node_name}",
+                "Hex group ID returned by the cascade dispatch",
+            ),
+            (
+                "status",
+                "cascade_namespace_application_status_{node_name}",
+                "Initial status string (in_progress | completed)",
+            ),
+            (
+                "total",
+                "cascade_namespace_application_total_{node_name}",
+                "Number of descendants the cascade dispatched against",
+            ),
+        ]
+
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
@@ -273,6 +292,12 @@ class CascadeNamespaceApplicationStep(BaseStep):
             return False
 
         workflow_results[f"cascade_namespace_application_{node_name}"] = result["data"]
+        # Mirror GetGroupUpgradeStatusStep: only export when the author
+        # configured outputs, otherwise the base class prints a
+        # "No outputs configured" warning for every caller that doesn't
+        # use outputs.
+        if "outputs" in self.config:
+            self._export_variables(result["data"], node_name, dynamic_values)
         console.print(
             f"[green]✓ Cascaded namespace {namespace_id} to {target_application_id} on {node_name}[/green]"
         )
