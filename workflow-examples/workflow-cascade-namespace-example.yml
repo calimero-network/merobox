@@ -64,6 +64,17 @@ steps:
     outputs:
       admin_key: publicKey
 
+  # Align the namespace root's `app_key` to v1's bytecode blob_id.
+  # `create_namespace` initializes `app_key` to a RANDOM 32-byte value
+  # (see create_group.rs:38-41 — `app_key.unwrap_or_else(rand::gen)`).
+  # An explicit upgrade_group(target=v1) rewrites it to v1's bytecode
+  # blob_id, which is the cascade predicate's reference value.
+  - name: Align Namespace Root to v1
+    type: upgrade_group
+    node: calimero-node-1
+    group_id: '{{ns_id}}'
+    target_application_id: '{{app_v1}}'
+
   - name: Create Descendant Subgroup
     type: create_group_in_namespace
     node: calimero-node-1
@@ -72,29 +83,29 @@ steps:
     outputs:
       sub_id: groupId
 
-  # The subgroup must have an `app_key` matching the namespace root's
-  # before cascade — the engine skips heterogeneous descendants per
-  # cascade spec § 3.2 (see calimero-network/core
-  # `cascade_target_application_set.rs`: "apply the settings mutation
-  # to every descendant whose current app_key matches from_app_key").
-  # Creating a context in the subgroup with app_v1 sets the subgroup's
-  # app_key. Without this, cascade would silently skip the subgroup
-  # and only the namespace root would be updated.
-  - name: Create Context in Subgroup with v1
-    type: create_context
+  # The subgroup must share the namespace root's `app_key` for the
+  # cascade engine to walk into it. `create_group_in_namespace` /
+  # `GroupCreated` initializes `app_key` to `[0u8; 32]`
+  # (group_created.rs:86 — only inherits target_application_id from
+  # parent, NOT app_key). The ONLY mutator is `set_target_application`
+  # (group_settings.rs:55), called from the TargetApplicationSet and
+  # CascadeTargetApplicationSet apply arms (= `upgrade_group`). So we
+  # explicitly upgrade the subgroup to v1, aligning its app_key with
+  # the namespace root's v1 app_key.
+  - name: Align Subgroup to v1
+    type: upgrade_group
     node: calimero-node-1
-    application_id: '{{app_v1}}'
     group_id: '{{sub_id}}'
-    outputs:
-      sub_ctx_id: contextId
+    target_application_id: '{{app_v1}}'
 
-  - name: Wait for Subgroup + Context Propagation
+  - name: Wait for Alignment Propagation
     type: wait
     seconds: 5
 
   # Phase 3: Cascade from v1 to v2. The engine walks the namespace's
-  # descendants, finds the subgroup (app_key matches v1), and flips
-  # every matching descendant to v2 in one signed op.
+  # descendants, finds the subgroup (app_key now matches v1's
+  # blob_id), and flips every matching descendant to v2 in one
+  # signed op.
   - name: Cascade Namespace v1 -> v2
     type: cascade_namespace_application
     node: calimero-node-1
@@ -129,12 +140,6 @@ steps:
       - 'equal("{{sub_target_app}}", "{{app_v2}}")'
 
   # Phase 5: Teardown
-  - name: Delete Context in Subgroup
-    type: delete_context
-    node: calimero-node-1
-    context_id: '{{sub_ctx_id}}'
-    requester: '{{admin_key}}'
-
   - name: Delete Subgroup
     type: delete_group
     node: calimero-node-1
