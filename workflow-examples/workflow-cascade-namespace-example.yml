@@ -72,7 +72,23 @@ steps:
     outputs:
       sub_id: groupId
 
-  - name: Wait for Subgroup Propagation
+  # The subgroup must have an `app_key` matching the namespace root's
+  # before cascade — the engine skips heterogeneous descendants per
+  # cascade spec § 3.2 (see calimero-network/core
+  # `cascade_target_application_set.rs`: "apply the settings mutation
+  # to every descendant whose current app_key matches from_app_key").
+  # Creating a context in the subgroup with app_v1 sets the subgroup's
+  # app_key. Without this, cascade would silently skip the subgroup
+  # and only the namespace root would be updated.
+  - name: Create Context in Subgroup with v1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_v1}}'
+    group_id: '{{sub_id}}'
+    outputs:
+      sub_ctx_id: contextId
+
+  - name: Wait for Subgroup + Context Propagation
     type: wait
     seconds: 5
 
@@ -113,6 +129,12 @@ steps:
       - 'equal("{{sub_target_app}}", "{{app_v2}}")'
 
   # Phase 5: Teardown
+  - name: Delete Context in Subgroup
+    type: delete_context
+    node: calimero-node-1
+    context_id: '{{sub_ctx_id}}'
+    requester: '{{admin_key}}'
+
   - name: Delete Subgroup
     type: delete_group
     node: calimero-node-1
