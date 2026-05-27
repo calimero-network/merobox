@@ -5,6 +5,11 @@ Covers signing-key rotation and the upgrade state machine
 (initiate -> poll status -> retry on failure).
 """
 
+# PEP 563 deferred evaluation — required for `X | None` style annotations
+# to work on Python 3.9 (merobox `requires-python = ">=3.9"`). Matches
+# convention used by assertion.py, assert_log.py, json_assertion.py.
+from __future__ import annotations
+
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import Any
@@ -249,20 +254,6 @@ class CascadeNamespaceApplicationStep(BaseStep):
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
-        namespace_id = self._resolve_dynamic_value(
-            self.config["namespace_id"], workflow_results, dynamic_values
-        )
-        target_application_id = self._resolve_dynamic_value(
-            self.config["target_application_id"], workflow_results, dynamic_values
-        )
-        migrate_method_raw = self.config.get("migrate_method")
-        migrate_method = (
-            self._resolve_dynamic_value(
-                migrate_method_raw, workflow_results, dynamic_values
-            )
-            if migrate_method_raw is not None
-            else None
-        )
 
         # Pre-flight: actionable error if the resolved client-py version
         # is below the minimum. Resolution happens once at module load
@@ -273,6 +264,10 @@ class CascadeNamespaceApplicationStep(BaseStep):
         # version-check path (e.g., pinned-to-old-client regression
         # case) gets the same expected/unexpected accounting as any
         # other step-level failure.
+        #
+        # Runs before dynamic-value resolution so a version mismatch
+        # short-circuits without resolving namespace_id /
+        # target_application_id from workflow_results.
         if (
             _CLIENT_PY_VERSION is not None
             and _CLIENT_PY_VERSION < _CASCADE_MIN_CLIENT_VERSION
@@ -288,6 +283,21 @@ class CascadeNamespaceApplicationStep(BaseStep):
                 return True
             console.print(f"[red]{msg}[/red]")
             return False
+
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+        target_application_id = self._resolve_dynamic_value(
+            self.config["target_application_id"], workflow_results, dynamic_values
+        )
+        migrate_method_raw = self.config.get("migrate_method")
+        migrate_method = (
+            self._resolve_dynamic_value(
+                migrate_method_raw, workflow_results, dynamic_values
+            )
+            if migrate_method_raw is not None
+            else None
+        )
 
         # Node resolution + client construction + RPC all share the
         # try/except so connection errors, auth failures, and RPC errors
