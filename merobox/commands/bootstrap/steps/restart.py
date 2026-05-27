@@ -31,14 +31,23 @@ from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import HEALTH_CHECK_TIMEOUT, NODE_READY_TIMEOUT
 from merobox.commands.utils import console, get_node_rpc_url
 
-# Directory where pre-restart log snapshots get written. CI workflows
-# that want them archived as artifacts should configure their upload
-# step to glob this directory. The default matches the convention
-# `e2e-rust-apps.yml`'s log-watcher uses (`docker-logs/`), so a CI run
-# that already uploads the watcher's output will also pick up the
-# pre-restart snapshots automatically.
-_PRE_RESTART_LOG_DIR_ENV = "MEROBOX_PRE_RESTART_LOG_DIR"
-_PRE_RESTART_LOG_DIR_DEFAULT = "docker-logs"
+# Directory where pre/post-restart log snapshots get written. CI
+# workflows that want them archived as artifacts should configure
+# their upload step to glob this directory. The default matches the
+# convention `e2e-rust-apps.yml`'s log-watcher uses (`docker-logs/`),
+# so a CI run that already uploads the watcher's output will also
+# pick up the snapshots automatically.
+#
+# The primary env var was originally `MEROBOX_PRE_RESTART_LOG_DIR`
+# back when the step only captured the pre-restart phase. Now that
+# it captures BOTH phases into the same directory, the canonical
+# name is `MEROBOX_RESTART_LOG_DIR`. The old name remains as a
+# backward-compat alias so anyone who set it in their CI before
+# 0.6.23 doesn't have to update simultaneously; the new name takes
+# precedence if both are set.
+_RESTART_LOG_DIR_ENV = "MEROBOX_RESTART_LOG_DIR"
+_RESTART_LOG_DIR_ENV_LEGACY = "MEROBOX_PRE_RESTART_LOG_DIR"
+_RESTART_LOG_DIR_DEFAULT = "docker-logs"
 
 
 class RestartContainerStep(BaseStep):
@@ -126,16 +135,18 @@ class RestartContainerStep(BaseStep):
         self._snapshot_post_restart_logs(container, container_name)
         return healthy
 
-    @classmethod
-    def _snapshot_pre_restart_logs(cls, container: Any, container_name: str) -> None:
+    @staticmethod
+    def _snapshot_pre_restart_logs(container: Any, container_name: str) -> None:
         """Pre-restart dump — captures the to-be-killed container's
         logs before `docker restart` cycles it. See `_snapshot_logs`
         for the shared shape; this is a thin wrapper that pins the
         phase to ``pre-restart``."""
-        cls._snapshot_logs(container, container_name, phase="pre-restart")
+        RestartContainerStep._snapshot_logs(
+            container, container_name, phase="pre-restart"
+        )
 
-    @classmethod
-    def _snapshot_post_restart_logs(cls, container: Any, container_name: str) -> None:
+    @staticmethod
+    def _snapshot_post_restart_logs(container: Any, container_name: str) -> None:
         """Post-restart dump — captures the freshly-restarted
         container's logs after `docker restart` returns (and after
         `wait_healthy` succeeds, if it was requested).
@@ -147,30 +158,65 @@ class RestartContainerStep(BaseStep):
         name as already-tracked so it never reattaches. Without
         this dump, the post-restart incarnation's logs go
         unrecorded entirely.
+
+        Reloads the container's attrs first via `container.reload()`
+        because docker-py caches state on the Python-side object.
+        `docker restart` cycles the underlying runtime, so a stale
+        Python container handle returned from before the restart
+        could in principle hand back the wrong incarnation's logs
+        (in practice docker-py's `logs()` re-queries by ID/name on
+        each call, but the reload is cheap insurance against future
+        SDK behavior drift).
         """
-        cls._snapshot_logs(container, container_name, phase="post-restart")
+        try:
+            container.reload()
+        except Exception as exc:
+            # Don't fail the snapshot just because reload glitched;
+            # docker-py's `logs()` re-queries on each call anyway,
+            # so even a stale Python handle gives us the right
+            # logs. Log + proceed.
+            console.print(
+                f"[yellow]Could not reload {container_name!r} before "
+                f"post-restart snapshot: {exc} (continuing)[/yellow]"
+            )
+        RestartContainerStep._snapshot_logs(
+            container, container_name, phase="post-restart"
+        )
 
     @staticmethod
     def _snapshot_logs(container: Any, container_name: str, *, phase: str) -> None:
-        """Best-effort dump of the container's logs to a numbered
+        """Best-effort dump of the container's logs to a timestamped
         file. Pre- and post-restart entry points share this body so
         the failure-handling and naming convention stay in lockstep.
 
-        Naming convention: ``<dir>/<container>.<phase>-<utc_ts>.log``
-        where ``<dir>`` is ``$MEROBOX_PRE_RESTART_LOG_DIR`` or, by
-        default, ``docker-logs/`` in the current working directory.
-        The UTC microsecond timestamp suffix means multiple
-        restarts of the same container in a single workflow
-        produce distinct files (sortable by name), and ordering
-        between a pre-restart snapshot and its paired post-restart
-        snapshot is preserved by the timestamp too.
+        Naming convention: ``<dir>/<safe_name>.<phase>-<utc_ts>.log``
+        where:
+        - ``<dir>`` is ``$MEROBOX_RESTART_LOG_DIR`` (canonical) or
+          the legacy ``$MEROBOX_PRE_RESTART_LOG_DIR`` alias, falling
+          back to ``docker-logs/`` in the current working directory;
+        - ``<safe_name>`` is the container name reduced to its
+          basename component, defending against a `container:`
+          field that resolved (through dynamic-value substitution)
+          to a path-traversal-shaped string. Docker container names
+          are already constrained to ``[a-zA-Z0-9][a-zA-Z0-9_.-]*``
+          so this guard is belt-and-suspenders, but keeping the
+          filesystem-write safe locally is much cheaper than
+          tracking the trust boundary across the workflow YAML +
+          dynamic-value layer;
+        - ``<utc_ts>`` is microsecond-precision so rapid back-to-
+          back snapshots (e.g. pre+post within one restart) land
+          in distinct files, and ordering between paired snapshots
+          is preserved by name.
 
         Errors at any step (docker API hiccup, can't create
         directory, write fails) are logged to the console but
         never raised — the caller's restart flow must proceed
         regardless of whether the snapshot succeeds.
         """
-        log_dir = os.environ.get(_PRE_RESTART_LOG_DIR_ENV, _PRE_RESTART_LOG_DIR_DEFAULT)
+        log_dir = os.environ.get(
+            _RESTART_LOG_DIR_ENV,
+            os.environ.get(_RESTART_LOG_DIR_ENV_LEGACY, _RESTART_LOG_DIR_DEFAULT),
+        )
         try:
             os.makedirs(log_dir, exist_ok=True)
         except OSError as exc:
@@ -184,7 +230,10 @@ class RestartContainerStep(BaseStep):
         # back-to-back snapshots (e.g. pre+post within one restart)
         # need to land in distinct files.
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        log_path = os.path.join(log_dir, f"{container_name}.{phase}-{stamp}.log")
+        # `basename` reduces any path-traversal-shaped container
+        # name (e.g. "../foo") to a single filesystem component.
+        safe_name = os.path.basename(container_name) or "unnamed"
+        log_path = os.path.join(log_dir, f"{safe_name}.{phase}-{stamp}.log")
 
         try:
             # `timestamps=True` so each line carries the docker-side
