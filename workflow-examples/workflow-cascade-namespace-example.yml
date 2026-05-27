@@ -1,0 +1,128 @@
+name: Cascade Namespace Application Example
+description: >
+  Demonstrates the namespace-level cascade upgrade flow: a single signed
+  CascadeTargetApplicationSet op against a namespace fans the target-
+  application change out to every matching descendant subgroup in one
+  sync round (calimero-network/core#2493).
+
+  Sibling of workflow-group-upgrade-example.yml, which exercises the
+  per-group `upgrade_group` path. This workflow exercises the cascade
+  path (cascade=true on the underlying upgrade_group RPC).
+
+  Uses the same kv_store v1 + v2 binaries as the group-upgrade example;
+  v1 is produced by workflow-examples/scripts/build_res_wasm.sh, v2 is
+  committed under workflow-examples/res/.
+
+  This is a SMOKE TEST. It verifies:
+    - The cascade RPC dispatches successfully against a namespace root
+    - The descendant subgroup's GroupMeta.target_application_id flips
+      to v2 (cascade fan-out landed)
+
+  Multi-context state-migration verification with proper v1/v2
+  scenarios lives downstream in core's app-migration workflows
+  (calimero-network/core#2494 + scenarios mega-PR).
+
+force_pull_image: true
+
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # Phase 1: Install two distinct application binaries
+  - name: Install v1 Application
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_v1: applicationId
+
+  - name: Install v2 Application
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_v2: applicationId
+
+  # Phase 2: Build a namespace with one descendant subgroup so the
+  # cascade has somewhere to fan out to.
+  - name: Create Namespace with v1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_v1}}'
+    outputs:
+      ns_id: namespaceId
+
+  # Capture admin key for teardown.
+  - name: Get Namespace Admin Identity
+    type: get_namespace_identity
+    node: calimero-node-1
+    namespace_id: '{{ns_id}}'
+    outputs:
+      admin_key: publicKey
+
+  - name: Create Descendant Subgroup
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: '{{ns_id}}'
+    group_name: 'cascade-target-subgroup'
+    outputs:
+      sub_id: groupId
+
+  - name: Wait for Subgroup Propagation
+    type: wait
+    seconds: 5
+
+  # Phase 3: Cascade from v1 to v2. The engine walks the namespace's
+  # descendants, finds the subgroup (app_key matches v1), and flips
+  # every matching descendant to v2 in one signed op.
+  - name: Cascade Namespace v1 -> v2
+    type: cascade_namespace_application
+    node: calimero-node-1
+    namespace_id: '{{ns_id}}'
+    target_application_id: '{{app_v2}}'
+
+  - name: Wait for Cascade Propagation
+    type: wait
+    seconds: 10
+
+  # Phase 4: Verify both the namespace root and the descendant
+  # subgroup now point at v2. get_group_info returns the GroupMeta,
+  # which carries target_application_id.
+  - name: Verify Namespace Root at v2
+    type: get_group_info
+    node: calimero-node-1
+    group_id: '{{ns_id}}'
+
+  - name: Verify Descendant Subgroup at v2
+    type: get_group_info
+    node: calimero-node-1
+    group_id: '{{sub_id}}'
+
+  # Phase 5: Teardown
+  - name: Delete Subgroup
+    type: delete_group
+    node: calimero-node-1
+    group_id: '{{sub_id}}'
+    requester: '{{admin_key}}'
+
+  - name: Delete Namespace
+    type: delete_namespace
+    node: calimero-node-1
+    namespace_id: '{{ns_id}}'
+    requester: '{{admin_key}}'
+
+  - name: Uninstall v1
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_v1}}'
+
+  - name: Uninstall v2
+    type: uninstall_application
+    node: calimero-node-1
+    application_id: '{{app_v2}}'
+
+stop_all_nodes: false

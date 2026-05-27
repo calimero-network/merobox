@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `workflow-examples/workflow-cascade-namespace-example.yml` — smoke
+  test exercising `cascade_namespace_application` end-to-end against a
+  real merod container. Sibling of `workflow-group-upgrade-example.yml`,
+  uses the same kv_store v1/v2 binaries.
 - `cascade_namespace_application` workflow step type. Submits a
   `CascadeTargetApplicationSet` governance op against a namespace,
   fanning the target-application change out to every matching descendant
