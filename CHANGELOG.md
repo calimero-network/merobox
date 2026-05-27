@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.25] - 2026-05-28
+
+### Changed
+
+- `workflow-examples/workflow-cascade-namespace-example.yml` — dropped
+  the two `upgrade_group(target=app_v1)` alignment workarounds (one on
+  the namespace root, one on the subgroup). They existed to paper over
+  the random / zero `app_key` defaults at namespace + subgroup
+  creation, fixed at source in calimero-network/core#2507. Requires
+  merod >= the edge release that ships #2507. The non-cascade
+  `upgrade_group` on the namespace root was also actively harmful —
+  trips `validate_upgrade`'s "no contexts to upgrade" check because
+  the namespace root holds no contexts (contexts live in the
+  subgroup), aborting the workflow before reaching the cascade.
+
 ## [0.6.23] - 2026-05-27
 
 ### Added
