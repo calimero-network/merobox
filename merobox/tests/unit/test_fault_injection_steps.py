@@ -249,3 +249,136 @@ class TestDetectNodeNetwork:
         # When container.reload() fails, the function should still pick a
         # network from whatever attrs it has, not crash.
         assert detect_node_network(FlakyContainer()) == "merobox-cluster"
+
+
+# ---------------------------------------------------------------------------
+# RestartContainerStep — pre-restart log snapshot
+#
+# The snapshot fires before `container.restart()` rotates the underlying
+# container ID, so the to-be-killed incarnation's logs survive in a CI
+# artifact. These tests pin the contract:
+#
+#   - Snapshot writes to `<dir>/<container>.pre-restart-<utc>.log`.
+#   - `MEROBOX_PRE_RESTART_LOG_DIR` env var overrides the default dir.
+#   - Failures at every step (mkdir, container.logs, file write) are
+#     logged but never raise — the caller's restart MUST proceed.
+# ---------------------------------------------------------------------------
+
+
+class TestRestartPreRestartLogSnapshot:
+    @staticmethod
+    def _container_with_logs(log_bytes):
+        class _StubContainer:
+            def logs(self, *, timestamps=False):
+                # The implementation passes `timestamps=True`. We don't
+                # care about that detail for the unit test, but accepting
+                # the kwarg keeps the stub honest.
+                _ = timestamps
+                return log_bytes
+
+        return _StubContainer()
+
+    def test_snapshot_writes_expected_file(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(tmp_path))
+        RestartContainerStep._snapshot_pre_restart_logs(
+            self._container_with_logs(b"hello\nworld\n"),
+            "sync-resil-node-1",
+        )
+        files = list(tmp_path.iterdir())
+        assert len(files) == 1, f"expected exactly one snapshot file, got {files}"
+        name = files[0].name
+        assert name.startswith("sync-resil-node-1.pre-restart-"), name
+        assert name.endswith(".log"), name
+        # UTC timestamp is the 8-char date + T + 6-char time + 6-char micros + Z.
+        # Just check it's present (any digit-heavy run between the prefix and `.log`).
+        ts = name[len("sync-resil-node-1.pre-restart-") : -len(".log")]
+        assert ts.endswith("Z") and "T" in ts, f"unexpected timestamp shape: {ts!r}"
+        # File contents match what container.logs returned.
+        assert files[0].read_text() == "hello\nworld\n"
+
+    def test_snapshot_handles_str_logs(self, tmp_path, monkeypatch):
+        # docker-py normally returns bytes from container.logs(), but
+        # the helper has a `str` fallback path to defang any wrapper
+        # that decoded it before returning. Pin that path so a future
+        # type change doesn't regress to a TypeError.
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(tmp_path))
+        RestartContainerStep._snapshot_pre_restart_logs(
+            self._container_with_logs("already-decoded\n"),
+            "n1",
+        )
+        files = list(tmp_path.iterdir())
+        assert len(files) == 1
+        assert files[0].read_text() == "already-decoded\n"
+
+    def test_snapshot_returns_silently_when_container_logs_fail(
+        self, tmp_path, monkeypatch
+    ):
+        # The whole point is to never block a restart. If `container.logs()`
+        # raises (daemon hiccup, container in transient state, anything),
+        # the snapshot must catch and log — not propagate.
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(tmp_path))
+
+        class _BrokenContainer:
+            def logs(self, *, timestamps=False):
+                _ = timestamps
+                raise RuntimeError("daemon flake")
+
+        # Must NOT raise.
+        RestartContainerStep._snapshot_pre_restart_logs(_BrokenContainer(), "n1")
+        # No file produced.
+        assert list(tmp_path.iterdir()) == []
+
+    def test_snapshot_returns_silently_when_mkdir_fails(self, tmp_path, monkeypatch):
+        # If the snapshot dir can't be created (read-only mount, no
+        # permission, etc.), we must NOT raise. Point the env at a
+        # path under a file (not a directory) so os.makedirs raises
+        # NotADirectoryError, which the helper catches.
+        blocker = tmp_path / "blocker"
+        blocker.write_text("not a directory")
+        bad_dir = blocker / "logs"
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(bad_dir))
+
+        # Must NOT raise.
+        RestartContainerStep._snapshot_pre_restart_logs(
+            self._container_with_logs(b"unreachable\n"),
+            "n1",
+        )
+
+    def test_snapshot_uses_default_dir_when_env_unset(self, tmp_path, monkeypatch):
+        # No env var → defaults to ./docker-logs/ in CWD.
+        monkeypatch.delenv("MEROBOX_PRE_RESTART_LOG_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)
+
+        RestartContainerStep._snapshot_pre_restart_logs(
+            self._container_with_logs(b"default-dir\n"),
+            "n1",
+        )
+
+        default_dir = tmp_path / "docker-logs"
+        assert default_dir.is_dir(), "default docker-logs/ should be created"
+        files = list(default_dir.iterdir())
+        assert len(files) == 1
+        assert files[0].read_text() == "default-dir\n"
+
+    def test_snapshot_distinct_files_for_repeated_restarts(self, tmp_path, monkeypatch):
+        # Two snapshots of the same container within the same workflow
+        # must land in distinct files so the second doesn't clobber the
+        # first. Achieved by the microsecond timestamp suffix.
+        import time as _time
+
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(tmp_path))
+        RestartContainerStep._snapshot_pre_restart_logs(
+            self._container_with_logs(b"first\n"), "n1"
+        )
+        # Sleep ~1ms so the µs-resolution timestamp definitely advances.
+        # Without this the two snapshots could land in the same µs on a
+        # fast machine and clobber.
+        _time.sleep(0.002)
+        RestartContainerStep._snapshot_pre_restart_logs(
+            self._container_with_logs(b"second\n"), "n1"
+        )
+
+        files = sorted(tmp_path.iterdir())
+        assert len(files) == 2, files
+        contents = sorted(f.read_text() for f in files)
+        assert contents == ["first\n", "second\n"]
