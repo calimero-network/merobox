@@ -125,17 +125,19 @@ def test_nat_topology_serialises_boot_node_keypair_path():
 # ---------------------------------------------------------------------------
 
 
-def test_boot_node_image_tag_is_local_namespaced():
-    """The boot-node image is built on first use from a bundled
-    Dockerfile and tagged `merobox/boot-node:local`. The `merobox/`
-    prefix prevents collision with a third-party image that
-    happened to have the same short name; `:local` makes it
-    obvious it's locally-built, not pulled from a registry. (When
-    we move boot-node to a GHCR-pulled image, this constant will
-    change to the `ghcr.io/calimero-network/boot-node:<tag>` form
-    and this assertion will need updating.)"""
-    assert BOOT_NODE_IMAGE_TAG.startswith("merobox/")
-    assert BOOT_NODE_IMAGE_TAG.endswith(":local")
+def test_boot_node_image_tag_is_ghcr_pull():
+    """The boot-node image is pulled from
+    `ghcr.io/calimero-network/boot-node` — the registry tag
+    published by the boot-node repo's `release.yml`. We pin the
+    `:edge` tag specifically (mirroring how merobox pulls
+    `ghcr.io/calimero-network/merod:edge` for clients), so a
+    fresh boot-node release flows through to merobox without a
+    merobox-side bump. If the constant ever drifts off the GHCR
+    namespace we catch it here rather than at first-pull (which
+    would 404 mid-`setup_nat_topology` instead of failing fast
+    in the unit suite)."""
+    assert BOOT_NODE_IMAGE_TAG.startswith("ghcr.io/calimero-network/boot-node")
+    assert BOOT_NODE_IMAGE_TAG.endswith(":edge")
 
 
 def test_gateway_base_image_default_is_stock_alpine(monkeypatch):

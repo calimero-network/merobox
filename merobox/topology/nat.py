@@ -34,7 +34,6 @@ import re
 import shlex
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import docker
 import docker.errors
@@ -47,13 +46,31 @@ from merobox.commands.utils import console
 # Image identifiers
 # ---------------------------------------------------------------------------
 
-# The boot-node image is built on first use from the bundled Dockerfile
-# in `merobox/topology/images/boot-node/`. Once built it's cached
-# locally as `merobox/boot-node:local`. Tracked under merobox#TODO
-# to move to a pre-built `ghcr.io/calimero-network/boot-node:<tag>`
-# pull pattern (mirror how we pull merod), at which point this
-# constant is replaced with the GHCR tag.
-BOOT_NODE_IMAGE_TAG = "merobox/boot-node:local"
+# The boot-node image is pulled from GHCR. The
+# calimero-network/boot-node repo's `release.yml` publishes a
+# multi-arch image (linux/amd64 + linux/arm64) on every version
+# bump, with three tags per release:
+#
+#     ghcr.io/calimero-network/boot-node:<version>   (immutable)
+#     ghcr.io/calimero-network/boot-node:latest
+#     ghcr.io/calimero-network/boot-node:edge        (← what we pin)
+#
+# Pinning `:edge` mirrors how merobox already pulls
+# `ghcr.io/calimero-network/merod:edge` for client containers —
+# the test-topology always tracks the most recent published
+# release rather than an arbitrary historical pin. If a workflow
+# needs a specific release for reproducibility it can override
+# via `topology.boot_node.image` (see
+# `boot_node_image_override` plumbing in `setup_nat_topology`).
+#
+# The previous incarnation built `merobox/boot-node:local` from a
+# bundled `merobox/topology/images/boot-node/Dockerfile` at
+# first-use. That broke under PyInstaller frozen builds (non-`.py`
+# files aren't bundled by default), and was already on the
+# "retire and pull from GHCR" list before this PR. Now retired:
+# the bundled Dockerfile is gone, the build helper is gone, and
+# this constant points straight at the pull tag.
+BOOT_NODE_IMAGE_TAG = "ghcr.io/calimero-network/boot-node:edge"
 
 # The NAT-gateway container is a stock Alpine container with
 # iptables + iproute2 added at first-run via `apk add` against the
@@ -86,15 +103,12 @@ BOOT_NODE_IMAGE_TAG = "merobox/boot-node:local"
 # var is enough for full pinning.
 GATEWAY_BASE_IMAGE = os.environ.get("MEROBOX_NAT_GATEWAY_IMAGE", "alpine:3.19")
 
-# Default version of the boot-node binary baked into the boot-node
-# image. Bump in lockstep with the calimero-network/boot-node release
-# that's also deployed to the devnet, so test behaviour matches what
-# real clients see. Override per-workflow via
-# `topology.boot_node.image` if a specific build is required.
-DEFAULT_BOOT_NODE_VERSION = "0.8.0"
-
-# Boot-node's `--port` default. The image's Dockerfile EXPOSEs the
-# same value; if you bump this, change both.
+# Boot-node's `--port` default. The published image's Dockerfile
+# EXPOSEs the same value; if upstream bumps this, change both. We
+# don't pin a binary version here anymore — the `:edge` tag of the
+# published image always tracks the latest boot-node release, and
+# workflows that need a specific release override
+# `BOOT_NODE_IMAGE_TAG` directly via `topology.boot_node.image`.
 BOOT_NODE_PORT = 4001
 
 
@@ -186,69 +200,8 @@ class NatTopologyState:
 
 
 # ---------------------------------------------------------------------------
-# Image building
+# Image pulling
 # ---------------------------------------------------------------------------
-
-
-def _images_root() -> Path:
-    """Path to the bundled `merobox/topology/images/` directory."""
-    return Path(__file__).parent / "images"
-
-
-def _build_image_if_missing(
-    client: docker.DockerClient,
-    image_subdir: str,
-    tag: str,
-    build_args: dict[str, str] | None = None,
-) -> None:
-    """Ensure the named image exists locally, building it from the
-    bundled Dockerfile if not.
-
-    A pre-existing tag (built out-of-band, or left over from a prior
-    workflow run) is treated as authoritative — we don't rebuild on
-    every workflow start. To force a rebuild, `docker rmi <tag>` and
-    re-run.
-    """
-    try:
-        client.images.get(tag)
-        console.print(f"[cyan]✓ Image {tag} already present[/cyan]")
-        return
-    except docker.errors.NotFound:
-        pass
-
-    dockerfile_dir = _images_root() / image_subdir
-    if not (dockerfile_dir / "Dockerfile").exists():
-        raise RuntimeError(
-            f"No Dockerfile at {dockerfile_dir}. The merobox install "
-            f"is incomplete — reinstall the package."
-        )
-
-    console.print(
-        f"[yellow]Building {tag} from {dockerfile_dir} "
-        f"(first-use, future runs reuse the cached image)...[/yellow]"
-    )
-    # `client.images.build()` returns `(image, build_log_generator)`.
-    # The generator yields already-parsed JSON dicts from the build
-    # stream (docker-py handles `decode=True` for us on this
-    # high-level API — `decode=True` is only an explicit kwarg on
-    # the lower-level `client.api.build`). We iterate the generator
-    # to (a) drive the build to completion (it's lazy) and (b) trap
-    # `{"error": …}` chunks so a failed layer surfaces as a Python
-    # exception rather than as a phantom-success that fails later
-    # when the missing image is needed.
-    _image, build_logs = client.images.build(
-        path=str(dockerfile_dir),
-        tag=tag,
-        buildargs=build_args or {},
-        rm=True,
-        forcerm=True,
-        # Older Docker versions error if buildkit isn't enabled and
-        # `--platform` is set; we let Docker pick the platform.
-    )
-    for chunk in build_logs:
-        if isinstance(chunk, dict) and "error" in chunk:
-            raise RuntimeError(f"Failed to build {tag}: {chunk.get('error')}")
-    console.print(f"[green]✓ Built {tag}[/green]")
 
 
 def _pull_image_if_missing(
@@ -1233,7 +1186,7 @@ def setup_nat_topology(
 
     Order of operations matters:
 
-      1. Build (or reuse) the boot-node + nat-gateway images.
+      1. Pull the boot-node + alpine base images on miss.
       2. Create the two networks (public + LAN-internal).
       3. Start the boot-node on the public network.
       4. Start the NAT gateway straddling both networks; the
@@ -1254,29 +1207,29 @@ def setup_nat_topology(
 
     # Step 1: images.
     #
-    # boot-node: still built locally from the bundled Dockerfile
-    # for now (moving to a pre-built GHCR image is tracked
-    # separately). Skip the build if the operator passed an
-    # explicit image override.
+    # boot-node: pulled from GHCR (ghcr.io/calimero-network/boot-
+    # node:edge by default). Override via `topology.boot_node.image`
+    # in the workflow yaml if a specific release or dev-build is
+    # required. We pull the default tag explicitly; for operator
+    # overrides we leave the pull to whatever path the operator
+    # set up (`docker pull` themselves, locally-built image, etc.)
+    # so a `merobox/boot-node:dev-local` override doesn't trigger
+    # a 404 against GHCR.
     #
     # alpine: stock base for the nat-gateway role + the per-client
     # default-route injection sidecars + the diagnostic-dump
-    # sidecars. We MUST pull it explicitly: docker-py's
-    # `containers.create()` (which `_spawn_nat_gateway` uses, so
-    # it can attach the LAN bridge BEFORE start) does NOT auto-pull
-    # on a missing image, unlike `containers.run()`. A missing
-    # alpine:3.19 on a fresh CI runner would surface as
-    # `404 Client Error ... No such image: alpine:3.19` from the
-    # daemon mid-create. Explicit pull at setup time gives a
-    # clean diagnostic if the registry is unreachable.
+    # sidecars. We MUST pull it explicitly for the same reason as
+    # boot-node: docker-py's `containers.create()` (which
+    # `_spawn_nat_gateway` uses, so it can attach the LAN bridge
+    # BEFORE start) does NOT auto-pull on a missing image, unlike
+    # `containers.run()`. A missing alpine:3.19 on a fresh CI
+    # runner would surface as `404 Client Error ... No such image:
+    # alpine:3.19` from the daemon mid-create. Explicit pull at
+    # setup time gives a clean diagnostic if the registry is
+    # unreachable.
     boot_node_image = boot_node_image_override or BOOT_NODE_IMAGE_TAG
     if not boot_node_image_override:
-        _build_image_if_missing(
-            client,
-            "boot-node",
-            BOOT_NODE_IMAGE_TAG,
-            build_args={"BOOT_NODE_VERSION": DEFAULT_BOOT_NODE_VERSION},
-        )
+        _pull_image_if_missing(client, BOOT_NODE_IMAGE_TAG)
     _pull_image_if_missing(client, GATEWAY_BASE_IMAGE)
 
     # Step 2: networks. Names are workflow-scoped so parallel
