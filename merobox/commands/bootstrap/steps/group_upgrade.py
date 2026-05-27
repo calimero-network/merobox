@@ -171,6 +171,92 @@ class UpgradeGroupStep(BaseStep):
         return True
 
 
+class CascadeNamespaceApplicationStep(BaseStep):
+    """Cascade a target-application change across every descendant of a namespace.
+
+    Wraps the same `upgrade_group` RPC as `UpgradeGroupStep`, but sets
+    `cascade=True` so the emitter publishes `CascadeTargetApplicationSet`
+    instead of a per-group upgrade. The core cascade engine then fans the
+    op out to every matching descendant subgroup + context in a single
+    sync round (calimero-network/core#2493).
+
+    Requires calimero-client-py >= 0.6.15 for the `cascade` kwarg.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "namespace_id", "target_application_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "namespace_id", "target_application_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        migrate_method = self.config.get("migrate_method")
+        if migrate_method is not None and not isinstance(migrate_method, str):
+            raise ValueError(
+                f"Step '{step_name}': 'migrate_method' must be a string if provided"
+            )
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+        target_application_id = self._resolve_dynamic_value(
+            self.config["target_application_id"], workflow_results, dynamic_values
+        )
+        migrate_method_raw = self.config.get("migrate_method")
+        migrate_method = (
+            self._resolve_dynamic_value(
+                migrate_method_raw, workflow_results, dynamic_values
+            )
+            if migrate_method_raw is not None
+            else None
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.upgrade_group(
+                group_id=namespace_id,
+                target_application_id=target_application_id,
+                migrate_method=migrate_method,
+                cascade=True,
+            )
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("cascade_namespace_application failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]cascade_namespace_application failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        workflow_results[f"cascade_namespace_application_{node_name}"] = result["data"]
+        console.print(
+            f"[green]✓ Cascaded namespace {namespace_id} to {target_application_id} on {node_name}[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
 class GetGroupUpgradeStatusStep(BaseStep):
     """Read the current upgrade status for a group."""
 

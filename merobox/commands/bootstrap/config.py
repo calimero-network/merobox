@@ -70,6 +70,7 @@ VALID_STEP_TYPES = frozenset(
         "sync_group",
         "register_group_signing_key",
         "upgrade_group",
+        "cascade_namespace_application",
         "get_group_upgrade_status",
         "retry_group_upgrade",
         "call",
@@ -1070,6 +1071,23 @@ class UpgradeGroupStepConfig(BaseStepConfig):
     )
 
 
+class CascadeNamespaceApplicationStepConfig(BaseStepConfig):
+    """Configuration for cascade_namespace_application step."""
+
+    type: Literal["cascade_namespace_application"] = "cascade_namespace_application"
+    node: str = Field(..., description="Admin node emitting the cascade")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose descendants should cascade"
+    )
+    target_application_id: str = Field(
+        ..., description="Application ID to cascade across the namespace"
+    )
+    migrate_method: Optional[str] = Field(
+        None,
+        description="Optional migration export to invoke on each descendant",
+    )
+
+
 class GetGroupUpgradeStatusStepConfig(BaseStepConfig):
     """Configuration for get_group_upgrade_status step."""
 
@@ -1170,6 +1188,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "sync_group": SyncGroupStepConfig,
     "register_group_signing_key": RegisterGroupSigningKeyStepConfig,
     "upgrade_group": UpgradeGroupStepConfig,
+    "cascade_namespace_application": CascadeNamespaceApplicationStepConfig,
     "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
     "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,

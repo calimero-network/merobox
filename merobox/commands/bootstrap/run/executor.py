@@ -21,6 +21,7 @@ from rich.progress import (
 from merobox.commands.auth import AUTH_METHOD_NONE, AuthenticationError, AuthManager
 from merobox.commands.bootstrap.steps import (
     AddGroupMembersStep,
+    CascadeNamespaceApplicationStep,
     CreateContextStep,
     CreateGroupInNamespaceStep,
     CreateIdentityStep,
@@ -2148,6 +2149,8 @@ class WorkflowExecutor:
             return RegisterGroupSigningKeyStep(step_config, **common_kwargs)
         elif step_type == "upgrade_group":
             return UpgradeGroupStep(step_config, **common_kwargs)
+        elif step_type == "cascade_namespace_application":
+            return CascadeNamespaceApplicationStep(step_config, **common_kwargs)
         elif step_type == "get_group_upgrade_status":
             return GetGroupUpgradeStatusStep(step_config, **common_kwargs)
         elif step_type == "retry_group_upgrade":

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `cascade_namespace_application` workflow step type. Submits a
+  `CascadeTargetApplicationSet` governance op against a namespace,
+  fanning the target-application change out to every matching descendant
+  subgroup + context in a single sync round (calimero-network/core#2493).
+  Wraps the same `upgrade_group` RPC as `UpgradeGroupStep` but with
+  `cascade=True`; takes `node`, `namespace_id`, `target_application_id`,
+  and optional `migrate_method`. Requires calimero-client-py >= 0.6.15.
+
+### Changed
+
+- Bumped minimum `calimero-client-py` to 0.6.15 (`upgrade_group` now
+  accepts the `cascade` kwarg; published in 0.6.15).
+
 ## [0.6.17] - 2026-05-23
 
 ### Added
