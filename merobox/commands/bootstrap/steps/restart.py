@@ -103,49 +103,97 @@ class RestartContainerStep(BaseStep):
         console.print(f"[green]✓ Restarted {container_name}[/green]")
 
         if not wait_healthy:
+            # No health gate requested. Snapshot what the new
+            # incarnation has logged so far — best-effort, since
+            # the container may still be very early in startup.
+            self._snapshot_post_restart_logs(container, container_name)
             return True
 
-        return await self._wait_healthy(container_name, timeout)
+        healthy = await self._wait_healthy(container_name, timeout)
+        # Snapshot post-restart logs once the container is up
+        # (or after the wait-healthy timeout — either way, we
+        # want to capture whatever's been written). The OLD
+        # `docker logs -f` follower in the CI watcher doesn't
+        # follow across `docker restart`'s stop+start cycle: it
+        # exits when the pre-restart container's log stream
+        # closes during the stop phase, and the watcher loop
+        # treats the name as already-tracked so it never
+        # reattaches. Without this dump, the post-restart
+        # incarnation's logs never make it to a CI artifact and
+        # any investigation of post-restart behaviour is
+        # blind — see merobox#258 (the pre-restart half of this
+        # capture) for the upstream rationale.
+        self._snapshot_post_restart_logs(container, container_name)
+        return healthy
+
+    @classmethod
+    def _snapshot_pre_restart_logs(cls, container: Any, container_name: str) -> None:
+        """Pre-restart dump — captures the to-be-killed container's
+        logs before `docker restart` cycles it. See `_snapshot_logs`
+        for the shared shape; this is a thin wrapper that pins the
+        phase to ``pre-restart``."""
+        cls._snapshot_logs(container, container_name, phase="pre-restart")
+
+    @classmethod
+    def _snapshot_post_restart_logs(cls, container: Any, container_name: str) -> None:
+        """Post-restart dump — captures the freshly-restarted
+        container's logs after `docker restart` returns (and after
+        `wait_healthy` succeeds, if it was requested).
+
+        The CI watcher (`docker logs -f` keyed on container NAME)
+        DOES NOT follow across the restart's stop+start cycle —
+        the follower exits when the pre-restart container's log
+        stream closes during stop, and the watcher loop sees the
+        name as already-tracked so it never reattaches. Without
+        this dump, the post-restart incarnation's logs go
+        unrecorded entirely.
+        """
+        cls._snapshot_logs(container, container_name, phase="post-restart")
 
     @staticmethod
-    def _snapshot_pre_restart_logs(container: Any, container_name: str) -> None:
-        """Best-effort dump of the container's logs to a numbered file
-        before `docker restart` rotates the underlying container ID.
+    def _snapshot_logs(container: Any, container_name: str, *, phase: str) -> None:
+        """Best-effort dump of the container's logs to a numbered
+        file. Pre- and post-restart entry points share this body so
+        the failure-handling and naming convention stay in lockstep.
 
-        Naming convention: ``<dir>/<container>.pre-restart-<utc_ts>.log``
+        Naming convention: ``<dir>/<container>.<phase>-<utc_ts>.log``
         where ``<dir>`` is ``$MEROBOX_PRE_RESTART_LOG_DIR`` or, by
         default, ``docker-logs/`` in the current working directory.
-        The UTC timestamp suffix means multiple restarts of the same
-        container in a single workflow produce distinct files (sortable
-        by name).
+        The UTC microsecond timestamp suffix means multiple
+        restarts of the same container in a single workflow
+        produce distinct files (sortable by name), and ordering
+        between a pre-restart snapshot and its paired post-restart
+        snapshot is preserved by the timestamp too.
 
-        Errors at any step (docker API hiccup, can't create directory,
-        write fails) are logged to the console but never raised — the
-        caller's `container.restart()` must run regardless.
+        Errors at any step (docker API hiccup, can't create
+        directory, write fails) are logged to the console but
+        never raised — the caller's restart flow must proceed
+        regardless of whether the snapshot succeeds.
         """
         log_dir = os.environ.get(_PRE_RESTART_LOG_DIR_ENV, _PRE_RESTART_LOG_DIR_DEFAULT)
         try:
             os.makedirs(log_dir, exist_ok=True)
         except OSError as exc:
             console.print(
-                f"[yellow]Could not create pre-restart log dir {log_dir!r}: "
+                f"[yellow]Could not create {phase} log dir {log_dir!r}: "
                 f"{exc} (continuing without snapshot)[/yellow]"
             )
             return
 
-        # UTC + millisecond precision; the millis matter because rapid
-        # back-to-back restarts in a workflow shouldn't collide.
+        # UTC + microsecond precision; the µs matter because rapid
+        # back-to-back snapshots (e.g. pre+post within one restart)
+        # need to land in distinct files.
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        log_path = os.path.join(log_dir, f"{container_name}.pre-restart-{stamp}.log")
+        log_path = os.path.join(log_dir, f"{container_name}.{phase}-{stamp}.log")
 
         try:
             # `timestamps=True` so each line carries the docker-side
             # wall-clock timestamp, matching the format the CI
-            # watcher writes for the post-restart container's logs.
+            # watcher writes for the live-streamed container logs.
             log_bytes = container.logs(timestamps=True)
         except Exception as exc:
             console.print(
-                f"[yellow]Could not read pre-restart logs for "
+                f"[yellow]Could not read {phase} logs for "
                 f"{container_name!r}: {exc} (continuing)[/yellow]"
             )
             return
@@ -160,13 +208,13 @@ class RestartContainerStep(BaseStep):
                 f.write(log_text)
         except OSError as exc:
             console.print(
-                f"[yellow]Could not write pre-restart log file "
+                f"[yellow]Could not write {phase} log file "
                 f"{log_path!r}: {exc} (continuing)[/yellow]"
             )
             return
 
         console.print(
-            f"[cyan]Snapshotted pre-restart logs of {container_name!r} → {log_path}[/cyan]"
+            f"[cyan]Snapshotted {phase} logs of {container_name!r} → {log_path}[/cyan]"
         )
 
     async def _wait_healthy(self, container_name: str, timeout: int) -> bool:

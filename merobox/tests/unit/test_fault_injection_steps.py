@@ -382,3 +382,87 @@ class TestRestartPreRestartLogSnapshot:
         assert len(files) == 2, files
         contents = sorted(f.read_text() for f in files)
         assert contents == ["first\n", "second\n"]
+
+
+# ---------------------------------------------------------------------------
+# RestartContainerStep — post-restart log snapshot
+#
+# After `container.restart()` and (optionally) wait_healthy, the step ALSO
+# snapshots the newly-restarted container's logs. The CI watcher's
+# `docker logs -f` follower doesn't follow across the stop+start cycle:
+# the pre-restart container's log stream closes during the stop phase,
+# the follower exits, and the watcher loop treats the name as
+# already-tracked so it never reattaches. Without this second snapshot,
+# the post-restart incarnation's logs are lost entirely.
+# ---------------------------------------------------------------------------
+
+
+class TestRestartPostRestartLogSnapshot:
+    @staticmethod
+    def _container_with_logs(log_bytes):
+        class _StubContainer:
+            def logs(self, *, timestamps=False):
+                _ = timestamps
+                return log_bytes
+
+        return _StubContainer()
+
+    def test_pre_and_post_snapshots_land_in_distinct_files(self, tmp_path, monkeypatch):
+        # Both phases write to the same directory. The UTC microsecond
+        # timestamp in the filename guarantees they don't collide even
+        # if called back-to-back within the same `docker restart` cycle.
+        import time as _time
+
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(tmp_path))
+        c = self._container_with_logs(b"hello\n")
+
+        RestartContainerStep._snapshot_pre_restart_logs(c, "n1")
+        _time.sleep(0.002)  # advance the µs timestamp
+        RestartContainerStep._snapshot_post_restart_logs(c, "n1")
+
+        files = sorted(p.name for p in tmp_path.iterdir())
+        assert len(files) == 2, files
+        pre = [f for f in files if ".pre-restart-" in f]
+        post = [f for f in files if ".post-restart-" in f]
+        assert len(pre) == 1 and pre[0].endswith(".log")
+        assert len(post) == 1 and post[0].endswith(".log")
+        # Filename format: `<container>.<phase>-<utc-ts>.log`
+        assert pre[0].startswith("n1.pre-restart-")
+        assert post[0].startswith("n1.post-restart-")
+
+    def test_post_restart_snapshot_filename_carries_post_marker(
+        self, tmp_path, monkeypatch
+    ):
+        # Pins the exact phase marker in the filename so downstream
+        # tooling (CI artifact globs, log analyzers) can distinguish
+        # the two phases by name alone.
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(tmp_path))
+        RestartContainerStep._snapshot_post_restart_logs(
+            self._container_with_logs(b"post-startup\n"),
+            "sync-resil-node-1",
+        )
+        files = list(tmp_path.iterdir())
+        assert len(files) == 1
+        name = files[0].name
+        # Spelled exactly `.post-restart-` between the container name
+        # and the timestamp — matches the pre-restart counterpart's
+        # `.pre-restart-` convention.
+        assert name.startswith("sync-resil-node-1.post-restart-")
+        assert name.endswith(".log")
+        assert files[0].read_text() == "post-startup\n"
+
+    def test_post_restart_swallows_logs_failure(self, tmp_path, monkeypatch):
+        # The whole point of best-effort: even if container.logs()
+        # raises, we must not propagate. The restart already happened;
+        # losing the snapshot is bad but losing the workflow run is
+        # worse.
+        monkeypatch.setenv("MEROBOX_PRE_RESTART_LOG_DIR", str(tmp_path))
+
+        class _BrokenContainer:
+            def logs(self, *, timestamps=False):
+                _ = timestamps
+                raise RuntimeError("daemon flake post-restart")
+
+        # Must NOT raise.
+        RestartContainerStep._snapshot_post_restart_logs(_BrokenContainer(), "n1")
+        assert list(tmp_path.iterdir()) == []
