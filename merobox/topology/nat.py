@@ -88,6 +88,23 @@ BOOT_NODE_IMAGE_TAG = "ghcr.io/calimero-network/boot-node:edge"
 # add iptables iproute2` adds ~5 s on first run but is no worse
 # than the previous Docker build step would have been.
 #
+# Tradeoff worth flagging: the inlined-gateway design swaps a
+# build-time package install (baked into the wrapper image) for a
+# RUNTIME `apk add` against Alpine's package mirrors. Air-gapped
+# CI runners or environments where the upstream mirror is blocked
+# will fail at the `apk add` step in `_spawn_nat_gateway` with a
+# diagnostic that points at this comment. Mitigations, in order
+# of escalation: (a) prewarm the gateway image with iptables /
+# ip6tables / iproute2 already installed (`docker run --rm
+# alpine:3.19 apk add --no-cache iptables ip6tables iproute2 &&
+# docker commit ...`), then point `MEROBOX_NAT_GATEWAY_IMAGE` at
+# the prewarmed image, (b) point apk at an internal mirror via
+# an override image whose `/etc/apk/repositories` lists it, or
+# (c) publish a `merobox-nat-gateway` image and pin
+# `MEROBOX_NAT_GATEWAY_IMAGE` to it. We don't ship (c) by
+# default because it would re-introduce the bundled-image
+# pattern that this PR exists to retire.
+#
 # Override via `MEROBOX_NAT_GATEWAY_IMAGE` if you want to pin to a
 # specific digest for reproducibility (recommended in production
 # CI):
@@ -905,6 +922,16 @@ def _spawn_nat_gateway(
         # busybox-sleep so we don't depend on /dev/null being
         # writable.
         command=["sleep", "infinity"],
+        # Force-clear any ENTRYPOINT the image declares. Stock
+        # alpine has none, but `MEROBOX_NAT_GATEWAY_IMAGE` lets
+        # operators swap in any image, and an image with
+        # `ENTRYPOINT ["something"]` would silently turn our
+        # `command` into arguments to that entrypoint rather
+        # than the process we actually want to run. Passing the
+        # empty-list explicit clear (Docker idiom: `--entrypoint=""`
+        # on the CLI) makes the `command=` above authoritative
+        # regardless of what the image declares.
+        entrypoint=[],
         labels={
             "merobox.role": "nat-gateway",
             "merobox.workflow": workflow_name,
@@ -943,10 +970,20 @@ def _spawn_nat_gateway(
             tail = container.logs(tail=200).decode("utf-8", errors="replace")
         except Exception:
             tail = "<could not read gateway logs>"
+        image_in_use = gateway_base_image()
         _destroy_half_spawned_gateway(container, public_network, lan_network)
         raise RuntimeError(
             f"NAT gateway container {container_name!r} exited "
-            f"during startup (status={status!r}). Logs:\n{tail}"
+            f"during startup (status={status!r}, "
+            f"image={image_in_use!r}). If this is a non-default "
+            f"`MEROBOX_NAT_GATEWAY_IMAGE`, check whether the "
+            f"override image's ENTRYPOINT/CMD shape lets our "
+            f"`sleep infinity` actually run — stock alpine has "
+            f"no ENTRYPOINT so this is implicit; we also pass "
+            f"`entrypoint=[]` to clear any declared ENTRYPOINT, "
+            f"but an image whose binary at `entrypoint=[]` "
+            f"resolution fails (e.g. wrong arch) would still "
+            f"exit here. Logs:\n{tail}"
         )
 
     # Install iptables + iproute2 inside the running container.
@@ -984,9 +1021,30 @@ def _spawn_nat_gateway(
     if apk_ec != 0:
         decoded = _decode_exec_output(apk_out)
         _destroy_half_spawned_gateway(container, public_network, lan_network)
+        # Most `apk add` failures in this path are network-shaped:
+        # the inlined-gateway design (see the comment above
+        # `_GATEWAY_DEFAULT_IMAGE`) trades build-time image bloat
+        # for a runtime Alpine-mirror dependency at first spawn.
+        # If CI is running in an air-gapped or offline-rerun
+        # environment, the path forward is to either (a) prewarm
+        # the runner with `docker run --rm <image> apk add
+        # --no-cache iptables ip6tables iproute2` before the
+        # workflow, (b) point apk at an internal mirror via the
+        # `MEROBOX_NAT_GATEWAY_IMAGE` override (an image with
+        # mirrors baked into `/etc/apk/repositories`), or (c)
+        # publish a `merobox-nat-gateway` image and pin it. We
+        # surface the hint here so an operator's first
+        # diagnostic doesn't require finding this comment.
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to apk add "
-            f"iptables (exit {apk_ec}): {decoded}"
+            f"iptables (exit {apk_ec}): {decoded}.\n"
+            f"This step requires reachable Alpine package "
+            f"mirrors at workflow-start time. On offline or "
+            f"air-gapped CI: prewarm the gateway image with "
+            f"iptables/iproute2 installed, or set "
+            f"MEROBOX_NAT_GATEWAY_IMAGE to a custom image with "
+            f"`/etc/apk/repositories` pointing at an internal "
+            f"mirror."
         )
 
     # Belt-and-suspenders per-interface forwarding enable.
