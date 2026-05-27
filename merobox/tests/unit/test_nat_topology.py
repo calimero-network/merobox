@@ -18,9 +18,9 @@ from merobox.commands.bootstrap.config import (
 )
 from merobox.topology.nat import (
     BOOT_NODE_IMAGE_TAG,
-    GATEWAY_BASE_IMAGE,
     NatTopologyState,
     boot_node_bootstrap_multiaddrs,
+    gateway_base_image,
     slugify_workflow_name,
 )
 
@@ -155,37 +155,19 @@ def test_gateway_base_image_default_is_stock_alpine(monkeypatch):
     source-level change rather than an accidental drift.
     """
     monkeypatch.delenv("MEROBOX_NAT_GATEWAY_IMAGE", raising=False)
-    import importlib
-
-    import merobox.topology.nat as nat_module
-
-    importlib.reload(nat_module)
-    try:
-        assert nat_module.GATEWAY_BASE_IMAGE == "alpine:3.19"
-    finally:
-        # Restore the module's state for any later tests that
-        # imported the (env-free) default.
-        importlib.reload(nat_module)
+    assert gateway_base_image() == "alpine:3.19"
 
 
 def test_gateway_base_image_env_override(monkeypatch):
     """`MEROBOX_NAT_GATEWAY_IMAGE` lets CI pin to a digest
     (e.g. `alpine@sha256:<digest>`) without shipping a merobox
-    release. Override is read at module-load time, so this test
-    sets the env var and reloads the module to exercise the
-    full override path."""
+    release. The override is resolved per-call rather than at
+    module-import, so monkeypatch alone is enough — no
+    `importlib.reload` dance, and the override stays scoped to
+    this test by pytest's monkeypatch cleanup."""
     pinned = "alpine@sha256:" + "0" * 64
     monkeypatch.setenv("MEROBOX_NAT_GATEWAY_IMAGE", pinned)
-    import importlib
-
-    import merobox.topology.nat as nat_module
-
-    importlib.reload(nat_module)
-    try:
-        assert nat_module.GATEWAY_BASE_IMAGE == pinned
-    finally:
-        monkeypatch.delenv("MEROBOX_NAT_GATEWAY_IMAGE", raising=False)
-        importlib.reload(nat_module)
+    assert gateway_base_image() == pinned
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +466,7 @@ def test_inject_default_route_spawns_sidecar_with_expected_shape():
     # depending on a wrapper image that bundles a Dockerfile (which
     # broke under PyInstaller frozen builds because non-`.py`
     # files aren't bundled by default).
-    assert args[0] == GATEWAY_BASE_IMAGE
+    assert args[0] == gateway_base_image()
     # Stock alpine has no ENTRYPOINT we'd need to override, but
     # we still pass `sh -c` because the command is a multi-step
     # script (apk add + ip route replace + verification grep).
@@ -555,7 +537,7 @@ def test_inject_default_route_raises_with_sidecar_stderr_on_container_error():
         container=MagicMock(),
         exit_status=2,
         command="ip route replace default via 10.0.0.1",
-        image=GATEWAY_BASE_IMAGE,
+        image=gateway_base_image(),
         stderr=b"RTNETLINK answers: Network is unreachable",
     )
 

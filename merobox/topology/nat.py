@@ -101,7 +101,27 @@ BOOT_NODE_IMAGE_TAG = "ghcr.io/calimero-network/boot-node:edge"
 # time alpine gets a patch refresh, but the override is wired
 # through every call site (sidecars + gateway) so a single env
 # var is enough for full pinning.
-GATEWAY_BASE_IMAGE = os.environ.get("MEROBOX_NAT_GATEWAY_IMAGE", "alpine:3.19")
+#
+# Resolved lazily (per-call rather than at module-import) so the
+# env var can be set AFTER the module is imported — important
+# for both the test suite (no `importlib.reload` dance needed)
+# and operator workflows that import merobox as a library and
+# then configure env from a settings file before spawning a
+# topology. The default branch is hot-path only on a missed env
+# lookup, so the per-call cost is negligible.
+_GATEWAY_DEFAULT_IMAGE = "alpine:3.19"
+
+
+def gateway_base_image() -> str:
+    """Image to use for the NAT-gateway role and its sidecars.
+
+    Honors the `MEROBOX_NAT_GATEWAY_IMAGE` env var at call-time,
+    so tests can flip the override without reloading the module
+    and operators can set it after import. See the comment above
+    `_GATEWAY_DEFAULT_IMAGE` for the rationale.
+    """
+    return os.environ.get("MEROBOX_NAT_GATEWAY_IMAGE", _GATEWAY_DEFAULT_IMAGE)
+
 
 # Boot-node's `--port` default. The published image's Dockerfile
 # EXPOSEs the same value; if upstream bumps this, change both. We
@@ -453,7 +473,7 @@ def inject_default_route_into_client(
         ) from e
     try:
         client.containers.run(
-            GATEWAY_BASE_IMAGE,
+            gateway_base_image(),
             # Stock alpine has busybox's limited `ip` command but no
             # iproute2 — `ip route replace` works either way (busybox
             # `ip` is sufficient for adding a default route), but we
@@ -581,7 +601,7 @@ def wait_for_client_reachability(
         attempt += 1
         try:
             out = client.containers.run(
-                GATEWAY_BASE_IMAGE,
+                gateway_base_image(),
                 # Alpine's busybox already ships `nc` and `timeout`,
                 # so we don't need any extra package install for
                 # this probe. `nc -zv` keeps the "<ip> (<ip>:<port>)
@@ -753,6 +773,55 @@ def _pick_gateway_lan_ip(lan_network: docker.models.networks.Network) -> str:
     return str(network.network_address + 2)
 
 
+def _destroy_half_spawned_gateway(
+    container: docker.models.containers.Container,
+    public_network: docker.models.networks.Network,
+    lan_network: docker.models.networks.Network,
+) -> None:
+    """Tear down a partially-set-up NAT gateway container.
+
+    Used when an exec step inside `_spawn_nat_gateway` (`apk add`,
+    per-interface forwarding, eth1 verify, or iptables) fails: the
+    container is up (`sleep infinity`) and wired to both bridges,
+    but doesn't have the NAT semantics the caller needs. Leaving
+    it running would (a) burn a container slot on the runner, (b)
+    block future `_ensure_network` calls from removing/recreating
+    the two networks (Docker refuses to remove a network with an
+    attached endpoint), and (c) make the surfaced RuntimeError
+    actionable only after the user manually `docker rm`-s.
+
+    Disconnect-then-remove rather than just `remove(force=True)`:
+    while `remove(force=True)` is supposed to disconnect on its
+    own, a daemon hiccup can leave the network with a dangling
+    endpoint even after the container record is gone. Explicit
+    disconnect is cheap insurance — if it fails we still try the
+    remove. Every step is best-effort; nothing propagates past
+    this function (the caller already has the original
+    RuntimeError it wants to surface).
+    """
+    container_name = getattr(container, "name", "<unknown>")
+    for network in (public_network, lan_network):
+        try:
+            network.disconnect(container, force=True)
+        except Exception as disconnect_exc:
+            # `force=True` makes disconnect tolerate
+            # "endpoint not found" style errors, but a daemon
+            # outage can still raise — log and keep going.
+            console.print(
+                f"[yellow]NAT gateway {container_name!r}: "
+                f"disconnect from {network.name!r} failed: "
+                f"{disconnect_exc}[/yellow]"
+            )
+    try:
+        container.remove(force=True)
+    except Exception as cleanup_exc:
+        console.print(
+            f"[yellow]NAT gateway {container_name!r}: "
+            f"remove failed after partial-spawn cleanup: "
+            f"{cleanup_exc}[/yellow]"
+        )
+
+
 def _decode_exec_output(output: bytes | str | None) -> str:
     """Normalize `container.exec_run(...)` output for error strings.
 
@@ -827,7 +896,7 @@ def _spawn_nat_gateway(
         f"(mode={nat_mode}, lan_ip={gateway_lan_ip})[/yellow]"
     )
     container = client.containers.create(
-        image=GATEWAY_BASE_IMAGE,
+        image=gateway_base_image(),
         name=container_name,
         network=public_network.name,
         # `sleep infinity` keeps the container alive while we
@@ -874,6 +943,7 @@ def _spawn_nat_gateway(
             tail = container.logs(tail=200).decode("utf-8", errors="replace")
         except Exception:
             tail = "<could not read gateway logs>"
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
         raise RuntimeError(
             f"NAT gateway container {container_name!r} exited "
             f"during startup (status={status!r}). Logs:\n{tail}"
@@ -912,9 +982,11 @@ def _spawn_nat_gateway(
     # driver case that's the only one merobox supports today.
     apk_ec, apk_out = container.exec_run(apk_cmd, demux=False)
     if apk_ec != 0:
+        decoded = _decode_exec_output(apk_out)
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to apk add "
-            f"iptables (exit {apk_ec}): {_decode_exec_output(apk_out)}"
+            f"iptables (exit {apk_ec}): {decoded}"
         )
 
     # Belt-and-suspenders per-interface forwarding enable.
@@ -933,12 +1005,19 @@ def _spawn_nat_gateway(
     # `2>/dev/null || true` per-file because /proc lists pseudo-
     # interfaces (e.g. `all`, `default`) that are already covered
     # by the sysctl and pre-existing entries that ignore writes.
+    # Shell-safety: `$f` is quoted so a future kernel path with a
+    # space (vanishingly unlikely under /proc but cheap defense)
+    # still works. `[ -e "$f" ]` guards the no-match case: under
+    # POSIX sh without nullglob, an empty glob leaves the loop
+    # variable bound to the literal pattern, and we don't want
+    # to attempt a write to a literal `*` path even just to fall
+    # through `|| true`.
     fwd_ec, fwd_out = container.exec_run(
         [
             "sh",
             "-c",
             "for f in /proc/sys/net/ipv4/conf/*/forwarding; do "
-            "echo 1 > $f 2>/dev/null || true; done",
+            '[ -e "$f" ] && echo 1 > "$f" 2>/dev/null || true; done',
         ],
         demux=False,
     )
@@ -946,10 +1025,11 @@ def _spawn_nat_gateway(
         # The `|| true` above means the script itself never exits
         # non-zero, so a non-zero here means `sh` itself failed —
         # worth surfacing rather than swallowing.
+        decoded = _decode_exec_output(fwd_out)
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to enable "
-            f"per-interface forwarding (exit {fwd_ec}): "
-            f"{_decode_exec_output(fwd_out)}"
+            f"per-interface forwarding (exit {fwd_ec}): {decoded}"
         )
 
     # Verify eth1 specifically — that's the interface the LAN
@@ -965,6 +1045,7 @@ def _spawn_nat_gateway(
     )
     verify_decoded = _decode_exec_output(verify_out).strip()
     if verify_ec != 0 or verify_decoded != "1":
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
         raise RuntimeError(
             f"NAT gateway {container_name!r}: eth1 forwarding is "
             f"not enabled (read={verify_decoded!r}, exit "
@@ -1001,26 +1082,8 @@ def _spawn_nat_gateway(
 
     ipt_ec, ipt_out = container.exec_run(iptables_cmd, demux=False)
     if ipt_ec != 0:
-        # Tear down the half-spawned gateway before re-raising.
-        # Without this, the container would be left running with
-        # `sleep infinity` and NO MASQUERADE rule installed —
-        # downstream teardown does eventually catch it (it's
-        # labelled with `merobox.workflow`), but leaving the
-        # cleanup until a later phase makes diagnostic dumps
-        # noisier and risks a partial-failure path where the
-        # caller doesn't run teardown at all (e.g. interactive
-        # CLI flow). Best-effort: any cleanup error is reported
-        # to the console but never overrides the original
-        # RuntimeError.
         decoded = _decode_exec_output(ipt_out)
-        try:
-            container.remove(force=True)
-        except Exception as cleanup_exc:
-            console.print(
-                f"[yellow]NAT gateway {container_name!r}: "
-                f"cleanup after iptables failure also failed: "
-                f"{cleanup_exc}[/yellow]"
-            )
+        _destroy_half_spawned_gateway(container, public_network, lan_network)
         raise RuntimeError(
             f"NAT gateway {container_name!r}: failed to install "
             f"iptables MASQUERADE ({nat_mode}, exit {ipt_ec}): "
@@ -1230,7 +1293,7 @@ def setup_nat_topology(
     boot_node_image = boot_node_image_override or BOOT_NODE_IMAGE_TAG
     if not boot_node_image_override:
         _pull_image_if_missing(client, BOOT_NODE_IMAGE_TAG)
-    _pull_image_if_missing(client, GATEWAY_BASE_IMAGE)
+    _pull_image_if_missing(client, gateway_base_image())
 
     # Step 2: networks. Names are workflow-scoped so parallel
     # workflows don't clobber each other.
@@ -1610,7 +1673,7 @@ def _dump_topology_diagnostics(
     for name in state.client_names:
         try:
             out = client.containers.run(
-                GATEWAY_BASE_IMAGE,
+                gateway_base_image(),
                 entrypoint=["sh", "-c"],
                 # `apk add` first because stock alpine's busybox
                 # `ip` differs subtly from iproute2's; we want
@@ -1674,7 +1737,7 @@ def _dump_topology_diagnostics(
     for name in state.client_names[:1]:  # first client is enough
         try:
             out = client.containers.run(
-                GATEWAY_BASE_IMAGE,
+                gateway_base_image(),
                 entrypoint=["sh", "-c"],
                 # ping and nc are in busybox, no apk needed for the
                 # probe itself.
