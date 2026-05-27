@@ -563,9 +563,18 @@ def inject_default_route_into_client(
 # return "open" after the default-route injection. CI showed the
 # forwarding path settles intermittently — first probe sometimes
 # hits ICMP unreachable while ARP / forwarding state stabilises;
-# a second probe ~1-2s later succeeds. 20s is generous for a slow
-# CI runner without inflating the overall topology-setup budget.
-NAT_CONNECTIVITY_PROBE_TIMEOUT_SECONDS = 20
+# a second probe ~1-2s later succeeds.
+#
+# Was 20s up to 0.6.20. Bumped to 60s because the inlined-iptables
+# gateway (0.6.20+) does `apk add iptables iproute2` at first spawn,
+# which on a cold-cache CI runner adds ~5-15s before the gateway
+# can start forwarding. Combined with the kernel forwarding-path
+# settle (~1-2s) and runner contention, the 20s budget was racing
+# the probe enough to surface 3-of-6 spurious failures on core
+# #2466's sync-resilience matrix. 60s gives the cold path enough
+# room without making the steady-state retry loop slower (the
+# probe still succeeds on attempt 1 once forwarding is up).
+NAT_CONNECTIVITY_PROBE_TIMEOUT_SECONDS = 60
 NAT_CONNECTIVITY_PROBE_INTERVAL_SECONDS = 1.0
 
 
