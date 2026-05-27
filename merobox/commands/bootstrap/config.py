@@ -1069,6 +1069,14 @@ class UpgradeGroupStepConfig(BaseStepConfig):
     migrate_method: Optional[str] = Field(
         None, description="Optional migration export to invoke during upgrade"
     )
+    cascade: bool = Field(
+        False,
+        description=(
+            "When true, dispatch as a namespace cascade "
+            "(CascadeTargetApplicationSet) instead of a per-group upgrade. "
+            "Requires calimero-client-py >= 0.6.15."
+        ),
+    )
 
 
 class CascadeNamespaceApplicationStepConfig(BaseStepConfig):

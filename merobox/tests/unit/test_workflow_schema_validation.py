@@ -1077,6 +1077,17 @@ class TestGroupUpgradeStepSchemas:
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
+    def test_valid_upgrade_group_with_cascade(self, config_module):
+        step = {
+            "type": "upgrade_group",
+            "node": "calimero-node-1",
+            "group_id": "{{namespace_id}}",
+            "target_application_id": "{{app_v2}}",
+            "migrate_method": "migrate_v1_to_v2",
+            "cascade": True,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
     def test_invalid_upgrade_group_missing_target(self, config_module):
         step = {
             "type": "upgrade_group",

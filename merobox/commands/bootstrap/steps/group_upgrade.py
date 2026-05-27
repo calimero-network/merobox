@@ -143,6 +143,11 @@ class UpgradeGroupStep(BaseStep):
             raise ValueError(
                 f"Step '{step_name}': 'migrate_method' must be a string if provided"
             )
+        cascade = self.config.get("cascade")
+        if cascade is not None and not isinstance(cascade, bool):
+            raise ValueError(
+                f"Step '{step_name}': 'cascade' must be a boolean if provided"
+            )
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -162,15 +167,44 @@ class UpgradeGroupStep(BaseStep):
             if migrate_method_raw is not None
             else None
         )
+        cascade = bool(self.config.get("cascade", False))
+
+        # Pre-flight: only enforced when cascade=True. The non-cascade
+        # path (the historical default) does not need the kwarg at all,
+        # so on older client-py versions a workflow that doesn't ask for
+        # cascade keeps working unchanged. Mirrors the version-guard
+        # pattern in CascadeNamespaceApplicationStep — see that step's
+        # comment for the rationale.
+        if cascade and (
+            _CLIENT_PY_VERSION is not None
+            and _CLIENT_PY_VERSION < _CASCADE_MIN_CLIENT_VERSION
+        ):
+            min_str = ".".join(str(p) for p in _CASCADE_MIN_CLIENT_VERSION)
+            msg = (
+                f"upgrade_group(cascade=true) requires "
+                f"calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if self._is_expected_failure():
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
 
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            api_result = client.upgrade_group(
-                group_id=group_id,
-                target_application_id=target_application_id,
-                migrate_method=migrate_method,
-            )
+            # `cascade` is only forwarded when truthy so callers running
+            # against pre-0.6.15 client-py (where the kwarg doesn't exist)
+            # don't trip a TypeError on the default `cascade=false` path.
+            upgrade_kwargs: dict[str, Any] = {
+                "group_id": group_id,
+                "target_application_id": target_application_id,
+                "migrate_method": migrate_method,
+            }
+            if cascade:
+                upgrade_kwargs["cascade"] = True
+            api_result = client.upgrade_group(**upgrade_kwargs)
             result = ok(api_result)
         except Exception as e:
             result = fail("upgrade_group failed", error=e)
