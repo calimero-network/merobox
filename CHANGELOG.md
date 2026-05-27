@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.26] - 2026-05-28
+
+### Changed
+
+- Bumped `calimero-client-py` pin from `>=0.6.15` to `>=0.6.16`.
+  0.6.16 picks up the new `app_key` field on
+  `SignedGroupOpenInvitation` (added in calimero-network/core#2507
+  and exposed through calimero-network/calimero-client-py#56). Older
+  client-py versions silently dropped the unknown field during the
+  JSON-RPC `join_namespace` deserialize, causing joiners'
+  `GroupMeta.app_key` to seed to `[0u8; 32]` and any subsequent
+  `CascadeTargetApplicationSet` op to silently skip the joiner's
+  subtree.
+
 ## [0.6.25] - 2026-05-28
 
 ### Changed
