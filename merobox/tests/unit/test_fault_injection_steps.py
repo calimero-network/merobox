@@ -609,3 +609,161 @@ class TestRestartLogSnapshotReviewFixes:
         files = list(tmp_path.iterdir())
         assert len(files) == 1
         assert files[0].name.startswith("unnamed.pre-restart-")
+
+
+# ---------------------------------------------------------------------------
+# RestartContainerStep — NAT-topology default-route re-injection
+#
+# `docker restart` resets the container's network configuration to
+# Docker's defaults, which wipes the `ip route replace default via
+# <gateway-IP>` override that the NAT-topology setup applied via
+# `inject_default_route_into_client`. Without re-injection, post-restart
+# packets go via Docker's bridge gateway instead of the NAT gateway —
+# they leave fine but the MASQUERADE return path is missing, so noise
+# handshakes to the boot-node time out. This is core#2469's root cause.
+#
+# These tests pin the re-injection contract on RestartContainerStep:
+#
+#   - Only fires when `manager.nat_topology_state` is non-None AND the
+#     restarted container is one of the topology's clients.
+#   - No-op for boot-node / non-topology container / no-NAT setups.
+#   - Reachability probe surfaces a half-broken topology before the
+#     caller starts asserting on sync behaviour.
+#   - Inject failure → log + continue (don't crash the restart step).
+#   - Reachability failure → log + continue (the route's already
+#     re-injected; the probe is diagnostic, not gating).
+# ---------------------------------------------------------------------------
+
+
+class TestRestartReinjectNatDefaultRoute:
+    @staticmethod
+    def _step():
+        # Construct the step the same way the YAML loader would, then
+        # attach a `manager` shim (the executor normally sets it on the
+        # step right before `execute()` runs).
+        step = RestartContainerStep({"type": "restart_container", "container": "n1"})
+
+        class _ManagerShim:
+            client = object()  # sentinel — never dereferenced
+            nat_topology_state = None
+
+        step.manager = _ManagerShim()
+        return step
+
+    @staticmethod
+    def _nat_state(client_names):
+        # Stand-in for `NatTopologyState` — only `client_names` is
+        # touched by `_reinject_nat_default_route`. Avoid pulling
+        # the real dataclass + its docker deps into the unit test.
+        class _State:
+            def __init__(self, names):
+                self.client_names = names
+
+        return _State(client_names)
+
+    def test_noop_when_no_nat_topology(self, monkeypatch):
+        # nat_topology_state absent / None → re-injection helpers
+        # must NOT be imported or called. Patch them to detonate so
+        # any accidental call surfaces immediately.
+        from merobox.topology import nat as nat_mod
+
+        def _boom(*_a, **_kw):
+            raise AssertionError("must not be called when no NAT topology")
+
+        monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _boom)
+        monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _boom)
+
+        step = self._step()
+        step.manager.nat_topology_state = None
+        # Must NOT raise.
+        step._reinject_nat_default_route("n1")
+
+    def test_noop_when_container_is_not_a_nat_client(self, monkeypatch):
+        # The boot-node and any non-topology container fall through
+        # this branch — they don't have a NAT-gateway default route
+        # in the first place, so re-injection would either no-op or
+        # actively break their networking.
+        from merobox.topology import nat as nat_mod
+
+        def _boom(*_a, **_kw):
+            raise AssertionError("must not be called for non-client containers")
+
+        monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _boom)
+        monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _boom)
+
+        step = self._step()
+        step.manager.nat_topology_state = self._nat_state(["client-1", "client-2"])
+        step._reinject_nat_default_route("boot-node")
+
+    def test_reinjects_and_probes_when_container_is_a_nat_client(self, monkeypatch):
+        # Happy path: state present, container in client_names. Both
+        # the inject and the reachability probe run, in that order.
+        from merobox.topology import nat as nat_mod
+
+        calls: list[tuple[str, str]] = []
+
+        def _inject(_client, _state, name):
+            calls.append(("inject", name))
+
+        def _probe(_client, _state, name):
+            calls.append(("probe", name))
+
+        monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _inject)
+        monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _probe)
+
+        step = self._step()
+        step.manager.nat_topology_state = self._nat_state(["n1", "n2"])
+        step._reinject_nat_default_route("n1")
+
+        # Order matters: inject BEFORE probe. If the probe ran
+        # first it'd flake on an unconfigured route.
+        assert calls == [("inject", "n1"), ("probe", "n1")], calls
+
+    def test_inject_failure_is_logged_and_skips_probe(self, monkeypatch):
+        # If the inject itself raises (e.g. the exec_run for
+        # `ip route replace` fails because the container isn't
+        # ready yet), we log and return — running the probe would
+        # be guaranteed to fail too, with a less useful error.
+        from merobox.topology import nat as nat_mod
+
+        def _broken_inject(*_a, **_kw):
+            raise RuntimeError("ip route replace failed")
+
+        probe_calls: list[str] = []
+
+        def _probe(_client, _state, name):
+            probe_calls.append(name)
+
+        monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _broken_inject)
+        monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _probe)
+
+        step = self._step()
+        step.manager.nat_topology_state = self._nat_state(["n1"])
+        # Must NOT raise.
+        step._reinject_nat_default_route("n1")
+        # Probe was skipped — inject failed, so the route isn't in
+        # a probeable state.
+        assert probe_calls == []
+
+    def test_probe_failure_does_not_propagate(self, monkeypatch):
+        # The reachability probe is purely diagnostic — it tells
+        # the user that the NAT gateway's MASQUERADE rule got
+        # dropped or similar, but the route is already re-injected.
+        # Failing the restart step on a probe miss would mask the
+        # actual bug (whatever made the gateway forwarding break)
+        # behind a less-informative test failure.
+        from merobox.topology import nat as nat_mod
+
+        def _inject(*_a, **_kw):
+            pass
+
+        def _broken_probe(*_a, **_kw):
+            raise RuntimeError("boot-node unreachable")
+
+        monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _inject)
+        monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _broken_probe)
+
+        step = self._step()
+        step.manager.nat_topology_state = self._nat_state(["n1"])
+        # Must NOT raise — probe failure is logged-and-swallowed.
+        step._reinject_nat_default_route("n1")

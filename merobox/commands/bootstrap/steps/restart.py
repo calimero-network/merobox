@@ -111,6 +111,25 @@ class RestartContainerStep(BaseStep):
 
         console.print(f"[green]✓ Restarted {container_name}[/green]")
 
+        # Re-inject the NAT-topology default route if applicable.
+        # `docker restart` resets the container's network
+        # configuration to Docker's defaults, which wipes the
+        # `ip route replace default via <gateway-IP>` override
+        # that the topology setup applied via
+        # `inject_default_route_into_client`. Without re-injection,
+        # post-restart packets go via Docker's bridge gateway
+        # instead of the NAT gateway — they leave fine but the
+        # MASQUERADE return path is missing, so noise handshakes
+        # to the boot-node time out (verified via netns
+        # route-watcher in the #2469 keypair-repro v6 run; see
+        # the PR description for the timeline).
+        #
+        # Best-effort: failure to re-inject doesn't fail the
+        # restart itself (the caller may not even be in a NAT
+        # topology — `nat_topology_state` is `None` in that
+        # case). Errors are surfaced to the console.
+        self._reinject_nat_default_route(container_name)
+
         if not wait_healthy:
             # No health gate requested. Snapshot what the new
             # incarnation has logged so far — best-effort, since
@@ -134,6 +153,62 @@ class RestartContainerStep(BaseStep):
         # capture) for the upstream rationale.
         self._snapshot_post_restart_logs(container, container_name)
         return healthy
+
+    def _reinject_nat_default_route(self, container_name: str) -> None:
+        """Re-inject the NAT-gateway default route into the
+        just-restarted container if it belongs to a live NAT
+        topology.
+
+        The `nat_topology_state` attribute is stashed on the
+        manager by `WorkflowExecutor._start_nodes_nat_topology`
+        when the topology comes up, and cleared on teardown. If
+        absent or empty, the restart isn't in a NAT context and
+        this method is a no-op.
+        """
+        state = getattr(self.manager, "nat_topology_state", None)
+        if state is None:
+            # Not a NAT topology — nothing to re-inject.
+            return
+        if container_name not in state.client_names:
+            # Restart targets a container that isn't a NAT
+            # client (e.g. the boot-node or a non-topology
+            # container). Default route is already correct.
+            return
+
+        # Imported here to avoid pulling the NAT module's
+        # docker / iptables deps into the step's import path
+        # when the step is used outside NAT contexts.
+        from merobox.topology.nat import (
+            inject_default_route_into_client,
+            wait_for_client_reachability,
+        )
+
+        client = self.manager.client
+        try:
+            inject_default_route_into_client(client, state, container_name)
+        except Exception as exc:
+            console.print(
+                f"[yellow]Failed to re-inject default route into "
+                f"{container_name!r} post-restart: {exc}[/yellow]"
+            )
+            return
+
+        # Verify the client can still reach the boot-node
+        # through the gateway. This is the same probe the
+        # initial topology setup runs and serves the same
+        # purpose: catch a half-broken topology before the
+        # caller starts asserting on sync behaviour. A failure
+        # here means the route was re-injected but the
+        # forwarding path is broken (e.g. gateway MASQUERADE
+        # rule got dropped somehow) — much more diagnostic
+        # than letting downstream sync time out.
+        try:
+            wait_for_client_reachability(client, state, container_name)
+        except Exception as exc:
+            console.print(
+                f"[yellow]Post-restart reachability check from "
+                f"{container_name!r} → boot-node failed: {exc}[/yellow]"
+            )
 
     @staticmethod
     def _snapshot_pre_restart_logs(container: Any, container_name: str) -> None:

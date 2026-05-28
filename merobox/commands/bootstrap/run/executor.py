@@ -794,6 +794,11 @@ class WorkflowExecutor:
             console.print(f"[yellow]NAT topology teardown raised: {e}[/yellow]")
         finally:
             self._nat_state = None
+            # Drop the manager-side handle in lockstep so a
+            # subsequent restart_container step (in a fresh
+            # workflow that reuses the same manager) doesn't
+            # try to re-inject against a torn-down topology.
+            self.manager.nat_topology_state = None
 
     def _nuke_data(self, prefix: str = None) -> bool:
         """
@@ -1049,6 +1054,22 @@ class WorkflowExecutor:
         except Exception as e:
             console.print(f"[red]❌ NAT topology setup failed: {e}[/red]")
             return False
+
+        # Expose the topology state on the manager so step
+        # executors (specifically `RestartContainerStep`) can
+        # re-invoke `inject_default_route_into_client` on the
+        # client after a `docker restart`. Docker's restart
+        # path resets the container's default route to the
+        # Docker bridge gateway, wiping the merobox-injected
+        # override that points at the NAT gateway. Without
+        # the re-injection, every post-restart packet from
+        # the client goes via Docker's bridge instead of the
+        # NAT gateway, the boot-node connection times out at
+        # the noise handshake (the return path doesn't
+        # transit the MASQUERADE), and downstream relay-
+        # reservation + rendezvous-register never run.
+        # Cleared on teardown alongside `self._nat_state`.
+        self.manager.nat_topology_state = self._nat_state
 
         # Compute the bootstrap multiaddrs the clients need. These
         # override anything the workflow's `bootstrap_nodes:` field
