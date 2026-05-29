@@ -225,3 +225,70 @@ def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
         f"code paths may not be exercised. Set `mdns: false` in nodes config "
         f"to make this fault test meaningful.[/yellow]"
     )
+
+
+def reinject_nat_default_route(
+    manager: Any, container_name: str, *, context: str
+) -> None:
+    """Re-apply the NAT-gateway default route to a container whose network
+    Docker just reconfigured, if it belongs to a live NAT topology.
+
+    Docker rewrites a container's routing table on any operation that
+    rebuilds its network attachment — both `docker restart` and a
+    `network disconnect` + `network connect` cycle (the partition-heal
+    used by connect_node). Either one wipes the
+    `ip route replace default via <gateway-IP>` override that the topology
+    setup applied via `inject_default_route_into_client` and re-points the
+    default route at Docker's own bridge gateway. Packets then leave fine
+    but their return path skips the NAT gateway's MASQUERADE, so the
+    client's noise handshakes to the boot-node time out and every
+    relay/rendezvous recovery path stalls.
+
+    The `nat_topology_state` attribute is stashed on the manager by
+    `WorkflowExecutor` when the topology comes up and cleared on teardown.
+    If it is absent (not a NAT run) or the container isn't one of the
+    topology's clients (e.g. the boot-node), this is a no-op — those
+    containers don't carry the gateway default route in the first place.
+
+    Best-effort: any failure is logged and swallowed. The caller's
+    operation (restart / reconnect) has already succeeded; losing the
+    route override is a degraded state worth surfacing, not a reason to
+    fail the step. `context` is a short phrase (e.g. "post-restart",
+    "post-reconnect") woven into the log lines so the source operation is
+    identifiable.
+    """
+    state = getattr(manager, "nat_topology_state", None)
+    if state is None:
+        return
+    if container_name not in state.client_names:
+        return
+
+    # Imported lazily so steps used outside NAT contexts don't pull in the
+    # NAT module's docker / iptables dependencies at import time.
+    from merobox.topology.nat import (
+        inject_default_route_into_client,
+        wait_for_client_reachability,
+    )
+
+    client = manager.client
+    try:
+        inject_default_route_into_client(client, state, container_name)
+    except Exception as exc:
+        console.print(
+            f"[yellow]Failed to re-inject default route into "
+            f"{container_name!r} {context}: {exc}[/yellow]"
+        )
+        return
+
+    # Verify the client can still reach the boot-node through the gateway —
+    # the same probe topology setup runs. A failure here means the route
+    # was re-injected but the forwarding path is broken (e.g. a dropped
+    # gateway MASQUERADE rule), which is far more diagnostic than letting
+    # the caller's downstream sync silently time out.
+    try:
+        wait_for_client_reachability(client, state, container_name)
+    except Exception as exc:
+        console.print(
+            f"[yellow]{context} reachability check from "
+            f"{container_name!r} → boot-node failed: {exc}[/yellow]"
+        )
