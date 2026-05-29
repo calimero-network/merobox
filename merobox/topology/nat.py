@@ -954,6 +954,48 @@ def _decode_exec_output(output: bytes | str | None) -> str:
     return str(output)
 
 
+def _build_masquerade_cmd(lan_subnet: str, nat_mode: str) -> list[str]:
+    """Build the gateway's iptables MASQUERADE argv for `nat_mode`.
+
+    Matches on the LAN SOURCE SUBNET ("masquerade anything FROM the LAN
+    going anywhere but the LAN"), deliberately NOT on an output
+    interface. An earlier `-o eth0` form assumed eth0 was the
+    public-facing interface, but Docker's interface naming for a
+    two-network container is not deterministic with attachment order —
+    CI proved (via the reachability-failure gateway dump) that the LAN
+    can land on eth0 and the public net on eth1, which put MASQUERADE on
+    the wrong interface. The client's packets then egressed the public
+    interface UN-masqueraded (src still the LAN IP), the boot-node had no
+    route back to the LAN subnet, replies were dropped, and the
+    reachability probe hung the full timeout (exit 143). The
+    source-subnet rule is the canonical NAT-router form and is correct
+    regardless of which kernel name each bridge got.
+
+    `symmetric` appends `--random-fully` so the per-destination source
+    port is randomised (defeats DCUtR's predict-the-port hole punching);
+    `cone` omits it. Any other mode is a programming error.
+    """
+    base = [
+        "iptables",
+        "-t",
+        "nat",
+        "-A",
+        "POSTROUTING",
+        "-s",
+        lan_subnet,
+        "!",
+        "-d",
+        lan_subnet,
+        "-j",
+        "MASQUERADE",
+    ]
+    if nat_mode == "cone":
+        return base
+    if nat_mode == "symmetric":
+        return base + ["--random-fully"]
+    raise ValueError(f"nat_mode must be 'cone' or 'symmetric', got {nat_mode!r}")
+
+
 def _spawn_nat_gateway(
     client: docker.DockerClient,
     public_network: docker.models.networks.Network,
@@ -1005,9 +1047,14 @@ def _spawn_nat_gateway(
         pass
 
     gateway_lan_ip = _pick_gateway_lan_ip(lan_network)
+    # LAN CIDR for the source-based MASQUERADE rule installed below.
+    # `_pick_gateway_lan_ip` just reloaded the network and validated the
+    # IPAM subnet exists (it raises otherwise), so this read is safe.
+    _lan_ipam = (lan_network.attrs.get("IPAM") or {}).get("Config") or []
+    lan_subnet = _lan_ipam[0]["Subnet"]
     console.print(
         f"[yellow]Starting NAT gateway {container_name} "
-        f"(mode={nat_mode}, lan_ip={gateway_lan_ip})[/yellow]"
+        f"(mode={nat_mode}, lan_ip={gateway_lan_ip}, lan_subnet={lan_subnet})[/yellow]"
     )
     container = client.containers.create(
         image=gateway_base_image(),
@@ -1097,23 +1144,22 @@ def _spawn_nat_gateway(
         "ip6tables",
         "iproute2",
     ]
-    # Interface-name invariant.
-    # The exec steps below (per-iface forwarding loop, eth1
-    # verify, iptables `-o eth0`) assume Docker named the public
-    # network `eth0` and the LAN network `eth1`. For bridge
-    # networks under the default Linux kernel netdev driver this
-    # is universal: `eth0` is the first network attached at
-    # `containers.create(network=...)` time, `eth1` is the
-    # second attached via `network.connect(...)` before start.
-    # That ordering is what _this function_ does, deterministically,
-    # so the invariant holds for every gateway we spawn. If a
-    # future Docker engine or non-bridge driver renames interfaces,
-    # the eth1-forwarding verify step below will fail with a
-    # clear `read=''` error rather than silently MASQUERADE-ing
-    # off the wrong interface. We deliberately do NOT resolve
-    # interfaces dynamically (via MAC-match against container
-    # attrs) — the added complexity buys nothing for the bridge-
-    # driver case that's the only one merobox supports today.
+    # Interface naming is NOT a reliable invariant.
+    # An earlier version of this function assumed Docker always named
+    # the public network `eth0` (created via `containers.create(
+    # network=...)`) and the LAN `eth1` (attached via
+    # `network.connect(...)` before start). That assumption was WRONG:
+    # Docker does not guarantee interface-name ↔ attachment-order, and
+    # CI caught the inverted assignment in the wild (gateway dump showed
+    # eth0=LAN, eth1=public). The old `-o eth0` MASQUERADE then sat on
+    # the LAN interface, the client's traffic egressed the public
+    # interface un-masqueraded, the boot-node had no route back to the
+    # LAN subnet, and the reachability probe hung the full timeout.
+    #
+    # So nothing below keys off a specific interface NAME: the
+    # forwarding check verifies BOTH eth0 and eth1, and the MASQUERADE
+    # rule matches on the LAN SOURCE SUBNET rather than an output
+    # interface. Both are correct whichever name each bridge got.
     apk_ec, apk_out = container.exec_run(apk_cmd, demux=False)
     if apk_ec != 0:
         decoded = _decode_exec_output(apk_out)
@@ -1187,53 +1233,37 @@ def _spawn_nat_gateway(
             f"per-interface forwarding (exit {fwd_ec}): {decoded}"
         )
 
-    # Verify eth1 specifically — that's the interface the LAN
-    # bridge is attached to and the one that matters for the
-    # NAT-forwarding semantics this gateway exists to provide.
-    # If forwarding is off on eth1 despite the sysctl + loop
-    # above, MASQUERADE will install but packets will still be
-    # dropped; fail loudly here so the surfaced error points at
-    # the actual cause.
-    verify_ec, verify_out = container.exec_run(
-        ["cat", "/proc/sys/net/ipv4/conf/eth1/forwarding"],
-        demux=False,
-    )
-    verify_decoded = _decode_exec_output(verify_out).strip()
-    if verify_ec != 0 or verify_decoded != "1":
-        _destroy_half_spawned_gateway(container, public_network, lan_network)
-        raise RuntimeError(
-            f"NAT gateway {container_name!r}: eth1 forwarding is "
-            f"not enabled (read={verify_decoded!r}, exit "
-            f"{verify_ec}). This means the LAN bridge attachment "
-            f"either landed without inheriting the master "
-            f"forwarding sysctl OR a host-level `net.ipv4."
-            f"conf.eth1.forwarding=0` is overriding the "
-            f"container sysctl namespace."
+    # Verify forwarding on BOTH data interfaces (eth0 + eth1). We do
+    # NOT assume which is public vs LAN: Docker does not guarantee that
+    # the network attached first becomes eth0 — when a gateway is
+    # created on the public net and the LAN is `connect()`ed before
+    # `start()`, the kernel can name them in either order, and CI has
+    # observed the inverted assignment (eth0=LAN, eth1=public). Either
+    # way both must forward, so check both. If forwarding is off on a
+    # data interface despite the sysctl + loop above, MASQUERADE will
+    # install but packets get dropped; fail loudly pointing at the
+    # actual cause.
+    for iface in ("eth0", "eth1"):
+        verify_ec, verify_out = container.exec_run(
+            ["cat", f"/proc/sys/net/ipv4/conf/{iface}/forwarding"],
+            demux=False,
         )
+        verify_decoded = _decode_exec_output(verify_out).strip()
+        if verify_ec != 0 or verify_decoded != "1":
+            _destroy_half_spawned_gateway(container, public_network, lan_network)
+            raise RuntimeError(
+                f"NAT gateway {container_name!r}: {iface} forwarding is "
+                f"not enabled (read={verify_decoded!r}, exit "
+                f"{verify_ec}). This means the bridge attachment either "
+                f"landed without inheriting the master forwarding sysctl "
+                f"OR a host-level `net.ipv4.conf.{iface}.forwarding=0` is "
+                f"overriding the container sysctl namespace."
+            )
 
-    # Install the MASQUERADE rule per `nat_mode`. For symmetric
-    # we try `--random-fully` first; if iptables rejects the
-    # flag (older kernel without iptables-extensions support),
-    # we fall back to plain MASQUERADE BUT FAIL the spawn —
-    # silently running cone semantics under a symmetric label
-    # would mask DCUtR-related regressions in downstream tests.
-    masquerade_base = [
-        "iptables",
-        "-t",
-        "nat",
-        "-A",
-        "POSTROUTING",
-        "-o",
-        "eth0",
-        "-j",
-        "MASQUERADE",
-    ]
-    if nat_mode == "cone":
-        iptables_cmd = masquerade_base
-    elif nat_mode == "symmetric":
-        iptables_cmd = masquerade_base + ["--random-fully"]
-    else:
-        raise ValueError(f"nat_mode must be 'cone' or 'symmetric', got {nat_mode!r}")
+    # Install the MASQUERADE rule per `nat_mode` (see
+    # `_build_masquerade_cmd` for the source-subnet-vs-`-o eth0`
+    # rationale and the symmetric `--random-fully` handling).
+    iptables_cmd = _build_masquerade_cmd(lan_subnet, nat_mode)
 
     ipt_ec, ipt_out = container.exec_run(iptables_cmd, demux=False)
     if ipt_ec != 0:

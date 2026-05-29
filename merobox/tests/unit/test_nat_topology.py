@@ -801,6 +801,65 @@ def test_pick_lan_subnet_returns_hashed_start_when_no_overlap():
 
 
 # ---------------------------------------------------------------------------
+# _build_masquerade_cmd — interface-agnostic NAT rule
+#
+# The gateway's MASQUERADE must match on the LAN SOURCE SUBNET, not on an
+# output interface (`-o eth0`). Docker doesn't guarantee that the public
+# network becomes eth0 and the LAN eth1 — CI caught the inverted
+# assignment, which put the old `-o eth0` rule on the LAN interface and
+# left client→boot-node traffic un-masqueraded, killing the return path
+# (the reachability probe hung to a 60s/exit-143 timeout). These tests
+# pin the source-subnet form so the regression can't silently return.
+# ---------------------------------------------------------------------------
+
+
+from merobox.topology.nat import _build_masquerade_cmd  # noqa: E402
+
+
+def test_masquerade_cmd_matches_lan_source_subnet_not_output_iface():
+    """Cone rule: masquerade traffic FROM the LAN going anywhere but the
+    LAN, with NO `-o <iface>` clause (the interface-name assumption is
+    exactly the bug this avoids)."""
+    cmd = _build_masquerade_cmd("172.30.48.0/24", "cone")
+    # Source-subnet match present, destination-exclusion present.
+    assert "-s" in cmd and "172.30.48.0/24" in cmd
+    s_idx = cmd.index("-s")
+    assert cmd[s_idx + 1] == "172.30.48.0/24"
+    # `! -d <lan>` excludes intra-LAN traffic from masquerading.
+    assert "!" in cmd and "-d" in cmd
+    bang_idx = cmd.index("!")
+    assert cmd[bang_idx : bang_idx + 3] == ["!", "-d", "172.30.48.0/24"]
+    assert cmd[-1] == "MASQUERADE"
+    # The whole point: no output-interface assumption.
+    assert "-o" not in cmd
+    assert "eth0" not in cmd and "eth1" not in cmd
+
+
+def test_masquerade_cmd_symmetric_appends_random_fully():
+    """Symmetric mode randomises the source port so DCUtR can't predict
+    it — appended AFTER the base rule, not replacing the source match."""
+    cmd = _build_masquerade_cmd("10.5.0.0/24", "symmetric")
+    assert cmd[-1] == "--random-fully"
+    assert "-o" not in cmd
+    # Still source-subnet based.
+    assert cmd[cmd.index("-s") + 1] == "10.5.0.0/24"
+
+
+def test_masquerade_cmd_cone_has_no_random_fully():
+    """Cone must NOT randomise — that would let it mask DCUtR-direct
+    regressions the symmetric variant exists to catch."""
+    cmd = _build_masquerade_cmd("172.30.1.0/24", "cone")
+    assert "--random-fully" not in cmd
+
+
+def test_masquerade_cmd_rejects_unknown_mode():
+    """A bad nat_mode is a programming error, surfaced loudly rather
+    than silently producing a cone rule under a symmetric label."""
+    with pytest.raises(ValueError, match="nat_mode"):
+        _build_masquerade_cmd("172.30.1.0/24", "double-cone")
+
+
+# ---------------------------------------------------------------------------
 # teardown_nat_topology
 # ---------------------------------------------------------------------------
 #
