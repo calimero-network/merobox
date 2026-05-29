@@ -2,28 +2,28 @@ Origin: merobox
 Label: merobox
 Suite: stable
 Codename: stable
-Date: Fri, 29 May 2026 09:47:58 UTC
+Date: Fri, 29 May 2026 10:33:33 UTC
 Architectures: amd64 arm64
 Components: main
 Description: Merobox APT Repository - CLI tool for Calimero node management
 MD5Sum:
- 920f5c0aac0cfebdef909a16684b8a14 652 main/binary-amd64/Packages
- 8ab7829d6a3155ac9f881a66b5ccfdb1 439 main/binary-amd64/Packages.gz
+ 39f6da2f83736ca332b94737da9c5238 652 main/binary-amd64/Packages
+ ae629da95a8c1b4e6afd32a81289375b 438 main/binary-amd64/Packages.gz
  fc8c8c4c2b13812baa5ca99eb12e3def 159 main/binary-amd64/Release
- 6bf9c91d44f63b9b1fcf17111cd11ee4 652 main/binary-arm64/Packages
- 7cba19d6b70404aaa57669cf2b677d28 437 main/binary-arm64/Packages.gz
+ f8fa6b201c0f0ec98f9e0df3a3f62bfa 652 main/binary-arm64/Packages
+ 58f0530b4ff21e5bc78edbb7f4e47a4b 439 main/binary-arm64/Packages.gz
  6cb2ee5976d0e3c67d700b74d96e22e6 159 main/binary-arm64/Release
 SHA1:
- 60f8cefba84f1a628523c43ab86c98ea735809d5 652 main/binary-amd64/Packages
- f7b0392b8d81086f6ab8da81d778a47b8bf0647b 439 main/binary-amd64/Packages.gz
+ 3c2edb705a442e3c0842fbe02947946168306326 652 main/binary-amd64/Packages
+ 913d2763357443395caa97fdccbf70f4d6dd4dc7 438 main/binary-amd64/Packages.gz
  8544a1880e8d5d51cb86ec2bbf209b0619664bbc 159 main/binary-amd64/Release
- 24ea5e71168d588495d146940d7fa1d13691d679 652 main/binary-arm64/Packages
- b8fa8ccc989b7c73a31ce9be412215f1c653cc77 437 main/binary-arm64/Packages.gz
+ 9377f74da815432c191b5feb11977b9f9113811b 652 main/binary-arm64/Packages
+ efc2ee74a345d2e6a65e049c932e468380c0dc16 439 main/binary-arm64/Packages.gz
  8d5816038e534a525dedc582dc9615e572f5e85d 159 main/binary-arm64/Release
 SHA256:
- 70454582f2a58e738d6991b28846c904993d8386c3178d804cb347e606f3a2de 652 main/binary-amd64/Packages
- 412cf7e4097a3735fe9649ec6a2b760399ba5a61d2c65403ecae4e5ffcff0438 439 main/binary-amd64/Packages.gz
+ 2d97eb59417423bc630fe4267ce4d7547b683cc3eb423e452d598be12410a886 652 main/binary-amd64/Packages
+ f87501b6eaeffe66679883ff1b610a1364bbfe32d01116ede148768481b343ca 438 main/binary-amd64/Packages.gz
  482163097ec79c422de19f2f83e2658676455df766518086a6a371a945e0dfd4 159 main/binary-amd64/Release
- e56160a3190a9fadc91fb277059aad63ee4dca60dc22fb1332c4894ab7f00c8f 652 main/binary-arm64/Packages
- 05aa0b91a3e7a48eefe45ac9af1f2566e5a176cc1b12c3d7b50141156b52a647 437 main/binary-arm64/Packages.gz
+ e62ac037065a8502eaefc2cbb2f7acfaf191878ad6198882e2364b508f1d9129 652 main/binary-arm64/Packages
+ 5851897276e8c176c10dcf3a825d6e8cbfd5c6c084e63ec6a5f906e728717ede 439 main/binary-arm64/Packages.gz
  7fff0e368c5cb547b671cbeae400cab9b56bb3866ace12626f1fd0a4123cd25b 159 main/binary-arm64/Release
