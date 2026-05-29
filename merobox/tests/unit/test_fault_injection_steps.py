@@ -5,8 +5,6 @@ schema layer), which catches misconfigurations even if a workflow bypasses
 schema validation.
 """
 
-import asyncio
-
 import pytest
 
 from merobox.commands.bootstrap.steps import network as network_mod
@@ -777,7 +775,10 @@ class TestConnectNodeReinjectsRoute:
     network-partition step routes around the NAT gateway and never
     actually re-establishes connectivity to the boot-node."""
 
-    def test_connect_node_calls_reinject_after_successful_connect(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_connect_node_calls_reinject_after_successful_connect(
+        self, monkeypatch
+    ):
         reinjected: list[tuple[str, str]] = []
 
         def _spy_reinject(_manager, container_name, *, context):
@@ -814,7 +815,7 @@ class TestConnectNodeReinjectsRoute:
         dynamic_values = {
             partition_network_key("sync-resil-node-2"): "some-lan-network",
         }
-        ok = asyncio.run(step.execute({}, dynamic_values))
+        ok = await step.execute({}, dynamic_values)
 
         assert ok is True
         # The reconnected node, tagged with the post-reconnect context.
