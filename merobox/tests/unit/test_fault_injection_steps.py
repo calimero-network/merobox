@@ -5,8 +5,15 @@ schema layer), which catches misconfigurations even if a workflow bypasses
 schema validation.
 """
 
+import asyncio
+
 import pytest
 
+from merobox.commands.bootstrap.steps import network as network_mod
+from merobox.commands.bootstrap.steps._docker_utils import (
+    partition_network_key,
+    reinject_nat_default_route,
+)
 from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.network import (
     ConnectNodeStep,
@@ -612,49 +619,50 @@ class TestRestartLogSnapshotReviewFixes:
 
 
 # ---------------------------------------------------------------------------
-# RestartContainerStep — NAT-topology default-route re-injection
+# reinject_nat_default_route — shared NAT default-route re-application
 #
-# `docker restart` resets the container's network configuration to
-# Docker's defaults, which wipes the `ip route replace default via
-# <gateway-IP>` override that the NAT-topology setup applied via
-# `inject_default_route_into_client`. Without re-injection, post-restart
-# packets go via Docker's bridge gateway instead of the NAT gateway —
-# they leave fine but the MASQUERADE return path is missing, so noise
-# handshakes to the boot-node time out. This is core#2469's root cause.
+# Docker rewrites a container's routing table on any operation that
+# rebuilds its network attachment: `docker restart` (RestartContainerStep)
+# AND a `network disconnect` + `connect` cycle (ConnectNodeStep's
+# partition-heal). Either one wipes the `ip route replace default via
+# <gateway-IP>` override the NAT topology injected, re-pointing the
+# default route at Docker's own bridge gateway. Packets then leave fine
+# but their return path skips the gateway's MASQUERADE, so the client's
+# noise handshakes to the boot-node time out. This is core#2469's root
+# cause for restart, and the same mechanism strands a reconnected peer
+# after a network-partition heal.
 #
-# These tests pin the re-injection contract on RestartContainerStep:
+# These tests pin the shared helper's contract:
 #
 #   - Only fires when `manager.nat_topology_state` is non-None AND the
-#     restarted container is one of the topology's clients.
+#     target container is one of the topology's clients.
 #   - No-op for boot-node / non-topology container / no-NAT setups.
 #   - Reachability probe surfaces a half-broken topology before the
 #     caller starts asserting on sync behaviour.
-#   - Inject failure → log + continue (don't crash the restart step).
+#   - Inject failure → log + continue (don't crash the caller's step).
 #   - Reachability failure → log + continue (the route's already
 #     re-injected; the probe is diagnostic, not gating).
 # ---------------------------------------------------------------------------
 
 
-class TestRestartReinjectNatDefaultRoute:
+class TestReinjectNatDefaultRoute:
     @staticmethod
-    def _step():
-        # Construct the step the same way the YAML loader would, then
-        # attach a `manager` shim (the executor normally sets it on the
-        # step right before `execute()` runs).
-        step = RestartContainerStep({"type": "restart_container", "container": "n1"})
-
+    def _manager(nat_topology_state=None):
+        # Minimal stand-in for the workflow manager the executor passes
+        # to steps. The helper only touches `.client` (opaque, forwarded
+        # to the nat module — which we patch) and `.nat_topology_state`.
         class _ManagerShim:
-            client = object()  # sentinel — never dereferenced
-            nat_topology_state = None
+            def __init__(self, state):
+                self.client = object()  # sentinel — never dereferenced
+                self.nat_topology_state = state
 
-        step.manager = _ManagerShim()
-        return step
+        return _ManagerShim(nat_topology_state)
 
     @staticmethod
     def _nat_state(client_names):
-        # Stand-in for `NatTopologyState` — only `client_names` is
-        # touched by `_reinject_nat_default_route`. Avoid pulling
-        # the real dataclass + its docker deps into the unit test.
+        # Stand-in for `NatTopologyState` — only `client_names` is read
+        # by reinject_nat_default_route. Avoid pulling the real dataclass
+        # and its docker deps into the unit test.
         class _State:
             def __init__(self, names):
                 self.client_names = names
@@ -673,10 +681,8 @@ class TestRestartReinjectNatDefaultRoute:
         monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _boom)
         monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _boom)
 
-        step = self._step()
-        step.manager.nat_topology_state = None
         # Must NOT raise.
-        step._reinject_nat_default_route("n1")
+        reinject_nat_default_route(self._manager(None), "n1", context="post-restart")
 
     def test_noop_when_container_is_not_a_nat_client(self, monkeypatch):
         # The boot-node and any non-topology container fall through
@@ -691,9 +697,8 @@ class TestRestartReinjectNatDefaultRoute:
         monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _boom)
         monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _boom)
 
-        step = self._step()
-        step.manager.nat_topology_state = self._nat_state(["client-1", "client-2"])
-        step._reinject_nat_default_route("boot-node")
+        mgr = self._manager(self._nat_state(["client-1", "client-2"]))
+        reinject_nat_default_route(mgr, "boot-node", context="post-reconnect")
 
     def test_reinjects_and_probes_when_container_is_a_nat_client(self, monkeypatch):
         # Happy path: state present, container in client_names. Both
@@ -711,9 +716,8 @@ class TestRestartReinjectNatDefaultRoute:
         monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _inject)
         monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _probe)
 
-        step = self._step()
-        step.manager.nat_topology_state = self._nat_state(["n1", "n2"])
-        step._reinject_nat_default_route("n1")
+        mgr = self._manager(self._nat_state(["n1", "n2"]))
+        reinject_nat_default_route(mgr, "n1", context="post-reconnect")
 
         # Order matters: inject BEFORE probe. If the probe ran
         # first it'd flake on an unconfigured route.
@@ -737,10 +741,9 @@ class TestRestartReinjectNatDefaultRoute:
         monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _broken_inject)
         monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _probe)
 
-        step = self._step()
-        step.manager.nat_topology_state = self._nat_state(["n1"])
+        mgr = self._manager(self._nat_state(["n1"]))
         # Must NOT raise.
-        step._reinject_nat_default_route("n1")
+        reinject_nat_default_route(mgr, "n1", context="post-restart")
         # Probe was skipped — inject failed, so the route isn't in
         # a probeable state.
         assert probe_calls == []
@@ -749,7 +752,7 @@ class TestRestartReinjectNatDefaultRoute:
         # The reachability probe is purely diagnostic — it tells
         # the user that the NAT gateway's MASQUERADE rule got
         # dropped or similar, but the route is already re-injected.
-        # Failing the restart step on a probe miss would mask the
+        # Failing the caller's step on a probe miss would mask the
         # actual bug (whatever made the gateway forwarding break)
         # behind a less-informative test failure.
         from merobox.topology import nat as nat_mod
@@ -763,7 +766,56 @@ class TestRestartReinjectNatDefaultRoute:
         monkeypatch.setattr(nat_mod, "inject_default_route_into_client", _inject)
         monkeypatch.setattr(nat_mod, "wait_for_client_reachability", _broken_probe)
 
-        step = self._step()
-        step.manager.nat_topology_state = self._nat_state(["n1"])
+        mgr = self._manager(self._nat_state(["n1"]))
         # Must NOT raise — probe failure is logged-and-swallowed.
-        step._reinject_nat_default_route("n1")
+        reinject_nat_default_route(mgr, "n1", context="post-reconnect")
+
+
+class TestConnectNodeReinjectsRoute:
+    """ConnectNodeStep must re-apply the NAT default route after a
+    successful reconnect — without it, a peer that 'heals' from a
+    network-partition step routes around the NAT gateway and never
+    actually re-establishes connectivity to the boot-node."""
+
+    def test_connect_node_calls_reinject_after_successful_connect(self, monkeypatch):
+        reinjected: list[tuple[str, str]] = []
+
+        def _spy_reinject(_manager, container_name, *, context):
+            reinjected.append((container_name, context))
+
+        # Patch the symbol as imported into the network module's namespace
+        # (the step calls the bare name, not the _docker_utils-qualified one).
+        monkeypatch.setattr(network_mod, "reinject_nat_default_route", _spy_reinject)
+        monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
+
+        # Stub the docker client so `network.connect` "succeeds" without a
+        # real daemon. detect_node_network isn't reached because a prior
+        # disconnect recorded the partition network in dynamic_values.
+        class _FakeNetwork:
+            def connect(self, _container):
+                return None
+
+        class _FakeClient:
+            class containers:
+                @staticmethod
+                def get(_name):
+                    return object()
+
+            class networks:
+                @staticmethod
+                def get(_name):
+                    return _FakeNetwork()
+
+        monkeypatch.setattr(network_mod, "get_docker_client", lambda _m: _FakeClient())
+
+        step = ConnectNodeStep({"type": "connect_node", "node": "sync-resil-node-2"})
+        step.manager = object()
+
+        dynamic_values = {
+            partition_network_key("sync-resil-node-2"): "some-lan-network",
+        }
+        ok = asyncio.run(step.execute({}, dynamic_values))
+
+        assert ok is True
+        # The reconnected node, tagged with the post-reconnect context.
+        assert reinjected == [("sync-resil-node-2", "post-reconnect")], reinjected
