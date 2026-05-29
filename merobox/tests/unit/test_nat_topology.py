@@ -716,6 +716,91 @@ def test_pick_lan_subnet_returns_valid_rfc1918_24():
 
 
 # ---------------------------------------------------------------------------
+# _pick_lan_subnet — overlap avoidance (the peer-restart-symmetric fix)
+#
+# The public network is created with a Docker-AUTO-assigned subnet
+# BEFORE the LAN. Docker's pool can hand the public bridge a /16 (e.g.
+# 172.30.0.0/16) that swallows the hashed LAN /24. Overlapping ranges on
+# the gateway's two interfaces make the kernel's reverse-path lookup for
+# return traffic ambiguous, silently killing the return path — the
+# client SYN leaves but the reply never comes back, and the reachability
+# probe hangs until `timeout` SIGTERMs it. When a `client` is supplied,
+# the picker must dodge every existing network's subnet.
+# ---------------------------------------------------------------------------
+
+
+def _fake_docker_client_with_subnets(subnets):
+    """Build a stub Docker client whose `networks.list()` returns
+    networks carrying the given subnets, shaped like docker-py's
+    `.attrs["IPAM"]["Config"]`."""
+
+    class _FakeNet:
+        def __init__(self, name, subnet):
+            self.name = name
+            self.attrs = {"IPAM": {"Config": [{"Subnet": subnet}]}}
+
+    class _FakeNetworks:
+        def __init__(self, nets):
+            self._nets = nets
+
+        def list(self):
+            return self._nets
+
+    class _FakeClient:
+        def __init__(self, nets):
+            self.networks = _FakeNetworks(nets)
+
+    return _FakeClient([_FakeNet(f"net-{i}", s) for i, s in enumerate(subnets)])
+
+
+def test_pick_lan_subnet_client_none_matches_pure_hash():
+    """Passing no client preserves the historical pure-hash behaviour,
+    so reruns on a clean host still reuse their own subnet."""
+    assert _pick_lan_subnet("some-workflow", None) == _pick_lan_subnet("some-workflow")
+
+
+def test_pick_lan_subnet_avoids_overlapping_public_16():
+    """If the auto-assigned public network grabbed the /16 that
+    contains the hashed /24, the picker must return a /24 that does
+    NOT overlap it."""
+    import ipaddress
+
+    name = "Sync Resilience — Peer Restart (NAT symmetric)"
+    hashed = _pick_lan_subnet(name)  # pure hash, no client
+    # Simulate the public bridge swallowing the hashed /24 inside a /16.
+    hashed_net = ipaddress.ip_network(hashed)
+    public_16 = ipaddress.ip_network("172.30.0.0/16")
+    assert hashed_net.overlaps(public_16)  # precondition for the bug
+
+    client = _fake_docker_client_with_subnets(["172.30.0.0/16", "172.17.0.0/16"])
+    chosen = _pick_lan_subnet(name, client)
+    chosen_net = ipaddress.ip_network(chosen)
+    # Must not overlap any existing network.
+    assert not chosen_net.overlaps(public_16)
+    assert not chosen_net.overlaps(ipaddress.ip_network("172.17.0.0/16"))
+
+
+def test_pick_lan_subnet_falls_back_to_10_range_when_17230_exhausted():
+    """If all of 172.30.0.0/16 is occupied, the picker falls back to a
+    10.x /24 rather than returning an overlapping subnet."""
+    import ipaddress
+
+    client = _fake_docker_client_with_subnets(["172.30.0.0/16"])
+    chosen = _pick_lan_subnet("whatever-workflow", client)
+    chosen_net = ipaddress.ip_network(chosen)
+    assert not chosen_net.overlaps(ipaddress.ip_network("172.30.0.0/16"))
+    assert chosen.startswith("10.")
+
+
+def test_pick_lan_subnet_returns_hashed_start_when_no_overlap():
+    """With a client present but no conflicting networks, the picker
+    still returns the deterministic hashed /24 (the search starts there
+    and the first candidate is free)."""
+    client = _fake_docker_client_with_subnets(["172.18.0.0/16", "172.17.0.0/16"])
+    assert _pick_lan_subnet("cone-smoke", client) == _pick_lan_subnet("cone-smoke")
+
+
+# ---------------------------------------------------------------------------
 # teardown_nat_topology
 # ---------------------------------------------------------------------------
 #
