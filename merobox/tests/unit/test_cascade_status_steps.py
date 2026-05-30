@@ -263,6 +263,49 @@ class TestAssertCascadeCompleteValidation:
         with pytest.raises(ValueError, match="poll_interval"):
             AssertCascadeCompleteStep({**self.base, "poll_interval": 0})
 
+    def test_non_finite_timeout_raises(self):
+        # NaN/inf would make the poll deadline non-finite -> never times out.
+        for bad in (float("inf"), float("nan")):
+            with pytest.raises(ValueError, match="finite"):
+                AssertCascadeCompleteStep({**self.base, "timeout_seconds": bad})
+
+    def test_non_finite_poll_interval_raises(self):
+        with pytest.raises(ValueError, match="finite"):
+            AssertCascadeCompleteStep({**self.base, "poll_interval": float("inf")})
+
+
+class TestAssertCascadeCompleteSchema:
+    """Schema-level (Pydantic) validation, used by validate_workflow_step."""
+
+    def setup_method(self):
+        from merobox.commands.bootstrap.config import (
+            AssertCascadeCompleteStepConfig,
+        )
+
+        self.model = AssertCascadeCompleteStepConfig
+        self.base = {
+            "type": "assert_cascade_complete",
+            "node": "calimero-node-1",
+            "namespace_id": "ns123",
+        }
+
+    def test_valid_defaults(self):
+        m = self.model(**self.base)
+        assert m.timeout_seconds == 30
+        assert m.poll_interval == 2.0
+
+    def test_bool_timeout_rejected(self):
+        with pytest.raises(ValueError):
+            self.model(**self.base, timeout_seconds=True)
+
+    def test_non_finite_timeout_rejected(self):
+        with pytest.raises(ValueError):
+            self.model(**self.base, timeout_seconds=float("inf"))
+
+    def test_zero_poll_interval_rejected(self):
+        with pytest.raises(ValueError):
+            self.model(**self.base, poll_interval=0)
+
 
 # =============================================================================
 # AssertCascadeCompleteStep — execute

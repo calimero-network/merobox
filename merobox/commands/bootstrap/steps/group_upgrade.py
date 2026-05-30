@@ -11,6 +11,7 @@ Covers signing-key rotation and the upgrade state machine
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -714,6 +715,13 @@ class AssertCascadeCompleteStep(BaseStep):
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(
                     f"Step '{step_name}': '{field}' must be a number if provided"
+                )
+            # NaN/inf would make `deadline` non-finite so the poll loop's
+            # `time.monotonic() >= deadline` never trips — the step would hang
+            # forever instead of timing out. Reject them up front.
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be a finite number"
                 )
             if value <= 0:
                 raise ValueError(

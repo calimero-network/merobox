@@ -2,12 +2,20 @@
 Configuration management for bootstrap workflows.
 """
 
+import math
 import os
 import re
 from typing import Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from merobox.commands.utils import console
 
@@ -1144,6 +1152,21 @@ class AssertCascadeCompleteStepConfig(BaseStepConfig):
         gt=0,
         description="Seconds between get_cascade_status polls",
     )
+
+    @field_validator("timeout_seconds", "poll_interval", mode="before")
+    @classmethod
+    def _reject_bool_and_non_finite(cls, v: Any) -> Any:
+        # mode="before" so we see the raw value: Pydantic would otherwise
+        # coerce bool -> int first, hiding `true` (=1) from the isinstance
+        # check. bool is an int subclass, so `gt=0` alone accepts `true`.
+        # NaN/inf would also slip past `gt=0` and make the poll loop's deadline
+        # non-finite (it would never time out). Mirror the runtime
+        # AssertCascadeCompleteStep._validate_field_types check at schema level.
+        if isinstance(v, bool):
+            raise ValueError("must be a number, not a boolean")
+        if isinstance(v, float) and not math.isfinite(v):
+            raise ValueError("must be a finite number")
+        return v
 
 
 class RetryGroupUpgradeStepConfig(BaseStepConfig):
