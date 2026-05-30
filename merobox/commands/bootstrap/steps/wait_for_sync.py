@@ -9,7 +9,12 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import SYNC_RETRY_ATTEMPTS, SYNC_RETRY_DELAY
+from merobox.commands.constants import (
+    SYNC_BACKOFF_FACTOR,
+    SYNC_INITIAL_CHECK_INTERVAL,
+    SYNC_RETRY_ATTEMPTS,
+    SYNC_RETRY_DELAY,
+)
 from merobox.commands.utils import console
 
 
@@ -134,6 +139,27 @@ class WaitForSyncStep(BaseStep):
             ):
                 raise ValueError(
                     f"Step '{step_name}': 'check_interval' must be a positive number"
+                )
+
+        # Validate initial_check_interval is positive if provided
+        if "initial_check_interval" in self.config:
+            if (
+                not isinstance(self.config["initial_check_interval"], (int, float))
+                or self.config["initial_check_interval"] <= 0
+            ):
+                raise ValueError(
+                    f"Step '{step_name}': 'initial_check_interval' must be a positive number"
+                )
+
+        # Validate backoff_factor is >= 1 if provided (>= 1 keeps the interval
+        # non-decreasing so it converges to the check_interval cap).
+        if "backoff_factor" in self.config:
+            if (
+                not isinstance(self.config["backoff_factor"], (int, float))
+                or self.config["backoff_factor"] < 1
+            ):
+                raise ValueError(
+                    f"Step '{step_name}': 'backoff_factor' must be a number >= 1"
                 )
 
         # Validate retry_attempts is a positive integer if provided
@@ -292,12 +318,22 @@ class WaitForSyncStep(BaseStep):
         check_interval: float,
         retry_attempts: int | None = None,
         trigger_sync: bool = False,
+        initial_check_interval: float = SYNC_INITIAL_CHECK_INTERVAL,
+        backoff_factor: float = SYNC_BACKOFF_FACTOR,
     ) -> tuple[bool, dict[str, Any]]:
         """
         Wait for all targets to converge across all nodes.
 
         A target converges when every node returns the same hash for it.
         All specified targets must converge for the overall result to succeed.
+
+        Polling uses adaptive backoff: the inter-attempt sleep starts at
+        ``initial_check_interval`` and grows geometrically by
+        ``backoff_factor`` after every miss, capped at ``check_interval``.
+        Fast syncs that miss the first check are caught within a few short
+        steps instead of rounding up to a full ``check_interval``; slow or
+        never-converging syncs still poll at no more than ``check_interval``
+        in steady state, so RPC load is unchanged on the slow path.
         """
         start_time = time.time()
         attempt = 0
@@ -315,13 +351,13 @@ class WaitForSyncStep(BaseStep):
 
         last_per_target: dict[str, dict[str, str | None]] = {}
 
+        # Adaptive backoff: the inter-attempt sleep starts short and grows
+        # geometrically, capped at check_interval. Never start above the cap.
+        backoff_interval = min(initial_check_interval, check_interval)
+
         while (time.time() - start_time < timeout) and (attempt < max_attempts):
             attempt += 1
             elapsed = time.time() - start_time
-
-            if attempt > 1:
-                jitter = 0.1 * (attempt % 3)
-                await asyncio.sleep(jitter)
 
             # Check each target's convergence in parallel.
             target_checks = await asyncio.gather(
@@ -385,7 +421,12 @@ class WaitForSyncStep(BaseStep):
                     for h, ns in hash_groups.items():
                         console.print(f"[dim]      {h}: {', '.join(ns)}[/dim]")
 
-            await asyncio.sleep(check_interval)
+            # Sleep the current backoff interval before the next check, with a
+            # small jitter folded on top to de-sync parallel node pollers, then
+            # grow the interval geometrically toward the check_interval cap.
+            jitter = 0.1 * (attempt % 3)
+            await asyncio.sleep(backoff_interval + jitter)
+            backoff_interval = min(backoff_interval * backoff_factor, check_interval)
 
         # Timeout / max attempts reached — final consistency check.
         elapsed = time.time() - start_time
@@ -469,11 +510,22 @@ class WaitForSyncStep(BaseStep):
         retry_attempts = self.config.get("retry_attempts")
         # Default: enabled — uses sync_context for context targets.
         trigger_sync = self.config.get("trigger_sync", True)
+        initial_check_interval = self.config.get(
+            "initial_check_interval", SYNC_INITIAL_CHECK_INTERVAL
+        )
+        backoff_factor = self.config.get("backoff_factor", SYNC_BACKOFF_FACTOR)
 
         console.print("\n[bold cyan]⏳ Waiting for node synchronization...[/bold cyan]")
 
         synced, details = await self._wait_for_sync(
-            targets, nodes, timeout, check_interval, retry_attempts, trigger_sync
+            targets,
+            nodes,
+            timeout,
+            check_interval,
+            retry_attempts,
+            trigger_sync,
+            initial_check_interval,
+            backoff_factor,
         )
 
         if "outputs" in self.config:

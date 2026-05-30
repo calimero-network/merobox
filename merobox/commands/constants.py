@@ -134,6 +134,14 @@ STATE_RETRY_DELAY = 3.0  # seconds
 SYNC_RETRY_ATTEMPTS = 3
 SYNC_RETRY_DELAY = 0.5  # seconds
 
+# wait_for_sync adaptive backoff polling. Instead of sleeping a full
+# check_interval after every missed convergence check, start with a short
+# interval and grow it geometrically (capped at check_interval). This catches
+# syncs that land just after the first miss in ~50–150ms instead of rounding
+# the wait up to a full check_interval.
+SYNC_INITIAL_CHECK_INTERVAL = 0.05  # seconds; first inter-attempt sleep
+SYNC_BACKOFF_FACTOR = 2.0  # geometric growth per miss, capped at check_interval
+
 # Health check timeout
 HEALTH_CHECK_TIMEOUT = 10  # seconds
 

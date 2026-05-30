@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `wait_for_sync` now polls with adaptive backoff instead of a fixed
+  `check_interval` after every missed convergence check. The inter-attempt
+  sleep starts at `initial_check_interval` (default `0.05s`) and grows
+  geometrically by `backoff_factor` (default `2.0`), capped at
+  `check_interval`. Fast syncs that miss the first check are caught in
+  ~50–150ms instead of rounding up to a full `check_interval`; slow or
+  never-converging syncs still poll at no more than `check_interval` in
+  steady state, so RPC load on the slow path is unchanged. The existing
+  per-attempt jitter for de-syncing parallel node pollers is preserved.
+  New optional step fields `initial_check_interval` and `backoff_factor`
+  expose the schedule; existing workflows behave the same or faster
+  without changes. Closes #267.
+
 ## [0.6.23] - 2026-05-27
 
 ### Added
