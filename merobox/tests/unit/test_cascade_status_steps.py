@@ -349,6 +349,19 @@ class TestAssertCascadeCompleteExecute:
         sleep_mock.assert_not_called()
         assert workflow_results["cascade_status_calimero-node-1"]["all_completed"]
 
+    def test_outputs_exported_on_success(self):
+        cfg = {**self.config, "outputs": {"done": "all_completed", "n": "total"}}
+        step = AssertCascadeCompleteStep(cfg)
+        client = MagicMock()
+        client.get_cascade_status.return_value = _resp(["completed", "completed"])
+        dynamic_values = {}
+        p1, p2, p3, p4 = self._patched(step, client)
+        with p1, p2, p3, p4:
+            result = _run(step.execute({}, dynamic_values))
+        assert result is True
+        assert dynamic_values.get("done") is True
+        assert dynamic_values.get("n") == 2
+
     def test_poll_then_complete_passes(self):
         step = AssertCascadeCompleteStep(self.config)
         client = MagicMock()

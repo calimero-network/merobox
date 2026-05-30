@@ -814,6 +814,11 @@ class AssertCascadeCompleteStep(BaseStep):
                 )
                 if summary["all_completed"]:
                     workflow_results[f"cascade_status_{node_name}"] = summary
+                    # Support `outputs:` on the success path, same summary shape
+                    # as get_cascade_status (total/completed/.../all_completed +
+                    # the raw `groups` list), so authors can capture counts.
+                    if "outputs" in self.config:
+                        self._export_variables(summary, node_name, dynamic_values)
                     console.print(
                         f"[green]✓ Cascade on namespace {namespace_id} complete: "
                         f"all {summary['total']} groups migrated on {node_name}[/green]"
