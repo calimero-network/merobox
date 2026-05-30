@@ -14,7 +14,13 @@ from typing import Any, Optional
 
 from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
-from merobox.commands.utils import console
+from merobox.commands.utils import (
+    LOG_LEVEL_VERBOSE,
+    console,
+    resolve_log_level,
+    set_log_level,
+    vprint,
+)
 
 
 def merge_remote_nodes_config(
@@ -91,6 +97,7 @@ async def run_workflow(
     auth_username: Optional[str] = None,
     auth_password: Optional[str] = None,
     dry_run: bool = False,
+    quiet: bool = False,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -98,6 +105,8 @@ async def run_workflow(
     Args:
         config_file: Path to the workflow configuration file
         verbose: Whether to enable verbose output
+        quiet: Whether to suppress non-essential output (banners, per-attempt
+            detail); final summaries and errors are always shown
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
         auth_mode: Authentication mode for merod (binary mode only)
@@ -108,6 +117,10 @@ async def run_workflow(
     Returns:
         True if workflow completed successfully, False otherwise
     """
+    # Resolve and apply console verbosity before any step output. Priority:
+    # explicit --verbose/--quiet > MEROBOX_LOG_LEVEL env var > NORMAL default.
+    set_log_level(resolve_log_level(verbose=verbose, quiet=quiet))
+
     try:
         # Load configuration
         config = load_workflow_config(config_file)
@@ -170,18 +183,15 @@ async def run_workflow(
 
             manager = DockerManager()
 
-        # Debug: show incoming log level from CLI/defaults
-        try:
-            from merobox.commands.utils import console as _console
-
-            _console.print(
-                f"[cyan]run_workflow: incoming log_level='{log_level}'[/cyan]"
-            )
-            _console.print(
-                f"[cyan]run_workflow: incoming rust_backtrace='{rust_backtrace}'[/cyan]"
-            )
-        except Exception:
-            pass
+        # Debug: show incoming log level from CLI/defaults (verbose-only).
+        vprint(
+            f"[cyan]run_workflow: incoming log_level='{log_level}'[/cyan]",
+            level=LOG_LEVEL_VERBOSE,
+        )
+        vprint(
+            f"[cyan]run_workflow: incoming rust_backtrace='{rust_backtrace}'[/cyan]",
+            level=LOG_LEVEL_VERBOSE,
+        )
 
         executor = WorkflowExecutor(
             config,
@@ -246,6 +256,7 @@ def run_workflow_sync(
     auth_username: Optional[str] = None,
     auth_password: Optional[str] = None,
     dry_run: bool = False,
+    quiet: bool = False,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -253,6 +264,8 @@ def run_workflow_sync(
     Args:
         config_file: Path to the workflow configuration file
         verbose: Whether to enable verbose output
+        quiet: Whether to suppress non-essential output (banners, per-attempt
+            detail); final summaries and errors are always shown
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
         auth_mode: Authentication mode for merod (binary mode only)
@@ -283,5 +296,6 @@ def run_workflow_sync(
             auth_username=auth_username,
             auth_password=auth_password,
             dry_run=dry_run,
+            quiet=quiet,
         )
     )

@@ -7,37 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.27] - 2026-05-30
-
-### Changed
-
-- CI: excluded `cascade-namespace-example` from the **binary** test
-  matrix. Binary mode pulls merod from the latest core *release*, which
-  lags master; the cascade predicate only matches once merod derives
-  `app_key = blob_id(bytecode)` at group creation
-  (calimero-network/core#2507, merged after `0.10.1-rc.47`). Until a
-  release `>= 0.10.1-rc.48` ships #2507, the released merod leaves
-  `app_key = [0u8; 32]` and the cascade matches nothing — so the binary
-  job failed once 0.6.25 dropped the alignment workaround. Docker mode
-  runs against `merod:edge` (master), which has the fix, so cascade
-  coverage is retained there. Re-add to the binary matrix once the
-  pinned release carries #2507.
-
-## [0.6.26] - 2026-05-28
-
-### Changed
-
-- Bumped `calimero-client-py` pin from `>=0.6.15` to `>=0.6.16`.
-  0.6.16 picks up the new `app_key` field on
-  `SignedGroupOpenInvitation` (added in calimero-network/core#2507
-  and exposed through calimero-network/calimero-client-py#56). Older
-  client-py versions silently dropped the unknown field during the
-  JSON-RPC `join_namespace` deserialize, causing joiners'
-  `GroupMeta.app_key` to seed to `[0u8; 32]` and any subsequent
-  `CascadeTargetApplicationSet` op to silently skip the joiner's
-  subtree.
-
-## [0.6.25] - 2026-05-28
+## [0.6.31] - 2026-05-30
 
 ### Changed
 
@@ -45,12 +15,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the two `upgrade_group(target=app_v1)` alignment workarounds (one on
   the namespace root, one on the subgroup). They existed to paper over
   the random / zero `app_key` defaults at namespace + subgroup
-  creation, fixed at source in calimero-network/core#2507. Requires
-  merod >= the edge release that ships #2507. The non-cascade
-  `upgrade_group` on the namespace root was also actively harmful —
-  trips `validate_upgrade`'s "no contexts to upgrade" check because
-  the namespace root holds no contexts (contexts live in the
+  creation, fixed at source in calimero-network/core#2507. The
+  non-cascade `upgrade_group` on the namespace root was also actively
+  harmful — trips `validate_upgrade`'s "no contexts to upgrade" check
+  because the namespace root holds no contexts (contexts live in the
   subgroup), aborting the workflow before reaching the cascade.
+- Bumped `calimero-client-py` pin from `>=0.6.15` to `>=0.6.16`.
+  0.6.16 picks up the new `app_key` field on `SignedGroupOpenInvitation`
+  (added in calimero-network/core#2507 and exposed through
+  calimero-network/calimero-client-py#56). Older client-py versions
+  silently dropped the unknown field during the JSON-RPC
+  `join_namespace` deserialize, causing joiners' `GroupMeta.app_key` to
+  seed to `[0u8; 32]` and any subsequent `CascadeTargetApplicationSet`
+  op to silently skip the joiner's subtree.
+- CI: excluded `cascade-namespace-example` from the **binary** test
+  matrix. Binary mode pulls merod from the latest core *release*, which
+  lags master; the cascade predicate only matches once merod derives
+  `app_key = blob_id(bytecode)` at group creation
+  (calimero-network/core#2507, merged after `0.10.1-rc.47`). Until a
+  release `>= 0.10.1-rc.48` ships #2507, the released merod leaves
+  `app_key = [0u8; 32]` and the cascade matches nothing — so the binary
+  job would fail once the alignment workaround above is dropped. Docker
+  mode runs against `merod:edge` (master), which has the fix, so cascade
+  coverage is retained there. Re-add to the binary matrix once the
+  pinned release carries #2507.
+
+## [0.6.30] - 2026-05-30
+
+### Added
+
+- Console verbosity control for `merobox bootstrap run`, so CI logs are
+  readable on the happy path. A `vprint(msg, level=...)` helper in
+  `commands/utils.py` gates output through a single process-wide level
+  (`quiet` / `normal` / `verbose`), set in priority order by the new
+  `-q/--quiet` and existing `-v/--verbose` flags, then the
+  `MEROBOX_LOG_LEVEL` env var (useful for CI without touching workflow
+  YAML), then the `normal` default. This is merobox's own console
+  verbosity — distinct from `--log-level`, which sets the merod node's
+  RUST_LOG. By default `wait_for_sync` now emits its banner plus a single
+  final success/failure summary and suppresses the per-attempt
+  "not converged yet" blocks; `--verbose` (or `MEROBOX_LOG_LEVEL=verbose`)
+  restores the full per-attempt detail, and failures always dump the full
+  per-target/per-node hash state regardless of level. The previously
+  unconditional `run_workflow`/`WorkflowExecutor` debug lines are now
+  verbose-only. The same gate is applied to the dominant happy-path log
+  noise: the `execute`/`call` step's per-call JSON-RPC response dump and
+  resolved-values debug, the `repeat` step's per-iteration banners and
+  custom-export confirmations, and the export-machinery's "validated" /
+  "no outputs configured" / "Exporting variables" / per-field "✓ name =
+  value" lines are all now `verbose`-only. At the `normal` default a
+  100-iteration benchmark drops from tens of thousands of log lines to the
+  per-block banner plus the final timing summary; genuine warnings and
+  errors (missing export field, failed call, malformed config) always
+  print. Closes #268.
+
+## [0.6.29] - 2026-05-30
+
+### Changed
+
+- `wait_for_sync` now polls with adaptive backoff instead of a fixed
+  `check_interval` after every missed convergence check. The inter-attempt
+  sleep starts at `initial_check_interval` (default `0.05s`) and grows
+  geometrically by `backoff_factor` (default `2.0`), capped at
+  `check_interval`. Fast syncs that miss the first check are caught in
+  ~50–150ms instead of rounding up to a full `check_interval`; slow or
+  never-converging syncs still poll at no more than `check_interval` in
+  steady state, so RPC load on the slow path is unchanged. The existing
+  per-attempt jitter for de-syncing parallel node pollers is preserved.
+  New optional step fields `initial_check_interval` and `backoff_factor`
+  expose the schedule; existing workflows behave the same or faster
+  without changes. Closes #267.
 
 ## [0.6.23] - 2026-05-27
 

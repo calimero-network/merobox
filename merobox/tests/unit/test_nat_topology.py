@@ -716,6 +716,150 @@ def test_pick_lan_subnet_returns_valid_rfc1918_24():
 
 
 # ---------------------------------------------------------------------------
+# _pick_lan_subnet — overlap avoidance (the peer-restart-symmetric fix)
+#
+# The public network is created with a Docker-AUTO-assigned subnet
+# BEFORE the LAN. Docker's pool can hand the public bridge a /16 (e.g.
+# 172.30.0.0/16) that swallows the hashed LAN /24. Overlapping ranges on
+# the gateway's two interfaces make the kernel's reverse-path lookup for
+# return traffic ambiguous, silently killing the return path — the
+# client SYN leaves but the reply never comes back, and the reachability
+# probe hangs until `timeout` SIGTERMs it. When a `client` is supplied,
+# the picker must dodge every existing network's subnet.
+# ---------------------------------------------------------------------------
+
+
+def _fake_docker_client_with_subnets(subnets):
+    """Build a stub Docker client whose `networks.list()` returns
+    networks carrying the given subnets, shaped like docker-py's
+    `.attrs["IPAM"]["Config"]`."""
+
+    class _FakeNet:
+        def __init__(self, name, subnet):
+            self.name = name
+            self.attrs = {"IPAM": {"Config": [{"Subnet": subnet}]}}
+
+    class _FakeNetworks:
+        def __init__(self, nets):
+            self._nets = nets
+
+        def list(self):
+            return self._nets
+
+    class _FakeClient:
+        def __init__(self, nets):
+            self.networks = _FakeNetworks(nets)
+
+    return _FakeClient([_FakeNet(f"net-{i}", s) for i, s in enumerate(subnets)])
+
+
+def test_pick_lan_subnet_client_none_matches_pure_hash():
+    """Passing no client preserves the historical pure-hash behaviour,
+    so reruns on a clean host still reuse their own subnet."""
+    assert _pick_lan_subnet("some-workflow", None) == _pick_lan_subnet("some-workflow")
+
+
+def test_pick_lan_subnet_avoids_overlapping_public_16():
+    """If the auto-assigned public network grabbed the /16 that
+    contains the hashed /24, the picker must return a /24 that does
+    NOT overlap it."""
+    import ipaddress
+
+    name = "Sync Resilience — Peer Restart (NAT symmetric)"
+    hashed = _pick_lan_subnet(name)  # pure hash, no client
+    # Simulate the public bridge swallowing the hashed /24 inside a /16.
+    hashed_net = ipaddress.ip_network(hashed)
+    public_16 = ipaddress.ip_network("172.30.0.0/16")
+    assert hashed_net.overlaps(public_16)  # precondition for the bug
+
+    client = _fake_docker_client_with_subnets(["172.30.0.0/16", "172.17.0.0/16"])
+    chosen = _pick_lan_subnet(name, client)
+    chosen_net = ipaddress.ip_network(chosen)
+    # Must not overlap any existing network.
+    assert not chosen_net.overlaps(public_16)
+    assert not chosen_net.overlaps(ipaddress.ip_network("172.17.0.0/16"))
+
+
+def test_pick_lan_subnet_falls_back_to_10_range_when_17230_exhausted():
+    """If all of 172.30.0.0/16 is occupied, the picker falls back to a
+    10.x /24 rather than returning an overlapping subnet."""
+    import ipaddress
+
+    client = _fake_docker_client_with_subnets(["172.30.0.0/16"])
+    chosen = _pick_lan_subnet("whatever-workflow", client)
+    chosen_net = ipaddress.ip_network(chosen)
+    assert not chosen_net.overlaps(ipaddress.ip_network("172.30.0.0/16"))
+    assert chosen.startswith("10.")
+
+
+def test_pick_lan_subnet_returns_hashed_start_when_no_overlap():
+    """With a client present but no conflicting networks, the picker
+    still returns the deterministic hashed /24 (the search starts there
+    and the first candidate is free)."""
+    client = _fake_docker_client_with_subnets(["172.18.0.0/16", "172.17.0.0/16"])
+    assert _pick_lan_subnet("cone-smoke", client) == _pick_lan_subnet("cone-smoke")
+
+
+# ---------------------------------------------------------------------------
+# _build_masquerade_cmd — interface-agnostic NAT rule
+#
+# The gateway's MASQUERADE must match on the LAN SOURCE SUBNET, not on an
+# output interface (`-o eth0`). Docker doesn't guarantee that the public
+# network becomes eth0 and the LAN eth1 — CI caught the inverted
+# assignment, which put the old `-o eth0` rule on the LAN interface and
+# left client→boot-node traffic un-masqueraded, killing the return path
+# (the reachability probe hung to a 60s/exit-143 timeout). These tests
+# pin the source-subnet form so the regression can't silently return.
+# ---------------------------------------------------------------------------
+
+
+from merobox.topology.nat import _build_masquerade_cmd  # noqa: E402
+
+
+def test_masquerade_cmd_matches_lan_source_subnet_not_output_iface():
+    """Cone rule: masquerade traffic FROM the LAN going anywhere but the
+    LAN, with NO `-o <iface>` clause (the interface-name assumption is
+    exactly the bug this avoids)."""
+    cmd = _build_masquerade_cmd("172.30.48.0/24", "cone")
+    # Source-subnet match present, destination-exclusion present.
+    assert "-s" in cmd and "172.30.48.0/24" in cmd
+    s_idx = cmd.index("-s")
+    assert cmd[s_idx + 1] == "172.30.48.0/24"
+    # `! -d <lan>` excludes intra-LAN traffic from masquerading.
+    assert "!" in cmd and "-d" in cmd
+    bang_idx = cmd.index("!")
+    assert cmd[bang_idx : bang_idx + 3] == ["!", "-d", "172.30.48.0/24"]
+    assert cmd[-1] == "MASQUERADE"
+    # The whole point: no output-interface assumption.
+    assert "-o" not in cmd
+    assert "eth0" not in cmd and "eth1" not in cmd
+
+
+def test_masquerade_cmd_symmetric_appends_random_fully():
+    """Symmetric mode randomises the source port so DCUtR can't predict
+    it — appended AFTER the base rule, not replacing the source match."""
+    cmd = _build_masquerade_cmd("10.5.0.0/24", "symmetric")
+    assert cmd[-1] == "--random-fully"
+    assert "-o" not in cmd
+    # Still source-subnet based.
+    assert cmd[cmd.index("-s") + 1] == "10.5.0.0/24"
+
+
+def test_masquerade_cmd_cone_has_no_random_fully():
+    """Cone must NOT randomise — that would let it mask DCUtR-direct
+    regressions the symmetric variant exists to catch."""
+    cmd = _build_masquerade_cmd("172.30.1.0/24", "cone")
+    assert "--random-fully" not in cmd
+
+
+def test_masquerade_cmd_rejects_unknown_mode():
+    """A bad nat_mode is a programming error, surfaced loudly rather
+    than silently producing a cone rule under a symmetric label."""
+    with pytest.raises(ValueError, match="nat_mode"):
+        _build_masquerade_cmd("172.30.1.0/24", "double-cone")
+
+
+# ---------------------------------------------------------------------------
 # teardown_nat_topology
 # ---------------------------------------------------------------------------
 #

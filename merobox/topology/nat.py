@@ -686,6 +686,20 @@ def wait_for_client_reachability(
                 f"→ boot-node: {e}"
             ) from e
         time.sleep(NAT_CONNECTIVITY_PROBE_INTERVAL_SECONDS)
+    # The probe never succeeded. This is the failure that was
+    # previously blind: the bare "could not reach" error gives no
+    # gateway-side state, so a CI failure here (e.g. a dead return
+    # path that presents as `nc` hanging until `timeout` SIGTERMs it,
+    # exit 143) is undiagnosable from the log alone. Dump the full
+    # topology state — gateway forwarding sysctls, FORWARD/nat chain
+    # counters, conntrack, per-client routes, and the Docker network
+    # subnets (to surface a public/LAN overlap) — before raising, so
+    # the next failure is diagnosable from the artifact. Best-effort:
+    # a dump that itself fails must not mask the original error.
+    try:
+        _dump_topology_diagnostics(client, state)
+    except Exception as diag_exc:
+        console.print(f"[yellow]Topology diagnostics dump failed: {diag_exc}[/yellow]")
     raise RuntimeError(
         f"{client_container_name} could not reach the boot-node "
         f"({state.boot_node_public_ip}:{BOOT_NODE_PORT}) within "
@@ -739,28 +753,102 @@ def _spawn_boot_node(
     return container
 
 
-def _pick_lan_subnet(workflow_name: str) -> str:
-    """Choose a deterministic LAN-bridge subnet for the workflow.
+def _existing_network_subnets(
+    client: docker.DockerClient,
+) -> list:
+    """Collect the IPv4 subnets of every Docker network the daemon
+    currently knows about, so a freshly-pinned LAN subnet can avoid
+    overlapping any of them.
+
+    Best-effort: the whole scan is wrapped so a daemon hiccup just
+    yields an empty list (callers then fall back to the deterministic
+    hash), and a single network whose IPAM has no/garbage subnet is
+    skipped rather than aborting the scan.
+    """
+    import ipaddress
+
+    subnets = []
+    try:
+        networks = client.networks.list()
+    except Exception:
+        return subnets
+    for net in networks:
+        ipam = (getattr(net, "attrs", {}) or {}).get("IPAM") or {}
+        for cfg in ipam.get("Config") or []:
+            raw = cfg.get("Subnet")
+            if not raw:
+                continue
+            try:
+                subnets.append(ipaddress.ip_network(raw, strict=False))
+            except ValueError:
+                continue
+    return subnets
+
+
+def _pick_lan_subnet(
+    workflow_name: str, client: docker.DockerClient | None = None
+) -> str:
+    """Choose a deterministic LAN-bridge /24 for the workflow that does
+    not overlap any network the Docker daemon already has.
 
     The subnet has to be user-configured (not Docker-auto-assigned)
     because `_spawn_nat_gateway` connects the gateway with
-    `ipv4_address=`, and Docker rejects explicit IPs on
-    auto-subnetted networks. Determinism per workflow name lets a
-    rerun pick up the same subnet a previous crashed run created;
-    different workflow names yield different subnets so parallel
-    workflows don't collide.
+    `ipv4_address=`, and Docker rejects explicit IPs on auto-subnetted
+    networks.
 
-    Layout: `172.30.<hash & 0xff>.0/24`. The 172.16.0.0/12 range is
-    RFC1918 private and rarely in use on CI runners (which use
-    172.17.x for the default Docker bridge). 256 distinct subnets
-    is plenty — collisions would only matter if a single host ran
-    more than ~256 NAT workflows in parallel, which we're nowhere
-    near.
+    Determinism: the search STARTS at
+    `172.30.<sha256(name) & 0xff>.0/24`, so a rerun of the same workflow
+    on a clean host reuses the same subnet (and finds its own leftover
+    network from a crashed run); different workflow names start at
+    different octets.
+
+    Overlap guard (`client` provided): the *public* network is created
+    with a Docker-AUTO-assigned subnet BEFORE the LAN, and Docker's
+    address pool can hand that public bridge a /16 (e.g. 172.30.0.0/16)
+    that swallows the hashed LAN /24. Two interfaces on overlapping
+    ranges inside the gateway's netns make the kernel's reverse-path
+    lookup for return traffic ambiguous — the client's SYN leaves fine
+    but the boot-node's reply has no deterministic way back, so the
+    reachability probe hangs until its `timeout` SIGTERMs it (the
+    `exit 143` seen in CI). When the hashed start /24 overlaps an
+    existing network we walk forward through 172.30.0.0/16 to the first
+    free /24, then fall back to a 10.x range if the whole block is
+    somehow occupied.
+
+    With `client=None` the function is pure (hash only) — preserves the
+    historical behaviour for callers/tests that don't need the guard.
     """
     import hashlib
+    import ipaddress
 
-    octet = int(hashlib.sha256(workflow_name.encode()).hexdigest(), 16) & 0xFF
-    return f"172.30.{octet}.0/24"
+    start = int(hashlib.sha256(workflow_name.encode()).hexdigest(), 16) & 0xFF
+    existing = _existing_network_subnets(client) if client is not None else []
+
+    def _free(candidate: str) -> bool:
+        net = ipaddress.ip_network(candidate)
+        return not any(net.overlaps(e) for e in existing)
+
+    # Primary range: walk 172.30.0.0/16 from the deterministic start.
+    # With no existing subnets to dodge, the first candidate (the pure
+    # hash) is returned immediately, matching the historical layout.
+    for i in range(256):
+        candidate = f"172.30.{(start + i) & 0xFF}.0/24"
+        if not existing or _free(candidate):
+            return candidate
+
+    # 172.30.0.0/16 fully occupied (pathological — a host carrying
+    # 256 overlapping bridges). Fall back to a deterministic-ish /24
+    # in 10.0.0.0/8 and scan that too.
+    for i in range(256):
+        candidate = f"10.{(start + i) & 0xFF}.{start & 0xFF}.0/24"
+        if _free(candidate):
+            return candidate
+
+    raise RuntimeError(
+        "could not find a free /24 for the LAN bridge: 172.30.0.0/16 and "
+        "the 10.x fallback are both fully occupied by existing Docker "
+        "networks. Prune unused networks (`docker network prune`)."
+    )
 
 
 def _pick_gateway_lan_ip(lan_network: docker.models.networks.Network) -> str:
@@ -866,6 +954,48 @@ def _decode_exec_output(output: bytes | str | None) -> str:
     return str(output)
 
 
+def _build_masquerade_cmd(lan_subnet: str, nat_mode: str) -> list[str]:
+    """Build the gateway's iptables MASQUERADE argv for `nat_mode`.
+
+    Matches on the LAN SOURCE SUBNET ("masquerade anything FROM the LAN
+    going anywhere but the LAN"), deliberately NOT on an output
+    interface. An earlier `-o eth0` form assumed eth0 was the
+    public-facing interface, but Docker's interface naming for a
+    two-network container is not deterministic with attachment order —
+    CI proved (via the reachability-failure gateway dump) that the LAN
+    can land on eth0 and the public net on eth1, which put MASQUERADE on
+    the wrong interface. The client's packets then egressed the public
+    interface UN-masqueraded (src still the LAN IP), the boot-node had no
+    route back to the LAN subnet, replies were dropped, and the
+    reachability probe hung the full timeout (exit 143). The
+    source-subnet rule is the canonical NAT-router form and is correct
+    regardless of which kernel name each bridge got.
+
+    `symmetric` appends `--random-fully` so the per-destination source
+    port is randomised (defeats DCUtR's predict-the-port hole punching);
+    `cone` omits it. Any other mode is a programming error.
+    """
+    base = [
+        "iptables",
+        "-t",
+        "nat",
+        "-A",
+        "POSTROUTING",
+        "-s",
+        lan_subnet,
+        "!",
+        "-d",
+        lan_subnet,
+        "-j",
+        "MASQUERADE",
+    ]
+    if nat_mode == "cone":
+        return base
+    if nat_mode == "symmetric":
+        return base + ["--random-fully"]
+    raise ValueError(f"nat_mode must be 'cone' or 'symmetric', got {nat_mode!r}")
+
+
 def _spawn_nat_gateway(
     client: docker.DockerClient,
     public_network: docker.models.networks.Network,
@@ -917,9 +1047,14 @@ def _spawn_nat_gateway(
         pass
 
     gateway_lan_ip = _pick_gateway_lan_ip(lan_network)
+    # LAN CIDR for the source-based MASQUERADE rule installed below.
+    # `_pick_gateway_lan_ip` just reloaded the network and validated the
+    # IPAM subnet exists (it raises otherwise), so this read is safe.
+    _lan_ipam = (lan_network.attrs.get("IPAM") or {}).get("Config") or []
+    lan_subnet = _lan_ipam[0]["Subnet"]
     console.print(
         f"[yellow]Starting NAT gateway {container_name} "
-        f"(mode={nat_mode}, lan_ip={gateway_lan_ip})[/yellow]"
+        f"(mode={nat_mode}, lan_ip={gateway_lan_ip}, lan_subnet={lan_subnet})[/yellow]"
     )
     container = client.containers.create(
         image=gateway_base_image(),
@@ -1009,23 +1144,22 @@ def _spawn_nat_gateway(
         "ip6tables",
         "iproute2",
     ]
-    # Interface-name invariant.
-    # The exec steps below (per-iface forwarding loop, eth1
-    # verify, iptables `-o eth0`) assume Docker named the public
-    # network `eth0` and the LAN network `eth1`. For bridge
-    # networks under the default Linux kernel netdev driver this
-    # is universal: `eth0` is the first network attached at
-    # `containers.create(network=...)` time, `eth1` is the
-    # second attached via `network.connect(...)` before start.
-    # That ordering is what _this function_ does, deterministically,
-    # so the invariant holds for every gateway we spawn. If a
-    # future Docker engine or non-bridge driver renames interfaces,
-    # the eth1-forwarding verify step below will fail with a
-    # clear `read=''` error rather than silently MASQUERADE-ing
-    # off the wrong interface. We deliberately do NOT resolve
-    # interfaces dynamically (via MAC-match against container
-    # attrs) — the added complexity buys nothing for the bridge-
-    # driver case that's the only one merobox supports today.
+    # Interface naming is NOT a reliable invariant.
+    # An earlier version of this function assumed Docker always named
+    # the public network `eth0` (created via `containers.create(
+    # network=...)`) and the LAN `eth1` (attached via
+    # `network.connect(...)` before start). That assumption was WRONG:
+    # Docker does not guarantee interface-name ↔ attachment-order, and
+    # CI caught the inverted assignment in the wild (gateway dump showed
+    # eth0=LAN, eth1=public). The old `-o eth0` MASQUERADE then sat on
+    # the LAN interface, the client's traffic egressed the public
+    # interface un-masqueraded, the boot-node had no route back to the
+    # LAN subnet, and the reachability probe hung the full timeout.
+    #
+    # So nothing below keys off a specific interface NAME: the
+    # forwarding check verifies BOTH eth0 and eth1, and the MASQUERADE
+    # rule matches on the LAN SOURCE SUBNET rather than an output
+    # interface. Both are correct whichever name each bridge got.
     apk_ec, apk_out = container.exec_run(apk_cmd, demux=False)
     if apk_ec != 0:
         decoded = _decode_exec_output(apk_out)
@@ -1099,53 +1233,37 @@ def _spawn_nat_gateway(
             f"per-interface forwarding (exit {fwd_ec}): {decoded}"
         )
 
-    # Verify eth1 specifically — that's the interface the LAN
-    # bridge is attached to and the one that matters for the
-    # NAT-forwarding semantics this gateway exists to provide.
-    # If forwarding is off on eth1 despite the sysctl + loop
-    # above, MASQUERADE will install but packets will still be
-    # dropped; fail loudly here so the surfaced error points at
-    # the actual cause.
-    verify_ec, verify_out = container.exec_run(
-        ["cat", "/proc/sys/net/ipv4/conf/eth1/forwarding"],
-        demux=False,
-    )
-    verify_decoded = _decode_exec_output(verify_out).strip()
-    if verify_ec != 0 or verify_decoded != "1":
-        _destroy_half_spawned_gateway(container, public_network, lan_network)
-        raise RuntimeError(
-            f"NAT gateway {container_name!r}: eth1 forwarding is "
-            f"not enabled (read={verify_decoded!r}, exit "
-            f"{verify_ec}). This means the LAN bridge attachment "
-            f"either landed without inheriting the master "
-            f"forwarding sysctl OR a host-level `net.ipv4."
-            f"conf.eth1.forwarding=0` is overriding the "
-            f"container sysctl namespace."
+    # Verify forwarding on BOTH data interfaces (eth0 + eth1). We do
+    # NOT assume which is public vs LAN: Docker does not guarantee that
+    # the network attached first becomes eth0 — when a gateway is
+    # created on the public net and the LAN is `connect()`ed before
+    # `start()`, the kernel can name them in either order, and CI has
+    # observed the inverted assignment (eth0=LAN, eth1=public). Either
+    # way both must forward, so check both. If forwarding is off on a
+    # data interface despite the sysctl + loop above, MASQUERADE will
+    # install but packets get dropped; fail loudly pointing at the
+    # actual cause.
+    for iface in ("eth0", "eth1"):
+        verify_ec, verify_out = container.exec_run(
+            ["cat", f"/proc/sys/net/ipv4/conf/{iface}/forwarding"],
+            demux=False,
         )
+        verify_decoded = _decode_exec_output(verify_out).strip()
+        if verify_ec != 0 or verify_decoded != "1":
+            _destroy_half_spawned_gateway(container, public_network, lan_network)
+            raise RuntimeError(
+                f"NAT gateway {container_name!r}: {iface} forwarding is "
+                f"not enabled (read={verify_decoded!r}, exit "
+                f"{verify_ec}). This means the bridge attachment either "
+                f"landed without inheriting the master forwarding sysctl "
+                f"OR a host-level `net.ipv4.conf.{iface}.forwarding=0` is "
+                f"overriding the container sysctl namespace."
+            )
 
-    # Install the MASQUERADE rule per `nat_mode`. For symmetric
-    # we try `--random-fully` first; if iptables rejects the
-    # flag (older kernel without iptables-extensions support),
-    # we fall back to plain MASQUERADE BUT FAIL the spawn —
-    # silently running cone semantics under a symmetric label
-    # would mask DCUtR-related regressions in downstream tests.
-    masquerade_base = [
-        "iptables",
-        "-t",
-        "nat",
-        "-A",
-        "POSTROUTING",
-        "-o",
-        "eth0",
-        "-j",
-        "MASQUERADE",
-    ]
-    if nat_mode == "cone":
-        iptables_cmd = masquerade_base
-    elif nat_mode == "symmetric":
-        iptables_cmd = masquerade_base + ["--random-fully"]
-    else:
-        raise ValueError(f"nat_mode must be 'cone' or 'symmetric', got {nat_mode!r}")
+    # Install the MASQUERADE rule per `nat_mode` (see
+    # `_build_masquerade_cmd` for the source-subnet-vs-`-o eth0`
+    # rationale and the symmetric `--random-fully` handling).
+    iptables_cmd = _build_masquerade_cmd(lan_subnet, nat_mode)
 
     ipt_ec, ipt_out = container.exec_run(iptables_cmd, demux=False)
     if ipt_ec != 0:
@@ -1409,11 +1527,12 @@ def setup_nat_topology(
             internal=False,
             # User-configured subnet is REQUIRED because the gateway
             # gets attached with an explicit `ipv4_address=` (see
-            # `_spawn_nat_gateway`). The actual subnet doesn't matter
-            # — picking a deterministic-per-workflow value from a
-            # private range keeps parallel workflows from colliding
-            # while still letting reruns find their own leftover state.
-            subnet=_pick_lan_subnet(workflow_name),
+            # `_spawn_nat_gateway`). Pass `client` so the picker can
+            # dodge the already-created public network's auto-assigned
+            # subnet — Docker's pool can hand the public bridge a /16
+            # that swallows the hashed LAN /24, and the resulting
+            # overlap silently kills the gateway's return path.
+            subnet=_pick_lan_subnet(workflow_name, client),
         )
 
         # Step 3: boot-node.
@@ -1681,6 +1800,55 @@ def _dump_topology_diagnostics(
     down a relay-reservation timeout. Called from the readiness-gate
     failure path; safe to call ad hoc as well."""
     console.print("[yellow]── NAT topology diagnostics ──[/yellow]")
+    # Docker network subnets. A LAN /24 that overlaps the
+    # auto-assigned public /16 (or any other bridge) makes the
+    # gateway's reverse-path lookup ambiguous and silently kills the
+    # return path — exactly the "SYN out, nothing back" symptom. List
+    # every network's name + subnet so an overlap is visible at a
+    # glance. rp_filter and conntrack appear further down; this block
+    # is the cheapest thing to check first.
+    try:
+        import ipaddress
+
+        rows = []
+        for net in client.networks.list():
+            ipam = (getattr(net, "attrs", {}) or {}).get("IPAM") or {}
+            subs = [
+                cfg.get("Subnet")
+                for cfg in (ipam.get("Config") or [])
+                if cfg.get("Subnet")
+            ]
+            rows.append(f"  {net.name}: {', '.join(subs) or '<none>'}")
+        # Flag any pair of subnets that overlap — that's the smoking gun.
+        nets = []
+        for net in client.networks.list():
+            ipam = (getattr(net, "attrs", {}) or {}).get("IPAM") or {}
+            for cfg in ipam.get("Config") or []:
+                raw = cfg.get("Subnet")
+                if raw:
+                    try:
+                        nets.append((net.name, ipaddress.ip_network(raw, strict=False)))
+                    except ValueError:
+                        pass
+        overlaps = [
+            f"  {a_name} {a} OVERLAPS {b_name} {b}"
+            for i, (a_name, a) in enumerate(nets)
+            for (b_name, b) in nets[i + 1 :]
+            if a.overlaps(b)
+        ]
+        console.print(
+            "[yellow]--- docker networks (name: subnet) ---\n"
+            + "\n".join(rows)
+            + (
+                "\n--- OVERLAPPING SUBNETS (likely return-path culprit) ---\n"
+                + "\n".join(overlaps)
+                if overlaps
+                else "\n(no overlapping subnets detected)"
+            )
+            + "[/yellow]"
+        )
+    except Exception as e:
+        console.print(f"[yellow]Failed to enumerate docker networks: {e}[/yellow]")
     # Gateway logs (entrypoint output: iptables rules, ip routes,
     # any FATAL the script emitted).
     try:
@@ -1714,6 +1882,13 @@ def _dump_topology_diagnostics(
                     " echo '--- per-iface forwarding ---';"
                     " for f in /proc/sys/net/ipv4/conf/*/forwarding;"
                     '   do printf \'%s = \' "$f"; cat "$f"; done;'
+                    " echo '--- per-iface rp_filter ---';"
+                    " for f in /proc/sys/net/ipv4/conf/*/rp_filter;"
+                    '   do printf \'%s = \' "$f"; cat "$f"; done;'
+                    " echo '--- ip addr (gateway eth0/eth1 subnets) ---';"
+                    " (ip -4 addr 2>&1 || echo 'ip unavailable');"
+                    " echo '--- ip route ---';"
+                    " (ip -4 route 2>&1 || echo 'ip unavailable');"
                     " echo '--- FORWARD chain ---';"
                     " iptables -L FORWARD -nv;"
                     " echo '--- nat table ---';"

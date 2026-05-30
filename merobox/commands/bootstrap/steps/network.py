@@ -29,6 +29,7 @@ from merobox.commands.bootstrap.steps._docker_utils import (
     get_docker_client,
     is_binary_mode,
     partition_network_key,
+    reinject_nat_default_route,
     safe_console_error,
     warn_if_mdns_enabled,
 )
@@ -180,4 +181,13 @@ class ConnectNodeStep(BaseStep):
         dynamic_values.pop(partition_network_key(node_name), None)
 
         console.print(f"[green]✓ Connected {node_name} to {network_name}[/green]")
+
+        # Reconnecting via `network.connect` rebuilds the container's network
+        # attachment, which makes Docker re-point the default route at its
+        # own bridge gateway — wiping the NAT-gateway override the topology
+        # injected. Without re-applying it, the just-healed client routes
+        # around the NAT gateway, its noise handshakes to the boot-node time
+        # out, and the partition never actually "heals" for libp2p. No-op
+        # outside a NAT topology.
+        reinject_nat_default_route(self.manager, node_name, context="post-reconnect")
         return True

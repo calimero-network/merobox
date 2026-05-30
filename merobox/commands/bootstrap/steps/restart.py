@@ -25,6 +25,7 @@ import aiohttp
 
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
+    reinject_nat_default_route,
     resolve_container,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -110,6 +111,13 @@ class RestartContainerStep(BaseStep):
             return False
 
         console.print(f"[green]✓ Restarted {container_name}[/green]")
+
+        # `docker restart` rebuilds the container's network attachment and
+        # wipes the NAT-gateway default route the topology setup injected;
+        # re-apply it (no-op outside a NAT topology). Verified via netns
+        # route-watcher in the #2469 keypair-repro v6 run — see the shared
+        # helper for the full rationale.
+        reinject_nat_default_route(self.manager, container_name, context="post-restart")
 
         if not wait_healthy:
             # No health gate requested. Snapshot what the new

@@ -3,8 +3,10 @@ Shared utilities for Calimero CLI commands.
 """
 
 import asyncio
+import contextvars
 import json
 import logging
+import os
 import sys
 from typing import Any, Optional
 
@@ -18,6 +20,111 @@ from merobox.commands.manager import DockerManager
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+# ---------------------------------------------------------------------------
+# Console verbosity control
+#
+# This governs how much merobox itself prints to the terminal. It is distinct
+# from `--log-level`, which sets the merod *node* RUST_LOG level inside the
+# container — do not conflate the two. Higher numeric level = more output.
+#
+# All gated output flows through `vprint()` so every bootstrap step benefits
+# from a single knob (e.g. wait_for_sync suppressing its per-attempt blocks on
+# the happy path while still showing the banner and final summary).
+# ---------------------------------------------------------------------------
+LOG_LEVEL_QUIET = 0  # essentials only: final summaries and errors
+LOG_LEVEL_NORMAL = 1  # default: banners + summaries, no per-attempt chatter
+LOG_LEVEL_VERBOSE = 2  # everything, including per-poll / per-attempt detail
+
+# Accepted string spellings for MEROBOX_LOG_LEVEL / per-step verbose config.
+_LOG_LEVEL_NAMES = {
+    "quiet": LOG_LEVEL_QUIET,
+    "q": LOG_LEVEL_QUIET,
+    "normal": LOG_LEVEL_NORMAL,
+    "default": LOG_LEVEL_NORMAL,
+    "info": LOG_LEVEL_NORMAL,
+    "verbose": LOG_LEVEL_VERBOSE,
+    "v": LOG_LEVEL_VERBOSE,
+    "debug": LOG_LEVEL_VERBOSE,
+}
+
+# Current verbosity, scoped per execution context. Set via `set_log_level()`
+# (typically once at the start of `run_workflow`); read by `vprint()`. A
+# ContextVar — rather than a plain module global — means a value set before
+# spawning asyncio tasks is inherited by those tasks (each task copies the
+# context at creation), yet concurrent branches (e.g. ParallelStep) or a
+# library embedding can scope their own level without clobbering each other.
+# Defaults to NORMAL so callers that never configure it get CI-friendly output.
+_log_level_var: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "merobox_log_level", default=LOG_LEVEL_NORMAL
+)
+
+
+def parse_log_level(value: Any, default: int = LOG_LEVEL_NORMAL) -> int:
+    """Map a string/int verbosity into a numeric level.
+
+    Accepts the names in ``_LOG_LEVEL_NAMES`` (case-insensitive) or a numeric
+    value (clamped to the valid range). Anything unrecognized falls back to
+    ``default`` rather than raising, so a stray env var can never abort a run.
+
+    A bool is the shorthand a per-step ``verbose:`` field yields:
+    ``True`` -> VERBOSE, ``False`` -> NORMAL ("not verbose"). Both ignore
+    ``default`` so the mapping is symmetric and independent of caller context.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        # bool is an int subclass, so check it before the int branch.
+        return LOG_LEVEL_VERBOSE if value else LOG_LEVEL_NORMAL
+    if isinstance(value, int):
+        return max(LOG_LEVEL_QUIET, min(LOG_LEVEL_VERBOSE, value))
+    name = str(value).strip().lower()
+    if name.isdigit():
+        return max(LOG_LEVEL_QUIET, min(LOG_LEVEL_VERBOSE, int(name)))
+    return _LOG_LEVEL_NAMES.get(name, default)
+
+
+def resolve_log_level(verbose: bool = False, quiet: bool = False) -> int:
+    """Resolve effective console verbosity from flags and environment.
+
+    Priority (highest first):
+      1. Explicit ``--verbose`` / ``--quiet`` flags. ``--verbose`` wins if
+         both are somehow set (louder is safer for debugging).
+      2. ``MEROBOX_LOG_LEVEL`` env var (lets CI dial verbosity without
+         editing workflow YAML).
+      3. ``LOG_LEVEL_NORMAL`` default.
+    """
+    if verbose:
+        return LOG_LEVEL_VERBOSE
+    if quiet:
+        return LOG_LEVEL_QUIET
+    env = os.environ.get("MEROBOX_LOG_LEVEL")
+    if env:
+        return parse_log_level(env)
+    return LOG_LEVEL_NORMAL
+
+
+def set_log_level(level: int) -> None:
+    """Set the console verbosity used by ``vprint()`` in the current context."""
+    _log_level_var.set(level)
+
+
+def get_log_level() -> int:
+    """Return the current console verbosity for this context."""
+    return _log_level_var.get()
+
+
+def vprint(*args: Any, level: int = LOG_LEVEL_NORMAL, **kwargs: Any) -> None:
+    """``console.print`` gated by verbosity.
+
+    Prints only when the current level is at least ``level``. Use
+    ``level=LOG_LEVEL_VERBOSE`` for per-attempt / debug chatter,
+    ``level=LOG_LEVEL_NORMAL`` for banners, and plain ``console.print`` (or
+    ``level=LOG_LEVEL_QUIET``) for output that must always appear, such as
+    final success/failure summaries.
+    """
+    if _log_level_var.get() >= level:
+        console.print(*args, **kwargs)
 
 
 def _normalize_port(port_value: Any) -> Optional[int]:
