@@ -14,6 +14,7 @@ to None, so the version pre-flight is skipped and never interferes here.
 """
 
 import asyncio
+import itertools
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -208,6 +209,19 @@ class TestGetCascadeStatusExecute:
             result = _run(step.execute({}, {}))
         assert result is True
 
+    def test_jsonrpc_error_body_fails_step(self):
+        # transport OK but a JSON-RPC error body must not be summarised as an
+        # all-zero status — the step should fail.
+        step = GetCascadeStatusStep(self.config)
+        client = MagicMock()
+        client.get_cascade_status.return_value = {"error": {"type": "Internal"}}
+        workflow_results = {}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            result = _run(step.execute(workflow_results, {}))
+        assert result is False
+        assert "cascade_status_calimero-node-1" not in workflow_results
+
 
 # =============================================================================
 # AssertCascadeCompleteStep — validation
@@ -308,15 +322,25 @@ class TestAssertCascadeCompleteExecute:
 
     def test_timeout_fails(self):
         step = AssertCascadeCompleteStep(
-            {**self.config, "timeout_seconds": 0.02, "poll_interval": 0.01}
+            {**self.config, "timeout_seconds": 10, "poll_interval": 1}
         )
         client = MagicMock()
         client.get_cascade_status.return_value = _resp(["completed", "in_progress"])
         workflow_results = {}
         p1, p2, p3, p4 = self._patched(step, client)
-        with p1, p2, p3, p4:
+        # Drive the deadline deterministically rather than the wall clock:
+        # monotonic returns 0,5,10,... so deadline=10 is crossed on the 2nd
+        # poll regardless of CI runner speed.
+        with (
+            p1,
+            p2,
+            p3,
+            p4,
+            patch(f"{_MODULE}.time.monotonic", side_effect=itertools.count(0, 5)),
+        ):
             result = _run(step.execute(workflow_results, {}))
         assert result is False
+        assert client.get_cascade_status.call_count == 2
         # last-read summary is still recorded for downstream inspection
         assert workflow_results["cascade_status_calimero-node-1"]["pending"] == 1
 
@@ -336,15 +360,21 @@ class TestAssertCascadeCompleteExecute:
         step = AssertCascadeCompleteStep(
             {
                 **self.config,
-                "timeout_seconds": 0.02,
-                "poll_interval": 0.01,
+                "timeout_seconds": 10,
+                "poll_interval": 1,
                 "expected_failure": True,
             }
         )
         client = MagicMock()
         client.get_cascade_status.return_value = _resp(["in_progress"])
         p1, p2, p3, p4 = self._patched(step, client)
-        with p1, p2, p3, p4:
+        with (
+            p1,
+            p2,
+            p3,
+            p4,
+            patch(f"{_MODULE}.time.monotonic", side_effect=itertools.count(0, 5)),
+        ):
             result = _run(step.execute({}, {}))
         assert result is True
 
@@ -353,6 +383,20 @@ class TestAssertCascadeCompleteExecute:
         client = MagicMock()
         client.get_cascade_status.side_effect = [
             RuntimeError("node booting"),
+            _resp(["completed"]),
+        ]
+        p1, p2, p3, p4 = self._patched(step, client)
+        with p1, p2, p3, p4:
+            result = _run(step.execute({}, {}))
+        assert result is True
+        assert client.get_cascade_status.call_count == 2
+
+    def test_jsonrpc_error_body_retried_then_complete(self):
+        # a JSON-RPC error body is treated like a transient read: keep polling.
+        step = AssertCascadeCompleteStep(self.config)
+        client = MagicMock()
+        client.get_cascade_status.side_effect = [
+            {"error": {"type": "Internal"}},
             _resp(["completed"]),
         ]
         p1, p2, p3, p4 = self._patched(step, client)

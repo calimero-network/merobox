@@ -646,6 +646,15 @@ class GetCascadeStatusStep(BaseStep):
             )
             return False
 
+        # A transport-level success can still carry a JSON-RPC error body;
+        # mirror GetGroupUpgradeStatusStep so it isn't silently summarised as
+        # an empty (all-zero) status.
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
         summary = _summarize_cascade_status(result["data"])
         workflow_results[f"cascade_status_{node_name}"] = summary
         # Only export when the author configured outputs — otherwise the base
@@ -757,9 +766,11 @@ class AssertCascadeCompleteStep(BaseStep):
         )
 
         # monotonic() so a wall-clock adjustment mid-wait can't extend or
-        # truncate the timeout. The first poll happens immediately; the
-        # deadline guards the *next* sleep, so an already-complete cascade
-        # returns without ever sleeping.
+        # truncate the timeout. The first poll always runs; thereafter the
+        # deadline is checked BEFORE committing to a sleep, and the final
+        # sleep is clamped to the time remaining, so total wall-time stays
+        # within timeout_seconds (no extra poll past the deadline, no skipped
+        # poll while time remains).
         deadline = time.monotonic() + timeout_seconds
         last_summary: dict[str, Any] | None = None
         attempt = 0
@@ -769,8 +780,13 @@ class AssertCascadeCompleteStep(BaseStep):
             attempt += 1
             try:
                 api_result = client.get_cascade_status(namespace_id=namespace_id)
-                summary = _summarize_cascade_status(api_result)
-                last_summary = summary
+                if self._check_jsonrpc_error(api_result):
+                    # JSON-RPC error body on an otherwise-OK transport: treat
+                    # like a transient read and retry until the deadline.
+                    summary = None
+                else:
+                    summary = _summarize_cascade_status(api_result)
+                    last_summary = summary
             except Exception as e:
                 # Transient RPC error (node still booting, sync in flight).
                 # Keep polling until the deadline rather than failing the
@@ -805,9 +821,10 @@ class AssertCascadeCompleteStep(BaseStep):
                     )
                     break
 
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 break
-            await asyncio.sleep(poll_interval)
+            await asyncio.sleep(min(poll_interval, remaining))
 
         if last_summary is not None:
             workflow_results[f"cascade_status_{node_name}"] = last_summary
