@@ -38,11 +38,19 @@ def _resp(statuses):
 
 
 def _run(coro):
-    # Each step.execute() gets its own loop via asyncio.run() — the modern,
-    # env-independent runner. (The older get_event_loop().run_until_complete()
-    # pattern reuses a process-wide loop that is closed after first use on
-    # Python 3.13+, which breaks repeated calls.)
-    return asyncio.run(coro)
+    # Run on a private loop and never touch the process-wide "current loop".
+    #
+    # asyncio.run() would close the shared main-thread loop AND set the current
+    # loop to None, so any later test using the suite's prevailing
+    # `asyncio.get_event_loop().run_until_complete(...)` pattern would hit
+    # "RuntimeError: no current event loop" on Python 3.11/3.12. Creating an
+    # isolated loop (without set_event_loop) leaves the global loop state
+    # untouched, so this file can't pollute sibling test modules.
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # =============================================================================
