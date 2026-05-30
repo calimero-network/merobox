@@ -72,7 +72,8 @@ jobs:
       - id: set
         run: |
           # Binary mode: all workflows except fuzzy, auth-related, the
-          # whole fault-injection family, and NAT-topology workflows.
+          # whole fault-injection family, NAT-topology, and the
+          # cascade-namespace workflow.
           # The fault primitives are Docker-specific (the steps short-
           # circuit on is_binary_mode) and the paired docker-inspect
           # assertion scripts would fail outright in binary mode where
@@ -81,6 +82,15 @@ jobs:
           # refuses `topology: { type: nat }` in binary mode and
           # returns a clear error, but CI counts that refusal as a
           # workflow failure, so just don't run them.
+          # cascade-namespace requires a merod that derives
+          # app_key = blob_id(bytecode) at group creation
+          # (calimero-network/core#2507). Binary mode pulls merod from
+          # the latest core *release*, which lags master; until a
+          # release >= 0.10.1-rc.48 ships #2507, the released merod
+          # leaves app_key = [0u8; 32] and the cascade predicate matches
+          # nothing. Docker mode runs against merod:edge (master), which
+          # has the fix, so cascade-namespace keeps full coverage there.
+          # Re-add to binary once the pinned release carries #2507.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
@@ -88,6 +98,7 @@ jobs:
             grep -v cached-frontends | \
             grep -v fault-injection | \
             grep -v nat-topology | \
+            grep -v cascade-namespace | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
 

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.31] - 2026-05-30
+
+### Changed
+
+- `workflow-examples/workflow-cascade-namespace-example.yml` — dropped
+  the two `upgrade_group(target=app_v1)` alignment workarounds (one on
+  the namespace root, one on the subgroup). They existed to paper over
+  the random / zero `app_key` defaults at namespace + subgroup
+  creation, fixed at source in calimero-network/core#2507. The
+  non-cascade `upgrade_group` on the namespace root was also actively
+  harmful — trips `validate_upgrade`'s "no contexts to upgrade" check
+  because the namespace root holds no contexts (contexts live in the
+  subgroup), aborting the workflow before reaching the cascade.
+- Bumped `calimero-client-py` pin from `>=0.6.15` to `>=0.6.16`.
+  0.6.16 picks up the new `app_key` field on `SignedGroupOpenInvitation`
+  (added in calimero-network/core#2507 and exposed through
+  calimero-network/calimero-client-py#56). Older client-py versions
+  silently dropped the unknown field during the JSON-RPC
+  `join_namespace` deserialize, causing joiners' `GroupMeta.app_key` to
+  seed to `[0u8; 32]` and any subsequent `CascadeTargetApplicationSet`
+  op to silently skip the joiner's subtree.
+- CI: excluded `cascade-namespace-example` from the **binary** test
+  matrix. Binary mode pulls merod from the latest core *release*, which
+  lags master; the cascade predicate only matches once merod derives
+  `app_key = blob_id(bytecode)` at group creation
+  (calimero-network/core#2507, merged after `0.10.1-rc.47`). Until a
+  release `>= 0.10.1-rc.48` ships #2507, the released merod leaves
+  `app_key = [0u8; 32]` and the cascade matches nothing — so the binary
+  job would fail once the alignment workaround above is dropped. Docker
+  mode runs against `merod:edge` (master), which has the fix, so cascade
+  coverage is retained there. Re-add to the binary matrix once the
+  pinned release carries #2507.
+
 ## [0.6.30] - 2026-05-30
 
 ### Added
