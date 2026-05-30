@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.32] - 2026-05-30
+
+### Added
+
+- `get_cascade_status` workflow step. Reads per-descendant cascade
+  migration status across a namespace subtree via the
+  `get_cascade_status` RPC (calimero-network/core#2524) and rolls the
+  per-group entries up into `total` / `completed` / `pending` / `failed`
+  counts plus an `all_completed` flag. The summary is stored under
+  `cascade_status_{node}`; its fields — and the raw per-group `groups`
+  list — are addressable from an `outputs:` block. Takes `node` and
+  `namespace_id`.
+- `assert_cascade_complete` workflow step. Polls `get_cascade_status`
+  every `poll_interval` seconds (default `2.0`) until every group in the
+  namespace subtree has migrated (`all_completed`) or `timeout_seconds`
+  (default `30`) elapses. A descendant entering the `failed` status
+  aborts the wait immediately. Saves workflow authors from hand-rolling
+  a `wait`-loop around `get_cascade_status`. Takes `node`,
+  `namespace_id`, and optional `timeout_seconds` / `poll_interval`.
+  Together with `cascade_namespace_application` (shipped in 0.6.22) this
+  closes calimero-network/merobox#255.
+
+### Changed
+
+- Bumped minimum `calimero-client-py` to `0.6.17`. The
+  `get_cascade_status(namespace_id)` binding it adds
+  (calimero-network/calimero-client-py#59) backs both new steps; both
+  carry a `>= 0.6.17` pre-flight guard for clearer errors on older pins.
+
 ## [0.6.31] - 2026-05-30
 
 ### Changed
