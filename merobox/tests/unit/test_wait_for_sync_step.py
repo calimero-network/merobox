@@ -37,6 +37,13 @@ def _run_with_recorded_sleeps(step, converge_on_attempt, **kwargs):
 
     ``backoff_only`` strips the per-attempt jitter (0.1 * (attempt % 3)) back
     off each recorded sleep, recovering the pure geometric-backoff component.
+
+    Assumption: the loop sleeps exactly once at the end of every missed
+    attempt and never before the convergence check, so the i-th recorded
+    sleep (0-indexed) always follows attempt ``i + 1``. If convergence is
+    reached on the first check (``converge_on_attempt=1``) the loop sleeps
+    zero times and ``sleeps`` is empty — see
+    ``test_immediate_convergence_does_not_sleep``.
     """
     attempts = {"n": 0}
     sleeps: list[float] = []
@@ -51,9 +58,14 @@ def _run_with_recorded_sleeps(step, converge_on_attempt, **kwargs):
         sleeps.append(duration)
 
     async def run():
+        # Patch sleep on the module under test, not the global asyncio.sleep,
+        # so the target is robust to import aliasing / event-loop differences.
         with (
             patch.object(step, "_check_target_convergence", side_effect=fake_check),
-            patch("asyncio.sleep", side_effect=fake_sleep),
+            patch(
+                "merobox.commands.bootstrap.steps.wait_for_sync.asyncio.sleep",
+                side_effect=fake_sleep,
+            ),
         ):
             return await step._wait_for_sync(TARGETS, NODES, timeout=30, **kwargs)
 
@@ -80,6 +92,20 @@ def test_backoff_schedule_grows_geometrically_and_caps():
 
     assert result is True
     assert backoff_only == [0.05, 0.1, 0.2, 0.4, 0.5]
+
+
+def test_immediate_convergence_does_not_sleep():
+    """Converging on the very first check returns without any backoff sleep."""
+    step = _make_step()
+    result, _details, backoff_only = _run_with_recorded_sleeps(
+        step,
+        converge_on_attempt=1,
+        check_interval=0.5,
+    )
+
+    assert result is True
+    # First check hit → loop never reached the end-of-miss sleep.
+    assert backoff_only == []
 
 
 def test_fast_sync_caught_in_a_few_short_steps():
