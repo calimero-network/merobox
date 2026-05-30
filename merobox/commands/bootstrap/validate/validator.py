@@ -48,7 +48,9 @@ from merobox.commands.bootstrap.steps.group_metadata import (
     SetMemberMetadataStep,
 )
 from merobox.commands.bootstrap.steps.group_upgrade import (
+    AssertCascadeCompleteStep,
     CascadeNamespaceApplicationStep,
+    GetCascadeStatusStep,
     GetGroupUpgradeStatusStep,
     RegisterGroupSigningKeyStep,
     RetryGroupUpgradeStep,
@@ -310,6 +312,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = UpgradeGroupStep
         elif step_type == "cascade_namespace_application":
             step_class = CascadeNamespaceApplicationStep
+        elif step_type == "get_cascade_status":
+            step_class = GetCascadeStatusStep
+        elif step_type == "assert_cascade_complete":
+            step_class = AssertCascadeCompleteStep
         elif step_type == "get_group_upgrade_status":
             step_class = GetGroupUpgradeStatusStep
         elif step_type == "retry_group_upgrade":

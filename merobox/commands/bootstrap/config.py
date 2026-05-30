@@ -71,6 +71,8 @@ VALID_STEP_TYPES = frozenset(
         "register_group_signing_key",
         "upgrade_group",
         "cascade_namespace_application",
+        "get_cascade_status",
+        "assert_cascade_complete",
         "get_group_upgrade_status",
         "retry_group_upgrade",
         "call",
@@ -1114,6 +1116,36 @@ class GetGroupUpgradeStatusStepConfig(BaseStepConfig):
     group_id: str = Field(..., description="Group ID")
 
 
+class GetCascadeStatusStepConfig(BaseStepConfig):
+    """Configuration for get_cascade_status step."""
+
+    type: Literal["get_cascade_status"] = "get_cascade_status"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose cascade subtree to inspect"
+    )
+
+
+class AssertCascadeCompleteStepConfig(BaseStepConfig):
+    """Configuration for assert_cascade_complete step."""
+
+    type: Literal["assert_cascade_complete"] = "assert_cascade_complete"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose cascade must complete"
+    )
+    timeout_seconds: Union[int, float] = Field(
+        30,
+        gt=0,
+        description="Max seconds to poll before failing the assertion",
+    )
+    poll_interval: Union[int, float] = Field(
+        2.0,
+        gt=0,
+        description="Seconds between get_cascade_status polls",
+    )
+
+
 class RetryGroupUpgradeStepConfig(BaseStepConfig):
     """Configuration for retry_group_upgrade step."""
 
@@ -1207,6 +1239,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "register_group_signing_key": RegisterGroupSigningKeyStepConfig,
     "upgrade_group": UpgradeGroupStepConfig,
     "cascade_namespace_application": CascadeNamespaceApplicationStepConfig,
+    "get_cascade_status": GetCascadeStatusStepConfig,
+    "assert_cascade_complete": AssertCascadeCompleteStepConfig,
     "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
     "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,
