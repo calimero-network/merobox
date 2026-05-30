@@ -334,8 +334,18 @@ class WaitForSyncStep(BaseStepConfig):
     )
     nodes: list[str] = Field(..., description="Nodes to wait for sync")
     timeout: Optional[int] = Field(60, ge=1, description="Timeout in seconds")
-    check_interval: Optional[int] = Field(
-        2, ge=1, description="Check interval in seconds"
+    check_interval: Optional[float] = Field(
+        2, gt=0, description="Steady-state polling cap in seconds (backoff ceiling)"
+    )
+    initial_check_interval: Optional[float] = Field(
+        None,
+        gt=0,
+        description="Starting inter-attempt sleep for adaptive backoff (defaults to 0.05s)",
+    )
+    backoff_factor: Optional[float] = Field(
+        None,
+        ge=1,
+        description="Geometric growth per missed check, capped at check_interval (defaults to 2.0)",
     )
     trigger_sync: Optional[bool] = Field(
         False, description="Trigger sync before waiting"
