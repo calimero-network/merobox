@@ -749,11 +749,16 @@ class AssertCascadeCompleteStep(BaseStep):
         namespace_id = self._resolve_dynamic_value(
             self.config["namespace_id"], workflow_results, dynamic_values
         )
+        # `.get(key, default)` returns the default only when the key is
+        # ABSENT; an explicit `timeout_seconds: null` in YAML yields a present
+        # key with value None, which float() would crash on. _validate_field_types
+        # permits None (treats it as "not provided"), so collapse None to the
+        # default here too.
         timeout_seconds = float(
-            self.config.get("timeout_seconds", self._DEFAULT_TIMEOUT_SECONDS)
+            self.config.get("timeout_seconds") or self._DEFAULT_TIMEOUT_SECONDS
         )
         poll_interval = float(
-            self.config.get("poll_interval", self._DEFAULT_POLL_INTERVAL)
+            self.config.get("poll_interval") or self._DEFAULT_POLL_INTERVAL
         )
 
         try:

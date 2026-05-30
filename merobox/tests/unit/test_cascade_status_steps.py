@@ -316,6 +316,12 @@ class TestAssertCascadeCompleteSchema:
         with pytest.raises(ValueError):
             self.model(**self.base, poll_interval=0)
 
+    def test_string_timeout_rejected(self):
+        # Pydantic lax mode would coerce "30" -> 30; the runtime step rejects
+        # non-numbers, so the schema must too.
+        with pytest.raises(ValueError):
+            self.model(**self.base, timeout_seconds="30")
+
 
 # =============================================================================
 # AssertCascadeCompleteStep — execute
@@ -358,6 +364,19 @@ class TestAssertCascadeCompleteExecute:
         assert client.get_cascade_status.call_count == 1
         sleep_mock.assert_not_called()
         assert workflow_results["cascade_status_calimero-node-1"]["all_completed"]
+
+    def test_explicit_null_timeout_uses_default_not_crash(self):
+        # `timeout_seconds: null` in YAML reaches execute as None; it must fall
+        # back to the default rather than crashing on float(None).
+        step = AssertCascadeCompleteStep(
+            {**self.config, "timeout_seconds": None, "poll_interval": None}
+        )
+        client = MagicMock()
+        client.get_cascade_status.return_value = _resp(["completed"])
+        p1, p2, p3, p4 = self._patched(step, client)
+        with p1, p2, p3, p4:
+            result = _run(step.execute({}, {}))
+        assert result is True
 
     def test_outputs_exported_on_success(self):
         cfg = {**self.config, "outputs": {"done": "all_completed", "n": "total"}}

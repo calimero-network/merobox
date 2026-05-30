@@ -1155,15 +1155,17 @@ class AssertCascadeCompleteStepConfig(BaseStepConfig):
 
     @field_validator("timeout_seconds", "poll_interval", mode="before")
     @classmethod
-    def _reject_bool_and_non_finite(cls, v: Any) -> Any:
-        # mode="before" so we see the raw value: Pydantic would otherwise
-        # coerce bool -> int first, hiding `true` (=1) from the isinstance
-        # check. bool is an int subclass, so `gt=0` alone accepts `true`.
-        # NaN/inf would also slip past `gt=0` and make the poll loop's deadline
-        # non-finite (it would never time out). Mirror the runtime
-        # AssertCascadeCompleteStep._validate_field_types check at schema level.
+    def _reject_bool_str_and_non_finite(cls, v: Any) -> Any:
+        # mode="before" so we see the raw value: Pydantic's lax mode would
+        # otherwise coerce bool -> int (hiding `true` (=1) from the isinstance
+        # check) and str -> number (accepting "30"). The runtime
+        # AssertCascadeCompleteStep._validate_field_types rejects both bools
+        # and non-(int|float) values, so mirror that here, plus NaN/inf which
+        # would slip past `gt=0` and make the poll deadline non-finite.
         if isinstance(v, bool):
             raise ValueError("must be a number, not a boolean")
+        if not isinstance(v, (int, float)):
+            raise ValueError("must be an int or float, not a string")
         if isinstance(v, float) and not math.isfinite(v):
             raise ValueError("must be a finite number")
         return v
