@@ -753,12 +753,16 @@ class AssertCascadeCompleteStep(BaseStep):
         # ABSENT; an explicit `timeout_seconds: null` in YAML yields a present
         # key with value None, which float() would crash on. _validate_field_types
         # permits None (treats it as "not provided"), so collapse None to the
-        # default here too.
+        # default here too. An explicit `is None` test (rather than `or`) so a
+        # value of 0 is NOT silently swapped for the default — 0 is already
+        # rejected by _validate_field_types, and `or` would mask that.
+        timeout_raw = self.config.get("timeout_seconds")
         timeout_seconds = float(
-            self.config.get("timeout_seconds") or self._DEFAULT_TIMEOUT_SECONDS
+            self._DEFAULT_TIMEOUT_SECONDS if timeout_raw is None else timeout_raw
         )
+        poll_raw = self.config.get("poll_interval")
         poll_interval = float(
-            self.config.get("poll_interval") or self._DEFAULT_POLL_INTERVAL
+            self._DEFAULT_POLL_INTERVAL if poll_raw is None else poll_raw
         )
 
         try:
