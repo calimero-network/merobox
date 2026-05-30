@@ -1,8 +1,10 @@
 """Unit tests for the console verbosity controls in ``commands/utils.py``.
 
-Covers level parsing, flag/env resolution priority, and the ``vprint`` gate.
+Covers level parsing, flag/env resolution priority, the ``vprint`` gate, and
+the per-context (ContextVar) scoping of the level.
 """
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -135,3 +137,51 @@ class TestVprint:
         with self._capture() as mock_console:
             vprint("msg", level=LOG_LEVEL_NORMAL, markup=False)
             mock_console.print.assert_called_once_with("msg", markup=False)
+
+
+class TestContextScoping:
+    """The level is a ContextVar: child tasks inherit it, but a level set
+    inside a task does not leak back to the parent (so concurrent branches
+    don't clobber each other)."""
+
+    def test_child_task_inherits_parent_level(self):
+        async def scenario():
+            utils.set_log_level(LOG_LEVEL_VERBOSE)
+            seen = {}
+
+            async def child():
+                seen["inherited"] = utils.get_log_level()
+                # Mutate only this task's context.
+                utils.set_log_level(LOG_LEVEL_QUIET)
+                seen["after_local_set"] = utils.get_log_level()
+
+            await asyncio.create_task(child())
+            seen["parent_after_child"] = utils.get_log_level()
+            return seen
+
+        seen = asyncio.run(scenario())
+        assert seen["inherited"] == LOG_LEVEL_VERBOSE
+        assert seen["after_local_set"] == LOG_LEVEL_QUIET
+        # Child's set did not leak back to the parent context.
+        assert seen["parent_after_child"] == LOG_LEVEL_VERBOSE
+
+    def test_concurrent_tasks_are_isolated(self):
+        async def scenario():
+            results = {}
+
+            async def branch(name, level):
+                utils.set_log_level(level)
+                # Yield so the other branch interleaves before we read back.
+                await asyncio.sleep(0)
+                results[name] = utils.get_log_level()
+
+            await asyncio.gather(
+                asyncio.create_task(branch("a", LOG_LEVEL_QUIET)),
+                asyncio.create_task(branch("b", LOG_LEVEL_VERBOSE)),
+            )
+            return results
+
+        results = asyncio.run(scenario())
+        # Each branch reads back its own level despite interleaving.
+        assert results["a"] == LOG_LEVEL_QUIET
+        assert results["b"] == LOG_LEVEL_VERBOSE

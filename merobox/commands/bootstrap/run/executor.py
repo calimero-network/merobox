@@ -240,8 +240,9 @@ class WorkflowExecutor:
         except Exception:
             pass
         try:
-            console.print(
-                f"[cyan]WorkflowExecutor: resolved rust_backtrace='{self.rust_backtrace}', binary_mode={self.is_binary_mode}[/cyan]"
+            vprint(
+                f"[cyan]WorkflowExecutor: resolved rust_backtrace='{self.rust_backtrace}', binary_mode={self.is_binary_mode}[/cyan]",
+                level=LOG_LEVEL_VERBOSE,
             )
         except Exception:
             pass

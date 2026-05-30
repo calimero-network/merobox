@@ -3,6 +3,7 @@ Shared utilities for Calimero CLI commands.
 """
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -47,10 +48,16 @@ _LOG_LEVEL_NAMES = {
     "debug": LOG_LEVEL_VERBOSE,
 }
 
-# Module-level current verbosity. Set once per run via `set_log_level()`;
-# read by `vprint()`. Defaults to NORMAL so library/test callers that never
-# configure it get the CI-friendly behavior.
-_current_log_level = LOG_LEVEL_NORMAL
+# Current verbosity, scoped per execution context. Set via `set_log_level()`
+# (typically once at the start of `run_workflow`); read by `vprint()`. A
+# ContextVar — rather than a plain module global — means a value set before
+# spawning asyncio tasks is inherited by those tasks (each task copies the
+# context at creation), yet concurrent branches (e.g. ParallelStep) or a
+# library embedding can scope their own level without clobbering each other.
+# Defaults to NORMAL so callers that never configure it get CI-friendly output.
+_log_level_var: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "merobox_log_level", default=LOG_LEVEL_NORMAL
+)
 
 
 def parse_log_level(value: Any, default: int = LOG_LEVEL_NORMAL) -> int:
@@ -59,12 +66,16 @@ def parse_log_level(value: Any, default: int = LOG_LEVEL_NORMAL) -> int:
     Accepts the names in ``_LOG_LEVEL_NAMES`` (case-insensitive) or a numeric
     value (clamped to the valid range). Anything unrecognized falls back to
     ``default`` rather than raising, so a stray env var can never abort a run.
+
+    A bool is the shorthand a per-step ``verbose:`` field yields:
+    ``True`` -> VERBOSE, ``False`` -> NORMAL ("not verbose"). Both ignore
+    ``default`` so the mapping is symmetric and independent of caller context.
     """
     if value is None:
         return default
     if isinstance(value, bool):
-        # bool is an int subclass; treat True as verbose, False as default.
-        return LOG_LEVEL_VERBOSE if value else default
+        # bool is an int subclass, so check it before the int branch.
+        return LOG_LEVEL_VERBOSE if value else LOG_LEVEL_NORMAL
     if isinstance(value, int):
         return max(LOG_LEVEL_QUIET, min(LOG_LEVEL_VERBOSE, value))
     name = str(value).strip().lower()
@@ -94,14 +105,13 @@ def resolve_log_level(verbose: bool = False, quiet: bool = False) -> int:
 
 
 def set_log_level(level: int) -> None:
-    """Set the process-wide console verbosity used by ``vprint()``."""
-    global _current_log_level
-    _current_log_level = level
+    """Set the console verbosity used by ``vprint()`` in the current context."""
+    _log_level_var.set(level)
 
 
 def get_log_level() -> int:
-    """Return the current process-wide console verbosity."""
-    return _current_log_level
+    """Return the current console verbosity for this context."""
+    return _log_level_var.get()
 
 
 def vprint(*args: Any, level: int = LOG_LEVEL_NORMAL, **kwargs: Any) -> None:
@@ -113,7 +123,7 @@ def vprint(*args: Any, level: int = LOG_LEVEL_NORMAL, **kwargs: Any) -> None:
     ``level=LOG_LEVEL_QUIET``) for output that must always appear, such as
     final success/failure summaries.
     """
-    if _current_log_level >= level:
+    if _log_level_var.get() >= level:
         console.print(*args, **kwargs)
 
 
