@@ -109,7 +109,12 @@ from merobox.commands.constants import (
 from merobox.commands.health import check_node_health
 from merobox.commands.manager import DockerManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import (
+    LOG_LEVEL_VERBOSE,
+    console,
+    get_node_rpc_url,
+    vprint,
+)
 
 # Compiled regex pattern for extracting {{variable}} references
 _VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
@@ -224,11 +229,13 @@ class WorkflowExecutor:
         self.resolver: Optional[NodeResolver] = None
 
         try:
-            console.print(
-                f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}', binary_mode={self.is_binary_mode}[/cyan]"
+            vprint(
+                f"[cyan]WorkflowExecutor: resolved log_level='{self.log_level}', binary_mode={self.is_binary_mode}[/cyan]",
+                level=LOG_LEVEL_VERBOSE,
             )
-            console.print(
-                f"[cyan]WorkflowExecutor: workflow_id='{self.workflow_id}' (for test isolation)[/cyan]"
+            vprint(
+                f"[cyan]WorkflowExecutor: workflow_id='{self.workflow_id}' (for test isolation)[/cyan]",
+                level=LOG_LEVEL_VERBOSE,
             )
         except Exception:
             pass

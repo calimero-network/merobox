@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.30] - 2026-05-30
+
+### Added
+
+- Console verbosity control for `merobox bootstrap run`, so CI logs are
+  readable on the happy path. A `vprint(msg, level=...)` helper in
+  `commands/utils.py` gates output through a single process-wide level
+  (`quiet` / `normal` / `verbose`), set in priority order by the new
+  `-q/--quiet` and existing `-v/--verbose` flags, then the
+  `MEROBOX_LOG_LEVEL` env var (useful for CI without touching workflow
+  YAML), then the `normal` default. This is merobox's own console
+  verbosity — distinct from `--log-level`, which sets the merod node's
+  RUST_LOG. By default `wait_for_sync` now emits its banner plus a single
+  final success/failure summary and suppresses the per-attempt
+  "not converged yet" blocks; `--verbose` (or `MEROBOX_LOG_LEVEL=verbose`)
+  restores the full per-attempt detail, and failures always dump the full
+  per-target/per-node hash state regardless of level. The previously
+  unconditional `run_workflow`/`WorkflowExecutor` debug lines are now
+  verbose-only. Closes #268.
+
 ## [0.6.29] - 2026-05-30
 
 ### Changed

@@ -142,7 +142,21 @@ def bootstrap():
 
 @bootstrap.command()
 @click.argument("config_file", type=click.Path(exists=True), required=True)
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose output (per-attempt sync detail, debug lines). "
+    "Equivalent to MEROBOX_LOG_LEVEL=verbose.",
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Suppress non-essential output (banners, per-attempt detail); "
+    "final summaries and errors are still shown. Equivalent to "
+    "MEROBOX_LOG_LEVEL=quiet. Ignored if --verbose is also set.",
+)
 @click.option(
     "--image",
     help="Custom Docker image to use for Calimero nodes (overrides workflow config)",
@@ -235,6 +249,7 @@ def bootstrap():
 def run(
     config_file,
     verbose,
+    quiet,
     image,
     auth_service,
     auth_image,
@@ -272,6 +287,14 @@ def run(
     These CLI-specified remote nodes are merged with any remote_nodes
     defined in the workflow YAML file, with CLI options taking precedence.
     """
+    # --verbose and --quiet are mutually exclusive; verbose wins (louder is
+    # safer for debugging). Warn so the ignored flag isn't silently dropped.
+    if verbose and quiet:
+        console.print(
+            "[yellow]⚠ --verbose and --quiet are mutually exclusive; "
+            "--verbose takes precedence.[/yellow]"
+        )
+
     # Validate --auth-mode is only used with --no-docker (binary mode)
     if auth_mode and not no_docker:
         console.print(
@@ -303,6 +326,7 @@ def run(
     success = run_workflow_sync(
         config_file,
         verbose,
+        quiet=quiet,
         image=image,
         auth_service=auth_service,
         auth_image=auth_image,
