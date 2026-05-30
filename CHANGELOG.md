@@ -25,7 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restores the full per-attempt detail, and failures always dump the full
   per-target/per-node hash state regardless of level. The previously
   unconditional `run_workflow`/`WorkflowExecutor` debug lines are now
-  verbose-only. Closes #268.
+  verbose-only. The same gate is applied to the dominant happy-path log
+  noise: the `execute`/`call` step's per-call JSON-RPC response dump and
+  resolved-values debug, the `repeat` step's per-iteration banners and
+  custom-export confirmations, and the export-machinery's "validated" /
+  "no outputs configured" / "Exporting variables" / per-field "✓ name =
+  value" lines are all now `verbose`-only. At the `normal` default a
+  100-iteration benchmark drops from tens of thousands of log lines to the
+  per-block banner plus the final timing summary; genuine warnings and
+  errors (missing export field, failed call, malformed config) always
+  print. Closes #268.
 
 ## [0.6.29] - 2026-05-30
 

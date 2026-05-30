@@ -36,7 +36,7 @@ from merobox.commands.bootstrap.steps.subgroup import (
     ReparentGroupStep,
 )
 from merobox.commands.bootstrap.steps.wait import WaitStep
-from merobox.commands.utils import console
+from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, vprint
 
 
 class RepeatStep(BaseStep):
@@ -138,16 +138,18 @@ class RepeatStep(BaseStep):
         repeat_count = self.config.get("count", 1)
         nested_steps = self.config.get("steps", [])
 
-        # Validate export configuration
+        # Validate export configuration (advisory — verbose-only).
         if not self._validate_export_config():
-            console.print(
-                "[yellow]⚠️  Repeat step export configuration validation failed[/yellow]"
+            vprint(
+                "[yellow]⚠️  Repeat step export configuration validation failed[/yellow]",
+                level=LOG_LEVEL_VERBOSE,
             )
 
         if not nested_steps:
             console.print("[yellow]No nested steps specified for repeat[/yellow]")
             return True
 
+        # Per-block banner stays at NORMAL; per-iteration detail below is verbose.
         console.print(
             f"[cyan]🔄 Executing {len(nested_steps)} nested steps {repeat_count} times...[/cyan]"
         )
@@ -155,16 +157,18 @@ class RepeatStep(BaseStep):
         # Export repeat configuration variables
         dynamic_values["total_iterations"] = repeat_count
         dynamic_values["step_count"] = len(nested_steps)
-        console.print(
-            f"[blue]📝 Exported repeat configuration: total_iterations={repeat_count}, step_count={len(nested_steps)}[/blue]"
+        vprint(
+            f"[blue]📝 Exported repeat configuration: total_iterations={repeat_count}, step_count={len(nested_steps)}[/blue]",
+            level=LOG_LEVEL_VERBOSE,
         )
 
         # Track timing for throughput calculation
         start_time = time.perf_counter()  # Use perf_counter for better precision
 
         for iteration in range(repeat_count):
-            console.print(
-                f"\n[bold blue]📋 Iteration {iteration + 1}/{repeat_count}[/bold blue]"
+            vprint(
+                f"\n[bold blue]📋 Iteration {iteration + 1}/{repeat_count}[/bold blue]",
+                level=LOG_LEVEL_VERBOSE,
             )
 
             # Create iteration-specific dynamic values
@@ -190,8 +194,9 @@ class RepeatStep(BaseStep):
                 iteration_dynamic_values["current_step"] = nested_step_name
                 iteration_dynamic_values["current_step_index"] = step_idx + 1
 
-                console.print(
-                    f"  [cyan]Executing {nested_step_name} ({step_type})...[/cyan]"
+                vprint(
+                    f"  [cyan]Executing {nested_step_name} ({step_type})...[/cyan]",
+                    level=LOG_LEVEL_VERBOSE,
                 )
 
                 try:
@@ -214,8 +219,9 @@ class RepeatStep(BaseStep):
                         )
                         return False
 
-                    console.print(
-                        f"  [green]✓ Nested step '{nested_step_name}' completed in iteration {iteration + 1}[/green]"
+                    vprint(
+                        f"  [green]✓ Nested step '{nested_step_name}' completed in iteration {iteration + 1}[/green]",
+                        level=LOG_LEVEL_VERBOSE,
                     )
 
                 except Exception as e:
@@ -272,8 +278,9 @@ class RepeatStep(BaseStep):
         if not outputs_config:
             return
 
-        console.print(
-            f"[blue]📝 Processing custom outputs for iteration {iteration}...[/blue]"
+        vprint(
+            f"[blue]📝 Processing custom outputs for iteration {iteration}...[/blue]",
+            level=LOG_LEVEL_VERBOSE,
         )
 
         for export_name, export_config in outputs_config.items():
@@ -283,8 +290,9 @@ class RepeatStep(BaseStep):
                 if source_field in dynamic_values:
                     source_value = dynamic_values[source_field]
                     dynamic_values[export_name] = source_value
-                    console.print(
-                        f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
+                    vprint(
+                        f"  📝 Custom export: {source_field} → {export_name}: {source_value}",
+                        level=LOG_LEVEL_VERBOSE,
                     )
                 else:
                     console.print(
@@ -299,8 +307,9 @@ class RepeatStep(BaseStep):
                         source_value = dynamic_values[source_field]
                         # For repeat steps, we don't have node names, so just use the source value
                         dynamic_values[export_name] = source_value
-                        console.print(
-                            f"  📝 Custom export: {source_field} → {export_name}: {source_value}"
+                        vprint(
+                            f"  📝 Custom export: {source_field} → {export_name}: {source_value}",
+                            level=LOG_LEVEL_VERBOSE,
                         )
                     else:
                         console.print(
@@ -334,8 +343,9 @@ class RepeatStep(BaseStep):
                         if source_field in timing_variables
                         else "Export"
                     )
-                    console.print(
-                        f"  📝 {label}: {source_field} → {export_name}: {source_value}"
+                    vprint(
+                        f"  📝 {label}: {source_field} → {export_name}: {source_value}",
+                        level=LOG_LEVEL_VERBOSE,
                     )
                 else:
                     console.print(
@@ -355,8 +365,9 @@ class RepeatStep(BaseStep):
                             if source_field in timing_variables
                             else "Export"
                         )
-                        console.print(
-                            f"  📝 {label}: {source_field} → {export_name}: {source_value}"
+                        vprint(
+                            f"  📝 {label}: {source_field} → {export_name}: {source_value}",
+                            level=LOG_LEVEL_VERBOSE,
                         )
                     else:
                         console.print(

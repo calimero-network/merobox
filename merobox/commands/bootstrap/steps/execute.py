@@ -8,7 +8,7 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.call import call_function
 from merobox.commands.constants import STATE_RETRY_ATTEMPTS, STATE_RETRY_DELAY
-from merobox.commands.utils import console
+from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, vprint
 
 
 class ExecuteStep(BaseStep):
@@ -88,18 +88,22 @@ class ExecuteStep(BaseStep):
             args, workflow_results, dynamic_values
         )
 
-        # Validate export configuration
+        # Validate export configuration (advisory — verbose-only).
         if not self._validate_export_config():
-            console.print(
-                "[yellow]⚠️  Execute step export configuration validation failed[/yellow]"
+            vprint(
+                "[yellow]⚠️  Execute step export configuration validation failed[/yellow]",
+                level=LOG_LEVEL_VERBOSE,
             )
 
-        # Debug: Show resolved values
-        console.print("[blue]Debug: Resolved values for execute step:[/blue]")
-        console.print(f"  context_id: {context_id}")
-        console.print(f"  exec_type: {exec_type}")
-        console.print(f"  method: {method}")
-        console.print(f"  args: {resolved_args}")
+        # Debug: Show resolved values (verbose-only).
+        vprint(
+            "[blue]Debug: Resolved values for execute step:[/blue]",
+            level=LOG_LEVEL_VERBOSE,
+        )
+        vprint(f"  context_id: {context_id}", level=LOG_LEVEL_VERBOSE)
+        vprint(f"  exec_type: {exec_type}", level=LOG_LEVEL_VERBOSE)
+        vprint(f"  method: {method}", level=LOG_LEVEL_VERBOSE)
+        vprint(f"  args: {resolved_args}", level=LOG_LEVEL_VERBOSE)
 
         # Resolve node (gets URL and ensures authentication)
         try:
@@ -138,23 +142,25 @@ class ExecuteStep(BaseStep):
                     console.print(f"[red]Unknown execution type: {exec_type}[/red]")
                     return False
 
-                # Log detailed API response
+                # Log detailed API response (verbose-only; the per-call dump is
+                # the single biggest source of CI log noise on the happy path).
                 import json as json_lib
 
-                console.print(
-                    f"[cyan]🔍 Execute API Response for {node_name} (attempt {retry_attempt}/{max_state_retries}):[/cyan]"
+                vprint(
+                    f"[cyan]🔍 Execute API Response for {node_name} (attempt {retry_attempt}/{max_state_retries}):[/cyan]",
+                    level=LOG_LEVEL_VERBOSE,
                 )
-                console.print(f"  Success: {result.get('success')}")
+                vprint(f"  Success: {result.get('success')}", level=LOG_LEVEL_VERBOSE)
 
                 data = result.get("data")
                 if isinstance(data, dict):
                     try:
                         formatted_data = json_lib.dumps(data, indent=2)
-                        console.print(f"  Data:\n{formatted_data}")
+                        vprint(f"  Data:\n{formatted_data}", level=LOG_LEVEL_VERBOSE)
                     except Exception:
-                        console.print(f"  Data: {data}")
+                        vprint(f"  Data: {data}", level=LOG_LEVEL_VERBOSE)
                 else:
-                    console.print(f"  Data: {data}")
+                    vprint(f"  Data: {data}", level=LOG_LEVEL_VERBOSE)
 
                 if not result.get("success"):
                     console.print(f"  Error: {result.get('error')}")
