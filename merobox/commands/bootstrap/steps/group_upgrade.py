@@ -661,7 +661,7 @@ class GetCascadeStatusStep(BaseStep):
         # Only export when the author configured outputs — otherwise the base
         # class emits a verbose "no outputs configured" advisory. The summary
         # exposes total/completed/pending/failed/all_completed plus the raw
-        # `data` list, all addressable by `outputs:`.
+        # per-group `groups` list, all addressable by `outputs:`.
         if "outputs" in self.config:
             self._export_variables(summary, node_name, dynamic_values)
         console.print(
