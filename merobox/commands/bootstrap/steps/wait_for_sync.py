@@ -15,7 +15,12 @@ from merobox.commands.constants import (
     SYNC_RETRY_ATTEMPTS,
     SYNC_RETRY_DELAY,
 )
-from merobox.commands.utils import console
+from merobox.commands.utils import (
+    LOG_LEVEL_NORMAL,
+    LOG_LEVEL_VERBOSE,
+    console,
+    vprint,
+)
 
 
 def _build_success_details(
@@ -339,14 +344,17 @@ class WaitForSyncStep(BaseStep):
         attempt = 0
         max_attempts = retry_attempts or float("inf")
 
+        # Banner: shown at NORMAL+ (suppressed only with --quiet).
         target_labels = ", ".join(self._target_label(t) for t in targets)
-        console.print(
-            f"[cyan]🔄 Waiting for {len(nodes)} node(s) to sync on {len(targets)} target(s): {target_labels}...[/cyan]"
+        vprint(
+            f"[cyan]🔄 Waiting for {len(nodes)} node(s) to sync on {len(targets)} target(s): {target_labels}...[/cyan]",
+            level=LOG_LEVEL_NORMAL,
         )
-        console.print(f"[dim]  Nodes: {', '.join(nodes)}[/dim]")
-        console.print(
+        vprint(f"[dim]  Nodes: {', '.join(nodes)}[/dim]", level=LOG_LEVEL_NORMAL)
+        vprint(
             f"[dim]  Timeout: {timeout}s, Check interval: {check_interval}s"
-            f"{', Trigger sync: enabled' if trigger_sync else ''}[/dim]"
+            f"{', Trigger sync: enabled' if trigger_sync else ''}[/dim]",
+            level=LOG_LEVEL_NORMAL,
         )
 
         last_per_target: dict[str, dict[str, str | None]] = {}
@@ -397,29 +405,39 @@ class WaitForSyncStep(BaseStep):
                     attempt,
                 )
 
-            # Report what didn't converge yet.
-            console.print(
-                f"[yellow]Attempt {attempt} ({elapsed:.1f}s): {len(targets)} target(s) checked, not all converged yet[/yellow]"
+            # Report what didn't converge yet. This per-attempt block is the
+            # main source of CI log noise on the happy path, so it is gated
+            # behind --verbose; the final summary below always reports the
+            # outcome. On failure, the full per-node state is dumped
+            # unconditionally after the loop.
+            vprint(
+                f"[yellow]Attempt {attempt} ({elapsed:.1f}s): {len(targets)} target(s) checked, not all converged yet[/yellow]",
+                level=LOG_LEVEL_VERBOSE,
             )
             for target, (converged, node_hashes) in zip(targets, target_checks):
                 label = self._target_label(target)
                 if converged:
-                    console.print(f"[dim]  ✓ {label} converged[/dim]")
+                    vprint(f"[dim]  ✓ {label} converged[/dim]", level=LOG_LEVEL_VERBOSE)
                     continue
                 failed = [n for n, h in node_hashes.items() if h is None]
                 if failed:
-                    console.print(
-                        f"[dim]  · {label}: missing from {len(failed)} node(s): {', '.join(failed)}[/dim]"
+                    vprint(
+                        f"[dim]  · {label}: missing from {len(failed)} node(s): {', '.join(failed)}[/dim]",
+                        level=LOG_LEVEL_VERBOSE,
                     )
                 else:
                     hash_groups: dict[str, list[str]] = {}
                     for n, h in node_hashes.items():
                         hash_groups.setdefault(h, []).append(n)
-                    console.print(
-                        f"[dim]  · {label}: {len(hash_groups)} unique hash(es)[/dim]"
+                    vprint(
+                        f"[dim]  · {label}: {len(hash_groups)} unique hash(es)[/dim]",
+                        level=LOG_LEVEL_VERBOSE,
                     )
                     for h, ns in hash_groups.items():
-                        console.print(f"[dim]      {h}: {', '.join(ns)}[/dim]")
+                        vprint(
+                            f"[dim]      {h}: {', '.join(ns)}[/dim]",
+                            level=LOG_LEVEL_VERBOSE,
+                        )
 
             # Sleep the current backoff interval before the next check, with a
             # small jitter folded on top to de-sync parallel node pollers, then
@@ -515,7 +533,10 @@ class WaitForSyncStep(BaseStep):
         )
         backoff_factor = self.config.get("backoff_factor", SYNC_BACKOFF_FACTOR)
 
-        console.print("\n[bold cyan]⏳ Waiting for node synchronization...[/bold cyan]")
+        vprint(
+            "\n[bold cyan]⏳ Waiting for node synchronization...[/bold cyan]",
+            level=LOG_LEVEL_NORMAL,
+        )
 
         synced, details = await self._wait_for_sync(
             targets,

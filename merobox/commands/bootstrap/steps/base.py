@@ -7,7 +7,7 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from merobox.commands.utils import console, get_node_rpc_url
+from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, get_node_rpc_url, vprint
 
 if TYPE_CHECKING:
     from merobox.commands.node_resolver import NodeResolver
@@ -1033,7 +1033,10 @@ class BaseStep:
         else:
             actual_data = response_data
 
-        console.print(f"[cyan]� Exporting variables from {node_name} response:[/cyan]")
+        vprint(
+            f"[cyan]📝 Exporting variables from {node_name} response:[/cyan]",
+            level=LOG_LEVEL_VERBOSE,
+        )
 
         for exported_variable, assigned_var in outputs_config.items():
             if isinstance(assigned_var, str):
@@ -1070,8 +1073,9 @@ class BaseStep:
                     if len(display_value) > 100:
                         display_value = display_value[:97] + "..."
 
-                    console.print(
-                        f"[green]   ✓[/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}"
+                    vprint(
+                        f"[green]   ✓[/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}",
+                        level=LOG_LEVEL_VERBOSE,
                     )
 
             elif isinstance(assigned_var, dict):
@@ -1121,8 +1125,9 @@ class BaseStep:
                         if len(display_value) > 100:
                             display_value = display_value[:97] + "..."
 
-                        console.print(
-                            f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}"
+                        vprint(
+                            f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}",
+                            level=LOG_LEVEL_VERBOSE,
                         )
                 else:
                     console.print(
@@ -1156,11 +1161,14 @@ class BaseStep:
                 response_data, node_name, dynamic_values, protected_keys
             )
         else:
-            console.print(
-                "[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]"
+            # Advisory only (most steps intentionally export nothing) — verbose.
+            vprint(
+                "[yellow]⚠️  No outputs configured for this step. Variables will not be exported automatically.[/yellow]",
+                level=LOG_LEVEL_VERBOSE,
             )
-            console.print(
-                "[yellow]   To export variables, add an 'outputs' section to your step configuration.[/yellow]"
+            vprint(
+                "[yellow]   To export variables, add an 'outputs' section to your step configuration.[/yellow]",
+                level=LOG_LEVEL_VERBOSE,
             )
 
     def _validate_export_config(self) -> bool:
@@ -1201,20 +1209,23 @@ class BaseStep:
                     )
                     return False
 
-            console.print(
-                f"[blue]✅ Custom outputs configuration validated: {len(outputs_config)} outputs defined[/blue]"
+            vprint(
+                f"[blue]✅ Custom outputs configuration validated: {len(outputs_config)} outputs defined[/blue]",
+                level=LOG_LEVEL_VERBOSE,
             )
             return True
 
         # Check if automatic exports are configured
         if not hasattr(self, "exportable_variables") or not self.exportable_variables:
-            console.print(
-                f"[yellow]⚠️  Step {self.__class__.__name__} has no exportable variables defined[/yellow]"
+            vprint(
+                f"[yellow]⚠️  Step {self.__class__.__name__} has no exportable variables defined[/yellow]",
+                level=LOG_LEVEL_VERBOSE,
             )
             return False
 
-        console.print(
-            f"[blue]✅ Automatic exports configuration validated: {len(self.exportable_variables)} variables defined[/blue]"
+        vprint(
+            f"[blue]✅ Automatic exports configuration validated: {len(self.exportable_variables)} variables defined[/blue]",
+            level=LOG_LEVEL_VERBOSE,
         )
         return True
 
