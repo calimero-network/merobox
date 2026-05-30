@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.27] - 2026-05-30
+
+### Changed
+
+- CI: excluded `cascade-namespace-example` from the **binary** test
+  matrix. Binary mode pulls merod from the latest core *release*, which
+  lags master; the cascade predicate only matches once merod derives
+  `app_key = blob_id(bytecode)` at group creation
+  (calimero-network/core#2507, merged after `0.10.1-rc.47`). Until a
+  release `>= 0.10.1-rc.48` ships #2507, the released merod leaves
+  `app_key = [0u8; 32]` and the cascade matches nothing — so the binary
+  job failed once 0.6.25 dropped the alignment workaround. Docker mode
+  runs against `merod:edge` (master), which has the fix, so cascade
+  coverage is retained there. Re-add to the binary matrix once the
+  pinned release carries #2507.
+
 ## [0.6.26] - 2026-05-28
 
 ### Changed
