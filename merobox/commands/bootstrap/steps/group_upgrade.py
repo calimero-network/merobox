@@ -69,8 +69,8 @@ def _summarize_cascade_status(response: Any) -> dict[str, Any]:
     namespace subtree (root included) under `data`, each carrying an
     `upgrade.status` of `completed` / `in_progress` / `failed`. This collapses
     that list into `total` / `completed` / `failed` / `pending` counts plus an
-    `all_completed` flag, and re-attaches the raw `data` so callers can still
-    reach individual entries via `outputs:`.
+    `all_completed` flag, and re-attaches the raw per-group entries (under
+    `groups`, see below) so callers can still reach them via `outputs:`.
 
     `pending` is everything that is neither completed nor failed, so the three
     buckets always sum to `total` regardless of any future status spellings.

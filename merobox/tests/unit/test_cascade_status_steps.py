@@ -89,9 +89,19 @@ class TestSummarizeCascadeStatus:
         assert s["all_completed"] is False
 
     def test_garbage_response_is_empty_summary(self):
-        for bad in (None, [], {}, {"data": "nope"}, {"data": [1, 2, "x"]}):
+        # (response, expected_total): only a list under `data` yields entries;
+        # non-dict entries are counted (as pending) but never as completed.
+        cases = [
+            (None, 0),
+            ([], 0),
+            ({}, 0),
+            ({"data": "nope"}, 0),
+            ({"data": [1, 2, "x"]}, 3),
+        ]
+        for bad, expected_total in cases:
             s = _summarize_cascade_status(bad)
-            assert s["total"] == (3 if bad == {"data": [1, 2, "x"]} else 0)
+            assert s["total"] == expected_total
+            assert s["completed"] == 0
             assert s["all_completed"] is False
 
     def test_raw_groups_are_reattached(self):
