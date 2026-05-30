@@ -10,6 +10,9 @@ Covers signing-key rotation and the upgrade state machine
 # convention used by assertion.py, assert_log.py, json_assertion.py.
 from __future__ import annotations
 
+import asyncio
+import math
+import time
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import Any
@@ -17,7 +20,7 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
-from merobox.commands.utils import console
+from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, vprint
 
 # Cascade requires the calimero-client-py `cascade` kwarg on
 # `upgrade_group` (added in 0.6.15). Resolved ONCE at import time so a
@@ -26,6 +29,12 @@ from merobox.commands.utils import console
 # split into 3 integers (e.g. "0.6.15rc1", "0.6.15.dev0", "0+local")
 # is treated as unknown — we then defer to the RPC-level TypeError.
 _CASCADE_MIN_CLIENT_VERSION = (0, 6, 15)
+
+# `get_cascade_status` / `assert_cascade_complete` need the
+# `get_cascade_status(namespace_id)` binding, added in
+# calimero-client-py 0.6.17 (calimero-network/calimero-client-py#59,
+# wrapping the RPC from calimero-network/core#2524).
+_CASCADE_STATUS_MIN_CLIENT_VERSION = (0, 6, 17)
 
 
 def _resolve_client_py_version() -> tuple[tuple[int, ...] | None, str]:
@@ -41,6 +50,64 @@ def _resolve_client_py_version() -> tuple[tuple[int, ...] | None, str]:
 
 
 _CLIENT_PY_VERSION, _CLIENT_PY_VERSION_STR = _resolve_client_py_version()
+
+
+def _client_py_below(min_version: tuple[int, int, int]) -> bool:
+    """True only when the installed client-py is *known* to be too old.
+
+    Returns False when the version couldn't be resolved (`None`): we then
+    defer to the RPC-level error rather than blocking on a guess. Mirrors the
+    non-strict policy documented on `_resolve_client_py_version`.
+    """
+    return _CLIENT_PY_VERSION is not None and _CLIENT_PY_VERSION < min_version
+
+
+def _summarize_cascade_status(response: Any) -> dict[str, Any]:
+    """Roll a `get_cascade_status` response up into per-status counts.
+
+    The RPC (calimero-network/core#2524) returns one entry per group in the
+    namespace subtree (root included) under `data`, each carrying an
+    `upgrade.status` of `completed` / `in_progress` / `failed`. This collapses
+    that list into `total` / `completed` / `failed` / `pending` counts plus an
+    `all_completed` flag, and re-attaches the raw per-group entries (under
+    `groups`, see below) so callers can still reach them via `outputs:`.
+
+    `pending` is everything that is neither completed nor failed, so the three
+    buckets always sum to `total` regardless of any future status spellings.
+    `all_completed` is only true for a non-empty subtree where every group is
+    `completed` — an empty response is never "complete" (there is nothing to
+    have completed, and the subtree may simply not have propagated yet).
+
+    The raw per-group entries are re-attached under `groups` (NOT `data`): the
+    export machinery (`_export_custom_outputs`) treats a top-level `data` key
+    as an envelope to unwrap, which would hide the count fields from
+    `outputs:`. Keeping the list under `groups` leaves the whole summary
+    addressable.
+    """
+    entries: list[Any] = []
+    if isinstance(response, dict) and isinstance(response.get("data"), list):
+        entries = response["data"]
+
+    completed = 0
+    failed = 0
+    for entry in entries:
+        status = ""
+        if isinstance(entry, dict) and isinstance(entry.get("upgrade"), dict):
+            status = str(entry["upgrade"].get("status", "")).lower()
+        if status == "completed":
+            completed += 1
+        elif status == "failed":
+            failed += 1
+
+    total = len(entries)
+    return {
+        "total": total,
+        "completed": completed,
+        "failed": failed,
+        "pending": total - completed - failed,
+        "all_completed": total > 0 and completed == total,
+        "groups": entries,
+    }
 
 
 class RegisterGroupSigningKeyStep(BaseStep):
@@ -506,3 +573,296 @@ class RetryGroupUpgradeStep(BaseStep):
         if expected_failure:
             self._report_unexpected_success()
         return True
+
+
+class GetCascadeStatusStep(BaseStep):
+    """Read per-descendant cascade migration status across a namespace subtree.
+
+    Calls the `get_cascade_status` RPC (calimero-network/core#2524), which
+    returns one entry per group in the namespace tree — the root included —
+    carrying that group's upgrade snapshot plus the sticky `cascade_hlc` fence
+    the atomic `CascadeUpgrade` op stamped on it. The raw list is rolled up
+    into `total` / `completed` / `pending` / `failed` counts and an
+    `all_completed` flag (see `_summarize_cascade_status`), stored under
+    `cascade_status_{node}`. The summary fields — and the raw per-group
+    `groups` list — are reachable from an `outputs:` block.
+
+    Requires calimero-client-py >= 0.6.17 for the `get_cascade_status`
+    binding.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "namespace_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "namespace_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+
+        # Pre-flight version guard, same policy as the cascade steps: only
+        # block when client-py is *known* to predate the binding. Runs
+        # before dynamic-value resolution so a mismatch short-circuits
+        # cleanly, and honors expected_failure for regression workflows
+        # that intentionally pin an old client.
+        if _client_py_below(_CASCADE_STATUS_MIN_CLIENT_VERSION):
+            min_str = ".".join(str(p) for p in _CASCADE_STATUS_MIN_CLIENT_VERSION)
+            msg = (
+                f"get_cascade_status requires calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if self._is_expected_failure():
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
+
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.get_cascade_status(namespace_id=namespace_id)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("get_cascade_status failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]get_cascade_status failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        # A transport-level success can still carry a JSON-RPC error body;
+        # mirror GetGroupUpgradeStatusStep so it isn't silently summarised as
+        # an empty (all-zero) status.
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        summary = _summarize_cascade_status(result["data"])
+        workflow_results[f"cascade_status_{node_name}"] = summary
+        # Only export when the author configured outputs — otherwise the base
+        # class emits a verbose "no outputs configured" advisory. The summary
+        # exposes total/completed/pending/failed/all_completed plus the raw
+        # per-group `groups` list, all addressable by `outputs:`.
+        if "outputs" in self.config:
+            self._export_variables(summary, node_name, dynamic_values)
+        console.print(
+            f"[green]✓ Cascade status for namespace {namespace_id} on {node_name}: "
+            f"{summary['completed']}/{summary['total']} completed, "
+            f"{summary['pending']} pending, {summary['failed']} failed[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
+class AssertCascadeCompleteStep(BaseStep):
+    """Poll `get_cascade_status` until every group in a namespace has migrated.
+
+    Saves workflow authors from hand-rolling a `wait`-loop around
+    `get_cascade_status`. Polls every `poll_interval` seconds (default `2.0`)
+    until the subtree is fully migrated (`all_completed` — every group's
+    upgrade status is `completed`) or `timeout_seconds` (default `30`)
+    elapses. A group entering the `failed` status aborts the wait immediately:
+    a cascade with a failed descendant can never reach `all_completed`, so
+    there is no point burning the rest of the timeout.
+
+    On the happy path the final summary is stored under
+    `cascade_status_{node}` (same shape as `get_cascade_status`). A timeout or
+    a failed descendant fails the step unless `expected_failure` is set.
+
+    Requires calimero-client-py >= 0.6.17 for the `get_cascade_status`
+    binding.
+    """
+
+    _DEFAULT_TIMEOUT_SECONDS = 30.0
+    _DEFAULT_POLL_INTERVAL = 2.0
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "namespace_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "namespace_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        for field in ("timeout_seconds", "poll_interval"):
+            value = self.config.get(field)
+            if value is None:
+                continue
+            # bool is an int subclass — reject it explicitly so `true`/`false`
+            # don't masquerade as 1/0 timeouts.
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be a number if provided"
+                )
+            # NaN/inf would make `deadline` non-finite so the poll loop's
+            # `time.monotonic() >= deadline` never trips — the step would hang
+            # forever instead of timing out. Reject them up front.
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be a finite number"
+                )
+            if value <= 0:
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be greater than 0"
+                )
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        expected_failure = self._is_expected_failure()
+
+        if _client_py_below(_CASCADE_STATUS_MIN_CLIENT_VERSION):
+            min_str = ".".join(str(p) for p in _CASCADE_STATUS_MIN_CLIENT_VERSION)
+            msg = (
+                f"assert_cascade_complete requires calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if expected_failure:
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
+
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+        # `.get(key, default)` returns the default only when the key is
+        # ABSENT; an explicit `timeout_seconds: null` in YAML yields a present
+        # key with value None, which float() would crash on. _validate_field_types
+        # permits None (treats it as "not provided"), so collapse None to the
+        # default here too. An explicit `is None` test (rather than `or`) so a
+        # value of 0 is NOT silently swapped for the default — 0 is already
+        # rejected by _validate_field_types, and `or` would mask that.
+        timeout_raw = self.config.get("timeout_seconds")
+        timeout_seconds = float(
+            self._DEFAULT_TIMEOUT_SECONDS if timeout_raw is None else timeout_raw
+        )
+        poll_raw = self.config.get("poll_interval")
+        poll_interval = float(
+            self._DEFAULT_POLL_INTERVAL if poll_raw is None else poll_raw
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+        except Exception as e:
+            if expected_failure:
+                self._report_expected_failure(str(e))
+                return True
+            console.print(
+                f"[red]assert_cascade_complete: failed to reach {node_name}: {e}[/red]"
+            )
+            return False
+
+        console.print(
+            f"[blue]⏳ Waiting for cascade on namespace {namespace_id} to complete "
+            f"(timeout {timeout_seconds:g}s, poll {poll_interval:g}s) on {node_name}[/blue]"
+        )
+
+        # monotonic() so a wall-clock adjustment mid-wait can't extend or
+        # truncate the timeout. The first poll always runs; thereafter the
+        # deadline is checked BEFORE committing to a sleep, and the final
+        # sleep is clamped to the time remaining, so total wall-time stays
+        # within timeout_seconds (no extra poll past the deadline, no skipped
+        # poll while time remains).
+        deadline = time.monotonic() + timeout_seconds
+        last_summary: dict[str, Any] | None = None
+        attempt = 0
+        failure_reason = "timed out"
+
+        while True:
+            attempt += 1
+            try:
+                api_result = client.get_cascade_status(namespace_id=namespace_id)
+                if self._check_jsonrpc_error(api_result):
+                    # JSON-RPC error body on an otherwise-OK transport: treat
+                    # like a transient read and retry until the deadline.
+                    summary = None
+                else:
+                    summary = _summarize_cascade_status(api_result)
+                    last_summary = summary
+            except Exception as e:
+                # Transient RPC error (node still booting, sync in flight).
+                # Keep polling until the deadline rather than failing the
+                # whole assertion on one bad read.
+                vprint(
+                    f"[yellow]  attempt {attempt}: get_cascade_status errored "
+                    f"({type(e).__name__}); retrying[/yellow]",
+                    level=LOG_LEVEL_VERBOSE,
+                )
+                summary = None
+
+            if summary is not None:
+                vprint(
+                    f"[blue]  attempt {attempt}: {summary['completed']}/{summary['total']} "
+                    f"completed, {summary['pending']} pending, {summary['failed']} failed[/blue]",
+                    level=LOG_LEVEL_VERBOSE,
+                )
+                if summary["all_completed"]:
+                    workflow_results[f"cascade_status_{node_name}"] = summary
+                    # Support `outputs:` on the success path, same summary shape
+                    # as get_cascade_status (total/completed/.../all_completed +
+                    # the raw `groups` list), so authors can capture counts.
+                    if "outputs" in self.config:
+                        self._export_variables(summary, node_name, dynamic_values)
+                    console.print(
+                        f"[green]✓ Cascade on namespace {namespace_id} complete: "
+                        f"all {summary['total']} groups migrated on {node_name}[/green]"
+                    )
+                    if expected_failure:
+                        self._report_unexpected_success()
+                    return True
+                if summary["failed"] > 0:
+                    # Unrecoverable: a failed descendant means all_completed
+                    # is unreachable. Stop early instead of polling to timeout.
+                    failure_reason = (
+                        f"{summary['failed']} of {summary['total']} groups failed"
+                    )
+                    break
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(poll_interval, remaining))
+
+        if last_summary is not None:
+            workflow_results[f"cascade_status_{node_name}"] = last_summary
+            detail = (
+                f"{last_summary['completed']}/{last_summary['total']} completed, "
+                f"{last_summary['pending']} pending, {last_summary['failed']} failed"
+            )
+        else:
+            detail = "no successful status read"
+        msg = (
+            f"assert_cascade_complete on namespace {namespace_id} ({node_name}): "
+            f"{failure_reason} after {attempt} poll(s) — {detail}"
+        )
+
+        if expected_failure:
+            self._report_expected_failure(msg)
+            return True
+        console.print(f"[red]✗ {msg}[/red]")
+        return False

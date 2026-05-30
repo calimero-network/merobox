@@ -2,12 +2,20 @@
 Configuration management for bootstrap workflows.
 """
 
+import math
 import os
 import re
 from typing import Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from merobox.commands.utils import console
 
@@ -71,6 +79,8 @@ VALID_STEP_TYPES = frozenset(
         "register_group_signing_key",
         "upgrade_group",
         "cascade_namespace_application",
+        "get_cascade_status",
+        "assert_cascade_complete",
         "get_group_upgrade_status",
         "retry_group_upgrade",
         "call",
@@ -1114,6 +1124,53 @@ class GetGroupUpgradeStatusStepConfig(BaseStepConfig):
     group_id: str = Field(..., description="Group ID")
 
 
+class GetCascadeStatusStepConfig(BaseStepConfig):
+    """Configuration for get_cascade_status step."""
+
+    type: Literal["get_cascade_status"] = "get_cascade_status"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose cascade subtree to inspect"
+    )
+
+
+class AssertCascadeCompleteStepConfig(BaseStepConfig):
+    """Configuration for assert_cascade_complete step."""
+
+    type: Literal["assert_cascade_complete"] = "assert_cascade_complete"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose cascade must complete"
+    )
+    timeout_seconds: Union[int, float] = Field(
+        30,
+        gt=0,
+        description="Max seconds to poll before failing the assertion",
+    )
+    poll_interval: Union[int, float] = Field(
+        2.0,
+        gt=0,
+        description="Seconds between get_cascade_status polls",
+    )
+
+    @field_validator("timeout_seconds", "poll_interval", mode="before")
+    @classmethod
+    def _reject_bool_str_and_non_finite(cls, v: Any) -> Any:
+        # mode="before" so we see the raw value: Pydantic's lax mode would
+        # otherwise coerce bool -> int (hiding `true` (=1) from the isinstance
+        # check) and str -> number (accepting "30"). The runtime
+        # AssertCascadeCompleteStep._validate_field_types rejects both bools
+        # and non-(int|float) values, so mirror that here, plus NaN/inf which
+        # would slip past `gt=0` and make the poll deadline non-finite.
+        if isinstance(v, bool):
+            raise ValueError("must be a number, not a boolean")
+        if not isinstance(v, (int, float)):
+            raise ValueError("must be an int or float, not a string")
+        if isinstance(v, float) and not math.isfinite(v):
+            raise ValueError("must be a finite number")
+        return v
+
+
 class RetryGroupUpgradeStepConfig(BaseStepConfig):
     """Configuration for retry_group_upgrade step."""
 
@@ -1207,6 +1264,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "register_group_signing_key": RegisterGroupSigningKeyStepConfig,
     "upgrade_group": UpgradeGroupStepConfig,
     "cascade_namespace_application": CascadeNamespaceApplicationStepConfig,
+    "get_cascade_status": GetCascadeStatusStepConfig,
+    "assert_cascade_complete": AssertCascadeCompleteStepConfig,
     "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
     "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,

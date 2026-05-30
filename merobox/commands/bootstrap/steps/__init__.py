@@ -56,7 +56,9 @@ from merobox.commands.bootstrap.steps.group_metadata import (
     SetMemberMetadataStep,
 )
 from merobox.commands.bootstrap.steps.group_upgrade import (
+    AssertCascadeCompleteStep,
     CascadeNamespaceApplicationStep,
+    GetCascadeStatusStep,
     GetGroupUpgradeStatusStep,
     RegisterGroupSigningKeyStep,
     RetryGroupUpgradeStep,
@@ -183,6 +185,8 @@ __all__ = [
     "RegisterGroupSigningKeyStep",
     "UpgradeGroupStep",
     "CascadeNamespaceApplicationStep",
+    "GetCascadeStatusStep",
+    "AssertCascadeCompleteStep",
     "GetGroupUpgradeStatusStep",
     "RetryGroupUpgradeStep",
     "StopNodeStep",
