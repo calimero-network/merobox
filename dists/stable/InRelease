@@ -5,44 +5,44 @@ Origin: merobox
 Label: merobox
 Suite: stable
 Codename: stable
-Date: Sat, 30 May 2026 11:21:29 UTC
+Date: Sat, 30 May 2026 12:33:50 UTC
 Architectures: amd64 arm64
 Components: main
 Description: Merobox APT Repository - CLI tool for Calimero node management
 MD5Sum:
- 6a289996b64aecfab88494dd8fba4a11 652 main/binary-amd64/Packages
- 13a7453d6bb0fce8c8840ac36d39be77 437 main/binary-amd64/Packages.gz
+ 39f61e9a545ed079a45f730fd4b6aaad 652 main/binary-amd64/Packages
+ 81d8471d63fdb642b39f01eaf9eef01d 440 main/binary-amd64/Packages.gz
  fc8c8c4c2b13812baa5ca99eb12e3def 159 main/binary-amd64/Release
- d0822d60dc0e2b2c53ae23a82a89ccc9 652 main/binary-arm64/Packages
- 60cdaf0f0ee47994a867e595c9db59c1 439 main/binary-arm64/Packages.gz
+ 38853377d32d17bcb731e098889d1bac 652 main/binary-arm64/Packages
+ 613259056483b8f41775876aac7da2d9 438 main/binary-arm64/Packages.gz
  6cb2ee5976d0e3c67d700b74d96e22e6 159 main/binary-arm64/Release
 SHA1:
- be40c6bd3feaceff73224c43631ae5471bfbef93 652 main/binary-amd64/Packages
- b9f8ddd9f94168b5906e818563c4187776e8d955 437 main/binary-amd64/Packages.gz
+ 11cf449622c02c1a77c790b9dce00ae6184b2427 652 main/binary-amd64/Packages
+ ad058a0ac83c89fa3c363f6547cddc48ae9cf6b3 440 main/binary-amd64/Packages.gz
  8544a1880e8d5d51cb86ec2bbf209b0619664bbc 159 main/binary-amd64/Release
- f51a430df2dd2bc5703aec755e510f63592e32ae 652 main/binary-arm64/Packages
- e17a5933e18ace661e710747600079e4d333f323 439 main/binary-arm64/Packages.gz
+ 8b728e9a6dfef48f5bb3e88ecf991271cae05d48 652 main/binary-arm64/Packages
+ 786d5d9287c460f0d61383b02bbb2050e0b08250 438 main/binary-arm64/Packages.gz
  8d5816038e534a525dedc582dc9615e572f5e85d 159 main/binary-arm64/Release
 SHA256:
- 571f569ba89166531d1cddac929d7767e5b41869ecf17f4f6ccbdee772cac29e 652 main/binary-amd64/Packages
- c735be35eee9ea76835e0985dde51c0d867511e342ef9b481a607109a3b25548 437 main/binary-amd64/Packages.gz
+ d495f8e01c07ab68453dd2d905f875198953ffa2e1c2e1e0ce59a3585bdf2f61 652 main/binary-amd64/Packages
+ 11fd8c3fcc9ac140d4392647c2aa32a9f988741a05dea1ec122d16384380f7af 440 main/binary-amd64/Packages.gz
  482163097ec79c422de19f2f83e2658676455df766518086a6a371a945e0dfd4 159 main/binary-amd64/Release
- 3a05dbd5554a7ddcd3f6f380293a1a7bda91fa99009f0ccc1299fde39986cb14 652 main/binary-arm64/Packages
- f14afbc01c15e9421db28aef0dc2ab275d61b916b266ab4707486d76740916d6 439 main/binary-arm64/Packages.gz
+ 9123dd7002fd7a92a3a3cf7bad1c7a97753715b840ed71044fb0160f6bc5c828 652 main/binary-arm64/Packages
+ 77fe16e5fea6b9177e52f858e8a9098cd429fa7815cc2596b4f29a825eb2fed0 438 main/binary-arm64/Packages.gz
  7fff0e368c5cb547b671cbeae400cab9b56bb3866ace12626f1fd0a4123cd25b 159 main/binary-arm64/Release
 -----BEGIN PGP SIGNATURE-----
 
-iQIzBAEBCgAdFiEE+zZEiSHgyUTXS1K/nT+EKbOK2CEFAmoayDkACgkQnT+EKbOK
-2CHp+Q//XVIw7hpvCsh1q+esOSL6krk9RwDnqt4F1aD+zzl1HoMM9im0edFUEi2w
-o+QOpoAbqggm0zqLbvy6LxjEF/OBtUEs8TxcEalVWY5pcZIRZa7P9l073g3YaifT
-T+39cV9gdSV5SqKQRquwDIAY/Lz1gIoVcYLndKMHGqOKsGMF90L4G/V3T6FupCBs
-2W/D9I9/9f4cX4yaBRJu9FqYA+GFO7qw9bWgf1MmbUIj+0EowfEQvy+VVKeAYEHN
-s/uRcXACdzz+iZr1BYvnVXFFvOI857pav3pynygRm+39gH4zph50+62gE7/EOeAd
-tU+zNBJOrK/5hdI4E7fs5XgN00HPMv0kuF5xu/6sdZXANQOgqFIXmkpw5WSeE3lh
-rhHBJopGc1skcEH9fWlEZb0tw8oNwI0q46If+iVVFVO96jOVlfvrIPy5BoYhe7RT
-3kM8nweU0mHFiDpofFMsbr6PhcjbvxSOJMyprFb/uWUncFNiSLyAOyWjovHLt+MY
-OAovDlkWuqAtYSnEEIfZCPfvxZ15Jd2mtRgIw5nLfprJobqY62qLP265SwNMZ9VW
-MZqnZaijBBP1FLJdmnkJeUYfJ/iu/eQ3UN9E7JPdfakKW7Uz+Rjk7E7mRWFmJER8
-0CnpwsHdDkk1hL75zS+6PYH3FsVH5SNpJOjADIdXFxBIUvEZi2o=
-=RWkg
+iQIzBAEBCgAdFiEE+zZEiSHgyUTXS1K/nT+EKbOK2CEFAmoa2S4ACgkQnT+EKbOK
+2CF4hxAAgVMLMIMM+IZXjpoC6dK+6Wjrak4QRnEhx0HunwLep1JqOfo9QlQSm+6v
+v1rSNA7/dKKIlGSbGawP3Q8V7dX2IxwPxZyudUWWniNMCQfq8FzElM4io4W7VzH6
+aMDUMDEQMf2n8wv2ME3kDsITNrPyzjGJabvtKkC9a9xDVjrqIQKs60C8V8tp+7mS
+IIeT6PJhVQ9NxqdNPPJf5k5OH+DiDEj1qSSf+uh9lc3a+uMp1mr4F/ymW3O4fm97
+Zj6je8pB1YaU/0sp15YWTlE9OngjPSDLemza1qWj4CUA9ie7dP0n3fppBRy6TvIx
+94L5ttNbi9jbqrkX/860oQL9AnPIZYQxTDafynEOmDseINiyzSjPqIF4x3x19GV1
+1Yomkgj9fyCZsKHO9FlaXuUXHlB0gV9UznGWjZvg8Ml0ZUOCvHHxuKyOrlskO0ZI
+92xvh18XdK2nexqCkBO4gTGg12Ztgn5BgNcuBesgr7PWURbCowxVGXgfuyMgwjHC
+B+lKyq2O8v7sQUMcQoWXySdrDzeQgeF/MI7JbsdNSAjjb1gGLRqcY5WveCv52IA8
+PhPK0YkVIIejLFi/KDNdAEUTAgJTRP1eiflmFEHmvWgup1BP5Fzht+ZjkMl39dQ0
+G2Lvwn2NPGrKz7TGR1cR7hDJkYeI1igQNVuG3pM96exR0hr1OIU=
+=AXgh
 -----END PGP SIGNATURE-----
