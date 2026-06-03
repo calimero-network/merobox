@@ -10,6 +10,7 @@ branches.
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 from merobox.commands.auth import AuthenticationError, AuthToken
@@ -279,21 +280,25 @@ class _FakeSession:
         return self._ws_connect(url)
 
 
-def _handshake_error(status):
-    """Build an aiohttp.WSServerHandshakeError carrying an HTTP status."""
-    import aiohttp
-    import multidict
-    import yarl
+class _FakeHandshakeError(aiohttp.WSServerHandshakeError):
+    """A WSServerHandshakeError stand-in that carries a status.
 
-    request_info = aiohttp.RequestInfo(
-        yarl.URL("http://localhost:2528/ws"),
-        "GET",
-        multidict.CIMultiDictProxy(multidict.CIMultiDict()),
-        yarl.URL("http://localhost:2528/ws"),
-    )
-    return aiohttp.WSServerHandshakeError(
-        request_info, (), status=status, message="rejected"
-    )
+    The real ``ClientResponseError`` constructor and ``__str__`` reach into
+    ``request_info``/``message`` internals whose shape varies across aiohttp
+    versions. We skip the base ``__init__`` and override ``__str__`` so the
+    fixture is version-proof; it still matches ``except
+    aiohttp.WSServerHandshakeError`` (the step only reads ``.status``).
+    """
+
+    def __init__(self, status):
+        self.status = status
+
+    def __str__(self):
+        return f"handshake rejected with {self.status}"
+
+
+def _handshake_error(status):
+    return _FakeHandshakeError(status)
 
 
 class TestWebSocketConnectStep:
