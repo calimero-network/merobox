@@ -1,0 +1,135 @@
+name: "Embedded Auth Example (binary mode)"
+description: >
+  End-to-end exercise of merobox's embedded-auth support: bootstrap/login,
+  authenticated calls, negative (unauthenticated) asserts, WebSocket auth, and
+  the refresh flow. Runs a single native `merod` node with the auth router
+  mounted inside the node (no separate mero-auth container needed).
+
+# Embedded auth is only supported in binary/native mode (the auth router is
+# mounted inside merod itself). In Docker mode use `auth_service`/`auth_image`.
+no_docker: true
+
+# Enable the embedded auth router on the node (passes --auth-mode embedded to
+# merod). With no --auth-username/--auth-password on the CLI, the workflow drives
+# auth declaratively via the `login` step below.
+auth_mode: embedded
+
+nuke_on_start: true
+
+nodes:
+  count: 1
+  prefix: "calimero-node"
+  # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility.
+  image: "ghcr.io/calimero-network/merod:edge"
+
+steps:
+  - name: "Wait for node startup"
+    type: wait
+    seconds: 5
+    message: "Waiting for the embedded auth router to come up..."
+
+  # --- 1. Bootstrap / login -------------------------------------------------
+  # On a fresh node the FIRST POST /auth/token with user_password auto-creates a
+  # root key with ["admin"] permission — so this first login doubles as setup.
+  # It seeds ~/.merobox/auth_cache/{node}.json so downstream calls just work.
+  - name: "Authenticate as admin"
+    type: login
+    node: calimero-node-1
+    username: alice
+    password: password123
+    outputs:
+      access_token: access_token
+      refresh_token: refresh_token
+
+  # --- 2. Negative login: wrong credentials must be rejected ----------------
+  - name: "Reject bad credentials"
+    type: login
+    node: calimero-node-1
+    username: alice
+    password: wrong-password
+    expected_failure: true
+
+  # --- 3. Authenticated call (token auto-attached from the cache) -----------
+  - name: "Install application (authenticated)"
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: "Create namespace (authenticated)"
+    type: create_namespace
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  - name: "Create context (authenticated)"
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
+    outputs:
+      context_id: contextId
+
+  - name: "Set a value (authenticated)"
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: hello
+      value: world
+
+  # --- 4. Negative call: no token must be rejected (401) --------------------
+  # `unauthenticated: true` forces a no-token request; `expected_failure: true`
+  # asserts the protected endpoint rejects it.
+  - name: "Unauthenticated call is rejected"
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: hello
+    unauthenticated: true
+    expected_failure: true
+
+  # --- 5. WebSocket auth ----------------------------------------------------
+  # Valid token (from the cache) -> connect succeeds. WS clients can't set
+  # headers, so the JWT rides on ?token=<jwt>.
+  - name: "WebSocket connects with a valid token"
+    type: ws_connect
+    node: calimero-node-1
+
+  # No token -> the upgrade handshake must be rejected.
+  - name: "WebSocket without a token is rejected"
+    type: ws_connect
+    node: calimero-node-1
+    unauthenticated: true
+    expected_failure: true
+
+  # --- 6. Refresh flow ------------------------------------------------------
+  # Swap the refresh token for a fresh access token and re-seed the cache.
+  - name: "Refresh the access token"
+    type: refresh
+    node: calimero-node-1
+    outputs:
+      access_token: access_token
+
+  # The refreshed token still authorizes calls.
+  - name: "Authenticated call after refresh"
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: hello
+
+stop_all_nodes: true
+nuke_on_end: true
+
+# How to run:
+#   merobox bootstrap run workflow-examples/workflow-embedded-auth-example.yml --no-docker
+#
+# (Requires a `merod` binary on PATH or via --binary-path.)

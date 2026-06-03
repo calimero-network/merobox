@@ -144,6 +144,76 @@ class TestValidateWorkflowStep:
         errors = config_module.validate_workflow_step(step, 0)
         assert len(errors) == 0
 
+    def test_valid_login_step(self, config_module):
+        """Test validation of a valid login step."""
+        step = {
+            "name": "Authenticate",
+            "type": "login",
+            "node": "calimero-node-1",
+            "username": "alice",
+            "password": "password123",
+            "outputs": {"token": "access_token"},
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert len(errors) == 0
+
+    def test_login_step_missing_credentials(self, config_module):
+        """Test that login requires username and password."""
+        step = {
+            "name": "Bad login",
+            "type": "login",
+            "node": "calimero-node-1",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("username" in err.lower() for err in errors)
+        assert any("password" in err.lower() for err in errors)
+
+    def test_valid_refresh_step(self, config_module):
+        """Test validation of a valid refresh step."""
+        step = {"name": "Refresh", "type": "refresh", "node": "calimero-node-1"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert len(errors) == 0
+
+    def test_valid_ws_connect_step(self, config_module):
+        """Test validation of a valid ws_connect step (both positive and negative)."""
+        positive = {"name": "WS", "type": "ws_connect", "node": "calimero-node-1"}
+        negative = {
+            "name": "WS negative",
+            "type": "ws_subscribe",
+            "node": "calimero-node-1",
+            "unauthenticated": True,
+            "expected_failure": True,
+            "timeout": 5,
+        }
+        assert config_module.validate_workflow_step(positive, 0) == []
+        assert config_module.validate_workflow_step(negative, 0) == []
+
+    def test_ws_connect_rejects_non_positive_timeout(self, config_module):
+        """Test that ws_connect rejects a non-positive timeout."""
+        step = {
+            "name": "WS bad timeout",
+            "type": "ws_connect",
+            "node": "calimero-node-1",
+            "timeout": -1,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("timeout" in err.lower() for err in errors)
+
+    def test_call_step_accepts_unauthenticated_flag(self, config_module):
+        """Test that the call step accepts the negative-auth flags."""
+        step = {
+            "name": "Unauthenticated call",
+            "type": "call",
+            "node": "calimero-node-1",
+            "context_id": "{{context_id}}",
+            "method": "get",
+            "args": {"key": "hello"},
+            "unauthenticated": True,
+            "expected_failure": True,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert len(errors) == 0
+
     def test_missing_type_field(self, config_module):
         """Test that missing type field is detected."""
         step = {

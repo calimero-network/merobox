@@ -2064,6 +2064,20 @@ class WorkflowExecutor:
             return JoinOpenStep(step_config, **common_kwargs)
         elif step_type == "call":
             return ExecuteStep(step_config, **common_kwargs)
+        elif step_type == "login":
+            from merobox.commands.bootstrap.steps.login import LoginStep
+
+            return LoginStep(step_config, **common_kwargs)
+        elif step_type == "refresh":
+            from merobox.commands.bootstrap.steps.refresh import RefreshStep
+
+            return RefreshStep(step_config, **common_kwargs)
+        elif step_type in ("ws_connect", "ws_subscribe"):
+            from merobox.commands.bootstrap.steps.websocket import (
+                WebSocketConnectStep,
+            )
+
+            return WebSocketConnectStep(step_config, **common_kwargs)
         elif step_type == "wait":
             return WaitStep(step_config, **common_kwargs)
         elif step_type == "wait_for_sync":

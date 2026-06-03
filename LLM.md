@@ -356,6 +356,75 @@ Call a method on an application.
     result: "output"
 ```
 
+#### 5a. Embedded Auth Steps (`login`, `refresh`, `ws_connect`)
+
+Drive the **embedded** auth path of a node (`merod --auth-mode embedded`, set
+via top-level `auth_mode: embedded` in binary mode). These let you write
+authenticated and negative e2e tests declaratively.
+
+`login` bootstraps/authenticates and seeds the on-disk token cache so every
+downstream `call`/`execute`/`ws_connect` on that node is authenticated
+automatically. On a fresh node the first login auto-creates a root key with
+`["admin"]` (login == setup).
+
+```yaml
+- type: login
+  node: node-1
+  username: alice
+  password: password123
+  outputs:
+    access_token: access_token
+    refresh_token: refresh_token
+```
+
+Assert that bad credentials are rejected with `expected_failure: true`:
+
+```yaml
+- type: login
+  node: node-1
+  username: alice
+  password: wrong
+  expected_failure: true
+```
+
+Force an unauthenticated request on a `call` and assert the 401:
+
+```yaml
+- type: call
+  node: node-1
+  context_id: "{{context_id}}"
+  method: get
+  args: { key: hello }
+  unauthenticated: true
+  expected_failure: true
+```
+
+Open a WebSocket subscription (`/ws`, JWT on the `?token=` query param). With a
+valid cached token the connect must succeed; the negative case asserts rejection:
+
+```yaml
+- type: ws_connect        # alias: ws_subscribe
+  node: node-1            # uses the token seeded by `login`
+
+- type: ws_connect
+  node: node-1
+  unauthenticated: true
+  expected_failure: true  # no token -> handshake rejected
+```
+
+Refresh the cached access token via `POST /auth/refresh`:
+
+```yaml
+- type: refresh
+  node: node-1
+  outputs:
+    access_token: access_token
+```
+
+See `workflow-examples/workflow-embedded-auth-example.yml` for a full run, or
+`workflow-examples/workflow-websocket-auth-example.yml` for a WebSocket-focused
+one.
+
 #### 6. Wait Step
 
 Pause execution for a specified duration.
