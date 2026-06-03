@@ -150,12 +150,16 @@ async def run_workflow(
                 )
                 return False
 
-            if effective_auth_mode == "embedded" and not (
-                auth_username and auth_password
+            # Note: --auth-username/--auth-password are optional. When provided,
+            # merobox auto-authenticates every node up front (legacy convenience).
+            # When omitted, the workflow is expected to drive auth declaratively
+            # via `login` steps, which seed the token cache per node.
+            if effective_auth_mode == "embedded" and bool(auth_username) != bool(
+                auth_password
             ):
                 console.print(
-                    "[red]When using auth_mode=embedded (from CLI or workflow config), you must provide --auth-username and --auth-password "
-                    "for workflow authentication.[/red]"
+                    "[red]--auth-username and --auth-password must be provided "
+                    "together (or omitted to use declarative `login` steps).[/red]"
                 )
                 return False
 

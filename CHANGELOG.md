@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.33] - 2026-06-03
+
+### Added
+
+- First-class **auth support in workflows**, so authenticated (and negative)
+  e2e tests can be written declaratively against a node's embedded auth router
+  (`merod --auth-mode embedded`, no separate `mero-auth` container needed). The
+  embedded router auto-creates a root key with `["admin"]` on the first
+  `POST /auth/token`, so the first login doubles as setup. New step types:
+  - `login` — bootstraps/authenticates against a node and **seeds the on-disk
+    token cache** (`~/.merobox/auth_cache/{node}.json`) so every downstream
+    `call`/`execute`/`ws_connect` on that node is authenticated automatically.
+    Exports `access_token`/`refresh_token` via `outputs`. Set
+    `expected_failure: true` to assert that bad credentials are rejected.
+  - `refresh` — exercises `POST /auth/refresh`: swaps the cached refresh token
+    for a fresh access token and re-seeds the cache.
+  - `ws_connect` / `ws_subscribe` — opens a WebSocket against the node's `/ws`
+    endpoint with the JWT on the `?token=<jwt>` query param (WS clients can't
+    set headers). With a valid cached token the connect must succeed; with
+    `unauthenticated: true` + `expected_failure: true` it asserts the upgrade
+    handshake is rejected. Mirrors `core/scripts/test-websocket-auth.sh`.
+- Negative-test toggle on the `call`/`execute` step: `unauthenticated: true`
+  forces a no-token request so a protected endpoint rejects it; pair with the
+  existing `expected_failure: true` to assert the 401.
+- `expected_failure` on the auth steps is strict: it only passes on a genuine
+  auth rejection (a credential/refresh `AuthenticationError`, or a WebSocket
+  upgrade returning HTTP 401/403). Connectivity faults — unreachable node,
+  connection refused/reset, timeouts, or a non-auth handshake status — fail the
+  step rather than green-lighting a meaningless assert. A mis-asserted negative
+  `login`/`refresh` (auth unexpectedly succeeds) also no longer seeds the token
+  cache, so it can't leave stale credentials behind.
+- `auth_mode: embedded` workflows no longer require `--auth-username` /
+  `--auth-password`. When omitted, the workflow drives auth declaratively via
+  `login` steps; when provided (both together), merobox still auto-authenticates
+  every node up front as before. Supplying only one of the pair is now a
+  validation error.
+- Example workflows under `workflow-examples/`:
+  `workflow-embedded-auth-example.yml` (bootstrap/login, authenticated calls,
+  the unauthenticated negative assert, WebSocket auth, and the refresh flow) and
+  the focused `workflow-websocket-auth-example.yml` (valid token connects, no
+  token / bad token rejected).
+
 ## [0.6.32] - 2026-05-30
 
 ### Added

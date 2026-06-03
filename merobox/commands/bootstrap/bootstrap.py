@@ -303,11 +303,14 @@ def run(
         )
         sys.exit(1)
 
-    # Validate that auth credentials are provided when --auth-mode=embedded
-    if auth_mode == "embedded" and not (auth_username and auth_password):
+    # --auth-username/--auth-password are optional under --auth-mode=embedded:
+    # provide both to auto-authenticate every node up front, or omit both and
+    # drive auth declaratively from the workflow via `login` steps. Providing
+    # only one is a misconfiguration.
+    if auth_mode == "embedded" and bool(auth_username) != bool(auth_password):
         console.print(
-            "[red]When using --auth-mode=embedded, you must provide --auth-username and --auth-password "
-            "for workflow authentication.[/red]"
+            "[red]--auth-username and --auth-password must be provided together "
+            "(or omitted to use declarative `login` steps).[/red]"
         )
         sys.exit(1)
 

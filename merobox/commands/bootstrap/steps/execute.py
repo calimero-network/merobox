@@ -59,6 +59,12 @@ class ExecuteStep(BaseStep):
                 f"Step '{step_name}': 'expected_failure' must be a boolean"
             )
 
+        # Validate unauthenticated is a boolean if provided
+        if "unauthenticated" in self.config and not isinstance(
+            self.config["unauthenticated"], bool
+        ):
+            raise ValueError(f"Step '{step_name}': 'unauthenticated' must be a boolean")
+
     def _get_exportable_variables(self):
         """
         Define which variables this step can export.
@@ -111,6 +117,15 @@ class ExecuteStep(BaseStep):
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
+
+        # Negative-test support: force a no-token call so a protected endpoint
+        # rejects it. Pair with `expected_failure: true` to assert the 401.
+        if self.config.get("unauthenticated"):
+            client_node_name = None
+            vprint(
+                "[yellow]🔓 Sending unauthenticated request (no token attached)[/yellow]",
+                level=LOG_LEVEL_VERBOSE,
+            )
 
         # Execute based on type
         try:

@@ -107,6 +107,10 @@ VALID_STEP_TYPES = frozenset(
         "fuzzy_test",
         "stop_node",
         "start_node",
+        "login",
+        "refresh",
+        "ws_connect",
+        "ws_subscribe",
     }
 )
 
@@ -309,6 +313,64 @@ class CallStep(BaseStepConfig):
     args: Optional[dict[str, Any]] = Field(None, description="Arguments for the call")
     executor_public_key: Optional[str] = Field(
         None, description="Public key of executor"
+    )
+    expected_failure: Optional[bool] = Field(
+        False, description="Assert the call is rejected/fails rather than succeeds"
+    )
+    unauthenticated: Optional[bool] = Field(
+        False,
+        description=(
+            "Force a no-token request (negative auth test). Pair with "
+            "expected_failure: true to assert a 401."
+        ),
+    )
+
+
+class LoginStepConfig(BaseStepConfig):
+    """Configuration for login step (embedded-auth bootstrap/login)."""
+
+    type: Literal["login"] = "login"
+    node: str = Field(..., description="Target node to authenticate against")
+    username: str = Field(
+        ..., description="Username (public key) for user_password auth"
+    )
+    password: str = Field(..., description="Password for user_password auth")
+    expected_failure: Optional[bool] = Field(
+        False,
+        description="Assert that authentication is rejected (e.g. bad credentials)",
+    )
+
+
+class RefreshStepConfig(BaseStepConfig):
+    """Configuration for refresh step (POST /auth/refresh)."""
+
+    type: Literal["refresh"] = "refresh"
+    node: str = Field(..., description="Node whose cached token should be refreshed")
+    expected_failure: Optional[bool] = Field(
+        False, description="Assert that the refresh is rejected (e.g. invalid token)"
+    )
+
+
+class WebSocketConnectStepConfig(BaseStepConfig):
+    """Configuration for ws_connect / ws_subscribe step (WebSocket auth)."""
+
+    type: Literal["ws_connect", "ws_subscribe"] = "ws_connect"
+    node: str = Field(..., description="Target node to open a WebSocket against")
+    unauthenticated: Optional[bool] = Field(
+        False, description="Connect without attaching a token (negative auth test)"
+    )
+    expected_failure: Optional[bool] = Field(
+        False,
+        description="Assert the connection is rejected (use with unauthenticated)",
+    )
+    token: Optional[str] = Field(
+        None, description="Explicit JWT to attach (overrides the cached token)"
+    )
+    message: Optional[str] = Field(
+        None, description="Optional text frame to send once connected"
+    )
+    timeout: Optional[float] = Field(
+        None, gt=0, description="Handshake timeout in seconds"
     )
 
 
@@ -1269,6 +1331,10 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
     "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,
+    "login": LoginStepConfig,
+    "refresh": RefreshStepConfig,
+    "ws_connect": WebSocketConnectStepConfig,
+    "ws_subscribe": WebSocketConnectStepConfig,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
     "repeat": RepeatStep,
