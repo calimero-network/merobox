@@ -20,7 +20,21 @@ from merobox.commands.bootstrap.steps.websocket import WebSocketConnectStep
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    """Run a coroutine on a dedicated loop, leaving a fresh current loop behind.
+
+    `asyncio.run()` closes its loop and unsets the current one, which on
+    Python 3.11 makes a later bare `asyncio.get_event_loop()` raise
+    "no current event loop". Other unit-test modules in this suite still use
+    that legacy pattern, so we restore a usable current loop afterward rather
+    than poison shared state for tests that run after us.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def _manager():
