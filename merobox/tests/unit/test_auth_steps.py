@@ -111,13 +111,36 @@ class TestLoginStep:
         fake_auth.authenticate = AsyncMock(return_value=_token())
         fake_auth.save_token.return_value = True
 
+        dynamic = {}
+        with patch(
+            "merobox.commands.bootstrap.steps.login.AuthManager",
+            return_value=fake_auth,
+        ):
+            result = _run(step.execute({}, dynamic))
+
+        # Asserted rejection but login succeeded -> step fails AND must not
+        # seed the cache or export tokens (no stale credentials left behind).
+        assert result is False
+        fake_auth.save_token.assert_not_called()
+        assert dynamic == {}
+
+    def test_login_expected_failure_ignores_connectivity_error(self):
+        # A negative test must assert an auth rejection, not pass because the
+        # node was unreachable (AuthManager wraps both as AuthenticationError).
+        step = self._step(expected_failure=True)
+        fake_auth = MagicMock()
+        fake_auth.authenticate = AsyncMock(
+            side_effect=AuthenticationError(
+                "Network error during authentication: connection refused"
+            )
+        )
+
         with patch(
             "merobox.commands.bootstrap.steps.login.AuthManager",
             return_value=fake_auth,
         ):
             result = _run(step.execute({}, {}))
 
-        # Asserted rejection but login succeeded -> step fails.
         assert result is False
 
 
@@ -185,6 +208,44 @@ class TestRefreshStep:
 
         assert result is True
 
+    def test_refresh_expected_failure_but_success_does_not_reseed(self):
+        step = self._step(expected_failure=True)
+        new = _token(access="new.acc.tok")
+        fake_auth = MagicMock()
+        fake_auth.get_cached_token.return_value = _token()
+        fake_auth.refresh = AsyncMock(return_value=new)
+        fake_auth.save_token.return_value = True
+
+        dynamic = {}
+        with patch(
+            "merobox.commands.bootstrap.steps.refresh.AuthManager",
+            return_value=fake_auth,
+        ):
+            result = _run(step.execute({}, dynamic))
+
+        # Asserted rejection but refresh succeeded -> fail and keep prior token.
+        assert result is False
+        fake_auth.save_token.assert_not_called()
+        assert dynamic == {}
+
+    def test_refresh_expected_failure_ignores_connectivity_error(self):
+        step = self._step(expected_failure=True)
+        fake_auth = MagicMock()
+        fake_auth.get_cached_token.return_value = _token()
+        fake_auth.refresh = AsyncMock(
+            side_effect=AuthenticationError(
+                "Network error during token refresh: timed out"
+            )
+        )
+
+        with patch(
+            "merobox.commands.bootstrap.steps.refresh.AuthManager",
+            return_value=fake_auth,
+        ):
+            result = _run(step.execute({}, {}))
+
+        assert result is False
+
 
 # =============================================================================
 # ws_connect
@@ -216,6 +277,23 @@ class _FakeSession:
 
     def ws_connect(self, url):
         return self._ws_connect(url)
+
+
+def _handshake_error(status):
+    """Build an aiohttp.WSServerHandshakeError carrying an HTTP status."""
+    import aiohttp
+    import multidict
+    import yarl
+
+    request_info = aiohttp.RequestInfo(
+        yarl.URL("http://localhost:2528/ws"),
+        "GET",
+        multidict.CIMultiDictProxy(multidict.CIMultiDict()),
+        yarl.URL("http://localhost:2528/ws"),
+    )
+    return aiohttp.WSServerHandshakeError(
+        request_info, (), status=status, message="rejected"
+    )
 
 
 class TestWebSocketConnectStep:
@@ -269,14 +347,12 @@ class TestWebSocketConnectStep:
         assert result is False
 
     def test_ws_unauthenticated_rejected_is_expected_failure(self):
-        import aiohttp
-
         step = self._step(unauthenticated=True, expected_failure=True)
         captured = {}
 
         async def ws_connect(url):
             captured["url"] = url
-            raise aiohttp.WSServerHandshakeError(MagicMock(), MagicMock())
+            raise _handshake_error(401)
 
         with patch(
             "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
@@ -287,6 +363,52 @@ class TestWebSocketConnectStep:
         assert result is True
         # No token attached on the unauthenticated negative case.
         assert captured["url"] == "ws://localhost:2528/ws"
+
+    def test_ws_non_auth_handshake_status_fails_even_when_expected(self):
+        # A 500 (or any non-401/403) handshake error doesn't prove an auth
+        # rejection, so it must not satisfy expected_failure.
+        step = self._step(unauthenticated=True, expected_failure=True)
+
+        async def ws_connect(url):
+            raise _handshake_error(500)
+
+        with patch(
+            "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
+            return_value=_FakeSession(ws_connect),
+        ):
+            result = _run(step.execute({}, {}))
+
+        assert result is False
+
+    def test_ws_timeout_fails_even_when_expected(self):
+        # A connection timeout doesn't prove an auth rejection.
+        step = self._step(unauthenticated=True, expected_failure=True)
+
+        async def ws_connect(url):
+            raise asyncio.TimeoutError()
+
+        with patch(
+            "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
+            return_value=_FakeSession(ws_connect),
+        ):
+            result = _run(step.execute({}, {}))
+
+        assert result is False
+
+    def test_ws_null_timeout_falls_back_to_default(self):
+        # `timeout: null` in YAML must not blow up on float(None).
+        step = self._step(timeout=None, unauthenticated=True)
+
+        async def ws_connect(url):
+            return _FakeWS()
+
+        with patch(
+            "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
+            return_value=_FakeSession(ws_connect),
+        ):
+            result = _run(step.execute({}, {}))
+
+        assert result is True
 
     def test_ws_unauthenticated_unexpected_success_fails(self):
         step = self._step(unauthenticated=True, expected_failure=True)

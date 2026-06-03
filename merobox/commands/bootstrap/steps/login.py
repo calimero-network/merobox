@@ -68,21 +68,31 @@ class LoginStep(BaseStep):
             token = await auth_manager.authenticate(rpc_url, username, password)
         except AuthenticationError as e:
             if expected_failure:
+                # A negative test must assert an *auth* rejection, not pass just
+                # because the node was unreachable (AuthManager wraps transport
+                # faults in the same exception type as a 401).
+                if self._is_connectivity_error(str(e)):
+                    console.print(
+                        f"[red]❌ Expected an auth rejection but hit a "
+                        f"connectivity error for {node_name}: {e}[/red]"
+                    )
+                    return False
                 self._report_expected_failure(str(e))
                 return True
             console.print(f"[red]❌ Login failed for {node_name}: {e}[/red]")
             self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False
         except Exception as e:
-            if expected_failure:
-                self._report_expected_failure(str(e))
-                return True
+            # An unexpected exception is never proof of an auth rejection.
             console.print(f"[red]❌ Login error for {node_name}: {e}[/red]")
             return False
 
         if expected_failure:
             # Login succeeded but the workflow asserted it should be rejected.
+            # Do NOT seed the cache or export tokens — a mis-asserted negative
+            # test must not leave stale credentials behind for later steps/runs.
             self._report_unexpected_success()
+            return False
 
         # Seed the on-disk cache so downstream calls auto-attach this token.
         if not auth_manager.save_token(token, cache_node_name):
@@ -97,7 +107,7 @@ class LoginStep(BaseStep):
         self._export_variables(token.to_dict(), node_name, dynamic_values)
 
         console.print(f"[green]✓ Logged in to {node_name} as {username}[/green]")
-        return not expected_failure
+        return True
 
     def _resolve_login_target(self, node_name: str) -> tuple[str, str]:
         """Return ``(rpc_url, cache_node_name)`` for the login target.

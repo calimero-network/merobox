@@ -68,19 +68,28 @@ class RefreshStep(BaseStep):
             new_token = await auth_manager.refresh(rpc_url, cached)
         except AuthenticationError as e:
             if expected_failure:
+                # A negative test must assert an *auth* rejection, not pass just
+                # because the node was unreachable.
+                if self._is_connectivity_error(str(e)):
+                    console.print(
+                        f"[red]❌ Expected a refresh rejection but hit a "
+                        f"connectivity error for {node_name}: {e}[/red]"
+                    )
+                    return False
                 self._report_expected_failure(str(e))
                 return True
             console.print(f"[red]❌ Token refresh failed for {node_name}: {e}[/red]")
             return False
         except Exception as e:
-            if expected_failure:
-                self._report_expected_failure(str(e))
-                return True
+            # An unexpected exception is never proof of a refresh rejection.
             console.print(f"[red]❌ Token refresh error for {node_name}: {e}[/red]")
             return False
 
         if expected_failure:
+            # Refresh succeeded but the workflow asserted it should be rejected.
+            # Do NOT re-seed the cache or export — keep the prior token intact.
             self._report_unexpected_success()
+            return False
 
         if not auth_manager.save_token(new_token, cache_node_name):
             console.print(
@@ -93,4 +102,4 @@ class RefreshStep(BaseStep):
         self._export_variables(new_token.to_dict(), node_name, dynamic_values)
 
         console.print(f"[green]✓ Refreshed token for {node_name}[/green]")
-        return not expected_failure
+        return True

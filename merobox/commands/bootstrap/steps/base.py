@@ -1263,6 +1263,30 @@ class BaseStep:
             "[yellow]⚠️  Warning: expected_failure was set but the step succeeded[/yellow]"
         )
 
+    def _is_connectivity_error(self, error_message: str) -> bool:
+        """Return True if an error message looks like a network/connectivity fault.
+
+        Auth steps use this to keep ``expected_failure`` honest: a negative auth
+        test (e.g. "bad credentials are rejected") must assert an *auth* failure,
+        not silently pass because the node was unreachable. ``AuthManager`` wraps
+        transport faults with a "Network error ..." prefix, while a genuine
+        rejection surfaces as "Invalid credentials" / "Access forbidden".
+        """
+        if not error_message:
+            return False
+        lowered = error_message.lower()
+        markers = (
+            "network error",
+            "connection refused",
+            "cannot connect",
+            "connection reset",
+            "timed out",
+            "timeout",
+            "name or service not known",
+            "temporary failure in name resolution",
+        )
+        return any(marker in lowered for marker in markers)
+
     def _check_jsonrpc_error(self, result_data: Any) -> bool:
         """
         Check if the API response contains a JSON-RPC error.

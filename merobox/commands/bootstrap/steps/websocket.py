@@ -60,7 +60,14 @@ class WebSocketConnectStep(BaseStep):
         unauthenticated = bool(self.config.get("unauthenticated", False))
         expected_failure = self._is_expected_failure()
         message = self.config.get("message")
-        timeout = float(self.config.get("timeout", DEFAULT_CONNECTION_TIMEOUT))
+        # `timeout` is optional and may be explicitly null in YAML — fall back to
+        # the default rather than letting float(None) raise.
+        timeout_cfg = self.config.get("timeout")
+        timeout = (
+            float(timeout_cfg)
+            if timeout_cfg is not None
+            else float(DEFAULT_CONNECTION_TIMEOUT)
+        )
 
         try:
             resolved = self._resolve_node(node_name)
@@ -102,20 +109,24 @@ class WebSocketConnectStep(BaseStep):
                         await ws.send_str(resolved_message)
                 finally:
                     await ws.close()
-        except (
-            aiohttp.WSServerHandshakeError,
-            aiohttp.ClientError,
-            asyncio.TimeoutError,
-        ) as e:
+        except aiohttp.WSServerHandshakeError as e:
+            # The server rejected the upgrade handshake — the genuine auth signal.
+            # Only an auth status (401/403) proves a rejected-without-token test;
+            # other statuses are a real failure even under expected_failure.
             if expected_failure:
-                self._report_expected_failure(str(e))
-                return True
+                if e.status in (401, 403):
+                    self._report_expected_failure(str(e))
+                    return True
+                console.print(
+                    f"[red]❌ Expected a 401/403 auth rejection but the "
+                    f"{node_name} handshake returned HTTP {e.status}[/red]"
+                )
+                return False
             console.print(f"[red]❌ WebSocket connect to {node_name} failed: {e}[/red]")
             return False
-        except Exception as e:
-            if expected_failure:
-                self._report_expected_failure(str(e))
-                return True
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            # Connection refused / reset / timeout doesn't prove an auth
+            # rejection, so it never satisfies expected_failure.
             console.print(f"[red]❌ WebSocket connect to {node_name} error: {e}[/red]")
             return False
 
