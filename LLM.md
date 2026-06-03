@@ -421,7 +421,9 @@ Refresh the cached access token via `POST /auth/refresh`:
     access_token: access_token
 ```
 
-See `workflow-examples/workflow-embedded-auth-example.yml` for a full run.
+See `workflow-examples/workflow-embedded-auth-example.yml` for a full run, or
+`workflow-examples/workflow-websocket-auth-example.yml` for a WebSocket-focused
+one.
 
 #### 6. Wait Step
 

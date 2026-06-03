@@ -1,0 +1,63 @@
+name: "WebSocket Auth Example (binary mode)"
+description: >
+  Focused exercise of WebSocket authentication against a node's embedded auth
+  router. A WS client cannot set custom headers, so the JWT is passed on the
+  `?token=<jwt>` query param. Mirrors core/scripts/test-websocket-auth.sh:
+  a valid token connects, no token is rejected on the upgrade handshake.
+
+# Embedded auth is only supported in binary/native mode (the auth router is
+# mounted inside merod itself).
+no_docker: true
+auth_mode: embedded
+
+nuke_on_start: true
+
+nodes:
+  count: 1
+  prefix: "calimero-node"
+  # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility.
+  image: "ghcr.io/calimero-network/merod:edge"
+
+steps:
+  - name: "Wait for node startup"
+    type: wait
+    seconds: 5
+    message: "Waiting for the embedded auth router to come up..."
+
+  # Bootstrap/login seeds ~/.merobox/auth_cache/{node}.json. On a fresh node the
+  # first POST /auth/token auto-creates a root key with ["admin"].
+  - name: "Authenticate as admin"
+    type: login
+    node: calimero-node-1
+    username: alice
+    password: password123
+
+  # Positive: a valid cached token (from the login above) -> connect succeeds.
+  # The token rides on ?token=<jwt> behind the scenes.
+  - name: "WebSocket connects with a valid token"
+    type: ws_connect
+    node: calimero-node-1
+    message: "ping"
+
+  # Negative: no token -> the server must reject the upgrade handshake.
+  - name: "WebSocket without a token is rejected"
+    type: ws_connect
+    node: calimero-node-1
+    unauthenticated: true
+    expected_failure: true
+
+  # You can also pass an explicit token instead of relying on the cache, e.g.
+  # to test a deliberately bad/expired token is rejected:
+  - name: "WebSocket with a bad token is rejected"
+    type: ws_subscribe
+    node: calimero-node-1
+    token: "not-a-real-jwt"
+    expected_failure: true
+
+stop_all_nodes: true
+nuke_on_end: true
+
+# How to run:
+#   merobox bootstrap run workflow-examples/workflow-websocket-auth-example.yml --no-docker
+#
+# (Requires a `merod` binary on PATH or via --binary-path.)
