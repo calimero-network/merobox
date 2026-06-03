@@ -115,3 +115,36 @@ async def test_remote_only_workflow_has_no_manager_to_keep():
 
     with _stub_node_io(executor, has_local_nodes=False):
         assert await executor.execute_workflow() is True
+
+
+# --- merobox#207: logs persisted even when nodes are left running ------------
+
+
+@pytest.mark.asyncio
+async def test_logs_exported_when_nodes_left_running():
+    # stop_all_nodes:false -> stop path never runs, so Step 5 must dump logs
+    # itself (otherwise data/container-logs/ stays empty on success).
+    executor, manager = _make_executor(
+        {"name": "wf", "nodes": {"count": 1}, "stop_all_nodes": False}
+    )
+
+    with _stub_node_io(executor):
+        assert await executor.execute_workflow() is True
+
+    manager.export_node_logs.assert_called_once()
+    manager.stop_all_nodes.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_logs_exported_on_failure_before_cleanup():
+    # On failure with stop_all_nodes:false the nodes are left up, so logs must
+    # still be captured for post-mortem before NAT teardown.
+    executor, manager = _make_executor(
+        {"name": "wf", "nodes": {"count": 1}, "stop_all_nodes": False}
+    )
+
+    with _stub_node_io(executor, steps_ok=False):
+        assert await executor.execute_workflow() is False
+
+    manager.export_node_logs.assert_called_once()
+    manager.stop_all_nodes.assert_not_called()

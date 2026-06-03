@@ -107,6 +107,30 @@ def _get_node_hostname(node_name: str) -> str:
     return node_name.replace("calimero-", "").replace("-", "")
 
 
+# Directory, relative to the workflow's working directory, where per-container
+# logs are persisted. Kept stable so CI can collect ``data/container-logs/*.log``
+# as build artifacts regardless of the ``stop_all_nodes`` setting.
+CONTAINER_LOG_DIR = os.path.join("data", "container-logs")
+
+
+def _dump_container_log(container, container_name: str, log_dir: str) -> bool:
+    """Write a single container's full log to ``<log_dir>/<name>.log``.
+
+    Best-effort: any Docker/IO error is swallowed and reported via the return
+    value so callers in shutdown paths never fail just because a log could not
+    be captured. ``timestamps=True`` matches the format used elsewhere so the
+    files are consistent whether written on stop or on a still-running dump.
+    """
+    try:
+        log_content = container.logs(timestamps=True).decode("utf-8", errors="replace")
+        log_file = os.path.join(log_dir, f"{container_name}.log")
+        with open(log_file, "w") as f:
+            f.write(log_content)
+        return True
+    except Exception:
+        return False
+
+
 class DockerManager(CleanupMixin):
     """Manages Calimero nodes in Docker containers."""
 
@@ -1768,20 +1792,12 @@ class DockerManager(CleanupMixin):
         # Phase 3: Capture logs, then stop and remove all containers in parallel
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        log_dir = os.path.join("data", "container-logs")
+        log_dir = CONTAINER_LOG_DIR
         os.makedirs(log_dir, exist_ok=True)
 
         def stop_one(container_name, container):
             # Capture logs before stopping
-            try:
-                log_content = container.logs(timestamps=True).decode(
-                    "utf-8", errors="replace"
-                )
-                log_file = os.path.join(log_dir, f"{container_name}.log")
-                with open(log_file, "w") as f:
-                    f.write(log_content)
-            except Exception:
-                pass
+            _dump_container_log(container, container_name, log_dir)
 
             try:
                 container.stop(timeout=stop_timeout)
@@ -1959,6 +1975,40 @@ class DockerManager(CleanupMixin):
             return [c.name for c in containers]
         except Exception:
             return []
+
+    def export_node_logs(self, node_names: Optional[list[str]] = None) -> int:
+        """Persist logs for the given (or all running) Calimero nodes.
+
+        Writes ``data/container-logs/<name>.log`` for each node without
+        stopping it, so workflows that leave nodes running
+        (``stop_all_nodes: false``) still produce collectable log artifacts.
+        The stop path captures logs of its own when nodes are torn down; this
+        method covers the cases where they are not.
+
+        Args:
+            node_names: Explicit container names to dump. When ``None``, all
+                currently running Calimero nodes are used.
+
+        Returns:
+            The number of node logs successfully written.
+        """
+        if node_names is None:
+            node_names = self.get_running_nodes()
+        if not node_names:
+            return 0
+
+        os.makedirs(CONTAINER_LOG_DIR, exist_ok=True)
+        written = 0
+        for name in node_names:
+            container = self.nodes.get(name)
+            if container is None:
+                try:
+                    container = self.client.containers.get(name)
+                except Exception:
+                    continue
+            if _dump_container_log(container, name, CONTAINER_LOG_DIR):
+                written += 1
+        return written
 
     def list_nodes(self) -> None:
         """List all running Calimero nodes and infrastructure."""
