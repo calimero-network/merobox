@@ -1075,9 +1075,10 @@ class UpdateGroupSettingsStepConfig(BaseStepConfig):
     type: Literal["update_group_settings"] = "update_group_settings"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID")
+    # The server accepts only 'automatic' or 'lazy-on-access'; the former
+    # 'coordinated' policy was removed and is now rejected on deserialize.
     upgrade_policy: Literal[
         "automatic",
-        "coordinated",
         "lazy",
         "lazy-on-access",
         "lazy_on_access",

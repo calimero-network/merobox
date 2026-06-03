@@ -20,7 +20,7 @@ class UpdateGroupSettingsStep(BaseStep):
 
     def _validate_field_types(self) -> None:
         step_name = self.config.get(
-            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+            "name", f"Unnamed {self.config.get('type', 'Unknown')} step"
         )
         for field in ("node", "group_id", "upgrade_policy"):
             if not isinstance(self.config.get(field), str):
@@ -44,7 +44,7 @@ class UpdateGroupSettingsStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("update_group_settings failed", error=e)
+            result = fail(f"update_group_settings failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -80,7 +80,7 @@ class DetachContextFromGroupStep(BaseStep):
 
     def _validate_field_types(self) -> None:
         step_name = self.config.get(
-            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+            "name", f"Unnamed {self.config.get('type', 'Unknown')} step"
         )
         for field in ("node", "group_id", "context_id"):
             if not isinstance(self.config.get(field), str):
@@ -104,7 +104,7 @@ class DetachContextFromGroupStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("detach_context_from_group failed", error=e)
+            result = fail(f"detach_context_from_group failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -140,7 +140,7 @@ class SyncGroupStep(BaseStep):
 
     def _validate_field_types(self) -> None:
         step_name = self.config.get(
-            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+            "name", f"Unnamed {self.config.get('type', 'Unknown')} step"
         )
         for field in ("node", "group_id"):
             if not isinstance(self.config.get(field), str):
@@ -159,7 +159,7 @@ class SyncGroupStep(BaseStep):
             api_result = client.sync_group(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("sync_group failed", error=e)
+            result = fail(f"sync_group failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
