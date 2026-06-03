@@ -408,6 +408,10 @@ class WorkflowExecutor:
                     console.print(
                         "[cyan]Nodes will continue running for future workflows[/cyan]"
                     )
+                    # Nodes are left running, so the stop path never captures
+                    # their logs. Dump them now so CI still collects
+                    # data/container-logs/*.log artifacts.
+                    self._export_node_logs()
                 # Tear down NAT-topology infra (boot-node, gateway,
                 # bridges) on success too. `stop_all_nodes` covers
                 # the client merods that the normal manager knows
@@ -720,9 +724,31 @@ class WorkflowExecutor:
         `_stop_nodes_on_failure` and silently skipped NAT teardown
         when `stop_all_nodes: false` was set.
         """
+        # Capture logs of whatever is still running BEFORE any stop, so
+        # failure artifacts survive even when `stop_all_nodes: false` leaves
+        # the cluster up (the stop path's own log capture never fires then).
+        self._export_node_logs()
         if stop_all_nodes:
             self._stop_nodes_on_failure()
         self._teardown_nat_topology_if_present()
+
+    def _export_node_logs(self) -> None:
+        """Persist logs of all running nodes to ``data/container-logs/``.
+
+        Best-effort and manager-agnostic: remote-only / dry-run paths reach
+        here with no Docker manager, in which case there is nothing to dump.
+        """
+        if self.manager is None or getattr(self.manager, "client", None) is None:
+            return
+        try:
+            count = self.manager.export_node_logs()
+            if count:
+                console.print(
+                    f"[cyan]📝 Exported logs for {count} node(s) to "
+                    f"data/container-logs/[/cyan]"
+                )
+        except Exception as e:
+            console.print(f"[yellow]⚠️  Failed to export node logs: {str(e)}[/yellow]")
 
     def _stop_nodes_on_failure(self) -> None:
         """

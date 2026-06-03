@@ -1301,3 +1301,102 @@ def test_drain_timeout_zero_skips_drain_phase(mock_docker):
         manager.stop_all_nodes(stop_timeout=10)
 
     mock_sleep.assert_not_called()
+
+
+# --- export_node_logs (merobox#207): persist logs without stopping nodes -----
+
+
+def _logging_container(name, log_text):
+    """A MagicMock container whose `.logs()` returns `log_text` as bytes."""
+    c = MagicMock()
+    c.name = name
+    c.logs.return_value = log_text.encode("utf-8")
+    return c
+
+
+@patch("docker.from_env")
+def test_export_node_logs_writes_running_nodes(mock_docker, tmp_path, monkeypatch):
+    """With no explicit names, all running nodes are dumped to data/container-logs/."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    node = _logging_container("calimero-node-1", "hello from node-1")
+    # get_running_nodes() lists running calimero nodes; export then re-fetches
+    # each by name via containers.get().
+    client.containers.list.return_value = [node]
+    client.containers.get.return_value = node
+
+    monkeypatch.chdir(tmp_path)
+    written = manager.export_node_logs()
+
+    assert written == 1
+    log_file = tmp_path / "data" / "container-logs" / "calimero-node-1.log"
+    assert log_file.read_text() == "hello from node-1"
+    # Logs are captured with timestamps, matching the stop-path format.
+    node.logs.assert_called_once_with(timestamps=True)
+    # Node was never stopped — it is left running.
+    node.stop.assert_not_called()
+
+
+@patch("docker.from_env")
+def test_export_node_logs_explicit_names(mock_docker, tmp_path, monkeypatch):
+    """Explicit names bypass get_running_nodes and are fetched directly."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    node = _logging_container("calimero-node-2", "node-2 logs")
+    client.containers.get.return_value = node
+
+    monkeypatch.chdir(tmp_path)
+    written = manager.export_node_logs(["calimero-node-2"])
+
+    assert written == 1
+    assert (
+        tmp_path / "data" / "container-logs" / "calimero-node-2.log"
+    ).read_text() == "node-2 logs"
+    # No running-node discovery when names are supplied.
+    client.containers.list.assert_not_called()
+
+
+@patch("docker.from_env")
+def test_export_node_logs_no_running_nodes_returns_zero(
+    mock_docker, tmp_path, monkeypatch
+):
+    """No running nodes -> nothing written, returns 0, no directory churn."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    client.containers.list.return_value = []
+
+    monkeypatch.chdir(tmp_path)
+    assert manager.export_node_logs() == 0
+    assert not (tmp_path / "data" / "container-logs").exists()
+
+
+@patch("docker.from_env")
+def test_export_node_logs_skips_missing_container(mock_docker, tmp_path, monkeypatch):
+    """A name that can't be fetched is skipped without aborting the rest."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    good = _logging_container("calimero-node-1", "ok")
+
+    def get(name):
+        if name == "calimero-node-1":
+            return good
+        raise docker.errors.NotFound("gone")
+
+    client.containers.get.side_effect = get
+
+    monkeypatch.chdir(tmp_path)
+    written = manager.export_node_logs(["calimero-node-1", "calimero-node-missing"])
+
+    assert written == 1
+    assert (tmp_path / "data" / "container-logs" / "calimero-node-1.log").exists()
+    assert not (
+        tmp_path / "data" / "container-logs" / "calimero-node-missing.log"
+    ).exists()

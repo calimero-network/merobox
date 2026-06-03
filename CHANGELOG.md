@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.34] - 2026-06-03
+
+### Added
+
+- Container logs are now persisted to `data/container-logs/<name>.log` on every
+  `bootstrap run`, regardless of the `stop_all_nodes` setting. Previously logs
+  were only captured on the stop path, so workflows that leave nodes running
+  (`stop_all_nodes: false`, the default) — including Calimero core's parallel
+  e2e jobs — produced no collectable log artifacts, and failures had to be
+  diagnosed via an external bash docker-logs workaround. A one-shot dump now
+  runs in both the leave-running success branch and the failure-exit path
+  (before any stop/teardown), so success and failure runs both yield artifacts.
+  Closes calimero-network/merobox#207.
+
 ## [0.6.33] - 2026-06-03
 
 ### Added
