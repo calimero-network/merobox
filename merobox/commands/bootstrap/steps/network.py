@@ -238,8 +238,13 @@ def _ip_on_network(container: Any, network_name: str) -> str | None:
     if not ip:
         return None
     try:
-        ipaddress.ip_address(ip)
+        addr = ipaddress.ip_address(ip)
     except ValueError:
+        return None
+    # IPv4 only: these steps shell out to `iptables`, not `ip6tables`. A
+    # dual-stack/IPv6 endpoint would need the v6 chain, so refuse rather than
+    # hand iptables an address it will reject.
+    if not isinstance(addr, ipaddress.IPv4Address):
         return None
     return ip
 
@@ -389,8 +394,22 @@ class PartitionPeersStep(_PeerPartitionBase):
         inserted: list[tuple[str, str]] = []
 
         def rollback():
+            # Best-effort, but a rollback delete that fails for a non-benign
+            # reason (sudo revoked mid-run, iptables state changed) leaves a
+            # rule behind — surface which one so an operator can clean up.
             for s, d in inserted:
-                _iptables("-D", s, d)  # best-effort
+                res = _iptables("-D", s, d)
+                err = _iptables_err(res).lower()
+                if res.returncode != 0 and not any(
+                    benign in err for benign in _BENIGN_DELETE_ERRORS
+                ):
+                    safe_console_error(
+                        "⚠ partition_peers: rollback of {s} -> {d} failed; "
+                        "rule may persist: {out}",
+                        s=s,
+                        d=d,
+                        out=_iptables_err(res),
+                    )
 
         for peer_name, peer_ip in peers:
             console.print(
@@ -466,6 +485,19 @@ class HealPeersStep(_PeerPartitionBase):
                     )
                     ok = False
                     break
+                else:
+                    # Loop ran the full cap with every delete succeeding and
+                    # never hit "does not exist" — there are more duplicates
+                    # than the cap, or the rule is being re-added underneath us.
+                    # Don't claim a clean heal.
+                    safe_console_error(
+                        "✗ heal_peers: {src} -> {dst} still present after "
+                        "{n} deletes — rule may be re-added externally",
+                        src=src,
+                        dst=dst,
+                        n=str(_MAX_DUP_DELETES),
+                    )
+                    ok = False
 
         if ok:
             console.print(
