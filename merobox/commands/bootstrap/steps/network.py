@@ -20,6 +20,7 @@ Reconnect typically needs a few seconds for libp2p mesh reformation
 explicit `wait_for_sync` or short `wait` before asserting state propagation.
 """
 
+import ipaddress
 import subprocess
 from typing import Any
 
@@ -215,49 +216,84 @@ class ConnectNodeStep(BaseStep):
 # Docker-network fault steps — it is a CI / Linux primitive.
 
 _DOCKER_USER_CHAIN = "DOCKER-USER"
+# Bound on a wedged sudo/iptables call so the workflow can't hang.
+_IPTABLES_TIMEOUT_S = 30
+# Upper bound on delete-until-gone, so a stuck rule can't loop forever.
+_MAX_DUP_DELETES = 16
+# iptables stderr substrings that mean "the rule/chain isn't there" — i.e. the
+# benign already-healed case, as opposed to a real failure (sudo denied, etc.).
+_BENIGN_DELETE_ERRORS = ("does not exist", "no chain/target/match")
 
 
-def _container_bridge_ip(container: Any) -> str | None:
-    """First non-empty IPv4 across the container's attached networks.
+def _libp2p_ip(container: Any) -> str | None:
+    """The container's IPv4 on the network it uses for inter-node libp2p.
 
-    Works regardless of the network's name (merobox may use a custom bridge).
+    Resolves the IP on the network ``detect_node_network`` would partition
+    (merobox-cluster / calimero_web / the single attached bridge) rather than
+    whichever network Docker happened to list first — so on a multi-attached
+    (e.g. auth-mode) node the DROP rules target the subnet libp2p actually flows
+    on. Falls back to any attached IPv4 if the chosen network has none, and
+    validates the result. Returns None if no well-formed IPv4 is found.
     """
-    try:
-        container.reload()
-    except docker.errors.DockerException:
-        pass
+    # detect_node_network reloads the container and applies the priority rule.
+    network_name = detect_node_network(container)
     networks = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
-    for net in networks.values():
-        ip = net.get("IPAddress")
-        if ip:
-            return ip
-    return None
+    ip = (networks.get(network_name) or {}).get("IPAddress") or ""
+    if not ip:
+        for net in networks.values():
+            if net.get("IPAddress"):
+                ip = net["IPAddress"]
+                break
+    if not ip:
+        return None
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    return ip
 
 
-def _iptables_drop(action: str, src: str, dst: str) -> subprocess.CompletedProcess:
-    """Run one `iptables <action> DOCKER-USER -s src -d dst -j DROP` on the host.
+def _iptables(action: str, src: str, dst: str) -> subprocess.CompletedProcess:
+    """Run `iptables <action> DOCKER-USER -s src -d dst -j DROP` on the host.
 
-    `sudo -n` fails fast instead of prompting when sudo needs a password (so a
-    misconfigured host errors clearly rather than hanging the workflow).
+    `sudo -n` fails fast instead of prompting; `timeout` bounds a wedged
+    sudo/iptables; stdout and stderr are kept SEPARATE so a sudo auth error is
+    distinguishable from a "rule not found". A timeout surfaces as a synthetic
+    non-zero result rather than raising, so callers handle it uniformly.
     """
-    return subprocess.run(
-        [
-            "sudo",
-            "-n",
-            "iptables",
-            action,
-            _DOCKER_USER_CHAIN,
-            "-s",
-            src,
-            "-d",
-            dst,
-            "-j",
-            "DROP",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
+    argv = [
+        "sudo",
+        "-n",
+        "iptables",
+        action,
+        _DOCKER_USER_CHAIN,
+        "-s",
+        src,
+        "-d",
+        dst,
+        "-j",
+        "DROP",
+    ]
+    try:
+        return subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=_IPTABLES_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            argv,
+            returncode=124,
+            stdout="",
+            stderr=f"timed out after {_IPTABLES_TIMEOUT_S}s",
+        )
+
+
+def _iptables_err(result: subprocess.CompletedProcess) -> str:
+    """Combined, trimmed stdout+stderr from an iptables run (for diagnostics)."""
+    parts = [p.strip() for p in (result.stdout, result.stderr) if p and p.strip()]
+    return " ".join(parts)
 
 
 class _PeerPartitionBase(BaseStep):
@@ -275,10 +311,11 @@ class _PeerPartitionBase(BaseStep):
     def _resolve_ips(self, workflow_results, dynamic_values):
         """Resolve (node_name, node_ip, [(peer_name, peer_ip), ...]).
 
-        Returns None (after printing a diagnostic) if a container is missing or
-        has no bridge IP.
+        Returns None (after a diagnostic naming the step) if a container is
+        missing or has no usable libp2p IPv4.
         """
         client = get_docker_client(self.manager)
+        step_type = self.config.get("type", "partition_peers")
 
         def lookup(raw_name):
             name = self._resolve_dynamic_value(
@@ -287,11 +324,14 @@ class _PeerPartitionBase(BaseStep):
             try:
                 container = client.containers.get(name)
             except docker.errors.NotFound:
-                console.print(f"[red]✗ Container '{name}' not found[/red]")
+                console.print(f"[red]✗ {step_type}: container '{name}' not found[/red]")
                 return None, None
-            ip = _container_bridge_ip(container)
+            ip = _libp2p_ip(container)
             if not ip:
-                console.print(f"[red]✗ Could not resolve bridge IP for {name}[/red]")
+                console.print(
+                    f"[red]✗ {step_type}: could not resolve a libp2p IP "
+                    f"for {name}[/red]"
+                )
                 return name, None
             return name, ip
 
@@ -312,7 +352,11 @@ class PartitionPeersStep(_PeerPartitionBase):
     """Cut libp2p between ``node`` and each of ``peers`` while keeping RPC up.
 
     Inserts symmetric DROP rules into the host's DOCKER-USER chain on the
-    containers' bridge IPs. Heal with heal_peers (same args).
+    containers' libp2p IPs. **Idempotent**: a rule already present (checked with
+    ``iptables -C``) is not re-inserted, so re-runs don't accumulate duplicates.
+    On a partial failure the rules inserted by THIS call are rolled back before
+    returning, so the step never leaves a half-applied partition. Heal with
+    heal_peers (same args).
     """
 
     async def execute(
@@ -330,21 +374,33 @@ class PartitionPeersStep(_PeerPartitionBase):
             return False
         node_name, node_ip, peers = resolved
 
+        inserted: list[tuple[str, str]] = []
+
+        def rollback():
+            for s, d in inserted:
+                _iptables("-D", s, d)  # best-effort
+
         for peer_name, peer_ip in peers:
             console.print(
                 f"[yellow]Partitioning {node_name} ({node_ip}) <-x-> "
                 f"{peer_name} ({peer_ip}) — libp2p only, RPC stays up[/yellow]"
             )
             for src, dst in ((node_ip, peer_ip), (peer_ip, node_ip)):
-                result = _iptables_drop("-I", src, dst)
+                # Idempotent: skip if the DROP rule is already present.
+                if _iptables("-C", src, dst).returncode == 0:
+                    continue
+                result = _iptables("-I", src, dst)
                 if result.returncode != 0:
                     safe_console_error(
-                        "✗ iptables insert failed ({src} -> {dst}): {out}",
+                        "✗ partition_peers: iptables insert failed "
+                        "({src} -> {dst}): {out}",
                         src=src,
                         dst=dst,
-                        out=result.stdout.strip(),
+                        out=_iptables_err(result),
                     )
+                    rollback()
                     return False
+                inserted.append((src, dst))
 
         console.print(
             f"[green]✓ Partitioned {node_name} from {len(peers)} peer(s) "
@@ -356,8 +412,11 @@ class PartitionPeersStep(_PeerPartitionBase):
 class HealPeersStep(_PeerPartitionBase):
     """Remove the DROP rules a prior partition_peers added (same args).
 
-    Deleting a rule that is already gone is not an error, so the step is
-    idempotent and safe even after a partial partition.
+    For each direction the rule is deleted until iptables reports it is gone
+    (clearing any duplicates an interrupted/re-run workflow may have left). A
+    "rule does not exist" is the benign already-healed case; any OTHER iptables
+    failure (sudo denied, missing binary) fails the step, so a partition is
+    never silently reported as healed.
     """
 
     async def execute(
@@ -375,15 +434,29 @@ class HealPeersStep(_PeerPartitionBase):
             return False
         node_name, node_ip, peers = resolved
 
+        ok = True
         for peer_name, peer_ip in peers:
             console.print(f"[yellow]Healing {node_name} <--> {peer_name}[/yellow]")
             for src, dst in ((node_ip, peer_ip), (peer_ip, node_ip)):
-                result = _iptables_drop("-D", src, dst)
-                if result.returncode != 0:
-                    # A missing rule is the common, benign case (already healed).
-                    console.print(
-                        f"[dim]  no rule {src} -> {dst} to remove (already healed)[/dim]"
+                for _ in range(_MAX_DUP_DELETES):
+                    result = _iptables("-D", src, dst)
+                    if result.returncode == 0:
+                        continue  # removed one; retry in case of duplicates
+                    err = _iptables_err(result).lower()
+                    if any(benign in err for benign in _BENIGN_DELETE_ERRORS):
+                        break  # nothing (more) to remove — already healed
+                    safe_console_error(
+                        "✗ heal_peers: iptables delete failed "
+                        "({src} -> {dst}): {out}",
+                        src=src,
+                        dst=dst,
+                        out=_iptables_err(result),
                     )
+                    ok = False
+                    break
 
-        console.print(f"[green]✓ Healed {node_name} from {len(peers)} peer(s)[/green]")
-        return True
+        if ok:
+            console.print(
+                f"[green]✓ Healed {node_name} from {len(peers)} peer(s)[/green]"
+            )
+        return ok

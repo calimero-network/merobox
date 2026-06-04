@@ -872,90 +872,146 @@ def _fake_client(ips: dict):
     return _Client()
 
 
-def _capture_iptables(monkeypatch):
-    """Patch network_mod.subprocess.run, returning the captured argv lists."""
-    calls: list[list[str]] = []
+class _IptablesResult:
+    def __init__(self, returncode, stderr=""):
+        self.returncode = returncode
+        self.stdout = ""
+        self.stderr = stderr
 
-    class _Completed:
-        returncode = 0
-        stdout = ""
 
-    def _fake_run(argv, **_kwargs):
-        calls.append(argv)
-        return _Completed()
+def _capture_iptables(
+    monkeypatch, *, check_returncode=1, fail_action=None, fail_on=1, fail_stderr="boom"
+):
+    """Patch network_mod._iptables and record (action, src, dst) per call.
 
-    monkeypatch.setattr(network_mod.subprocess, "run", _fake_run)
+    Simulates iptables without touching the host:
+    - ``-C`` returns ``check_returncode`` (default 1 = "rule not present", so a
+      partition proceeds to ``-I``; pass 0 to simulate an existing rule).
+    - ``-D`` returns 0 the first time a given (src,dst) is deleted, then a benign
+      "does not exist" — so heal's delete-until-gone removes one copy and stops.
+    - ``-I`` (and anything else) returns 0.
+    - If ``fail_action`` is set, the ``fail_on``-th call of that action returns a
+      non-zero result carrying ``fail_stderr`` (to exercise failure paths).
+    """
+    calls: list[tuple[str, str, str]] = []
+    deleted: set = set()
+    counts: dict = {}
+
+    def _fake_iptables(action, src, dst):
+        calls.append((action, src, dst))
+        counts[action] = counts.get(action, 0) + 1
+        if action == fail_action and counts[action] == fail_on:
+            return _IptablesResult(1, fail_stderr)
+        if action == "-C":
+            return _IptablesResult(check_returncode)
+        if action == "-D":
+            if (src, dst) in deleted:
+                return _IptablesResult(
+                    1,
+                    "iptables: Bad rule (does not exist that you attempted to delete)",
+                )
+            deleted.add((src, dst))
+            return _IptablesResult(0)
+        return _IptablesResult(0)  # -I
+
+    monkeypatch.setattr(network_mod, "_iptables", _fake_iptables)
     return calls
+
+
+def _patch_docker(monkeypatch, ips):
+    monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
+    monkeypatch.setattr(network_mod, "get_docker_client", lambda _m: _fake_client(ips))
+
+
+def _step(cls, peers):
+    step = cls({"type": cls.__name__, "node": "node-2", "peers": peers})
+    step.manager = object()
+    return step
 
 
 class TestPartitionPeersExecute:
     @pytest.mark.asyncio
     async def test_partition_inserts_symmetric_drops_keeps_rpc(self, monkeypatch):
-        monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
-        monkeypatch.setattr(
-            network_mod,
-            "get_docker_client",
-            lambda _m: _fake_client(
-                {"node-2": "10.0.0.2", "node-1": "10.0.0.1", "node-3": "10.0.0.3"}
-            ),
+        _patch_docker(
+            monkeypatch,
+            {"node-2": "10.0.0.2", "node-1": "10.0.0.1", "node-3": "10.0.0.3"},
         )
         calls = _capture_iptables(monkeypatch)
 
-        step = PartitionPeersStep(
-            {"type": "partition_peers", "node": "node-2", "peers": ["node-1", "node-3"]}
-        )
-        step.manager = object()
-        ok = await step.execute({}, {})
+        ok = await _step(PartitionPeersStep, ["node-1", "node-3"]).execute({}, {})
         assert ok is True
 
-        # Symmetric DROP into DOCKER-USER for each peer, both directions.
-        drops = {
-            (a[a.index("-s") + 1], a[a.index("-d") + 1])
-            for a in calls
-            if "DOCKER-USER" in a and "-I" in a
-        }
-        assert drops == {
+        # Symmetric DROP inserted for each peer, both directions.
+        inserts = {(s, d) for (a, s, d) in calls if a == "-I"}
+        assert inserts == {
             ("10.0.0.2", "10.0.0.1"),
             ("10.0.0.1", "10.0.0.2"),
             ("10.0.0.2", "10.0.0.3"),
             ("10.0.0.3", "10.0.0.2"),
         }
-        # Inserts, not deletes (partition adds rules).
-        assert all("-I" in a and "-D" not in a for a in calls)
-        # No rule ever matches a non-container source (RPC path is untouched).
-        assert all(a.index("-j") and a[-1] == "DROP" for a in calls)
+        # Each insert is preceded by an existence check (idempotency probe).
+        assert sum(1 for (a, _s, _d) in calls if a == "-C") == 4
+        # A successful partition never deletes (no rollback).
+        assert all(a != "-D" for (a, _s, _d) in calls)
 
     @pytest.mark.asyncio
-    async def test_heal_deletes_the_same_rules(self, monkeypatch):
-        monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
-        monkeypatch.setattr(
-            network_mod,
-            "get_docker_client",
-            lambda _m: _fake_client({"node-2": "10.0.0.2", "node-1": "10.0.0.1"}),
+    async def test_partition_idempotent_skips_existing_rules(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # -C reports the rule already present → nothing should be inserted.
+        calls = _capture_iptables(monkeypatch, check_returncode=0)
+
+        ok = await _step(PartitionPeersStep, ["node-1"]).execute({}, {})
+        assert ok is True
+        assert all(a == "-C" for (a, _s, _d) in calls)  # only checks, no -I
+
+    @pytest.mark.asyncio
+    async def test_partition_rolls_back_on_partial_failure(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # First insert succeeds; the second fails → the first must be rolled back.
+        calls = _capture_iptables(
+            monkeypatch, fail_action="-I", fail_on=2, fail_stderr="iptables: failure"
         )
+
+        ok = await _step(PartitionPeersStep, ["node-1"]).execute({}, {})
+        assert ok is False
+        # The one rule that did get inserted is deleted again (rollback).
+        assert ("-D", "10.0.0.2", "10.0.0.1") in calls
+
+    @pytest.mark.asyncio
+    async def test_heal_deletes_until_gone(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
         calls = _capture_iptables(monkeypatch)
 
-        step = HealPeersStep(
-            {"type": "heal_peers", "node": "node-2", "peers": ["node-1"]}
-        )
-        step.manager = object()
-        ok = await step.execute({}, {})
+        ok = await _step(HealPeersStep, ["node-1"]).execute({}, {})
         assert ok is True
+        # Heal only deletes, both directions.
+        assert all(a == "-D" for (a, _s, _d) in calls)
+        assert {(s, d) for (a, s, d) in calls if a == "-D"} == {
+            ("10.0.0.2", "10.0.0.1"),
+            ("10.0.0.1", "10.0.0.2"),
+        }
 
-        # Two deletes (both directions), mirroring the partition inserts.
-        assert all("-D" in a and "-I" not in a for a in calls)
-        deletes = {(a[a.index("-s") + 1], a[a.index("-d") + 1]) for a in calls}
-        assert deletes == {("10.0.0.2", "10.0.0.1"), ("10.0.0.1", "10.0.0.2")}
+    @pytest.mark.asyncio
+    async def test_heal_fails_on_non_benign_iptables_error(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # A sudo/permission error is NOT "rule does not exist" → heal must fail
+        # rather than falsely report the partition healed.
+        calls = _capture_iptables(
+            monkeypatch,
+            fail_action="-D",
+            fail_on=1,
+            fail_stderr="sudo: a password is required",
+        )
+
+        ok = await _step(HealPeersStep, ["node-1"]).execute({}, {})
+        assert ok is False
+        assert any(a == "-D" for (a, _s, _d) in calls)
 
     @pytest.mark.asyncio
     async def test_binary_mode_is_a_no_op(self, monkeypatch):
         monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: True)
         calls = _capture_iptables(monkeypatch)
 
-        step = PartitionPeersStep(
-            {"type": "partition_peers", "node": "node-2", "peers": ["node-1"]}
-        )
-        step.manager = object()
-        ok = await step.execute({}, {})
+        ok = await _step(PartitionPeersStep, ["node-1"]).execute({}, {})
         assert ok is True
         assert calls == []  # no iptables touched without Docker
