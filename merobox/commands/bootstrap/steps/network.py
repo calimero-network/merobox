@@ -249,6 +249,33 @@ def _ip_on_network(container: Any, network_name: str) -> str | None:
     return ip
 
 
+def _ensure_bridge_netfilter() -> None:
+    """Best-effort: make iptables actually filter bridged traffic.
+
+    Two containers on the SAME docker bridge (e.g. the default `docker0`, the
+    common merobox case) talk at L2 — their packets only traverse the iptables
+    FORWARD chain, where DOCKER-USER lives, when the kernel's `br_netfilter`
+    hook is active (`net.bridge.bridge-nf-call-iptables=1`). Docker normally
+    enables it, but it can be off on minimal/CI hosts, in which case our DROP
+    rules silently never see same-bridge libp2p traffic and the "partition"
+    is a no-op. Turn it on before inserting rules.
+
+    Failures are non-fatal: if sudo/modprobe/sysctl is unavailable the partition
+    attempt (and any behavioral assertions downstream) will surface a partition
+    that didn't bite, rather than this masking it.
+    """
+    for argv in (
+        ["sudo", "-n", "modprobe", "br_netfilter"],
+        ["sudo", "-n", "sysctl", "-w", "net.bridge.bridge-nf-call-iptables=1"],
+    ):
+        try:
+            subprocess.run(
+                argv, capture_output=True, text=True, timeout=_IPTABLES_TIMEOUT_S
+            )
+        except (subprocess.SubprocessError, OSError):
+            pass
+
+
 def _iptables(action: str, src: str, dst: str) -> subprocess.CompletedProcess:
     """Run `iptables <action> DOCKER-USER -s src -d dst -j DROP` on the host.
 
@@ -385,6 +412,10 @@ class PartitionPeersStep(_PeerPartitionBase):
                 "container network to partition[/yellow]"
             )
             return True
+
+        # Without this, DROP rules don't bite same-bridge container pairs (the
+        # default docker0 case) because that traffic is L2-bridged.
+        _ensure_bridge_netfilter()
 
         resolved = self._resolve_ips(workflow_results, dynamic_values)
         if resolved is None:

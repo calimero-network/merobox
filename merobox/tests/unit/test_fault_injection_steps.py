@@ -930,6 +930,8 @@ def _capture_iptables(
 def _patch_docker(monkeypatch, ips):
     monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
     monkeypatch.setattr(network_mod, "get_docker_client", lambda _m: _fake_client(ips))
+    # Don't run real `sudo modprobe/sysctl` from unit tests.
+    monkeypatch.setattr(network_mod, "_ensure_bridge_netfilter", lambda: None)
 
 
 def _step(cls, peers):
