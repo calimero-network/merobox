@@ -90,6 +90,8 @@ from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.network import (
     ConnectNodeStep,
     DisconnectNodeStep,
+    HealPeersStep,
+    PartitionPeersStep,
 )
 from merobox.commands.bootstrap.steps.pause import (
     PauseContainerStep,
@@ -2124,6 +2126,10 @@ class WorkflowExecutor:
             return DisconnectNodeStep(step_config, **common_kwargs)
         elif step_type == "connect_node":
             return ConnectNodeStep(step_config, **common_kwargs)
+        elif step_type == "partition_peers":
+            return PartitionPeersStep(step_config, **common_kwargs)
+        elif step_type == "heal_peers":
+            return HealPeersStep(step_config, **common_kwargs)
         elif step_type == "inject_network_fault":
             return InjectNetworkFaultStep(step_config, **common_kwargs)
         elif step_type == "assert":

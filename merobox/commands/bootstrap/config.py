@@ -94,6 +94,8 @@ VALID_STEP_TYPES = frozenset(
         "restart_container",
         "disconnect_node",
         "connect_node",
+        "partition_peers",
+        "heal_peers",
         "inject_network_fault",
         "assert",
         "json_assert",
@@ -522,6 +524,35 @@ class ConnectNodeStepConfig(BaseStepConfig):
             "(the modern multi-node default); set explicitly for legacy / "
             "single-node setups that use Docker's default bridge."
         ),
+    )
+
+
+class PartitionPeersStepConfig(BaseStepConfig):
+    """Configuration for partition_peers step.
+
+    Cuts libp2p between ``node`` and each container in ``peers`` while keeping
+    every node RPC-reachable (unlike disconnect_node, which also severs the
+    node's published-port RPC). Linux + iptables + passwordless sudo only.
+    """
+
+    type: Literal["partition_peers"] = "partition_peers"
+    node: str = Field(..., description="Container to isolate from its peers")
+    peers: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Peer container(s) to cut this node's libp2p traffic to/from",
+    )
+
+
+class HealPeersStepConfig(BaseStepConfig):
+    """Configuration for heal_peers step — undoes a partition_peers (same args)."""
+
+    type: Literal["heal_peers"] = "heal_peers"
+    node: str = Field(..., description="Container to reconnect to its peers")
+    peers: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Peer container(s) whose libp2p partition to lift",
     )
 
 
@@ -1346,6 +1377,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "restart_container": RestartContainerStepConfig,
     "disconnect_node": DisconnectNodeStepConfig,
     "connect_node": ConnectNodeStepConfig,
+    "partition_peers": PartitionPeersStepConfig,
+    "heal_peers": HealPeersStepConfig,
     "inject_network_fault": InjectNetworkFaultStepConfig,
     "assert": AssertStep,
     "json_assert": JsonAssertStep,

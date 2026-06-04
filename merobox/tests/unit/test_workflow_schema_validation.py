@@ -1308,3 +1308,40 @@ class TestFaultInjectionStepSchemas:
         dumped = cfg.model_dump(exclude_none=True)
         assert dumped["mdns"] is False
         assert dumped["network_admin"] is False
+
+    def test_valid_partition_peers_step(self, config_module):
+        """A partition_peers step with node + non-empty peers validates."""
+        step = {
+            "name": "Partition node-2 from peers",
+            "type": "partition_peers",
+            "node": "node-2",
+            "peers": ["node-1", "node-3"],
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_heal_peers_step(self, config_module):
+        """A heal_peers step validates with the same shape as partition_peers."""
+        step = {
+            "name": "Heal node-2",
+            "type": "heal_peers",
+            "node": "node-2",
+            "peers": ["node-1"],
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_partition_peers_missing_peers_rejected(self, config_module):
+        """partition_peers requires a non-empty peers list."""
+        step = {"name": "bad", "type": "partition_peers", "node": "node-2"}
+        errors = config_module.validate_workflow_step(step, 0)
+        assert len(errors) > 0
+
+    def test_partition_peers_empty_peers_rejected(self, config_module):
+        """An empty peers list is rejected (min_length=1)."""
+        step = {
+            "name": "bad",
+            "type": "partition_peers",
+            "node": "node-2",
+            "peers": [],
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert len(errors) > 0

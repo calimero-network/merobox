@@ -20,6 +20,7 @@ Reconnect typically needs a few seconds for libp2p mesh reformation
 explicit `wait_for_sync` or short `wait` before asserting state propagation.
 """
 
+import subprocess
 from typing import Any
 
 import docker.errors
@@ -190,4 +191,199 @@ class ConnectNodeStep(BaseStep):
         # out, and the partition never actually "heals" for libp2p. No-op
         # outside a NAT topology.
         reinject_nat_default_route(self.manager, node_name, context="post-reconnect")
+        return True
+
+
+# ── Surgical peer-pair partition (calimero-network/merobox#278) ──────────────
+#
+# disconnect_node detaches a container from its bridge, which also tears down
+# its published-port DNAT — so the partitioned node can't be `call`ed. That is
+# fine when a test only reads a partitioned node *after* reconnecting, but it
+# can't drive a node that must execute a call WHILE partitioned (e.g. two nodes
+# concurrently rotating a SharedStorage writer set).
+#
+# partition_peers instead drops only *container-to-container* (libp2p) traffic
+# between specific peers, via symmetric DROP rules in the host's DOCKER-USER
+# iptables chain matched on the containers' bridge IPs. DOCKER-USER is consulted
+# for forwarded traffic, so the peers' libp2p packets are dropped both ways;
+# host→container traffic for the published RPC port arrives via DNAT with a
+# non-container source IP, so it does not match these rules and RPC stays up.
+# The container keeps its interface, IP, and routing table intact.
+#
+# Requires a Linux host with iptables + passwordless sudo (GitHub-hosted runners
+# qualify); it is incompatible with Docker Desktop's VM, so — like the other
+# Docker-network fault steps — it is a CI / Linux primitive.
+
+_DOCKER_USER_CHAIN = "DOCKER-USER"
+
+
+def _container_bridge_ip(container: Any) -> str | None:
+    """First non-empty IPv4 across the container's attached networks.
+
+    Works regardless of the network's name (merobox may use a custom bridge).
+    """
+    try:
+        container.reload()
+    except docker.errors.DockerException:
+        pass
+    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+    for net in networks.values():
+        ip = net.get("IPAddress")
+        if ip:
+            return ip
+    return None
+
+
+def _iptables_drop(action: str, src: str, dst: str) -> subprocess.CompletedProcess:
+    """Run one `iptables <action> DOCKER-USER -s src -d dst -j DROP` on the host.
+
+    `sudo -n` fails fast instead of prompting when sudo needs a password (so a
+    misconfigured host errors clearly rather than hanging the workflow).
+    """
+    return subprocess.run(
+        [
+            "sudo",
+            "-n",
+            "iptables",
+            action,
+            _DOCKER_USER_CHAIN,
+            "-s",
+            src,
+            "-d",
+            dst,
+            "-j",
+            "DROP",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+
+class _PeerPartitionBase(BaseStep):
+    """Shared field validation + IP resolution for partition_peers / heal_peers."""
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "peers"]
+
+    def _validate_field_types(self) -> None:
+        self._validate_string_field("node")
+        self._validate_list_field(
+            "peers", required=True, allow_empty=False, element_type=str
+        )
+
+    def _resolve_ips(self, workflow_results, dynamic_values):
+        """Resolve (node_name, node_ip, [(peer_name, peer_ip), ...]).
+
+        Returns None (after printing a diagnostic) if a container is missing or
+        has no bridge IP.
+        """
+        client = get_docker_client(self.manager)
+
+        def lookup(raw_name):
+            name = self._resolve_dynamic_value(
+                raw_name, workflow_results, dynamic_values
+            )
+            try:
+                container = client.containers.get(name)
+            except docker.errors.NotFound:
+                console.print(f"[red]✗ Container '{name}' not found[/red]")
+                return None, None
+            ip = _container_bridge_ip(container)
+            if not ip:
+                console.print(f"[red]✗ Could not resolve bridge IP for {name}[/red]")
+                return name, None
+            return name, ip
+
+        node_name, node_ip = lookup(self.config["node"])
+        if node_ip is None:
+            return None
+
+        peers = []
+        for raw_peer in self.config["peers"]:
+            peer_name, peer_ip = lookup(raw_peer)
+            if peer_ip is None:
+                return None
+            peers.append((peer_name, peer_ip))
+        return node_name, node_ip, peers
+
+
+class PartitionPeersStep(_PeerPartitionBase):
+    """Cut libp2p between ``node`` and each of ``peers`` while keeping RPC up.
+
+    Inserts symmetric DROP rules into the host's DOCKER-USER chain on the
+    containers' bridge IPs. Heal with heal_peers (same args).
+    """
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        if is_binary_mode(self.manager):
+            console.print(
+                "[yellow]Skipping partition_peers: --no-docker mode has no "
+                "container network to partition[/yellow]"
+            )
+            return True
+
+        resolved = self._resolve_ips(workflow_results, dynamic_values)
+        if resolved is None:
+            return False
+        node_name, node_ip, peers = resolved
+
+        for peer_name, peer_ip in peers:
+            console.print(
+                f"[yellow]Partitioning {node_name} ({node_ip}) <-x-> "
+                f"{peer_name} ({peer_ip}) — libp2p only, RPC stays up[/yellow]"
+            )
+            for src, dst in ((node_ip, peer_ip), (peer_ip, node_ip)):
+                result = _iptables_drop("-I", src, dst)
+                if result.returncode != 0:
+                    safe_console_error(
+                        "✗ iptables insert failed ({src} -> {dst}): {out}",
+                        src=src,
+                        dst=dst,
+                        out=result.stdout.strip(),
+                    )
+                    return False
+
+        console.print(
+            f"[green]✓ Partitioned {node_name} from {len(peers)} peer(s) "
+            f"(libp2p dropped; RPC reachable)[/green]"
+        )
+        return True
+
+
+class HealPeersStep(_PeerPartitionBase):
+    """Remove the DROP rules a prior partition_peers added (same args).
+
+    Deleting a rule that is already gone is not an error, so the step is
+    idempotent and safe even after a partial partition.
+    """
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        if is_binary_mode(self.manager):
+            console.print(
+                "[yellow]Skipping heal_peers: --no-docker mode has no "
+                "container network to heal[/yellow]"
+            )
+            return True
+
+        resolved = self._resolve_ips(workflow_results, dynamic_values)
+        if resolved is None:
+            return False
+        node_name, node_ip, peers = resolved
+
+        for peer_name, peer_ip in peers:
+            console.print(f"[yellow]Healing {node_name} <--> {peer_name}[/yellow]")
+            for src, dst in ((node_ip, peer_ip), (peer_ip, node_ip)):
+                result = _iptables_drop("-D", src, dst)
+                if result.returncode != 0:
+                    # A missing rule is the common, benign case (already healed).
+                    console.print(
+                        f"[dim]  no rule {src} -> {dst} to remove (already healed)[/dim]"
+                    )
+
+        console.print(f"[green]✓ Healed {node_name} from {len(peers)} peer(s)[/green]")
         return True

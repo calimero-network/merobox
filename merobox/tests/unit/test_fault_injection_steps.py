@@ -16,6 +16,8 @@ from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.network import (
     ConnectNodeStep,
     DisconnectNodeStep,
+    HealPeersStep,
+    PartitionPeersStep,
 )
 from merobox.commands.bootstrap.steps.pause import (
     PauseContainerStep,
@@ -820,3 +822,140 @@ class TestConnectNodeReinjectsRoute:
         assert ok is True
         # The reconnected node, tagged with the post-reconnect context.
         assert reinjected == [("sync-resil-node-2", "post-reconnect")], reinjected
+
+
+class TestPartitionPeersValidation:
+    def test_partition_minimal(self):
+        PartitionPeersStep(
+            {"type": "partition_peers", "node": "node-2", "peers": ["node-1"]}
+        )
+
+    def test_heal_minimal(self):
+        HealPeersStep(
+            {"type": "heal_peers", "node": "node-2", "peers": ["node-1", "node-3"]}
+        )
+
+    def test_missing_node_rejected(self):
+        with pytest.raises(ValueError, match="node"):
+            PartitionPeersStep({"type": "partition_peers", "peers": ["node-1"]})
+
+    def test_missing_peers_rejected(self):
+        with pytest.raises(ValueError, match="peers"):
+            PartitionPeersStep({"type": "partition_peers", "node": "node-2"})
+
+    def test_empty_peers_rejected(self):
+        with pytest.raises(ValueError, match="peers"):
+            PartitionPeersStep(
+                {"type": "partition_peers", "node": "node-2", "peers": []}
+            )
+
+
+class _FakeContainer:
+    def __init__(self, ip):
+        self.attrs = {
+            "NetworkSettings": {"Networks": {"merobox-cluster": {"IPAddress": ip}}}
+        }
+
+    def reload(self):
+        return None
+
+
+def _fake_client(ips: dict):
+    """Docker client stub whose containers.get(name) yields a container at ips[name]."""
+
+    class _Client:
+        class containers:
+            @staticmethod
+            def get(name):
+                return _FakeContainer(ips[name])
+
+    return _Client()
+
+
+def _capture_iptables(monkeypatch):
+    """Patch network_mod.subprocess.run, returning the captured argv lists."""
+    calls: list[list[str]] = []
+
+    class _Completed:
+        returncode = 0
+        stdout = ""
+
+    def _fake_run(argv, **_kwargs):
+        calls.append(argv)
+        return _Completed()
+
+    monkeypatch.setattr(network_mod.subprocess, "run", _fake_run)
+    return calls
+
+
+class TestPartitionPeersExecute:
+    @pytest.mark.asyncio
+    async def test_partition_inserts_symmetric_drops_keeps_rpc(self, monkeypatch):
+        monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
+        monkeypatch.setattr(
+            network_mod,
+            "get_docker_client",
+            lambda _m: _fake_client(
+                {"node-2": "10.0.0.2", "node-1": "10.0.0.1", "node-3": "10.0.0.3"}
+            ),
+        )
+        calls = _capture_iptables(monkeypatch)
+
+        step = PartitionPeersStep(
+            {"type": "partition_peers", "node": "node-2", "peers": ["node-1", "node-3"]}
+        )
+        step.manager = object()
+        ok = await step.execute({}, {})
+        assert ok is True
+
+        # Symmetric DROP into DOCKER-USER for each peer, both directions.
+        drops = {
+            (a[a.index("-s") + 1], a[a.index("-d") + 1])
+            for a in calls
+            if "DOCKER-USER" in a and "-I" in a
+        }
+        assert drops == {
+            ("10.0.0.2", "10.0.0.1"),
+            ("10.0.0.1", "10.0.0.2"),
+            ("10.0.0.2", "10.0.0.3"),
+            ("10.0.0.3", "10.0.0.2"),
+        }
+        # Inserts, not deletes (partition adds rules).
+        assert all("-I" in a and "-D" not in a for a in calls)
+        # No rule ever matches a non-container source (RPC path is untouched).
+        assert all(a.index("-j") and a[-1] == "DROP" for a in calls)
+
+    @pytest.mark.asyncio
+    async def test_heal_deletes_the_same_rules(self, monkeypatch):
+        monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
+        monkeypatch.setattr(
+            network_mod,
+            "get_docker_client",
+            lambda _m: _fake_client({"node-2": "10.0.0.2", "node-1": "10.0.0.1"}),
+        )
+        calls = _capture_iptables(monkeypatch)
+
+        step = HealPeersStep(
+            {"type": "heal_peers", "node": "node-2", "peers": ["node-1"]}
+        )
+        step.manager = object()
+        ok = await step.execute({}, {})
+        assert ok is True
+
+        # Two deletes (both directions), mirroring the partition inserts.
+        assert all("-D" in a and "-I" not in a for a in calls)
+        deletes = {(a[a.index("-s") + 1], a[a.index("-d") + 1]) for a in calls}
+        assert deletes == {("10.0.0.2", "10.0.0.1"), ("10.0.0.1", "10.0.0.2")}
+
+    @pytest.mark.asyncio
+    async def test_binary_mode_is_a_no_op(self, monkeypatch):
+        monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: True)
+        calls = _capture_iptables(monkeypatch)
+
+        step = PartitionPeersStep(
+            {"type": "partition_peers", "node": "node-2", "peers": ["node-1"]}
+        )
+        step.manager = object()
+        ok = await step.execute({}, {})
+        assert ok is True
+        assert calls == []  # no iptables touched without Docker

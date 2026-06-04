@@ -88,6 +88,8 @@ from merobox.commands.bootstrap.steps.namespace import (
 from merobox.commands.bootstrap.steps.network import (
     ConnectNodeStep,
     DisconnectNodeStep,
+    HealPeersStep,
+    PartitionPeersStep,
 )
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.pause import (
@@ -147,6 +149,8 @@ __all__ = [
     "RestartContainerStep",
     "DisconnectNodeStep",
     "ConnectNodeStep",
+    "PartitionPeersStep",
+    "HealPeersStep",
     "InjectNetworkFaultStep",
     "AssertStep",
     "AssertLogAbsentStep",

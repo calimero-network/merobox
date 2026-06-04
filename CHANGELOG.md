@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `partition_peers` / `heal_peers` workflow steps: a **surgical peer-pair
+  network partition** that drops only container-to-container (libp2p) traffic
+  between a node and the listed peers, while leaving the node's published-port
+  RPC reachable. Unlike `disconnect_node` (which detaches the container from
+  its bridge and so also severs its RPC), this lets a workflow issue `call`s to
+  a node *while* it is partitioned from its peers — required for tests that
+  must drive both sides of a split (e.g. two nodes concurrently rotating a
+  SharedStorage writer set). Implemented as symmetric DROP rules in the host's
+  `DOCKER-USER` iptables chain matched on the containers' bridge IPs; a CI /
+  Linux primitive (needs iptables + passwordless sudo). `heal_peers` removes
+  the rules (same args; idempotent). Closes calimero-network/merobox#278.
+
 ## [0.6.34] - 2026-06-03
 
 ### Added
