@@ -222,7 +222,17 @@ _IPTABLES_TIMEOUT_S = 30
 _MAX_DUP_DELETES = 16
 # iptables stderr substrings that mean "the rule/chain isn't there" — i.e. the
 # benign already-healed case, as opposed to a real failure (sudo denied, etc.).
-_BENIGN_DELETE_ERRORS = ("does not exist", "no chain/target/match")
+# `-D` on a missing rule is phrased differently across iptables versions/
+# backends, e.g. "Bad rule (does not exist that you attempted to delete)" and
+# "Bad rule (does a matching rule exist in that chain?)" — match both, plus the
+# missing-chain case. (A genuinely malformed spec yields a different message,
+# e.g. "Bad argument"/"unknown option".)
+_BENIGN_DELETE_ERRORS = (
+    "does not exist",
+    "matching rule",
+    "bad rule",
+    "no chain/target/match",
+)
 
 
 def _ip_on_network(container: Any, network_name: str) -> str | None:
