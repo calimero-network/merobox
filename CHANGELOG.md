@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.35] - 2026-06-04
+
 ### Added
 
 - New `partition_peers` / `heal_peers` workflow steps: a **surgical peer-pair
