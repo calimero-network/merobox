@@ -225,25 +225,16 @@ _MAX_DUP_DELETES = 16
 _BENIGN_DELETE_ERRORS = ("does not exist", "no chain/target/match")
 
 
-def _libp2p_ip(container: Any) -> str | None:
-    """The container's IPv4 on the network it uses for inter-node libp2p.
+def _ip_on_network(container: Any, network_name: str) -> str | None:
+    """The container's validated IPv4 on a SPECIFIC Docker network.
 
-    Resolves the IP on the network ``detect_node_network`` would partition
-    (merobox-cluster / calimero_web / the single attached bridge) rather than
-    whichever network Docker happened to list first — so on a multi-attached
-    (e.g. auth-mode) node the DROP rules target the subnet libp2p actually flows
-    on. Falls back to any attached IPv4 if the chosen network has none, and
-    validates the result. Returns None if no well-formed IPv4 is found.
+    Reads `NetworkSettings.Networks[network_name].IPAddress` (caller is
+    responsible for a fresh `reload()`), so partition rules can be pinned to one
+    network that every endpoint shares — see `_resolve_ips`. Returns None if the
+    container isn't on that network or the IP is malformed.
     """
-    # detect_node_network reloads the container and applies the priority rule.
-    network_name = detect_node_network(container)
     networks = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
     ip = (networks.get(network_name) or {}).get("IPAddress") or ""
-    if not ip:
-        for net in networks.values():
-            if net.get("IPAddress"):
-                ip = net["IPAddress"]
-                break
     if not ip:
         return None
     try:
@@ -311,38 +302,59 @@ class _PeerPartitionBase(BaseStep):
     def _resolve_ips(self, workflow_results, dynamic_values):
         """Resolve (node_name, node_ip, [(peer_name, peer_ip), ...]).
 
-        Returns None (after a diagnostic naming the step) if a container is
-        missing or has no usable libp2p IPv4.
+        Picks the libp2p network ONCE from the node (via `detect_node_network`,
+        which applies the merobox-cluster / calimero_web / bridge priority) and
+        pins the node AND every peer to that same network. Resolving each
+        container independently could otherwise land the node and a peer on
+        different networks/subnets — DROP rules between IPs that don't share a
+        network are meaningless, so libp2p wouldn't actually be cut. A peer that
+        isn't on the node's network is a real misconfiguration and is rejected.
+
+        Returns None (after a diagnostic naming the step) on any miss.
         """
         client = get_docker_client(self.manager)
         step_type = self.config.get("type", "partition_peers")
 
-        def lookup(raw_name):
+        def get_container(raw_name):
             name = self._resolve_dynamic_value(
                 raw_name, workflow_results, dynamic_values
             )
             try:
-                container = client.containers.get(name)
+                return name, client.containers.get(name)
             except docker.errors.NotFound:
                 console.print(f"[red]✗ {step_type}: container '{name}' not found[/red]")
-                return None, None
-            ip = _libp2p_ip(container)
-            if not ip:
-                console.print(
-                    f"[red]✗ {step_type}: could not resolve a libp2p IP "
-                    f"for {name}[/red]"
-                )
                 return name, None
-            return name, ip
 
-        node_name, node_ip = lookup(self.config["node"])
-        if node_ip is None:
+        node_name, node_container = get_container(self.config["node"])
+        if node_container is None:
+            return None
+
+        # detect_node_network reloads the node and returns the network all
+        # endpoints must share for the partition to bite.
+        network = detect_node_network(node_container)
+        node_ip = _ip_on_network(node_container, network)
+        if not node_ip:
+            console.print(
+                f"[red]✗ {step_type}: {node_name} has no IPv4 on "
+                f"network '{network}'[/red]"
+            )
             return None
 
         peers = []
         for raw_peer in self.config["peers"]:
-            peer_name, peer_ip = lookup(raw_peer)
-            if peer_ip is None:
+            peer_name, peer_container = get_container(raw_peer)
+            if peer_container is None:
+                return None
+            try:
+                peer_container.reload()
+            except docker.errors.DockerException:
+                pass
+            peer_ip = _ip_on_network(peer_container, network)
+            if not peer_ip:
+                console.print(
+                    f"[red]✗ {step_type}: {peer_name} is not on {node_name}'s "
+                    f"network '{network}' — can't partition them[/red]"
+                )
                 return None
             peers.append((peer_name, peer_ip))
         return node_name, node_ip, peers

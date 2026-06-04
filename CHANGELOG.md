@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DOCKER-USER` iptables chain matched on the containers' bridge IPs; a CI /
   Linux primitive (needs iptables + passwordless sudo). `heal_peers` removes
   the rules (same args; idempotent). Closes calimero-network/merobox#278.
+  Behavioral coverage in `workflow-fault-injection-partition-peers-example.yml`
+  (Docker matrix): proves RPC stays up on the isolated node, the partition
+  actually blocks delivery, and heal restores it.
 
 ## [0.6.34] - 2026-06-03
 
