@@ -107,7 +107,10 @@ class TestAbortMigrationExecute:
         # Aborting with nothing pending is a no-op success (aborted=False).
         step = AbortMigrationStep(self.config)
         client = MagicMock()
-        client.abort_migration.return_value = {"namespace_id": "ns123", "aborted": False}
+        client.abort_migration.return_value = {
+            "namespace_id": "ns123",
+            "aborted": False,
+        }
         workflow_results = {}
         p1, p2, p3 = self._patched(step, client)
         with p1, p2, p3:
