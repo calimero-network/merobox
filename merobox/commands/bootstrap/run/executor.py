@@ -20,6 +20,7 @@ from rich.progress import (
 
 from merobox.commands.auth import AUTH_METHOD_NONE, AuthenticationError, AuthManager
 from merobox.commands.bootstrap.steps import (
+    AbortMigrationStep,
     AddGroupMembersStep,
     AssertCascadeCompleteStep,
     CascadeNamespaceApplicationStep,
@@ -2226,6 +2227,8 @@ class WorkflowExecutor:
             return GetCascadeStatusStep(step_config, **common_kwargs)
         elif step_type == "assert_cascade_complete":
             return AssertCascadeCompleteStep(step_config, **common_kwargs)
+        elif step_type == "abort_migration":
+            return AbortMigrationStep(step_config, **common_kwargs)
         elif step_type == "get_group_upgrade_status":
             return GetGroupUpgradeStatusStep(step_config, **common_kwargs)
         elif step_type == "retry_group_upgrade":

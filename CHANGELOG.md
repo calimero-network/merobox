@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.35] - 2026-06-06
+
+### Added
+
+- New `abort_migration` workflow step: logically aborts an in-flight namespace
+  migration via the `abort_migration(namespace_id)` binding (calimero-client-py
+  >= 0.6.18, wrapping `POST admin-api/groups/{namespace_id}/migration/abort`
+  from calimero-network/core#2681). Flips the namespace's pending migration
+  target back to the pre-migration app id and drops the pending marker,
+  cascading to descendant subgroups; idempotent. Stores `{namespace_id,
+  aborted}` under `abort_migration_{node}`. Replaces the raw `script`+curl
+  stopgap in core's app-migration scenario 31. Carries the same client-version
+  pre-flight guard as the cascade-status steps.
+
 ## [0.6.34] - 2026-06-03
 
 ### Added

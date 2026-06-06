@@ -36,6 +36,11 @@ _CASCADE_MIN_CLIENT_VERSION = (0, 6, 15)
 # wrapping the RPC from calimero-network/core#2524).
 _CASCADE_STATUS_MIN_CLIENT_VERSION = (0, 6, 17)
 
+# `abort_migration` needs the `abort_migration(namespace_id)` binding, added in
+# calimero-client-py 0.6.18 (calimero-network/calimero-client-py#61, wrapping
+# the admin route from calimero-network/core#2681).
+_ABORT_MIGRATION_MIN_CLIENT_VERSION = (0, 6, 18)
+
 
 def _resolve_client_py_version() -> tuple[tuple[int, ...] | None, str]:
     try:
@@ -866,3 +871,92 @@ class AssertCascadeCompleteStep(BaseStep):
             return True
         console.print(f"[red]✗ {msg}[/red]")
         return False
+
+
+class AbortMigrationStep(BaseStep):
+    """Logically abort an in-flight namespace migration.
+
+    Calls the `abort_migration` binding (calimero-client-py 0.6.18, wrapping
+    calimero-network/core#2681's
+    `POST admin-api/groups/{namespace_id}/migration/abort`). Flips the
+    namespace's pending migration target back to the pre-migration app id and
+    drops the pending marker, cascading to descendant subgroups. Idempotent
+    (nothing pending => no-op). The `{namespace_id, aborted}` response is stored
+    under `abort_migration_{node}` and reachable from an `outputs:` block.
+
+    Requires calimero-client-py >= 0.6.18.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "namespace_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "namespace_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+
+        # Pre-flight version guard, same policy as the cascade steps: only block
+        # when client-py is *known* to predate the binding. Honors
+        # expected_failure for regression workflows pinning an old client.
+        if _client_py_below(_ABORT_MIGRATION_MIN_CLIENT_VERSION):
+            min_str = ".".join(str(p) for p in _ABORT_MIGRATION_MIN_CLIENT_VERSION)
+            msg = (
+                f"abort_migration requires calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if self._is_expected_failure():
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
+
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.abort_migration(namespace_id=namespace_id)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("abort_migration failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]abort_migration failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        # A transport-level success can still carry a JSON-RPC error body.
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        data = result["data"] or {}
+        workflow_results[f"abort_migration_{node_name}"] = data
+        if "outputs" in self.config:
+            self._export_variables(data, node_name, dynamic_values)
+        aborted = data.get("aborted") if isinstance(data, dict) else None
+        console.print(
+            f"[green]✓ abort_migration on namespace {namespace_id} ({node_name}): "
+            f"aborted={aborted}[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
