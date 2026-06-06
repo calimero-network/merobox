@@ -78,6 +78,8 @@ from merobox.commands.bootstrap.steps.namespace import (
 from merobox.commands.bootstrap.steps.network import (
     ConnectNodeStep,
     DisconnectNodeStep,
+    HealPeersStep,
+    PartitionPeersStep,
 )
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.pause import (
@@ -337,6 +339,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = DisconnectNodeStep
         elif step_type == "connect_node":
             step_class = ConnectNodeStep
+        elif step_type == "partition_peers":
+            step_class = PartitionPeersStep
+        elif step_type == "heal_peers":
+            step_class = HealPeersStep
         elif step_type == "inject_network_fault":
             step_class = InjectNetworkFaultStep
         else:

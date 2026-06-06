@@ -948,11 +948,15 @@ class AbortMigrationStep(BaseStep):
                 return True
             return False
 
-        data = result["data"] or {}
+        # The abort route returns a `{namespace_id, aborted}` object; coerce any
+        # non-dict body to {} (rather than `or {}`, which would also swallow a
+        # falsy-but-valid dict) so export/lookup below stay well-typed.
+        raw = result["data"]
+        data = raw if isinstance(raw, dict) else {}
         workflow_results[f"abort_migration_{node_name}"] = data
         if "outputs" in self.config:
             self._export_variables(data, node_name, dynamic_values)
-        aborted = data.get("aborted") if isinstance(data, dict) else None
+        aborted = data.get("aborted")
         console.print(
             f"[green]✓ abort_migration on namespace {namespace_id} ({node_name}): "
             f"aborted={aborted}[/green]"

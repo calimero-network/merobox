@@ -145,3 +145,27 @@ class TestAbortMigrationExecute:
         with p1, p2, p3:
             result = _run(step.execute({}, {}))
         assert result is True
+
+    def test_version_guard_old_client_fails(self):
+        # client-py known to predate the binding ⇒ pre-flight blocks (fail-closed).
+        step = AbortMigrationStep(self.config)
+        with patch(f"{_MODULE}._client_py_below", return_value=True):
+            result = _run(step.execute({}, {}))
+        assert result is False
+
+    def test_version_guard_old_client_expected_failure_passes(self):
+        cfg = {**self.config, "expected_failure": True}
+        step = AbortMigrationStep(cfg)
+        with patch(f"{_MODULE}._client_py_below", return_value=True):
+            result = _run(step.execute({}, {}))
+        assert result is True
+
+    def test_jsonrpc_error_body_fails_step(self):
+        # A transport-level success can still carry a JSON-RPC error body.
+        step = AbortMigrationStep(self.config)
+        client = MagicMock()
+        client.abort_migration.return_value = {"namespace_id": "ns123", "aborted": True}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3, patch.object(step, "_check_jsonrpc_error", return_value=True):
+            result = _run(step.execute({}, {}))
+        assert result is False

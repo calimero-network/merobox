@@ -1,0 +1,227 @@
+description: |
+  Behavioral verification for the partition_peers / heal_peers steps — the
+  surgical libp2p partition that keeps RPC reachable (merobox#278).
+
+  Unlike disconnect_node (which detaches the container from its bridge and so
+  also kills its published-port RPC), partition_peers drops ONLY container-to-
+  container libp2p traffic via the host's DOCKER-USER iptables chain, leaving
+  every node callable. This workflow proves all three properties on a real
+  3-node mesh running kv_store:
+
+    1. RPC stays up under partition (the headline, vs disconnect_node):
+       partition node-1 from {node-2, node-3}, then `set` AND `get` on the
+       isolated node-1 — both calls succeed. node-2 (the other side) is
+       likewise driven while partitioned.
+    2. The partition actually bites (catches a silent no-op): node-1's
+       during-partition write does NOT reach node-3, and node-2's write does
+       NOT reach the isolated node-1 — asserted with not_contains while still
+       partitioned (only possible because RPC is up).
+    3. heal_peers restores delivery: after heal + wait_for_sync, both
+       during-partition writes converge on every node.
+
+  Docker-only (the steps short-circuit under --no-docker, and the iptables
+  rules need a real bridge); the `fault-injection` name keeps it out of the
+  binary-mode matrix and in the Docker matrix. Slower (~3-5 min) because of a
+  real app install + context join + sync cycles.
+name: Fault Injection — partition_peers (RPC-preserving libp2p cut)
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  # mDNS left ENABLED: count-mode-no-restart starts nodes individually without
+  # auto-wiring bootstrap peers, so mDNS over the bridge is how they form the
+  # initial mesh. partition_peers severs the bridge path between the named
+  # peers cleanly, so the partition is still real.
+
+steps:
+  # --- Setup: 3-node mesh on kv_store ---
+  - name: Install kv_store on node 1
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create mesh context across all 3 nodes
+    type: create_mesh
+    context_node: calimero-node-1
+    application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
+    nodes:
+      - calimero-node-2
+      - calimero-node-3
+    capability: member
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  - name: Set baseline key from node 1
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: baseline
+      value: ok
+
+  - name: Wait for baseline to reach all 3 nodes
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 60
+
+  - name: Read baseline on node 3 (sanity — mesh works before we break it)
+    type: call
+    node: calimero-node-3
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: baseline
+    outputs:
+      baseline_node3: result
+  - name: Assert baseline replicated to node 3
+    type: assert
+    statements:
+      - "contains({{baseline_node3}}, 'ok')"
+
+  # ====================================================================
+  # Partition node-1 from BOTH peers (so node-3 can't relay node-2 to it)
+  # ====================================================================
+  - name: Partition node-1 from node-2 and node-3 (libp2p only; RPC stays up)
+    type: partition_peers
+    node: calimero-node-1
+    peers:
+      - calimero-node-2
+      - calimero-node-3
+
+  - name: Settle after the partition takes effect
+    type: wait
+    seconds: 8
+
+  # --- Property 1: RPC works on the isolated node (the headline) ---
+  - name: Write a key on the PARTITIONED node-1
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: from_n1
+      value: n1_while_partitioned
+  - name: Read it back on node-1 — proves RPC is reachable under partition
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: from_n1
+    outputs:
+      n1_self_read: result
+  - name: Assert node-1 is callable + functional while partitioned
+    type: assert
+    statements:
+      - "contains({{n1_self_read}}, 'n1_while_partitioned')"
+
+  # node-2 (the other side) is also driven while partitioned.
+  - name: Write a different key on node-2
+    type: call
+    node: calimero-node-2
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: from_n2
+      value: n2_while_partitioned
+
+  - name: node-2 and node-3 still converge with each other
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 30
+
+  - name: Grace window — gossip WOULD cross here if the partition were a no-op
+    type: wait
+    seconds: 10
+
+  # --- Property 2: the partition actually bites (assertable because RPC is up) ---
+  - name: Read node-1's key on node-3 (across the partition)
+    type: call
+    node: calimero-node-3
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: from_n1
+    outputs:
+      n1_key_on_node3: result
+  - name: Assert node-1's write did NOT cross the partition to node-3
+    type: assert
+    statements:
+      - "not_contains({{n1_key_on_node3}}, 'n1_while_partitioned')"
+
+  - name: Read node-2's key on the isolated node-1
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: from_n2
+    outputs:
+      n2_key_on_node1: result
+  - name: Assert node-1 did NOT receive node-2's write either (fully isolated)
+    type: assert
+    statements:
+      - "not_contains({{n2_key_on_node1}}, 'n2_while_partitioned')"
+
+  # ====================================================================
+  # Heal and prove delivery resumes both ways
+  # ====================================================================
+  - name: Heal the partition
+    type: heal_peers
+    node: calimero-node-1
+    peers:
+      - calimero-node-2
+      - calimero-node-3
+
+  - name: Wait for the mesh to reconverge after heal
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+      - calimero-node-3
+    timeout: 90
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Read node-1's key on node-3 after heal
+    type: call
+    node: calimero-node-3
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: from_n1
+    outputs:
+      n1_key_on_node3_after_heal: result
+  - name: Assert node-1's write reached node-3 after heal
+    type: assert
+    statements:
+      - "contains({{n1_key_on_node3_after_heal}}, 'n1_while_partitioned')"
+
+  - name: Read node-2's key on node-1 after heal
+    type: call
+    node: calimero-node-1
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: from_n2
+    outputs:
+      n2_key_on_node1_after_heal: result
+  - name: Assert node-2's write reached node-1 after heal
+    type: assert
+    statements:
+      - "contains({{n2_key_on_node1_after_heal}}, 'n2_while_partitioned')"

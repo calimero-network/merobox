@@ -16,6 +16,8 @@ from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.network import (
     ConnectNodeStep,
     DisconnectNodeStep,
+    HealPeersStep,
+    PartitionPeersStep,
 )
 from merobox.commands.bootstrap.steps.pause import (
     PauseContainerStep,
@@ -820,3 +822,236 @@ class TestConnectNodeReinjectsRoute:
         assert ok is True
         # The reconnected node, tagged with the post-reconnect context.
         assert reinjected == [("sync-resil-node-2", "post-reconnect")], reinjected
+
+
+class TestPartitionPeersValidation:
+    def test_partition_minimal(self):
+        PartitionPeersStep(
+            {"type": "partition_peers", "node": "node-2", "peers": ["node-1"]}
+        )
+
+    def test_heal_minimal(self):
+        HealPeersStep(
+            {"type": "heal_peers", "node": "node-2", "peers": ["node-1", "node-3"]}
+        )
+
+    def test_missing_node_rejected(self):
+        with pytest.raises(ValueError, match="node"):
+            PartitionPeersStep({"type": "partition_peers", "peers": ["node-1"]})
+
+    def test_missing_peers_rejected(self):
+        with pytest.raises(ValueError, match="peers"):
+            PartitionPeersStep({"type": "partition_peers", "node": "node-2"})
+
+    def test_empty_peers_rejected(self):
+        with pytest.raises(ValueError, match="peers"):
+            PartitionPeersStep(
+                {"type": "partition_peers", "node": "node-2", "peers": []}
+            )
+
+
+class _FakeContainer:
+    def __init__(self, ip):
+        self.attrs = {
+            "NetworkSettings": {"Networks": {"merobox-cluster": {"IPAddress": ip}}}
+        }
+
+    def reload(self):
+        return None
+
+
+def _fake_client(ips: dict):
+    """Docker client stub whose containers.get(name) yields a container at ips[name]."""
+
+    class _Client:
+        class containers:
+            @staticmethod
+            def get(name):
+                return _FakeContainer(ips[name])
+
+    return _Client()
+
+
+class _IptablesResult:
+    def __init__(self, returncode, stderr=""):
+        self.returncode = returncode
+        self.stdout = ""
+        self.stderr = stderr
+
+
+def _capture_iptables(
+    monkeypatch,
+    *,
+    check_returncode=1,
+    fail_action=None,
+    fail_on=1,
+    fail_stderr="boom",
+    delete_succeeds=1,
+):
+    """Patch network_mod._iptables and record (action, src, dst) per call.
+
+    Simulates iptables without touching the host:
+    - ``-C`` returns ``check_returncode`` (default 1 = "rule not present", so a
+      partition proceeds to ``-I``; pass 0 to simulate an existing rule).
+    - ``-D`` returns 0 for the first ``delete_succeeds`` calls per (src,dst),
+      then a benign "does not exist" — so heal's delete-until-gone removes that
+      many copies and stops. ``delete_succeeds=None`` makes ``-D`` ALWAYS succeed
+      (to exercise the _MAX_DUP_DELETES cap).
+    - ``-I`` (and anything else) returns 0.
+    - If ``fail_action`` is set, the ``fail_on``-th call of that action returns a
+      non-zero result carrying ``fail_stderr`` (to exercise failure paths).
+    """
+    calls: list[tuple[str, str, str]] = []
+    delete_counts: dict = {}
+    counts: dict = {}
+
+    def _fake_iptables(action, src, dst):
+        calls.append((action, src, dst))
+        counts[action] = counts.get(action, 0) + 1
+        if action == fail_action and counts[action] == fail_on:
+            return _IptablesResult(1, fail_stderr)
+        if action == "-C":
+            return _IptablesResult(check_returncode)
+        if action == "-D":
+            n = delete_counts.get((src, dst), 0)
+            delete_counts[(src, dst)] = n + 1
+            if delete_succeeds is None or n < delete_succeeds:
+                return _IptablesResult(0)
+            return _IptablesResult(
+                1,
+                "iptables: Bad rule (does not exist that you attempted to delete)",
+            )
+        return _IptablesResult(0)  # -I
+
+    monkeypatch.setattr(network_mod, "_iptables", _fake_iptables)
+    return calls
+
+
+def _patch_docker(monkeypatch, ips):
+    monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: False)
+    monkeypatch.setattr(network_mod, "get_docker_client", lambda _m: _fake_client(ips))
+    # Don't run real `sudo modprobe/sysctl` from unit tests.
+    monkeypatch.setattr(network_mod, "_ensure_bridge_netfilter", lambda: None)
+
+
+def _step(cls, peers):
+    step = cls({"type": cls.__name__, "node": "node-2", "peers": peers})
+    step.manager = object()
+    return step
+
+
+class TestPartitionPeersExecute:
+    @pytest.mark.asyncio
+    async def test_partition_inserts_symmetric_drops_keeps_rpc(self, monkeypatch):
+        _patch_docker(
+            monkeypatch,
+            {"node-2": "10.0.0.2", "node-1": "10.0.0.1", "node-3": "10.0.0.3"},
+        )
+        calls = _capture_iptables(monkeypatch)
+
+        ok = await _step(PartitionPeersStep, ["node-1", "node-3"]).execute({}, {})
+        assert ok is True
+
+        # Symmetric DROP inserted for each peer, both directions.
+        inserts = {(s, d) for (a, s, d) in calls if a == "-I"}
+        assert inserts == {
+            ("10.0.0.2", "10.0.0.1"),
+            ("10.0.0.1", "10.0.0.2"),
+            ("10.0.0.2", "10.0.0.3"),
+            ("10.0.0.3", "10.0.0.2"),
+        }
+        # Each insert is preceded by an existence check (idempotency probe).
+        assert sum(1 for (a, _s, _d) in calls if a == "-C") == 4
+        # A successful partition never deletes (no rollback).
+        assert all(a != "-D" for (a, _s, _d) in calls)
+
+    @pytest.mark.asyncio
+    async def test_partition_idempotent_skips_existing_rules(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # -C reports the rule already present → nothing should be inserted.
+        calls = _capture_iptables(monkeypatch, check_returncode=0)
+
+        ok = await _step(PartitionPeersStep, ["node-1"]).execute({}, {})
+        assert ok is True
+        assert all(a == "-C" for (a, _s, _d) in calls)  # only checks, no -I
+
+    @pytest.mark.asyncio
+    async def test_partition_rolls_back_on_partial_failure(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # First insert succeeds; the second fails → the first must be rolled back.
+        calls = _capture_iptables(
+            monkeypatch, fail_action="-I", fail_on=2, fail_stderr="iptables: failure"
+        )
+
+        ok = await _step(PartitionPeersStep, ["node-1"]).execute({}, {})
+        assert ok is False
+        # The one rule that did get inserted is deleted again (rollback).
+        assert ("-D", "10.0.0.2", "10.0.0.1") in calls
+
+    @pytest.mark.asyncio
+    async def test_heal_deletes_until_gone(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        calls = _capture_iptables(monkeypatch)
+
+        ok = await _step(HealPeersStep, ["node-1"]).execute({}, {})
+        assert ok is True
+        # Heal only deletes, both directions.
+        assert all(a == "-D" for (a, _s, _d) in calls)
+        assert {(s, d) for (a, s, d) in calls if a == "-D"} == {
+            ("10.0.0.2", "10.0.0.1"),
+            ("10.0.0.1", "10.0.0.2"),
+        }
+
+    @pytest.mark.asyncio
+    async def test_heal_fails_on_non_benign_iptables_error(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # A sudo/permission error is NOT "rule does not exist" → heal must fail
+        # rather than falsely report the partition healed.
+        calls = _capture_iptables(
+            monkeypatch,
+            fail_action="-D",
+            fail_on=1,
+            fail_stderr="sudo: a password is required",
+        )
+
+        ok = await _step(HealPeersStep, ["node-1"]).execute({}, {})
+        assert ok is False
+        assert any(a == "-D" for (a, _s, _d) in calls)
+
+    @pytest.mark.asyncio
+    async def test_heal_clears_duplicate_rules(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # Two duplicate rules per direction (e.g. left by crashed re-runs): heal
+        # must delete BOTH copies, then stop on the benign "does not exist".
+        calls = _capture_iptables(monkeypatch, delete_succeeds=2)
+
+        ok = await _step(HealPeersStep, ["node-1"]).execute({}, {})
+        assert ok is True
+        # Per direction: 2 successful deletes + 1 benign-stop = 3 calls.
+        per_dir = {}
+        for _a, s, d in calls:
+            per_dir[(s, d)] = per_dir.get((s, d), 0) + 1
+        assert per_dir == {("10.0.0.2", "10.0.0.1"): 3, ("10.0.0.1", "10.0.0.2"): 3}
+
+    @pytest.mark.asyncio
+    async def test_heal_fails_if_rule_never_clears(self, monkeypatch):
+        _patch_docker(monkeypatch, {"node-2": "10.0.0.2", "node-1": "10.0.0.1"})
+        # -D always reports success (rule keeps reappearing / buggy iptables):
+        # the delete-until-gone loop hits its cap and must NOT claim a clean heal.
+        calls = _capture_iptables(monkeypatch, delete_succeeds=None)
+
+        ok = await _step(HealPeersStep, ["node-1"]).execute({}, {})
+        assert ok is False
+        # Bounded by _MAX_DUP_DELETES per direction (no infinite loop).
+        from merobox.commands.bootstrap.steps.network import _MAX_DUP_DELETES
+
+        assert sum(1 for (a, _s, _d) in calls if a == "-D") == 2 * _MAX_DUP_DELETES
+
+    @pytest.mark.asyncio
+    async def test_binary_mode_is_a_no_op(self, monkeypatch):
+        monkeypatch.setattr(network_mod, "is_binary_mode", lambda _m: True)
+        calls = _capture_iptables(monkeypatch)
+
+        ok = await _step(PartitionPeersStep, ["node-1"]).execute({}, {})
+        assert ok is True
+        assert calls == []  # no iptables touched without Docker
