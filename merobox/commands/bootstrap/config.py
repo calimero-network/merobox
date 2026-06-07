@@ -81,6 +81,7 @@ VALID_STEP_TYPES = frozenset(
         "cascade_namespace_application",
         "get_cascade_status",
         "assert_cascade_complete",
+        "abort_migration",
         "get_group_upgrade_status",
         "retry_group_upgrade",
         "call",
@@ -1228,6 +1229,16 @@ class GetCascadeStatusStepConfig(BaseStepConfig):
     )
 
 
+class AbortMigrationStepConfig(BaseStepConfig):
+    """Configuration for abort_migration step."""
+
+    type: Literal["abort_migration"] = "abort_migration"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose in-flight migration to abort"
+    )
+
+
 class AssertCascadeCompleteStepConfig(BaseStepConfig):
     """Configuration for assert_cascade_complete step."""
 
@@ -1360,6 +1371,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "cascade_namespace_application": CascadeNamespaceApplicationStepConfig,
     "get_cascade_status": GetCascadeStatusStepConfig,
     "assert_cascade_complete": AssertCascadeCompleteStepConfig,
+    "abort_migration": AbortMigrationStepConfig,
     "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
     "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,
