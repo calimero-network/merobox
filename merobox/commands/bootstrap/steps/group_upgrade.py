@@ -138,6 +138,14 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     `state:"failed"`). Counter keys are coerced to ints with a 0 default so a
     missing/partial rollup degrades to an all-zero (never-complete) summary
     rather than raising.
+
+    `failed` is reconciled against the per-member states (`max` of the rollup
+    counter and the count of members in `state:"failed"`) so the
+    `assert_migration_complete` fast-exit still honours a failed member even
+    when the rollup is missing or carries a non-int counter — without it the
+    documented fail-fast would silently degrade to a poll-to-timeout. `total`
+    falls back to the member count only when the rollup omits it entirely (an
+    explicit `0` cohort is preserved).
     """
     rollup = response.get("rollup") if isinstance(response, dict) else None
     rollup = rollup if isinstance(rollup, dict) else {}
@@ -145,15 +153,19 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     raw_members = raw_members if isinstance(raw_members, list) else []
 
     members: list[dict[str, Any]] = []
+    members_failed = 0
     for entry in raw_members:
         if not isinstance(entry, dict):
             continue
         report = entry.get("report")
         report = report if isinstance(report, dict) else None
+        state = str(entry.get("state", "")).lower()
+        if state == "failed":
+            members_failed += 1
         members.append(
             {
                 "peer": entry.get("peer"),
-                "state": str(entry.get("state", "")).lower(),
+                "state": state,
                 "migration_failed": (
                     report.get("migrationFailed") if report is not None else None
                 ),
@@ -165,6 +177,11 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
             int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
         )
 
+    # `or len(members)` would mask a legitimate `total: 0` (empty cohort), so
+    # only fall back when the key is absent entirely.
+    total_raw = rollup.get("total")
+    total = _as_int(total_raw) if total_raw is not None else len(members)
+
     return {
         "target_version": (
             response.get("targetVersion") if isinstance(response, dict) else None
@@ -172,11 +189,13 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         "expected_members": (
             response.get("expectedMembers") if isinstance(response, dict) else None
         ),
-        "total": _as_int(rollup.get("total")) or len(members),
+        "total": total,
         "migrated": _as_int(rollup.get("migrated")),
         "in_progress": _as_int(rollup.get("inProgress")),
         "unknown": _as_int(rollup.get("unknown")),
-        "failed": _as_int(rollup.get("failed")),
+        # Reconcile with member states so a failed member is never missed when
+        # the rollup counter is absent/malformed (see docstring).
+        "failed": max(_as_int(rollup.get("failed")), members_failed),
         # core computes this directly: true iff every cohort member reported a
         # converged schema with zero residue. An empty/no-record response yields
         # false, so it can never falsely satisfy assert_migration_complete.
@@ -1274,6 +1293,12 @@ class AssertMigrationCompleteStep(BaseStep):
 
         if last_summary is not None:
             workflow_results[f"migration_status_{node_name}"] = last_summary
+            # Export on the failure/timeout exit too (not just the success
+            # path): under expected_failure the step returns True and
+            # downstream steps run, so they should see the final migration
+            # state rather than an unset variable.
+            if "outputs" in self.config:
+                self._export_variables(last_summary, node_name, dynamic_values)
             detail = (
                 f"{last_summary['migrated']}/{last_summary['total']} migrated, "
                 f"{last_summary['in_progress']} in-progress, "
@@ -1374,6 +1399,13 @@ class ResyncContextStep(BaseStep):
             return False
 
         raw = result["data"]
+        # Warn (don't silently drop) on an unexpected non-dict body so an
+        # operator can diagnose why `outputs:` fields resolve to None.
+        if not isinstance(raw, dict):
+            console.print(
+                f"[yellow]resync_context: unexpected response type "
+                f"{type(raw).__name__} on {node_name}, expected dict[/yellow]"
+            )
         data = raw if isinstance(raw, dict) else {}
         workflow_results[f"resync_context_{node_name}"] = data
         if "outputs" in self.config:
@@ -1399,8 +1431,14 @@ class ListApplicationVersionsStep(BaseStep):
     markers. The `blob_id` doubles as the `app_key` accepted by the
     `create_namespace` step to pin a namespace to a specific version.
 
-    The `{data: [...]}` response is stored under
-    `list_application_versions_{node}` and reachable from an `outputs:` block.
+    The response is summarised into `{count, versions}` and stored under
+    `list_application_versions_{node}`. The list is re-attached under `versions`
+    (NOT `data`): the export machinery (`_export_custom_outputs`) unwraps a
+    top-level `data` key before resolving `outputs:` paths, which would leave
+    `outputs: {x: "data"}` resolving against the inner list and break `app_key`
+    chaining. With `versions`, authors capture the whole list
+    (`outputs: {vs: "versions"}`) or pick a specific blob id
+    (`outputs: {v3_key: "versions.2.blob_id"}`).
 
     Requires calimero-client-py >= 0.6.19.
     """
@@ -1463,14 +1501,17 @@ class ListApplicationVersionsStep(BaseStep):
             return False
 
         data = result["data"]
-        workflow_results[f"list_application_versions_{node_name}"] = data
+        raw_versions = data.get("data") if isinstance(data, dict) else None
+        versions = raw_versions if isinstance(raw_versions, list) else []
+        # Re-attach under `versions` (not `data`) so the export unwrap doesn't
+        # strip the list before resolving `outputs:` paths — see class docstring.
+        summary = {"count": len(versions), "versions": versions}
+        workflow_results[f"list_application_versions_{node_name}"] = summary
         if "outputs" in self.config:
-            self._export_variables(data, node_name, dynamic_values)
-        versions = data.get("data") if isinstance(data, dict) else None
-        count = len(versions) if isinstance(versions, list) else 0
+            self._export_variables(summary, node_name, dynamic_values)
         console.print(
             f"[green]✓ list_application_versions for {application_id} on {node_name}: "
-            f"{count} version(s)[/green]"
+            f"{summary['count']} version(s)[/green]"
         )
         if expected_failure:
             self._report_unexpected_success()

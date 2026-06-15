@@ -121,6 +121,32 @@ class TestSummarizeMigrationStatus:
         # state is lowercased
         assert s["members"][0]["state"] == "migrated"
 
+    def test_failed_reconciled_from_members_when_rollup_missing(self):
+        # Bugbot #1: a failed member must surface in `failed` even when the
+        # rollup omits the counter, so the assert fast-exit still fires.
+        s = _summarize_migration_status({"members": [{"peer": "p", "state": "failed"}]})
+        assert s["failed"] == 1
+
+    def test_failed_takes_max_of_rollup_and_members(self):
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(failed=2, total=3),
+                "members": [{"peer": "p", "state": "failed"}],
+            }
+        )
+        # rollup is authoritative when larger; reconciliation never undercounts.
+        assert s["failed"] == 2
+
+    def test_explicit_zero_total_preserved(self):
+        # An explicit empty cohort (total: 0) must NOT fall back to len(members).
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(total=0),
+                "members": [{"peer": "p", "state": "unknown"}],
+            }
+        )
+        assert s["total"] == 0
+
 
 # =============================================================================
 # GetMigrationStatusStep
@@ -333,6 +359,51 @@ class TestAssertMigrationCompleteExecute:
             result = _run(step.execute({}, {}))
         assert result is False
 
+    def test_failed_member_exits_early_without_rollup_counter(self):
+        # Bugbot #1: the fast-exit must fire on a failed member even when the
+        # rollup omits the `failed` counter (reconciled via member states).
+        step = AssertMigrationCompleteStep(self.config)
+        client = MagicMock()
+        client.get_migration_status.return_value = {
+            "members": [{"peer": "p", "state": "failed"}],
+        }
+        p1, p2, p3, p4 = self._patched(step, client)
+        with (
+            p1,
+            p2,
+            p3,
+            p4,
+            # If the fast-exit failed to fire, monotonic would advance past the
+            # deadline and the step would still fail — but via timeout, not the
+            # failed-member branch. Keep time frozen so only the fast-exit can
+            # end the single poll; a hang would surface as a test timeout.
+            patch(f"{_MODULE}.time.monotonic", side_effect=itertools.count(0, 0)),
+        ):
+            result = _run(step.execute({}, {}))
+        assert result is False
+
+    def test_outputs_exported_on_failure_exit(self):
+        # meroreviewer 🟡: under expected_failure the step returns True and
+        # downstream runs, so the final summary must be exported even on the
+        # fail-fast path.
+        cfg = {
+            **self.config,
+            "expected_failure": True,
+            "outputs": {"failed_count": "failed"},
+        }
+        step = AssertMigrationCompleteStep(cfg)
+        client = MagicMock()
+        client.get_migration_status.return_value = {
+            "rollup": _rollup(failed=1, total=1),
+            "members": [{"peer": "p", "state": "failed"}],
+        }
+        dynamic_values = {}
+        p1, p2, p3, p4 = self._patched(step, client)
+        with p1, p2, p3, p4:
+            result = _run(step.execute({}, dynamic_values))
+        assert result is True
+        assert dynamic_values.get("failed_count") == 1
+
     def test_timeout_fails(self):
         step = AssertMigrationCompleteStep(self.config)
         client = MagicMock()
@@ -535,7 +606,7 @@ class TestListApplicationVersionsExecute:
             patch.object(step, "_resolve_dynamic_value", side_effect=lambda v, *_: v),
         )
 
-    def test_success_stores_response(self):
+    def test_success_stores_summary(self):
         step = ListApplicationVersionsStep(self.config)
         client = MagicMock()
         client.list_application_versions.return_value = {
@@ -552,19 +623,49 @@ class TestListApplicationVersionsExecute:
         client.list_application_versions.assert_called_once_with(
             application_id="app123"
         )
+        # The list is re-attached under `versions` (not `data`) so the export
+        # unwrap can't strip it; `count` is the convenience length.
         stored = workflow_results["list_application_versions_calimero-node-1"]
-        assert len(stored["data"]) == 2
+        assert stored["count"] == 2
+        assert len(stored["versions"]) == 2
 
-    def test_outputs_export_fields(self):
-        cfg = {**self.config, "outputs": {"versions": "data"}}
+    def test_outputs_export_versions_list(self):
+        # Mapping outputs to `versions` must actually export the list — under
+        # the old `{data: [...]}` shape the export unwrap stripped `data` and
+        # this resolved to None (Bugbot #2).
+        cfg = {**self.config, "outputs": {"vs": "versions"}}
         step = ListApplicationVersionsStep(cfg)
         client = MagicMock()
-        client.list_application_versions.return_value = {"data": []}
+        client.list_application_versions.return_value = {
+            "data": [
+                {"version": "0.1.0", "blob_id": "aa", "size": 10, "package": "p"},
+            ]
+        }
         dynamic_values = {}
         p1, p2, p3 = self._patched(step, client)
         with p1, p2, p3:
             result = _run(step.execute({}, dynamic_values))
         assert result is True
+        assert isinstance(dynamic_values.get("vs"), list)
+        assert len(dynamic_values["vs"]) == 1
+
+    def test_outputs_export_nested_blob_id(self):
+        # A specific version's blob_id (the app_key) is reachable by dotted path.
+        cfg = {**self.config, "outputs": {"v2_key": "versions.1.blob_id"}}
+        step = ListApplicationVersionsStep(cfg)
+        client = MagicMock()
+        client.list_application_versions.return_value = {
+            "data": [
+                {"version": "0.1.0", "blob_id": "aa", "size": 10, "package": "p"},
+                {"version": "0.2.0", "blob_id": "bb", "size": 11, "package": "p"},
+            ]
+        }
+        dynamic_values = {}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            result = _run(step.execute({}, dynamic_values))
+        assert result is True
+        assert dynamic_values.get("v2_key") == "bb"
 
     def test_client_error_fails_step(self):
         step = ListApplicationVersionsStep(self.config)
