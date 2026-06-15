@@ -1502,6 +1502,14 @@ class ListApplicationVersionsStep(BaseStep):
 
         data = result["data"]
         raw_versions = data.get("data") if isinstance(data, dict) else None
+        # Warn (don't silently drop) on an unexpected non-list `data` body, so an
+        # author whose `outputs: {vs: versions}` resolves to [] can tell it was a
+        # response-shape mismatch rather than genuinely zero installed versions.
+        if raw_versions is not None and not isinstance(raw_versions, list):
+            console.print(
+                f"[yellow]list_application_versions: unexpected data type "
+                f"{type(raw_versions).__name__} on {node_name}, expected list[/yellow]"
+            )
         versions = raw_versions if isinstance(raw_versions, list) else []
         # Re-attach under `versions` (not `data`) so the export unwrap doesn't
         # strip the list before resolving `outputs:` paths — see class docstring.

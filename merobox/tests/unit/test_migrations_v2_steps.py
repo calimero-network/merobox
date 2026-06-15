@@ -448,6 +448,13 @@ class TestAssertMigrationCompleteExecute:
             result = _run(step.execute({}, {}))
         assert result is False
 
+    def test_version_guard_old_client_expected_failure_passes(self):
+        cfg = {**self.config, "expected_failure": True}
+        step = AssertMigrationCompleteStep(cfg)
+        with patch(f"{_MODULE}._client_py_below", return_value=True):
+            result = _run(step.execute({}, {}))
+        assert result is True
+
 
 # =============================================================================
 # ResyncContextStep
@@ -666,6 +673,21 @@ class TestListApplicationVersionsExecute:
             result = _run(step.execute({}, dynamic_values))
         assert result is True
         assert dynamic_values.get("v2_key") == "bb"
+
+    def test_non_list_data_warns_and_empties(self):
+        # A non-list `data` body must not masquerade as zero installed versions:
+        # warn and fall back to an empty list.
+        step = ListApplicationVersionsStep(self.config)
+        client = MagicMock()
+        client.list_application_versions.return_value = {"data": {"oops": 1}}
+        workflow_results = {}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            result = _run(step.execute(workflow_results, {}))
+        assert result is True
+        stored = workflow_results["list_application_versions_calimero-node-1"]
+        assert stored["count"] == 0
+        assert stored["versions"] == []
 
     def test_client_error_fails_step(self):
         step = ListApplicationVersionsStep(self.config)
