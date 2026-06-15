@@ -23,6 +23,7 @@ from merobox.commands.bootstrap.steps import (
     AbortMigrationStep,
     AddGroupMembersStep,
     AssertCascadeCompleteStep,
+    AssertMigrationCompleteStep,
     CascadeNamespaceApplicationStep,
     CreateContextStep,
     CreateGroupInNamespaceStep,
@@ -41,6 +42,7 @@ from merobox.commands.bootstrap.steps import (
     GetGroupUpgradeStatusStep,
     GetMemberCapabilitiesStep,
     GetMemberMetadataStep,
+    GetMigrationStatusStep,
     GetNamespaceIdentityStep,
     InstallApplicationStep,
     InviteOpenStep,
@@ -51,6 +53,7 @@ from merobox.commands.bootstrap.steps import (
     LeaveContextStep,
     LeaveGroupStep,
     LeaveNamespaceStep,
+    ListApplicationVersionsStep,
     ListGroupContextsStep,
     ListGroupMembersStep,
     ListNamespaceGroupsStep,
@@ -61,6 +64,7 @@ from merobox.commands.bootstrap.steps import (
     RemoveGroupMembersStep,
     ReparentGroupStep,
     RepeatStep,
+    ResyncContextStep,
     RetryGroupUpgradeStep,
     ScriptStep,
     SetContextMetadataStep,
@@ -2235,6 +2239,14 @@ class WorkflowExecutor:
             return AssertCascadeCompleteStep(step_config, **common_kwargs)
         elif step_type == "abort_migration":
             return AbortMigrationStep(step_config, **common_kwargs)
+        elif step_type == "get_migration_status":
+            return GetMigrationStatusStep(step_config, **common_kwargs)
+        elif step_type == "assert_migration_complete":
+            return AssertMigrationCompleteStep(step_config, **common_kwargs)
+        elif step_type == "resync_context":
+            return ResyncContextStep(step_config, **common_kwargs)
+        elif step_type == "list_application_versions":
+            return ListApplicationVersionsStep(step_config, **common_kwargs)
         elif step_type == "get_group_upgrade_status":
             return GetGroupUpgradeStatusStep(step_config, **common_kwargs)
         elif step_type == "retry_group_upgrade":

@@ -1,8 +1,10 @@
 """
-Group upgrade-lifecycle workflow step executors.
+Group upgrade & migration-lifecycle workflow step executors.
 
-Covers signing-key rotation and the upgrade state machine
-(initiate -> poll status -> retry on failure).
+Covers signing-key rotation, the upgrade state machine (initiate -> poll
+status -> retry on failure), the cascade/migration status rollups, and the
+migrations-v2 recovery surface (resync a stranded context, list installed
+bytecode versions).
 """
 
 # PEP 563 deferred evaluation — required for `X | None` style annotations
@@ -40,6 +42,13 @@ _CASCADE_STATUS_MIN_CLIENT_VERSION = (0, 6, 17)
 # calimero-client-py 0.6.18 (calimero-network/calimero-client-py#61, wrapping
 # the admin route from calimero-network/core#2681).
 _ABORT_MIGRATION_MIN_CLIENT_VERSION = (0, 6, 18)
+
+# The migrations-v2 recovery surface — `resync_context`, `get_migration_status`
+# (+ the `assert_migration_complete` helper built on it), and
+# `list_application_versions` — all landed together in calimero-client-py 0.6.19
+# (calimero-network/calimero-client-py#63), wrapping the admin routes from
+# calimero-network/core#2768.
+_MIGRATIONS_V2_MIN_CLIENT_VERSION = (0, 6, 19)
 
 
 def _resolve_client_py_version() -> tuple[tuple[int, ...] | None, str]:
@@ -112,6 +121,68 @@ def _summarize_cascade_status(response: Any) -> dict[str, Any]:
         "pending": total - completed - failed,
         "all_completed": total > 0 and completed == total,
         "groups": entries,
+    }
+
+
+def _summarize_migration_status(response: Any) -> dict[str, Any]:
+    """Flatten a `get_migration_status` response into a flat, exportable summary.
+
+    The RPC (calimero-network/core#2768) returns the pinned-cohort rollup
+    (`rollup`: migrated / in_progress / unknown / failed / total +
+    `all_migrated`) alongside one `members` row per cohort member
+    (`{peer, report?, state}`). This lifts the rollup counters to the top level
+    (so `outputs:` can address them without an `all_migrated` envelope), faithfully
+    passes through core's authoritative `all_migrated` flag, and re-attaches a
+    compact per-member list under `members` carrying each member's `state` plus
+    the `migration_failed` reason from its report (a stranded member surfaces as
+    `state:"failed"`). Counter keys are coerced to ints with a 0 default so a
+    missing/partial rollup degrades to an all-zero (never-complete) summary
+    rather than raising.
+    """
+    rollup = response.get("rollup") if isinstance(response, dict) else None
+    rollup = rollup if isinstance(rollup, dict) else {}
+    raw_members = response.get("members") if isinstance(response, dict) else None
+    raw_members = raw_members if isinstance(raw_members, list) else []
+
+    members: list[dict[str, Any]] = []
+    for entry in raw_members:
+        if not isinstance(entry, dict):
+            continue
+        report = entry.get("report")
+        report = report if isinstance(report, dict) else None
+        members.append(
+            {
+                "peer": entry.get("peer"),
+                "state": str(entry.get("state", "")).lower(),
+                "migration_failed": (
+                    report.get("migrationFailed") if report is not None else None
+                ),
+            }
+        )
+
+    def _as_int(value: Any) -> int:
+        return (
+            int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+        )
+
+    return {
+        "target_version": (
+            response.get("targetVersion") if isinstance(response, dict) else None
+        ),
+        "expected_members": (
+            response.get("expectedMembers") if isinstance(response, dict) else None
+        ),
+        "total": _as_int(rollup.get("total")) or len(members),
+        "migrated": _as_int(rollup.get("migrated")),
+        "in_progress": _as_int(rollup.get("inProgress")),
+        "unknown": _as_int(rollup.get("unknown")),
+        "failed": _as_int(rollup.get("failed")),
+        # core computes this directly: true iff every cohort member reported a
+        # converged schema with zero residue. An empty/no-record response yields
+        # false, so it can never falsely satisfy assert_migration_complete.
+        "all_migrated": bool(rollup.get("allMigrated", False)),
+        "members_pending_signature": _as_int(rollup.get("membersPendingSignature")),
+        "members": members,
     }
 
 
@@ -210,11 +281,6 @@ class UpgradeGroupStep(BaseStep):
         for field in ("node", "group_id", "target_application_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
-        migrate_method = self.config.get("migrate_method")
-        if migrate_method is not None and not isinstance(migrate_method, str):
-            raise ValueError(
-                f"Step '{step_name}': 'migrate_method' must be a string if provided"
-            )
         cascade = self.config.get("cascade")
         if cascade is not None and not isinstance(cascade, bool):
             raise ValueError(
@@ -230,14 +296,6 @@ class UpgradeGroupStep(BaseStep):
         )
         target_application_id = self._resolve_dynamic_value(
             self.config["target_application_id"], workflow_results, dynamic_values
-        )
-        migrate_method_raw = self.config.get("migrate_method")
-        migrate_method = (
-            self._resolve_dynamic_value(
-                migrate_method_raw, workflow_results, dynamic_values
-            )
-            if migrate_method_raw is not None
-            else None
         )
         cascade = bool(self.config.get("cascade", False))
 
@@ -272,7 +330,6 @@ class UpgradeGroupStep(BaseStep):
             upgrade_kwargs: dict[str, Any] = {
                 "group_id": group_id,
                 "target_application_id": target_application_id,
-                "migrate_method": migrate_method,
             }
             if cascade:
                 upgrade_kwargs["cascade"] = True
@@ -329,11 +386,6 @@ class CascadeNamespaceApplicationStep(BaseStep):
         for field in ("node", "namespace_id", "target_application_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
-        migrate_method = self.config.get("migrate_method")
-        if migrate_method is not None and not isinstance(migrate_method, str):
-            raise ValueError(
-                f"Step '{step_name}': 'migrate_method' must be a string if provided"
-            )
 
     def _get_exportable_variables(self):
         # Only export fields that are always populated. `total`,
@@ -396,14 +448,6 @@ class CascadeNamespaceApplicationStep(BaseStep):
         target_application_id = self._resolve_dynamic_value(
             self.config["target_application_id"], workflow_results, dynamic_values
         )
-        migrate_method_raw = self.config.get("migrate_method")
-        migrate_method = (
-            self._resolve_dynamic_value(
-                migrate_method_raw, workflow_results, dynamic_values
-            )
-            if migrate_method_raw is not None
-            else None
-        )
 
         # Node resolution + client construction + RPC all share the
         # try/except so connection errors, auth failures, and RPC errors
@@ -416,7 +460,6 @@ class CascadeNamespaceApplicationStep(BaseStep):
             api_result = client.upgrade_group(
                 group_id=namespace_id,
                 target_application_id=target_application_id,
-                migrate_method=migrate_method,
                 cascade=True,
             )
             result = ok(api_result)
@@ -960,6 +1003,474 @@ class AbortMigrationStep(BaseStep):
         console.print(
             f"[green]✓ abort_migration on namespace {namespace_id} ({node_name}): "
             f"aborted={aborted}[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
+class GetMigrationStatusStep(BaseStep):
+    """Read the pinned-cohort migration-status rollup for a namespace.
+
+    Calls the `get_migration_status` RPC (calimero-network/core#2768), which
+    returns the cohort rollup (migrated / in_progress / unknown / failed / total
+    + `all_migrated`) plus one row per cohort member (`{peer, report?, state}`).
+    The response is flattened by `_summarize_migration_status` and stored under
+    `migration_status_{node}`; the counter fields, `all_migrated`, and the raw
+    per-member `members` list are reachable from an `outputs:` block. A stranded
+    member surfaces as `state:"failed"` with its `migration_failed` reason.
+    Observability only — this never gates a write or apply.
+
+    Requires calimero-client-py >= 0.6.19 for the `get_migration_status`
+    binding.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "namespace_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "namespace_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+
+        # Pre-flight version guard, same policy as the cascade-status step: only
+        # block when client-py is *known* to predate the binding. Runs before
+        # dynamic-value resolution and honors expected_failure.
+        if _client_py_below(_MIGRATIONS_V2_MIN_CLIENT_VERSION):
+            min_str = ".".join(str(p) for p in _MIGRATIONS_V2_MIN_CLIENT_VERSION)
+            msg = (
+                f"get_migration_status requires calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if self._is_expected_failure():
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
+
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.get_migration_status(namespace_id=namespace_id)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("get_migration_status failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]get_migration_status failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        # A transport-level success can still carry a JSON-RPC error body; mirror
+        # the cascade-status step so it isn't silently summarised as empty.
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        summary = _summarize_migration_status(result["data"])
+        workflow_results[f"migration_status_{node_name}"] = summary
+        if "outputs" in self.config:
+            self._export_variables(summary, node_name, dynamic_values)
+        console.print(
+            f"[green]✓ Migration status for namespace {namespace_id} on {node_name}: "
+            f"{summary['migrated']}/{summary['total']} migrated, "
+            f"{summary['in_progress']} in-progress, {summary['unknown']} unknown, "
+            f"{summary['failed']} failed[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
+class AssertMigrationCompleteStep(BaseStep):
+    """Poll `get_migration_status` until the whole pinned cohort has migrated.
+
+    Saves workflow authors from hand-rolling a `wait`-loop around
+    `get_migration_status`. Polls every `poll_interval` seconds (default `2.0`)
+    until the cohort is fully migrated (core's `all_migrated` — every member
+    reported a converged schema with zero residue) or `timeout_seconds`
+    (default `30`) elapses. A member entering the `failed` state aborts the
+    wait immediately: a cohort with a failed member can never reach
+    `all_migrated`, so there is no point burning the rest of the timeout.
+
+    On the happy path the final summary is stored under
+    `migration_status_{node}` (same shape as `get_migration_status`). A timeout
+    or a failed member fails the step unless `expected_failure` is set.
+
+    Requires calimero-client-py >= 0.6.19 for the `get_migration_status`
+    binding.
+    """
+
+    _DEFAULT_TIMEOUT_SECONDS = 30.0
+    _DEFAULT_POLL_INTERVAL = 2.0
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "namespace_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "namespace_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        for field in ("timeout_seconds", "poll_interval"):
+            value = self.config.get(field)
+            if value is None:
+                continue
+            # bool is an int subclass — reject it explicitly so `true`/`false`
+            # don't masquerade as 1/0 timeouts.
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be a number if provided"
+                )
+            # NaN/inf would make `deadline` non-finite so the poll loop's
+            # `time.monotonic() >= deadline` never trips — the step would hang
+            # forever instead of timing out. Reject them up front.
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be a finite number"
+                )
+            if value <= 0:
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be greater than 0"
+                )
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        expected_failure = self._is_expected_failure()
+
+        if _client_py_below(_MIGRATIONS_V2_MIN_CLIENT_VERSION):
+            min_str = ".".join(str(p) for p in _MIGRATIONS_V2_MIN_CLIENT_VERSION)
+            msg = (
+                f"assert_migration_complete requires calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if expected_failure:
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
+
+        namespace_id = self._resolve_dynamic_value(
+            self.config["namespace_id"], workflow_results, dynamic_values
+        )
+        # `.get(key, default)` returns the default only when the key is ABSENT;
+        # an explicit `timeout_seconds: null` yields a present key with value
+        # None, which float() would crash on. _validate_field_types permits None
+        # (treats it as "not provided"), so collapse None to the default here
+        # too. An explicit `is None` test (not `or`) so a value of 0 is NOT
+        # silently swapped for the default — 0 is already rejected above.
+        timeout_raw = self.config.get("timeout_seconds")
+        timeout_seconds = float(
+            self._DEFAULT_TIMEOUT_SECONDS if timeout_raw is None else timeout_raw
+        )
+        poll_raw = self.config.get("poll_interval")
+        poll_interval = float(
+            self._DEFAULT_POLL_INTERVAL if poll_raw is None else poll_raw
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+        except Exception as e:
+            if expected_failure:
+                self._report_expected_failure(str(e))
+                return True
+            console.print(
+                f"[red]assert_migration_complete: failed to reach {node_name}: {e}[/red]"
+            )
+            return False
+
+        console.print(
+            f"[blue]⏳ Waiting for migration on namespace {namespace_id} to complete "
+            f"(timeout {timeout_seconds:g}s, poll {poll_interval:g}s) on {node_name}[/blue]"
+        )
+
+        # monotonic() so a wall-clock adjustment mid-wait can't extend or
+        # truncate the timeout. The first poll always runs; thereafter the
+        # deadline is checked BEFORE committing to a sleep, and the final sleep
+        # is clamped to the time remaining, so total wall-time stays within
+        # timeout_seconds.
+        deadline = time.monotonic() + timeout_seconds
+        last_summary: dict[str, Any] | None = None
+        attempt = 0
+        failure_reason = "timed out"
+
+        while True:
+            attempt += 1
+            try:
+                api_result = client.get_migration_status(namespace_id=namespace_id)
+                if self._check_jsonrpc_error(api_result):
+                    # JSON-RPC error body on an otherwise-OK transport: treat
+                    # like a transient read and retry until the deadline.
+                    summary = None
+                else:
+                    summary = _summarize_migration_status(api_result)
+                    last_summary = summary
+            except Exception as e:
+                # Transient RPC error (node still booting, sync in flight). Keep
+                # polling until the deadline rather than failing the whole
+                # assertion on one bad read.
+                vprint(
+                    f"[yellow]  attempt {attempt}: get_migration_status errored "
+                    f"({type(e).__name__}); retrying[/yellow]",
+                    level=LOG_LEVEL_VERBOSE,
+                )
+                summary = None
+
+            if summary is not None:
+                vprint(
+                    f"[blue]  attempt {attempt}: {summary['migrated']}/{summary['total']} "
+                    f"migrated, {summary['in_progress']} in-progress, "
+                    f"{summary['unknown']} unknown, {summary['failed']} failed[/blue]",
+                    level=LOG_LEVEL_VERBOSE,
+                )
+                if summary["all_migrated"]:
+                    workflow_results[f"migration_status_{node_name}"] = summary
+                    if "outputs" in self.config:
+                        self._export_variables(summary, node_name, dynamic_values)
+                    console.print(
+                        f"[green]✓ Migration on namespace {namespace_id} complete: "
+                        f"all {summary['total']} cohort members migrated on {node_name}[/green]"
+                    )
+                    if expected_failure:
+                        self._report_unexpected_success()
+                    return True
+                if summary["failed"] > 0:
+                    # Unrecoverable: a failed member means all_migrated is
+                    # unreachable. Stop early instead of polling to timeout.
+                    failure_reason = (
+                        f"{summary['failed']} of {summary['total']} members failed"
+                    )
+                    break
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(poll_interval, remaining))
+
+        if last_summary is not None:
+            workflow_results[f"migration_status_{node_name}"] = last_summary
+            detail = (
+                f"{last_summary['migrated']}/{last_summary['total']} migrated, "
+                f"{last_summary['in_progress']} in-progress, "
+                f"{last_summary['unknown']} unknown, {last_summary['failed']} failed"
+            )
+        else:
+            detail = "no successful status read"
+        msg = (
+            f"assert_migration_complete on namespace {namespace_id} ({node_name}): "
+            f"{failure_reason} after {attempt} poll(s) — {detail}"
+        )
+
+        if expected_failure:
+            self._report_expected_failure(msg)
+            return True
+        console.print(f"[red]✗ {msg}[/red]")
+        return False
+
+
+class ResyncContextStep(BaseStep):
+    """Resync a stranded context by adopting a peer's full state.
+
+    Calls the `resync_context` binding (calimero-client-py 0.6.19, wrapping
+    calimero-network/core#2768's `POST admin-api/contexts/{context_id}/resync`).
+    Recovers a context that can no longer replay its upgrade ladder (an
+    intermediate bytecode blob is unobtainable from every reachable peer) by
+    discarding local DAG heads and pulling a peer's full-state snapshot.
+
+    Destructive: `force` (default `false`) must be `true` when the context still
+    holds local DAG heads, which the resync discards. The `{context_id,
+    resync_started}` response is stored under `resync_context_{node}` and
+    reachable from an `outputs:` block.
+
+    Requires calimero-client-py >= 0.6.19.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "context_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "context_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        force = self.config.get("force")
+        if force is not None and not isinstance(force, bool):
+            raise ValueError(
+                f"Step '{step_name}': 'force' must be a boolean if provided"
+            )
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+
+        if _client_py_below(_MIGRATIONS_V2_MIN_CLIENT_VERSION):
+            min_str = ".".join(str(p) for p in _MIGRATIONS_V2_MIN_CLIENT_VERSION)
+            msg = (
+                f"resync_context requires calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if self._is_expected_failure():
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
+
+        context_id = self._resolve_dynamic_value(
+            self.config["context_id"], workflow_results, dynamic_values
+        )
+        force = bool(self.config.get("force", False))
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.resync_context(context_id=context_id, force=force)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("resync_context failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]resync_context failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        raw = result["data"]
+        data = raw if isinstance(raw, dict) else {}
+        workflow_results[f"resync_context_{node_name}"] = data
+        if "outputs" in self.config:
+            self._export_variables(data, node_name, dynamic_values)
+        resync_started = data.get("resyncStarted")
+        console.print(
+            f"[green]✓ resync_context on {context_id} ({node_name}, force={force}): "
+            f"resync_started={resync_started}[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
+
+
+class ListApplicationVersionsStep(BaseStep):
+    """List every locally-retained bytecode version of an application.
+
+    Calls the `list_application_versions` binding (calimero-client-py 0.6.19,
+    wrapping calimero-network/core#2768's
+    `GET admin-api/applications/{id}/versions`). Returns one entry per retained
+    version (`{version, blob_id, size, package}`) — the row's latest install
+    plus any older blobs still referenced by groups or context activation
+    markers. The `blob_id` doubles as the `app_key` accepted by the
+    `create_namespace` step to pin a namespace to a specific version.
+
+    The `{data: [...]}` response is stored under
+    `list_application_versions_{node}` and reachable from an `outputs:` block.
+
+    Requires calimero-client-py >= 0.6.19.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "application_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "application_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+
+        if _client_py_below(_MIGRATIONS_V2_MIN_CLIENT_VERSION):
+            min_str = ".".join(str(p) for p in _MIGRATIONS_V2_MIN_CLIENT_VERSION)
+            msg = (
+                f"list_application_versions requires calimero-client-py >= {min_str} "
+                f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
+            )
+            if self._is_expected_failure():
+                self._report_expected_failure(msg)
+                return True
+            console.print(f"[red]{msg}[/red]")
+            return False
+
+        application_id = self._resolve_dynamic_value(
+            self.config["application_id"], workflow_results, dynamic_values
+        )
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.list_application_versions(application_id=application_id)
+            result = ok(api_result)
+        except Exception as e:
+            result = fail("list_application_versions failed", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]list_application_versions failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        data = result["data"]
+        workflow_results[f"list_application_versions_{node_name}"] = data
+        if "outputs" in self.config:
+            self._export_variables(data, node_name, dynamic_values)
+        versions = data.get("data") if isinstance(data, dict) else None
+        count = len(versions) if isinstance(versions, list) else 0
+        console.print(
+            f"[green]✓ list_application_versions for {application_id} on {node_name}: "
+            f"{count} version(s)[/green]"
         )
         if expected_failure:
             self._report_unexpected_success()

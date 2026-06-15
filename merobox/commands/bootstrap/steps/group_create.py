@@ -24,6 +24,11 @@ class CreateNamespaceStep(BaseStep):
             raise ValueError(f"Step '{step_name}': 'node' must be a string")
         if not isinstance(self.config.get("application_id"), str):
             raise ValueError(f"Step '{step_name}': 'application_id' must be a string")
+        app_key = self.config.get("app_key")
+        if app_key is not None and not isinstance(app_key, str):
+            raise ValueError(
+                f"Step '{step_name}': 'app_key' must be a string if provided"
+            )
 
     def _get_exportable_variables(self):
         return [
@@ -41,6 +46,13 @@ class CreateNamespaceStep(BaseStep):
         application_id = self._resolve_dynamic_value(
             self.config["application_id"], workflow_results, dynamic_values
         )
+        # Optional blob-id pin to a specific installed application version.
+        app_key_raw = self.config.get("app_key")
+        app_key = (
+            self._resolve_dynamic_value(app_key_raw, workflow_results, dynamic_values)
+            if app_key_raw is not None
+            else None
+        )
 
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
@@ -54,7 +66,12 @@ class CreateNamespaceStep(BaseStep):
             if callable(create_namespace):
                 # A namespace's display name (if any) is set afterward via a
                 # set_group_metadata step — never inferred from this step's label.
-                api_result = create_namespace(application_id=application_id)
+                # `app_key` is only forwarded when provided so the call stays
+                # compatible across client-py versions.
+                create_kwargs: dict[str, Any] = {"application_id": application_id}
+                if app_key is not None:
+                    create_kwargs["app_key"] = app_key
+                api_result = create_namespace(**create_kwargs)
             else:
                 # Backward compatibility for older client versions.
                 api_result = client.create_group(application_id=application_id)

@@ -1140,26 +1140,101 @@ class TestGroupUpgradeStepSchemas:
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
-    def test_valid_upgrade_group_with_migrate(self, config_module):
-        step = {
-            "type": "upgrade_group",
-            "node": "calimero-node-1",
-            "group_id": "{{group_id}}",
-            "target_application_id": "{{app_v2}}",
-            "migrate_method": "migrate_v1_to_v2",
-        }
-        assert config_module.validate_workflow_step(step, 0) == []
-
     def test_valid_upgrade_group_with_cascade(self, config_module):
         step = {
             "type": "upgrade_group",
             "node": "calimero-node-1",
             "group_id": "{{namespace_id}}",
             "target_application_id": "{{app_v2}}",
-            "migrate_method": "migrate_v1_to_v2",
             "cascade": True,
         }
         assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_create_namespace_with_app_key(self, config_module):
+        step = {
+            "type": "create_namespace",
+            "node": "calimero-node-1",
+            "application_id": "{{app_v3}}",
+            "app_key": "{{v3_blob_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_get_migration_status(self, config_module):
+        step = {
+            "type": "get_migration_status",
+            "node": "calimero-node-1",
+            "namespace_id": "{{namespace_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_get_migration_status_missing_namespace(self, config_module):
+        step = {
+            "type": "get_migration_status",
+            "node": "calimero-node-1",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("namespace_id" in e for e in errors)
+
+    def test_valid_assert_migration_complete(self, config_module):
+        step = {
+            "type": "assert_migration_complete",
+            "node": "calimero-node-1",
+            "namespace_id": "{{namespace_id}}",
+            "timeout_seconds": 60,
+            "poll_interval": 3,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_assert_migration_complete_bool_poll(self, config_module):
+        step = {
+            "type": "assert_migration_complete",
+            "node": "calimero-node-1",
+            "namespace_id": "{{namespace_id}}",
+            "poll_interval": True,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("poll_interval" in e for e in errors)
+
+    def test_valid_resync_context_with_force(self, config_module):
+        step = {
+            "type": "resync_context",
+            "node": "calimero-node-2",
+            "context_id": "{{context_id}}",
+            "force": True,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_resync_context_minimal(self, config_module):
+        step = {
+            "type": "resync_context",
+            "node": "calimero-node-2",
+            "context_id": "{{context_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_resync_context_missing_context(self, config_module):
+        step = {
+            "type": "resync_context",
+            "node": "calimero-node-2",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("context_id" in e for e in errors)
+
+    def test_valid_list_application_versions(self, config_module):
+        step = {
+            "type": "list_application_versions",
+            "node": "calimero-node-1",
+            "application_id": "{{app_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_list_application_versions_missing_app(self, config_module):
+        step = {
+            "type": "list_application_versions",
+            "node": "calimero-node-1",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("application_id" in e for e in errors)
 
     def test_invalid_upgrade_group_missing_target(self, config_module):
         step = {

@@ -82,6 +82,10 @@ VALID_STEP_TYPES = frozenset(
         "get_cascade_status",
         "assert_cascade_complete",
         "abort_migration",
+        "get_migration_status",
+        "assert_migration_complete",
+        "resync_context",
+        "list_application_versions",
         "get_group_upgrade_status",
         "retry_group_upgrade",
         "call",
@@ -708,6 +712,15 @@ class CreateNamespaceStepConfig(BaseStepConfig):
     application_id: str = Field(
         ..., description="Application ID for namespace creation"
     )
+    app_key: Optional[str] = Field(
+        None,
+        description=(
+            "Optional hex-encoded 32-byte bytecode blob id pinning the namespace "
+            "to a specific installed application version (e.g. a blob_id from "
+            "list_application_versions). Defaults to the application row's latest "
+            "blob when omitted."
+        ),
+    )
     # A namespace's display name (if any) is set afterward via a
     # set_group_metadata step — there is no namespace-name field here. The
     # inherited `name` from BaseStepConfig is the step label, nothing more.
@@ -1181,9 +1194,6 @@ class UpgradeGroupStepConfig(BaseStepConfig):
     target_application_id: str = Field(
         ..., description="Application ID to upgrade the group to"
     )
-    migrate_method: Optional[str] = Field(
-        None, description="Optional migration export to invoke during upgrade"
-    )
     cascade: bool = Field(
         False,
         description=(
@@ -1204,10 +1214,6 @@ class CascadeNamespaceApplicationStepConfig(BaseStepConfig):
     )
     target_application_id: str = Field(
         ..., description="Application ID to cascade across the namespace"
-    )
-    migrate_method: Optional[str] = Field(
-        None,
-        description="Optional migration export to invoke on each descendant",
     )
 
 
@@ -1274,6 +1280,77 @@ class AssertCascadeCompleteStepConfig(BaseStepConfig):
         if isinstance(v, float) and not math.isfinite(v):
             raise ValueError("must be a finite number")
         return v
+
+
+class GetMigrationStatusStepConfig(BaseStepConfig):
+    """Configuration for get_migration_status step."""
+
+    type: Literal["get_migration_status"] = "get_migration_status"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose migration rollup to read"
+    )
+
+
+class AssertMigrationCompleteStepConfig(BaseStepConfig):
+    """Configuration for assert_migration_complete step."""
+
+    type: Literal["assert_migration_complete"] = "assert_migration_complete"
+    node: str = Field(..., description="Target node")
+    namespace_id: str = Field(
+        ..., description="Namespace (root group) whose migration must complete"
+    )
+    timeout_seconds: Union[int, float] = Field(
+        30,
+        gt=0,
+        description="Max seconds to poll before failing the assertion",
+    )
+    poll_interval: Union[int, float] = Field(
+        2.0,
+        gt=0,
+        description="Seconds between get_migration_status polls",
+    )
+
+    @field_validator("timeout_seconds", "poll_interval", mode="before")
+    @classmethod
+    def _reject_bool_str_and_non_finite(cls, v: Any) -> Any:
+        # mode="before" so we see the raw value, mirroring
+        # AssertMigrationCompleteStep._validate_field_types: reject bools (which
+        # lax mode would coerce to 1/0), strings (coerced to numbers), and
+        # NaN/inf (which would slip past `gt=0` and make the deadline
+        # non-finite so the poll loop never times out).
+        if isinstance(v, bool):
+            raise ValueError("must be a number, not a boolean")
+        if not isinstance(v, (int, float)):
+            raise ValueError("must be an int or float, not a string")
+        if isinstance(v, float) and not math.isfinite(v):
+            raise ValueError("must be a finite number")
+        return v
+
+
+class ResyncContextStepConfig(BaseStepConfig):
+    """Configuration for resync_context step."""
+
+    type: Literal["resync_context"] = "resync_context"
+    node: str = Field(..., description="Target node")
+    context_id: str = Field(..., description="Context ID to resync from a peer")
+    force: Optional[bool] = Field(
+        False,
+        description=(
+            "Discard local DAG heads when resyncing. Must be true when the "
+            "context still holds local heads (the resync overwrites them)."
+        ),
+    )
+
+
+class ListApplicationVersionsStepConfig(BaseStepConfig):
+    """Configuration for list_application_versions step."""
+
+    type: Literal["list_application_versions"] = "list_application_versions"
+    node: str = Field(..., description="Target node")
+    application_id: str = Field(
+        ..., description="Application ID whose retained bytecode versions to list"
+    )
 
 
 class RetryGroupUpgradeStepConfig(BaseStepConfig):
@@ -1372,6 +1449,10 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "get_cascade_status": GetCascadeStatusStepConfig,
     "assert_cascade_complete": AssertCascadeCompleteStepConfig,
     "abort_migration": AbortMigrationStepConfig,
+    "get_migration_status": GetMigrationStatusStepConfig,
+    "assert_migration_complete": AssertMigrationCompleteStepConfig,
+    "resync_context": ResyncContextStepConfig,
+    "list_application_versions": ListApplicationVersionsStepConfig,
     "get_group_upgrade_status": GetGroupUpgradeStatusStepConfig,
     "retry_group_upgrade": RetryGroupUpgradeStepConfig,
     "call": CallStep,
