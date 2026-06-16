@@ -110,6 +110,7 @@ VALID_STEP_TYPES = frozenset(
         "list_proposals",
         "get_proposal_approvers",
         "upload_blob",
+        "delete_blob_on_disk",
         "create_mesh",
         "fuzzy_test",
         "stop_node",
@@ -702,6 +703,29 @@ class UploadBlobStep(BaseStepConfig):
     node: str = Field(..., description="Target node")
     file_path: str = Field(..., description="Path to the blob file")
     context_id: Optional[str] = Field(None, description="Context ID (optional)")
+
+
+class DeleteBlobOnDiskStepConfig(BaseStepConfig):
+    """Configuration for delete_blob_on_disk step."""
+
+    type: Literal["delete_blob_on_disk"] = "delete_blob_on_disk"
+    node: str = Field(..., description="Target node (== container name)")
+    blob_id: str = Field(
+        ...,
+        description="Base58 blob id to delete (e.g. from list_application_versions)",
+    )
+    data_dir: Optional[str] = Field(
+        None,
+        description="CALIMERO_HOME inside the container (default /app/data)",
+    )
+    blobs_subdir: Optional[str] = Field(
+        None,
+        description="Blob-store subdir under <data_dir>/<node> (default 'blobs')",
+    )
+    missing_ok: Optional[bool] = Field(
+        True,
+        description="Treat a node that never held the blob as success (default true)",
+    )
 
 
 class CreateNamespaceStepConfig(BaseStepConfig):
@@ -1481,6 +1505,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "list_proposals": ListProposalsStep,
     "get_proposal_approvers": GetProposalApproversStep,
     "upload_blob": UploadBlobStep,
+    "delete_blob_on_disk": DeleteBlobOnDiskStepConfig,
     "create_mesh": CreateMeshStep,
     "fuzzy_test": FuzzyTestStep,
 }

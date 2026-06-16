@@ -1236,6 +1236,33 @@ class TestGroupUpgradeStepSchemas:
         errors = config_module.validate_workflow_step(step, 0)
         assert any("application_id" in e for e in errors)
 
+    def test_valid_delete_blob_on_disk(self, config_module):
+        step = {
+            "type": "delete_blob_on_disk",
+            "node": "calimero-node-1",
+            "blob_id": "{{v2_blob_id}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_valid_delete_blob_on_disk_with_overrides(self, config_module):
+        step = {
+            "type": "delete_blob_on_disk",
+            "node": "calimero-node-1",
+            "blob_id": "{{v2_blob_id}}",
+            "data_dir": "/data",
+            "blobs_subdir": "store",
+            "missing_ok": False,
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_delete_blob_on_disk_missing_blob_id(self, config_module):
+        step = {
+            "type": "delete_blob_on_disk",
+            "node": "calimero-node-1",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("blob_id" in e for e in errors)
+
     def test_invalid_upgrade_group_missing_target(self, config_module):
         step = {
             "type": "upgrade_group",

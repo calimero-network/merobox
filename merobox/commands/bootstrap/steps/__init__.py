@@ -10,6 +10,7 @@ from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
+from merobox.commands.bootstrap.steps.delete_blob import DeleteBlobOnDiskStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
@@ -162,6 +163,7 @@ __all__ = [
     "AssertLogPresentStep",
     "JsonAssertStep",
     "UploadBlobStep",
+    "DeleteBlobOnDiskStep",
     "CreateMeshStep",
     "FuzzyTestStep",
     "RemoveGroupMembersStep",
