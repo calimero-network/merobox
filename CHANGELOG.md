@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is actually gone after `rm` (fails on a silent survivor) and confirms it was
   present unless `missing_ok` (default true). Docker-only (pairs with the
   `partition_peers` fault steps); stores `{blob_id, path, existed, removed}`.
+- New `get_application` workflow step: reads an application's current row
+  (`id`, `version`, `blob.bytecode`/`blob.compiled`) via
+  `GET admin-api/applications/{id}`. Same-package bundles share one
+  `applicationId`, so this is how a workflow distinguishes versions — the row
+  points at the latest install, so reading it right after an install captures
+  that version's base58 `blob.bytecode` (the id `delete_blob_on_disk` and the
+  on-disk blob store use). `outputs:` paths start at `application` (e.g.
+  `application.blob.bytecode`).
 
 ## [0.6.37] - 2026-06-15
 

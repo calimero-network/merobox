@@ -111,6 +111,7 @@ VALID_STEP_TYPES = frozenset(
         "get_proposal_approvers",
         "upload_blob",
         "delete_blob_on_disk",
+        "get_application",
         "create_mesh",
         "fuzzy_test",
         "stop_node",
@@ -726,6 +727,14 @@ class DeleteBlobOnDiskStepConfig(BaseStepConfig):
         True,
         description="Treat a node that never held the blob as success (default true)",
     )
+
+
+class GetApplicationStepConfig(BaseStepConfig):
+    """Configuration for get_application step."""
+
+    type: Literal["get_application"] = "get_application"
+    node: str = Field(..., description="Target node")
+    application_id: str = Field(..., description="Application ID to read")
 
 
 class CreateNamespaceStepConfig(BaseStepConfig):
@@ -1506,6 +1515,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "get_proposal_approvers": GetProposalApproversStep,
     "upload_blob": UploadBlobStep,
     "delete_blob_on_disk": DeleteBlobOnDiskStepConfig,
+    "get_application": GetApplicationStepConfig,
     "create_mesh": CreateMeshStep,
     "fuzzy_test": FuzzyTestStep,
 }
