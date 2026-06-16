@@ -182,6 +182,10 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     total_raw = rollup.get("total")
     total = _as_int(total_raw) if total_raw is not None else len(members)
 
+    # Reconcile with member states so a failed member is never missed when the
+    # rollup counter is absent/malformed (see docstring).
+    failed = max(_as_int(rollup.get("failed")), members_failed)
+
     return {
         "target_version": (
             response.get("targetVersion") if isinstance(response, dict) else None
@@ -193,13 +197,14 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         "migrated": _as_int(rollup.get("migrated")),
         "in_progress": _as_int(rollup.get("inProgress")),
         "unknown": _as_int(rollup.get("unknown")),
-        # Reconcile with member states so a failed member is never missed when
-        # the rollup counter is absent/malformed (see docstring).
-        "failed": max(_as_int(rollup.get("failed")), members_failed),
-        # core computes this directly: true iff every cohort member reported a
-        # converged schema with zero residue. An empty/no-record response yields
-        # false, so it can never falsely satisfy assert_migration_complete.
-        "all_migrated": bool(rollup.get("allMigrated", False)),
+        "failed": failed,
+        # core computes `allMigrated` directly (true iff every member converged
+        # with zero residue), but the assert poll loop checks all_migrated
+        # BEFORE failed — so gate it on `failed == 0` too, otherwise a response
+        # that (malformed) claims allMigrated while a member is failed would
+        # wrongly satisfy the assertion. An empty/no-record response yields
+        # false either way.
+        "all_migrated": bool(rollup.get("allMigrated", False)) and failed == 0,
         "members_pending_signature": _as_int(rollup.get("membersPendingSignature")),
         "members": members,
     }
@@ -1306,6 +1311,14 @@ class AssertMigrationCompleteStep(BaseStep):
             )
         else:
             detail = "no successful status read"
+            # No poll ever succeeded, so there's no summary to export. Synthesising
+            # an all-zero one would misreport "unknown" as "empty/not-migrated", so
+            # warn instead when a downstream step is expecting these outputs.
+            if expected_failure and "outputs" in self.config:
+                console.print(
+                    f"[yellow]assert_migration_complete: no status read succeeded "
+                    f"on {node_name}; `outputs:` variables left unset[/yellow]"
+                )
         msg = (
             f"assert_migration_complete on namespace {namespace_id} ({node_name}): "
             f"{failure_reason} after {attempt} poll(s) — {detail}"
@@ -1371,6 +1384,10 @@ class ResyncContextStep(BaseStep):
         context_id = self._resolve_dynamic_value(
             self.config["context_id"], workflow_results, dynamic_values
         )
+        # `force` is a static bool (like `cascade` on upgrade_group): both
+        # `_validate_field_types` here and the Pydantic `Optional[bool]` schema
+        # reject a non-bool value, so it never carries a `{{placeholder}}` to
+        # resolve — no _resolve_dynamic_value needed.
         force = bool(self.config.get("force", False))
 
         try:
@@ -1502,13 +1519,16 @@ class ListApplicationVersionsStep(BaseStep):
 
         data = result["data"]
         raw_versions = data.get("data") if isinstance(data, dict) else None
-        # Warn (don't silently drop) on an unexpected non-list `data` body, so an
+        # Warn (don't silently drop) on any shape other than `{data: [...]}` —
+        # a non-dict body (bare list / None) or a non-list `data` field — so an
         # author whose `outputs: {vs: versions}` resolves to [] can tell it was a
         # response-shape mismatch rather than genuinely zero installed versions.
-        if raw_versions is not None and not isinstance(raw_versions, list):
+        # A real empty inventory arrives as `{data: []}` and never warns.
+        if not isinstance(raw_versions, list):
             console.print(
-                f"[yellow]list_application_versions: unexpected data type "
-                f"{type(raw_versions).__name__} on {node_name}, expected list[/yellow]"
+                f"[yellow]list_application_versions: unexpected response shape "
+                f"({type(data).__name__}) on {node_name}, expected "
+                f"{{data: [...]}}[/yellow]"
             )
         versions = raw_versions if isinstance(raw_versions, list) else []
         # Re-attach under `versions` (not `data`) so the export unwrap doesn't

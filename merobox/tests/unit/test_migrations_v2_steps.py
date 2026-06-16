@@ -147,6 +147,22 @@ class TestSummarizeMigrationStatus:
         )
         assert s["total"] == 0
 
+    def test_all_migrated_false_when_member_failed(self):
+        # Bugbot HIGH: a (contradictory) response claiming allMigrated while a
+        # member is failed must NOT report all_migrated — the assert poll loop
+        # checks all_migrated before failed.
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(migrated=1, total=2, allMigrated=True),
+                "members": [
+                    {"peer": "a", "state": "migrated"},
+                    {"peer": "b", "state": "failed"},
+                ],
+            }
+        )
+        assert s["failed"] == 1
+        assert s["all_migrated"] is False
+
 
 # =============================================================================
 # GetMigrationStatusStep
@@ -333,13 +349,15 @@ class TestAssertMigrationCompleteExecute:
         step = AssertMigrationCompleteStep(self.config)
         client = MagicMock()
         client.get_migration_status.side_effect = [
-            {"rollup": _rollup(in_progress=1, total=1), "members": []},
+            {"rollup": _rollup(inProgress=1, total=1), "members": []},
             {"rollup": _rollup(migrated=1, total=1, allMigrated=True), "members": []},
         ]
         p1, p2, p3, p4 = self._patched(step, client)
         with p1, p2, p3, p4:
             result = _run(step.execute({}, {}))
         assert result is True
+        # Both polls must run — the first (in-progress) should not short-circuit.
+        assert client.get_migration_status.call_count == 2
 
     def test_failed_member_exits_early(self):
         step = AssertMigrationCompleteStep(self.config)
@@ -408,7 +426,7 @@ class TestAssertMigrationCompleteExecute:
         step = AssertMigrationCompleteStep(self.config)
         client = MagicMock()
         client.get_migration_status.return_value = {
-            "rollup": _rollup(in_progress=1, total=1),
+            "rollup": _rollup(inProgress=1, total=1),
             "members": [],
         }
         p1, p2, p3, p4 = self._patched(step, client)
@@ -422,6 +440,26 @@ class TestAssertMigrationCompleteExecute:
         ):
             result = _run(step.execute({}, {}))
         assert result is False
+
+    def test_all_polls_jsonrpc_error_times_out(self):
+        # Every poll returns a JSON-RPC error body → summary always None →
+        # last_summary stays None → exit via timeout, no migration_status stored.
+        step = AssertMigrationCompleteStep(self.config)
+        client = MagicMock()
+        client.get_migration_status.return_value = {"error": {"code": -1}}
+        workflow_results = {}
+        p1, p2, p3, p4 = self._patched(step, client)
+        with (
+            p1,
+            p2,
+            p3,
+            p4,
+            patch.object(step, "_check_jsonrpc_error", return_value=True),
+            patch(f"{_MODULE}.time.monotonic", side_effect=itertools.count(0, 5)),
+        ):
+            result = _run(step.execute(workflow_results, {}))
+        assert result is False
+        assert "migration_status_calimero-node-1" not in workflow_results
 
     def test_timeout_with_expected_failure_passes(self):
         cfg = {**self.config, "expected_failure": True}
@@ -547,6 +585,19 @@ class TestResyncContextExecute:
             result = _run(step.execute({}, dynamic_values))
         assert result is True
         assert dynamic_values.get("started") is True
+
+    def test_non_dict_response_warns_and_stores_empty(self):
+        # A non-dict body must not be silently dropped: the step warns and
+        # stores {} (so `outputs:` fields resolve to None, not stale data).
+        step = ResyncContextStep(self.config)
+        client = MagicMock()
+        client.resync_context.return_value = ["unexpected"]
+        workflow_results = {}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            result = _run(step.execute(workflow_results, {}))
+        assert result is True
+        assert workflow_results["resync_context_calimero-node-2"] == {}
 
     def test_client_error_fails_step(self):
         step = ResyncContextStep(self.config)
@@ -680,6 +731,21 @@ class TestListApplicationVersionsExecute:
         step = ListApplicationVersionsStep(self.config)
         client = MagicMock()
         client.list_application_versions.return_value = {"data": {"oops": 1}}
+        workflow_results = {}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            result = _run(step.execute(workflow_results, {}))
+        assert result is True
+        stored = workflow_results["list_application_versions_calimero-node-1"]
+        assert stored["count"] == 0
+        assert stored["versions"] == []
+
+    def test_bare_list_body_warns_and_empties(self):
+        # A non-dict top-level body (e.g. a bare list, not `{data: [...]}`) is
+        # also a shape mismatch and must warn rather than silently empty.
+        step = ListApplicationVersionsStep(self.config)
+        client = MagicMock()
+        client.list_application_versions.return_value = [{"version": "0.1.0"}]
         workflow_results = {}
         p1, p2, p3 = self._patched(step, client)
         with p1, p2, p3:
