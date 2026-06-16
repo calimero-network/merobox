@@ -72,10 +72,30 @@ class DeleteBlobOnDiskStep(BaseStep):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
         for field in ("data_dir", "blobs_subdir"):
             value = self.config.get(field)
-            if value is not None and not isinstance(value, str):
+            if value is None:
+                continue
+            if not isinstance(value, str):
                 raise ValueError(
                     f"Step '{step_name}': '{field}' must be a string if provided"
                 )
+            # These land in the exec path verbatim, so reject `..` traversal
+            # components outright (node_name/blob_id are validated in execute).
+            if ".." in value.split("/"):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must not contain '..' path components"
+                )
+        # `data_dir` is an absolute CALIMERO_HOME inside the container; a
+        # relative value would resolve against the exec cwd, not the data root.
+        data_dir = self.config.get("data_dir")
+        if isinstance(data_dir, str) and not data_dir.startswith("/"):
+            raise ValueError(f"Step '{step_name}': 'data_dir' must be an absolute path")
+        # `blobs_subdir` is a subdir under <data_dir>/<node>; an absolute value
+        # would escape that prefix entirely.
+        blobs_subdir = self.config.get("blobs_subdir")
+        if isinstance(blobs_subdir, str) and blobs_subdir.startswith("/"):
+            raise ValueError(
+                f"Step '{step_name}': 'blobs_subdir' must be a relative subdir"
+            )
         missing_ok = self.config.get("missing_ok")
         if missing_ok is not None and not isinstance(missing_ok, bool):
             raise ValueError(
@@ -93,12 +113,17 @@ class DeleteBlobOnDiskStep(BaseStep):
         )
         data_dir = self.config.get("data_dir") or _DEFAULT_DATA_DIR
         blobs_subdir = self.config.get("blobs_subdir") or _DEFAULT_BLOBS_SUBDIR
-        missing_ok = bool(self.config.get("missing_ok", True))
+        # `.get(..., True)` returns None (not the default) for an explicit
+        # `missing_ok: null`, and `bool(None)` is False — so collapse None to
+        # the documented default here.
+        missing_ok_raw = self.config.get("missing_ok")
+        missing_ok = True if missing_ok_raw is None else bool(missing_ok_raw)
         expected_failure = self._is_expected_failure()
 
-        # Defence in depth: every component lands in an exec path, so reject a
-        # crafted node name / blob id before building it (argv is a list, so
-        # this is belt-and-suspenders against traversal, not shell injection).
+        # Defence in depth: node_name + blob_id land in the exec path, so reject
+        # a crafted value before building it. With data_dir/blobs_subdir also
+        # `..`-validated (see _validate_field_types) the whole path is traversal-
+        # free; argv is a list so there's no shell-injection surface either.
         if not _SAFE_NAME_RE.match(str(node_name)):
             return self._fail(f"unsafe node name {node_name!r}", expected_failure)
         if not _BASE58_RE.match(str(blob_id)):
@@ -106,6 +131,10 @@ class DeleteBlobOnDiskStep(BaseStep):
                 f"blob_id {blob_id!r} is not a base58 blob id", expected_failure
             )
 
+        if not self.manager:
+            return self._fail(
+                "no manager available (remote-only mode)", expected_failure
+            )
         # docker-exec only: in binary mode the blob is on the host filesystem and
         # this primitive does not apply (the stranded-resync workflow is
         # docker-only, like the partition_peers fault steps it pairs with).
@@ -115,14 +144,25 @@ class DeleteBlobOnDiskStep(BaseStep):
                 "(no container to exec into in binary mode)",
                 expected_failure,
             )
-        if not self.manager:
-            return self._fail(
-                "no manager available (remote-only mode)", expected_failure
-            )
 
         container = resolve_container(self.manager, node_name)
         if container is None:
             return self._fail(f"container '{node_name}' not found", expected_failure)
+
+        # exec_run blocks indefinitely on a paused container (the process is
+        # SIGSTOP'd and never drains the exec stream — same hazard documented
+        # for the fault steps). Check state first so a paused node fails fast.
+        try:
+            container.reload()
+            state = container.attrs.get("State", {}).get("Status")
+        except Exception:
+            state = None
+        if state is not None and state != "running":
+            return self._fail(
+                f"container '{node_name}' is '{state}', not running "
+                f"(exec would hang)",
+                expected_failure,
+            )
 
         path = f"{data_dir}/{node_name}/{blobs_subdir}/{blob_id}"
 

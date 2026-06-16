@@ -50,7 +50,9 @@ class GetApplicationStep(BaseStep):
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
-        node_name = self.config["node"]
+        node_name = self._resolve_dynamic_value(
+            self.config["node"], workflow_results, dynamic_values
+        )
         application_id = self._resolve_dynamic_value(
             self.config["application_id"], workflow_results, dynamic_values
         )

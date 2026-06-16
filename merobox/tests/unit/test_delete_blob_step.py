@@ -38,8 +38,9 @@ class _Exec:
         self.output = output
 
 
-def _container(*exec_results):
+def _container(*exec_results, state="running"):
     c = MagicMock()
+    c.attrs = {"State": {"Status": state}}
     c.exec_run.side_effect = list(exec_results)
     return c
 
@@ -94,6 +95,31 @@ class TestDeleteBlobValidation:
                     "missing_ok": "yes",
                 },
                 manager=MagicMock(),
+            )
+
+    def _cfg(self, **extra):
+        cfg = {"type": "delete_blob_on_disk", "node": "node-1", "blob_id": _BLOB}
+        cfg.update(extra)
+        return cfg
+
+    def test_data_dir_with_dotdot_raises(self):
+        with pytest.raises(ValueError, match="data_dir"):
+            DeleteBlobOnDiskStep(self._cfg(data_dir="/app/../etc"), manager=MagicMock())
+
+    def test_relative_data_dir_raises(self):
+        with pytest.raises(ValueError, match="data_dir"):
+            DeleteBlobOnDiskStep(self._cfg(data_dir="app/data"), manager=MagicMock())
+
+    def test_blobs_subdir_with_dotdot_raises(self):
+        with pytest.raises(ValueError, match="blobs_subdir"):
+            DeleteBlobOnDiskStep(
+                self._cfg(blobs_subdir="../../etc"), manager=MagicMock()
+            )
+
+    def test_absolute_blobs_subdir_raises(self):
+        with pytest.raises(ValueError, match="blobs_subdir"):
+            DeleteBlobOnDiskStep(
+                self._cfg(blobs_subdir="/etc/passwd"), manager=MagicMock()
             )
 
 
@@ -198,12 +224,33 @@ class TestDeleteBlobExecute:
 
     def test_exec_exception_fails(self):
         step = _step()
-        container = MagicMock()
+        container = _container()  # running; exec_run overridden to raise
         container.exec_run.side_effect = RuntimeError("docker down")
         p1, p2 = self._patched(container)
         with p1, p2:
             result = _run(step.execute({}, {}))
         assert result is False
+
+    def test_paused_container_fails_fast(self):
+        # exec_run hangs on a paused container, so a non-running state must
+        # fail fast rather than block until timeout.
+        step = _step()
+        container = _container(_Exec(0), _Exec(0), _Exec(1), state="paused")
+        p1, p2 = self._patched(container)
+        with p1, p2:
+            result = _run(step.execute({}, {}))
+        assert result is False
+        container.exec_run.assert_not_called()
+
+    def test_missing_ok_null_defaults_true(self):
+        # Explicit `missing_ok: null` must keep the permissive default (an
+        # absent blob is still a success), not flip to False.
+        step = _step(missing_ok=None)
+        container = _container(_Exec(1), _Exec(0), _Exec(1))  # absent
+        p1, p2 = self._patched(container)
+        with p1, p2:
+            result = _run(step.execute({}, {}))
+        assert result is True
 
     def test_outputs_export_removed_flag(self):
         cfg_step = _step(outputs={"was_removed": "removed"})
