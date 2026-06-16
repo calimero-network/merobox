@@ -11,9 +11,11 @@ from merobox.commands.bootstrap.steps.assert_log import (
 )
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
+from merobox.commands.bootstrap.steps.delete_blob import DeleteBlobOnDiskStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
+from merobox.commands.bootstrap.steps.get_application import GetApplicationStep
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
 from merobox.commands.bootstrap.steps.group_governance import (
     DetachContextFromGroupStep,
@@ -357,6 +359,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = HealPeersStep
         elif step_type == "inject_network_fault":
             step_class = InjectNetworkFaultStep
+        elif step_type == "delete_blob_on_disk":
+            step_class = DeleteBlobOnDiskStep
+        elif step_type == "get_application":
+            step_class = GetApplicationStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

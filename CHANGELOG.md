@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.38] - 2026-06-16
+
+### Added
+
+- New `delete_blob_on_disk` workflow step: removes a single content-addressed
+  bytecode blob file from a node's on-disk blob store via `docker exec rm -f`
+  (`<data_dir>/<node>/blobs/<blob_id>`, default `data_dir=/app/data`). A
+  fault-injection primitive for the migrations-v2 stranded-context e2e —
+  `uninstall_application` does not remove the content-addressed blob and a
+  behind node pre-stages an upgrade-ladder rung over BlobShare, so `stop_node`
+  alone can't make a rung's bytecode unobtainable; deleting the intermediate
+  blob on every holder strands a behind context (`NoMigrationPath`), which
+  `resync_context` then recovers. The `blob_id` is the base58 id surfaced by
+  `list_application_versions` (matches the on-disk filename). Verifies the blob
+  is actually gone after `rm` (fails on a silent survivor) and confirms it was
+  present unless `missing_ok` (default true). Docker-only (pairs with the
+  `partition_peers` fault steps); stores `{blob_id, path, existed, removed}`.
+- New `get_application` workflow step: reads an application's current row
+  (`id`, `version`, `blob.bytecode`/`blob.compiled`) via
+  `GET admin-api/applications/{id}`. Same-package bundles share one
+  `applicationId`, so this is how a workflow distinguishes versions — the row
+  points at the latest install, so reading it right after an install captures
+  that version's base58 `blob.bytecode` (the id `delete_blob_on_disk` and the
+  on-disk blob store use). `outputs:` paths start at `application` (e.g.
+  `application.blob.bytecode`).
+
 ## [0.6.37] - 2026-06-15
 
 ### Added

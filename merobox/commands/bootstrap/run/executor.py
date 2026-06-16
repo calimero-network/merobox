@@ -30,11 +30,13 @@ from merobox.commands.bootstrap.steps import (
     CreateIdentityStep,
     CreateNamespaceInvitationStep,
     CreateNamespaceStep,
+    DeleteBlobOnDiskStep,
     DeleteContextStep,
     DeleteGroupStep,
     DeleteNamespaceStep,
     DetachContextFromGroupStep,
     ExecuteStep,
+    GetApplicationStep,
     GetCascadeStatusStep,
     GetContextMetadataStep,
     GetGroupInfoStep,
@@ -2153,6 +2155,10 @@ class WorkflowExecutor:
             return GetProposalApproversStep(step_config, **common_kwargs)
         elif step_type == "upload_blob":
             return UploadBlobStep(step_config, **common_kwargs)
+        elif step_type == "delete_blob_on_disk":
+            return DeleteBlobOnDiskStep(step_config, **common_kwargs)
+        elif step_type == "get_application":
+            return GetApplicationStep(step_config, **common_kwargs)
         elif step_type == "create_mesh":
             return CreateMeshStep(step_config, **common_kwargs)
         elif step_type == "fuzzy_test":
