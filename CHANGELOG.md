@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.37] - 2026-06-15
+
+### Added
+
+- Migrations-v2 workflow steps wrapping the calimero-client-py 0.6.19 bindings
+  (calimero-network/calimero-client-py#63, over calimero-network/core#2768).
+  Each carries the same client-version pre-flight guard as the cascade-status
+  steps (requires calimero-client-py >= 0.6.19):
+  - `get_migration_status`: reads the pinned-cohort migration rollup for a
+    namespace (migrated / in_progress / unknown / failed / total +
+    `all_migrated`, plus a per-member `state` and `migration_failed` reason).
+    Observability only. Stores the summary under `migration_status_{node}`.
+  - `assert_migration_complete`: polls `get_migration_status` until the cohort
+    is fully migrated (`all_migrated`) or `timeout_seconds` (default 30)
+    elapses, with `poll_interval` (default 2.0); fails fast if any member
+    enters the `failed` state.
+  - `resync_context`: recovers a stranded context by discarding local DAG heads
+    and adopting a peer's full-state snapshot (`force`, default false, required
+    when the context still holds local heads). Stores `{context_id,
+    resync_started}` under `resync_context_{node}`.
+  - `list_application_versions`: lists every locally-retained bytecode version
+    (`{version, blob_id, size, package}`) of an application; a `blob_id` doubles
+    as the `app_key` for `create_namespace`.
+- `create_namespace` step now accepts an optional `app_key` (hex blob id) that
+  pins the namespace to a specific installed application version.
+
+### Changed
+
+- Bump the `calimero-client-py` floor to `>=0.6.19` (the migrations-v2 binding
+  release).
+- **BREAKING**: drop the `migrate_method` field from the `upgrade_group` and
+  `cascade_namespace_application` steps. Core now resolves whether/what to
+  migrate from the apps' embedded ABIs, and the field was removed from the
+  underlying `upgrade_group` binding in calimero-client-py 0.6.19.
+
 ## [0.6.36] - 2026-06-06
 
 ### Added

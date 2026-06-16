@@ -50,10 +50,14 @@ from merobox.commands.bootstrap.steps.group_metadata import (
 from merobox.commands.bootstrap.steps.group_upgrade import (
     AbortMigrationStep,
     AssertCascadeCompleteStep,
+    AssertMigrationCompleteStep,
     CascadeNamespaceApplicationStep,
     GetCascadeStatusStep,
     GetGroupUpgradeStatusStep,
+    GetMigrationStatusStep,
+    ListApplicationVersionsStep,
     RegisterGroupSigningKeyStep,
+    ResyncContextStep,
     RetryGroupUpgradeStep,
     UpgradeGroupStep,
 )
@@ -321,6 +325,14 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = AssertCascadeCompleteStep
         elif step_type == "abort_migration":
             step_class = AbortMigrationStep
+        elif step_type == "get_migration_status":
+            step_class = GetMigrationStatusStep
+        elif step_type == "assert_migration_complete":
+            step_class = AssertMigrationCompleteStep
+        elif step_type == "resync_context":
+            step_class = ResyncContextStep
+        elif step_type == "list_application_versions":
+            step_class = ListApplicationVersionsStep
         elif step_type == "get_group_upgrade_status":
             step_class = GetGroupUpgradeStatusStep
         elif step_type == "retry_group_upgrade":
