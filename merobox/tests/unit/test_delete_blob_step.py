@@ -242,6 +242,18 @@ class TestDeleteBlobExecute:
         assert result is False
         container.exec_run.assert_not_called()
 
+    def test_unknown_state_on_reload_error_fails_fast(self):
+        # If reload() raises, the state is unknown — treat it as unsafe (don't
+        # risk the exec hang the check exists to prevent).
+        step = _step()
+        container = _container(_Exec(0), _Exec(0), _Exec(1))
+        container.reload.side_effect = RuntimeError("daemon hiccup")
+        p1, p2 = self._patched(container)
+        with p1, p2:
+            result = _run(step.execute({}, {}))
+        assert result is False
+        container.exec_run.assert_not_called()
+
     def test_missing_ok_null_defaults_true(self):
         # Explicit `missing_ok: null` must keep the permissive default (an
         # absent blob is still a success), not flip to False.

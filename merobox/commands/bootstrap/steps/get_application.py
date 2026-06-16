@@ -83,16 +83,19 @@ class GetApplicationStep(BaseStep):
             return False
 
         data = result["data"]
-        workflow_results[f"get_application_{node_name}"] = data
+        # Unwrap the `{data: {application: {...}}}` envelope explicitly so the
+        # `outputs:` contract (paths rooted at `application`) holds regardless of
+        # whether the base-class export machinery also unwraps a top-level
+        # `data` key. The unwrapped object is what we store AND export, so a
+        # direct workflow_results read and an `outputs:` path agree.
+        inner = data.get("data") if isinstance(data, dict) else None
+        inner = inner if isinstance(inner, dict) else data
+        workflow_results[f"get_application_{node_name}"] = inner
         if "outputs" in self.config:
-            self._export_variables(data, node_name, dynamic_values)
+            self._export_variables(inner, node_name, dynamic_values)
 
-        # Pull a compact summary for the run log (best-effort; the body is the
-        # `{data: {application: {...}}}` envelope).
-        app = {}
-        if isinstance(data, dict):
-            inner = data.get("data") if isinstance(data.get("data"), dict) else data
-            app = inner.get("application") or {} if isinstance(inner, dict) else {}
+        # Pull a compact summary for the run log (best-effort).
+        app = inner.get("application") or {} if isinstance(inner, dict) else {}
         version = app.get("version") if isinstance(app, dict) else None
         blob = app.get("blob") if isinstance(app, dict) else None
         bytecode = blob.get("bytecode") if isinstance(blob, dict) else None

@@ -86,7 +86,15 @@ class TestGetApplicationExecute:
             result = _run(step.execute(workflow_results, {}))
         assert result is True
         client.get_application.assert_called_once_with("app123")
-        assert workflow_results["get_application_node-1"] == _RESPONSE
+        # The `{data: ...}` envelope is unwrapped before storing, so a direct
+        # read and an `outputs:` path both root at `application`.
+        assert workflow_results["get_application_node-1"] == _RESPONSE["data"]
+        assert (
+            workflow_results["get_application_node-1"]["application"]["blob"][
+                "bytecode"
+            ]
+            == "Bk8aZ2x9Qm"
+        )
 
     def test_outputs_export_nested_bytecode(self):
         # The export unwrap strips the top-level `data`, so the blob id is

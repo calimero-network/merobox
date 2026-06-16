@@ -151,23 +151,36 @@ class DeleteBlobOnDiskStep(BaseStep):
 
         # exec_run blocks indefinitely on a paused container (the process is
         # SIGSTOP'd and never drains the exec stream — same hazard documented
-        # for the fault steps). Check state first so a paused node fails fast.
+        # for the fault steps). Require a confirmed "running" state first: an
+        # unknown state (reload raised) is treated as unsafe rather than risking
+        # the hang the whole check exists to prevent.
         try:
             container.reload()
             state = container.attrs.get("State", {}).get("Status")
         except Exception:
             state = None
-        if state is not None and state != "running":
+        if state != "running":
             return self._fail(
-                f"container '{node_name}' is '{state}', not running "
-                f"(exec would hang)",
+                f"container '{node_name}' is '{state}', not confirmed running "
+                f"(exec would risk hanging)",
                 expected_failure,
             )
 
         path = f"{data_dir}/{node_name}/{blobs_subdir}/{blob_id}"
 
+        # `op` labels the in-flight exec so a daemon error names which call failed.
+        op = "test -e (pre)"
         try:
             existed = container.exec_run(["test", "-e", path]).exit_code == 0
+            # Fail before issuing rm when a required blob is absent — don't run a
+            # no-op rm just to reject it afterward (clearer + avoids touching a
+            # never-present path).
+            if not existed and not missing_ok:
+                return self._fail(
+                    f"blob {blob_id} was not present at {path} (missing_ok=false)",
+                    expected_failure,
+                )
+            op = "rm -f"
             rm = container.exec_run(["rm", "-f", path])
             if rm.exit_code != 0:
                 detail = _decode(rm.output)
@@ -176,19 +189,16 @@ class DeleteBlobOnDiskStep(BaseStep):
                 )
             # Confirm the file is actually gone — a silently-surviving blob would
             # make the strand a no-op and the workflow false-pass.
+            op = "test -e (post)"
             still_present = container.exec_run(["test", "-e", path]).exit_code == 0
         except Exception as e:
-            return self._fail(f"exec failed on {node_name}: {e}", expected_failure)
+            return self._fail(
+                f"exec ({op}) failed on {node_name}: {e}", expected_failure
+            )
 
         if still_present:
             return self._fail(
                 f"blob {blob_id} still present at {path} after rm", expected_failure
-            )
-
-        if not existed and not missing_ok:
-            return self._fail(
-                f"blob {blob_id} was not present at {path} (missing_ok=false)",
-                expected_failure,
             )
 
         result = {
