@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.39] - 2026-06-17
+
+### Added
+
+- New `delete_blob` workflow step: deletes a blob via the admin API
+  (`DELETE admin-api/blobs/{id}`, calimero-client-py `delete_blob`), which
+  cascades the parent metadata + every chunk file + chunk metadata. This is the
+  primitive the stranded-context resync e2e actually needs: `delete_blob_on_disk`
+  `rm`s the base58 PARENT id off disk and is a **no-op for any real (chunked)
+  blob** (the parent id is RocksDB-only metadata; the bytes live in chunk files
+  named by an unexposed chunk hash), so it can't make a rung's bytecode
+  unobtainable. Fields: `node`, `blob_id` (base58 parent id from
+  `list_application_versions` `blobId` / `get_application`
+  `application.blob.bytecode`), optional `missing_ok` (default `true` — a blob
+  already absent on the node is success). Works in docker and binary mode.
+
 ## [0.6.38] - 2026-06-16
 
 ### Added

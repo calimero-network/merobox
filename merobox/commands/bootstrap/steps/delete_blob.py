@@ -28,6 +28,8 @@ from merobox.commands.bootstrap.steps._docker_utils import (
     resolve_container,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
 # merod's per-node data root inside a merobox container (CALIMERO_HOME), and the
@@ -233,3 +235,127 @@ def _decode(output: Any) -> str:
     if isinstance(output, bytes):
         return output.decode("utf-8", errors="replace").strip()
     return str(output).strip() if output is not None else ""
+
+
+class DeleteBlobStep(BaseStep):
+    """Delete a blob via the admin API (`DELETE admin-api/blobs/{id}`).
+
+    Unlike `delete_blob_on_disk` — which `rm`s the base58 PARENT id off disk and
+    is a NO-OP for any real (chunked) blob, because the parent id is RocksDB-only
+    metadata and the bytes live in chunk files named by an unexposed chunk hash —
+    this routes through the node's blob store (calimero-client-py `delete_blob`),
+    which cascades the parent metadata + every chunk file + chunk metadata. That
+    actually makes a rung's bytecode unobtainable, so it is the primitive the
+    stranded-context resync e2e needs. Works in both docker and binary mode.
+
+    Fields:
+      node:       target node.
+      blob_id:    base58 (parent) blob id to delete (e.g. from
+                  `list_application_versions` `blobId` or `get_application`
+                  `application.blob.bytecode`).
+      missing_ok: optional (default true) — a blob already absent on this node is
+                  still success (the goal is "absent here", reached either way).
+
+    Stores `{blob_id, deleted}` under `delete_blob_{node}` and exposes it to
+    `outputs:`.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "blob_id"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "blob_id"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        missing_ok = self.config.get("missing_ok")
+        if missing_ok is not None and not isinstance(missing_ok, bool):
+            raise ValueError(
+                f"Step '{step_name}': 'missing_ok' must be a boolean if provided"
+            )
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolve_dynamic_value(
+            self.config["node"], workflow_results, dynamic_values
+        )
+        blob_id = self._resolve_dynamic_value(
+            self.config["blob_id"], workflow_results, dynamic_values
+        )
+        # `.get(..., True)` returns None (not the default) for an explicit
+        # `missing_ok: null`, and `bool(None)` is False — so collapse None here.
+        missing_ok_raw = self.config.get("missing_ok")
+        missing_ok = True if missing_ok_raw is None else bool(missing_ok_raw)
+        expected_failure = self._is_expected_failure()
+
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            api_result = client.delete_blob(blob_id)
+            result = ok(api_result)
+        except Exception as e:
+            # The admin API errors with "Blob not found" (core's
+            # `node_client.delete_blob` bails when the blob metadata is absent —
+            # crates/node/primitives/src/client/blob.rs) when the blob is already
+            # gone on this node; under missing_ok that IS the desired end state,
+            # reached either way — report success without deleting. Match the
+            # anchored "blob not found" (not a bare "not found") so unrelated
+            # failures like "host not found" / "connection refused" still fail.
+            if missing_ok and "blob not found" in str(e).lower():
+                stored = {"blob_id": blob_id, "deleted": False}
+                workflow_results[f"delete_blob_{node_name}"] = stored
+                if "outputs" in self.config:
+                    self._export_variables(stored, node_name, dynamic_values)
+                console.print(
+                    f"[green]✓ delete_blob on {node_name}: blob {blob_id} "
+                    f"already absent[/green]"
+                )
+                if expected_failure:
+                    self._report_unexpected_success()
+                return True
+            result = fail("delete_blob failed", error=e)
+
+        if not result["success"]:
+            if expected_failure:
+                self._report_expected_failure(str(result.get("error", "Unknown error")))
+                return True
+            console.print(
+                f"[red]delete_blob failed on {node_name}: {result.get('error')}[/red]"
+            )
+            return False
+
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                self._report_expected_failure("JSON-RPC error returned")
+                return True
+            return False
+
+        # client-py returns the flat `BlobDeleteResponse` (`{blob_id, deleted}`).
+        # Guard the shape before storing so a non-dict can't slip through and
+        # surface later as a confusing `outputs:` export error.
+        data = result["data"]
+        if not isinstance(data, dict):
+            if expected_failure:
+                self._report_expected_failure(
+                    f"unexpected delete_blob response type {type(data).__name__}"
+                )
+                return True
+            console.print(
+                f"[red]delete_blob on {node_name}: unexpected response type "
+                f"{type(data).__name__}[/red]"
+            )
+            return False
+        workflow_results[f"delete_blob_{node_name}"] = data
+        if "outputs" in self.config:
+            self._export_variables(data, node_name, dynamic_values)
+
+        deleted = data.get("deleted")
+        console.print(
+            f"[green]✓ delete_blob {blob_id} on {node_name}: deleted={deleted}[/green]"
+        )
+        if expected_failure:
+            self._report_unexpected_success()
+        return True
