@@ -111,6 +111,7 @@ VALID_STEP_TYPES = frozenset(
         "get_proposal_approvers",
         "upload_blob",
         "delete_blob_on_disk",
+        "delete_blob",
         "get_application",
         "create_mesh",
         "fuzzy_test",
@@ -726,6 +727,24 @@ class DeleteBlobOnDiskStepConfig(BaseStepConfig):
     missing_ok: Optional[bool] = Field(
         True,
         description="Treat a node that never held the blob as success (default true)",
+    )
+
+
+class DeleteBlobStepConfig(BaseStepConfig):
+    """Configuration for delete_blob step (admin API, cascades chunked blobs)."""
+
+    type: Literal["delete_blob"] = "delete_blob"
+    node: str = Field(..., description="Target node")
+    blob_id: str = Field(
+        ...,
+        description=(
+            "Base58 (parent) blob id to delete (e.g. list_application_versions "
+            "`blobId` or get_application `application.blob.bytecode`)"
+        ),
+    )
+    missing_ok: Optional[bool] = Field(
+        True,
+        description="Treat a blob already absent on this node as success (default true)",
     )
 
 
@@ -1515,6 +1534,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "get_proposal_approvers": GetProposalApproversStep,
     "upload_blob": UploadBlobStep,
     "delete_blob_on_disk": DeleteBlobOnDiskStepConfig,
+    "delete_blob": DeleteBlobStepConfig,
     "get_application": GetApplicationStepConfig,
     "create_mesh": CreateMeshStep,
     "fuzzy_test": FuzzyTestStep,
