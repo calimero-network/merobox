@@ -124,6 +124,29 @@ class TestDeleteBlobExecute:
             result = _run(step.execute({}, {}))
         assert result is False
 
+    def test_unrelated_not_found_error_not_swallowed(self):
+        # The match is anchored to "blob not found": a network error whose text
+        # merely contains "not found" must still fail under missing_ok.
+        step = DeleteBlobStep(self.config)
+        client = MagicMock()
+        client.delete_blob.side_effect = RuntimeError("host not found")
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            result = _run(step.execute({}, {}))
+        assert result is False
+
+    def test_non_dict_response_fails(self):
+        # A non-dict API response is rejected before storing, not silently kept.
+        step = DeleteBlobStep(self.config)
+        client = MagicMock()
+        client.delete_blob.return_value = "not-a-dict"
+        workflow_results = {}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            result = _run(step.execute(workflow_results, {}))
+        assert result is False
+        assert "delete_blob_node-1" not in workflow_results
+
     def test_client_error_with_expected_failure_passes(self):
         cfg = {**self.config, "expected_failure": True}
         step = DeleteBlobStep(cfg)

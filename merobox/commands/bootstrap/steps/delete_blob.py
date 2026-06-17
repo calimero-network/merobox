@@ -297,10 +297,14 @@ class DeleteBlobStep(BaseStep):
             api_result = client.delete_blob(blob_id)
             result = ok(api_result)
         except Exception as e:
-            # The admin API errors ("Blob not found") when the blob's metadata is
-            # already absent on this node; under missing_ok that IS the desired
-            # end state, reached either way — report success without deleting.
-            if missing_ok and "not found" in str(e).lower():
+            # The admin API errors with "Blob not found" (core's
+            # `node_client.delete_blob` bails when the blob metadata is absent —
+            # crates/node/primitives/src/client/blob.rs) when the blob is already
+            # gone on this node; under missing_ok that IS the desired end state,
+            # reached either way — report success without deleting. Match the
+            # anchored "blob not found" (not a bare "not found") so unrelated
+            # failures like "host not found" / "connection refused" still fail.
+            if missing_ok and "blob not found" in str(e).lower():
                 stored = {"blob_id": blob_id, "deleted": False}
                 workflow_results[f"delete_blob_{node_name}"] = stored
                 if "outputs" in self.config:
@@ -330,12 +334,25 @@ class DeleteBlobStep(BaseStep):
             return False
 
         # client-py returns the flat `BlobDeleteResponse` (`{blob_id, deleted}`).
+        # Guard the shape before storing so a non-dict can't slip through and
+        # surface later as a confusing `outputs:` export error.
         data = result["data"]
+        if not isinstance(data, dict):
+            if expected_failure:
+                self._report_expected_failure(
+                    f"unexpected delete_blob response type {type(data).__name__}"
+                )
+                return True
+            console.print(
+                f"[red]delete_blob on {node_name}: unexpected response type "
+                f"{type(data).__name__}[/red]"
+            )
+            return False
         workflow_results[f"delete_blob_{node_name}"] = data
         if "outputs" in self.config:
             self._export_variables(data, node_name, dynamic_values)
 
-        deleted = data.get("deleted") if isinstance(data, dict) else None
+        deleted = data.get("deleted")
         console.print(
             f"[green]✓ delete_blob {blob_id} on {node_name}: deleted={deleted}[/green]"
         )
