@@ -233,7 +233,6 @@ class CreateContextStep(BaseStepConfig):
     service_name: Optional[str] = Field(
         None, description="Optional service name for context creation"
     )
-    protocol: Optional[str] = Field(None, description="Protocol to use (e.g., near)")
 
 
 class CreateIdentityStep(BaseStepConfig):
@@ -1424,7 +1423,6 @@ class CreateMeshStep(BaseStepConfig):
     context_node: str = Field(..., description="Node to create context on")
     application_id: str = Field(..., description="Application ID")
     nodes: list[str] = Field(..., description="List of nodes to include in mesh")
-    protocol: Optional[str] = Field(None, description="Protocol to use")
     params: Optional[str] = Field(None, description="Initialization params JSON string")
 
 
