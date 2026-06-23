@@ -975,13 +975,15 @@ class WorkflowExecutor:
         data_dir: Optional[str] = None,
         config_path: Optional[str] = None,
         use_image_entrypoint: bool = False,
+        mock_tee: bool = False,
     ) -> dict[str, Any]:
         """Build the keyword arguments for ``manager.run_node()``.
 
         Shared by every node-startup path (``_start_nodes`` and
         ``_start_single_node``) so they stay in sync. ``merod_args`` /
         ``auth_mode`` only apply in binary mode; ``use_image_entrypoint`` only
-        in Docker mode.
+        in Docker mode. ``mock_tee`` appends ``--mock-tee`` to ``merod run`` in
+        both modes.
         """
         kwargs: dict[str, Any] = {
             "node_name": node_name,
@@ -1001,6 +1003,8 @@ class WorkflowExecutor:
             "bootstrap_nodes": self.bootstrap_nodes,
             # keep merod-init bootstrap.nodes when True (opt-out of e2e isolation)
             "preserve_default_bootstrap": self.preserve_default_bootstrap,
+            # launch with `merod run --mock-tee` for local TEE testing
+            "mock_tee": mock_tee,
         }
         if self.is_binary_mode:
             if self.auth_mode:
@@ -1561,6 +1565,8 @@ class WorkflowExecutor:
         node_name: str,
         node_config: dict | None = None,
         nodes_config: dict | None = None,
+        *,
+        mock_tee: bool = False,
     ) -> bool:
         """
         Start a single node with proper configuration.
@@ -1684,6 +1690,7 @@ class WorkflowExecutor:
             data_dir=data_dir,
             config_path=node_config_path,
             use_image_entrypoint=node_use_image_entrypoint,
+            mock_tee=mock_tee,
         )
         return self.manager.run_node(**run_node_kwargs)
 

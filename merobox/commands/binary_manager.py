@@ -208,6 +208,7 @@ class BinaryManager(CleanupMixin):
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
         merod_args: Optional[str] = None,  # Additional arguments to pass to merod run
         preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
+        mock_tee: bool = False,  # launch with `merod run --mock-tee` (mock TEE attestation)
         **_ignored,  # tolerate Docker-only kwargs (mdns, network_admin, etc.)
     ) -> bool:
         """
@@ -377,6 +378,10 @@ class BinaryManager(CleanupMixin):
                 node_name,
                 "run",
             ]
+
+            # Mock TEE attestation for local testing (`merod run --mock-tee`)
+            if mock_tee:
+                cmd.append("--mock-tee")
 
             # Append additional merod arguments if provided
             if merod_args:
