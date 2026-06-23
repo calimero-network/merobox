@@ -441,9 +441,6 @@ def show(node, context_id, verbose):
                     f"[cyan]Application ID:[/cyan] {context_data['applicationId']}"
                 )
 
-            if "protocol" in context_data:
-                console.print(f"[cyan]Protocol:[/cyan] {context_data['protocol']}")
-
             if "contextStateHash" in context_data:
                 console.print(
                     f"[cyan]Context State Hash:[/cyan] {context_data['contextStateHash']}"
