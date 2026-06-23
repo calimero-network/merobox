@@ -24,6 +24,8 @@ from merobox.commands.bootstrap.steps import (
     AddGroupMembersStep,
     AssertCascadeCompleteStep,
     AssertMigrationCompleteStep,
+    AssertNotMemberStep,
+    AssertTeeMemberStep,
     CascadeNamespaceApplicationStep,
     CreateContextStep,
     CreateGroupInNamespaceStep,
@@ -77,7 +79,9 @@ from merobox.commands.bootstrap.steps import (
     SetMemberCapabilitiesStep,
     SetMemberMetadataStep,
     SetSubgroupVisibilityStep,
+    SetTeeAdmissionPolicyStep,
     SyncGroupStep,
+    TeeFleetJoinStep,
     UninstallApplicationStep,
     UpdateGroupSettingsStep,
     UpdateMemberRoleStep,
@@ -2271,6 +2275,14 @@ class WorkflowExecutor:
             return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "join_subgroup_inheritance":
             return JoinSubgroupInheritanceStep(step_config, **common_kwargs)
+        elif step_type == "set_tee_admission_policy":
+            return SetTeeAdmissionPolicyStep(step_config, **common_kwargs)
+        elif step_type == "tee_fleet_join":
+            return TeeFleetJoinStep(step_config, **common_kwargs)
+        elif step_type == "assert_tee_member":
+            return AssertTeeMemberStep(step_config, **common_kwargs)
+        elif step_type == "assert_not_member":
+            return AssertNotMemberStep(step_config, **common_kwargs)
         elif step_type == "leave_context":
             return LeaveContextStep(step_config, **common_kwargs)
         elif step_type == "leave_group":
