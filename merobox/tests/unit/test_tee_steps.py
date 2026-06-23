@@ -188,7 +188,9 @@ class TestTeeFleetJoinExecute:
         method, url = req.request.call_args.args
         assert method == "POST"
         assert url == f"{_ADMIN_URL}/admin-api/tee/fleet-join"
-        assert req.request.call_args.kwargs["json"] == {"group_id": "gid"}
+        # The admin API deserializes camelCase (serde rename_all = "camelCase"),
+        # so the fleet-join body field must be `groupId`, not `group_id`.
+        assert req.request.call_args.kwargs["json"] == {"groupId": "gid"}
         assert workflow_results["tee_fleet_join_admitted_node-1"] is True
         assert workflow_results["tee_fleet_join_node-1"]["admitted"] is True
 

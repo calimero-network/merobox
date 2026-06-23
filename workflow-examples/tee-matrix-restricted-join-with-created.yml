@@ -1,0 +1,185 @@
+# =============================================================================
+# TEE MATRIX — Restricted × join-with-created (interleaved)
+# =============================================================================
+#
+# Timing×visibility matrix mirror of the in-process core tests. This is the
+# Restricted "join-with-created" cell — the interleaved/concurrent variant:
+# the Restricted subgroup is created FIRST, the TEE is admitted SECOND (while
+# the subgroup exists but has no context yet), and the context is registered
+# THIRD (after admission). It exercises admission and context-registration
+# straddling the same Restricted subgroup, rather than one strictly before the
+# other.
+#
+# Matrix coverage (Restricted column):
+#   - created-after-join ......... tee-g1-restricted-auto-admit.yml
+#   - late-join .................. tee-matrix-restricted-late-join.yml
+#   - join-with-created (THIS) ... subgroup → admit → context (interleaved)
+#
+# What it proves:
+#   1. Owner creates a Restricted subgroup (no context yet).
+#   2. THEN the TEE fleet-joins the root → ReadOnlyTee AT THE ROOT and is
+#      auto-followed into the (still-empty) Restricted subgroup.
+#   3. THEN the owner registers a context in that subgroup; the already-admitted
+#      TEE replicates the newly-registered context.
+#
+# Run natively (macOS), meroctl on PATH for the script step:
+#   PATH="/Users/xilosada/dev/calimero-work/core/target/release:$PATH" \
+#   merobox bootstrap run workflow-examples/tee-matrix-restricted-join-with-created.yml \
+#     --no-docker \
+#     --binary-path /Users/xilosada/dev/calimero-work/core/target/release/merod
+#
+# See tee-g1 for the boot/admit mechanics.
+#
+# NATIVE-RUN STATUS (best-effort realism mirror, like tee-r1): subject to native
+# libp2p mesh-formation timing. The deterministic guard for this timing cell is
+# the in-process core test. The extra fleet-join windows below give the mesh
+# room; treat a native red as "mesh timing — investigate", not "core regressed".
+# =============================================================================
+
+name: TEE MATRIX — Restricted join-with-created (local mock)
+
+force_pull_image: false
+
+nodes:
+  tee-owner:
+    port: 7080
+    rpc_port: 7180
+  tee-replica:
+    port: 7081
+    rpc_port: 7181
+
+steps:
+  - name: Stop the replica so we can relaunch it with --mock-tee
+    type: stop_node
+    nodes: tee-replica
+
+  - name: Start the replica as a mock-TEE node (merod run --mock-tee)
+    type: start_node
+    nodes: tee-replica
+    mock_tee: true
+    wait_for_ready: true
+    wait_timeout: 30
+
+  - name: Install kv-store on owner
+    type: install_application
+    node: tee-owner
+    path: ./workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace on owner
+    type: create_namespace
+    node: tee-owner
+    application_id: '{{app_id}}'
+    outputs:
+      ns: namespaceId
+
+  - name: Set namespace-root TeeAdmissionPolicy to accept mock attestation
+    type: set_tee_admission_policy
+    node: tee-owner
+    group_id: '{{ns}}'
+    accept_mock: true
+
+  # ---------- STEP 1: Restricted subgroup created FIRST (no context yet) ----------
+  - name: Owner creates a Restricted subgroup under the namespace (no context yet)
+    type: create_group_in_namespace
+    node: tee-owner
+    namespace_id: '{{ns}}'
+    group_name: 'restricted-interleaved'
+    outputs:
+      sub: groupId
+
+  - name: Wait for governance + namespace subscription to settle
+    type: wait
+    seconds: 8
+
+  # ---------- STEP 2: admit the TEE (subgroup exists, still empty) ----------
+  - name: TEE fleet-join attempt 1
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  # Extra mesh windows (see tee-matrix-restricted-late-join for rationale): the
+  # local libp2p mesh can take longer to form than in tee-g1. The
+  # `assert_tee_member` below is the real admission gate.
+  - name: TEE fleet-join attempt 3 (extra mesh window)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  - name: TEE fleet-join attempt 4 (extra mesh window)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  - name: Assert the replica reported a namespace identity
+    type: assert
+    statements:
+      - "is_set({{tee_pk}})"
+
+  - name: Let root membership + auto-follow settle
+    type: wait
+    seconds: 8
+
+  - name: Assert the replica is a ReadOnlyTee member AT THE ROOT
+    type: assert_tee_member
+    node: tee-owner
+    group_id: '{{ns}}'
+    identity: '{{tee_pk}}'
+    role: ReadOnlyTee
+
+  - name: Assert the replica is a ReadOnlyTee member of the (empty) subgroup
+    type: assert_tee_member
+    node: tee-owner
+    group_id: '{{sub}}'
+    identity: '{{tee_pk}}'
+    role: ReadOnlyTee
+
+  # ---------- STEP 3: register the context AFTER admission ----------
+  - name: Owner registers a context in the Restricted subgroup (after admit)
+    type: create_context
+    node: tee-owner
+    application_id: '{{app_id}}'
+    group_id: '{{sub}}'
+    outputs:
+      ctx_id: contextId
+
+  - name: Wait for context replication into the already-admitted TEE replica
+    type: wait
+    seconds: 20
+
+  - name: Assert the post-admission context replicated to the TEE replica
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-tee-context-replicated.sh
+    args:
+      - 'http://localhost:7181'
+      - '{{ctx_id}}'
+
+  - name: No panics on either node
+    type: assert_log_absent
+    nodes: [tee-owner, tee-replica]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true

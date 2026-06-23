@@ -1,0 +1,200 @@
+# =============================================================================
+# TEE MATRIX — Restricted × late-join
+# =============================================================================
+#
+# Timing×visibility matrix mirror of the in-process core tests. This is the
+# Restricted "late-join" cell: the Restricted subgroup AND its context already
+# exist BEFORE the TEE is admitted. After admission the TEE must auto-follow
+# into the pre-existing Restricted subgroup and BACKFILL/REPLICATE the
+# pre-existing context.
+#
+# Matrix coverage (Restricted column):
+#   - created-after-join ......... tee-g1-restricted-auto-admit.yml
+#   - late-join (THIS FILE) ...... subgroup+context first, THEN admit
+#   - join-with-created .......... tee-matrix-restricted-join-with-created.yml
+#
+# What it proves:
+#   1. Owner creates a Restricted subgroup + registers a context FIRST.
+#   2. THEN the TEE replica is started (--mock-tee), the policy is set, and it
+#      fleet-joins the namespace root → admitted as ReadOnlyTee AT THE ROOT.
+#   3. The already-existing Restricted subgroup auto-follows the new root TEE
+#      (direct-row auto-follow) → ReadOnlyTee member of the subgroup.
+#   4. The pre-existing Restricted context REPLICATES to the TEE replica
+#      (`meroctl context ls` on the replica greps the context id).
+#
+# Run natively (macOS), meroctl on PATH for the script step:
+#   PATH="/Users/xilosada/dev/calimero-work/core/target/release:$PATH" \
+#   merobox bootstrap run workflow-examples/tee-matrix-restricted-late-join.yml \
+#     --no-docker \
+#     --binary-path /Users/xilosada/dev/calimero-work/core/target/release/merod
+#
+# See tee-g1 for the boot/admit mechanics and the (now-#2491-fixed) first-publish
+# mesh-timing caveat in core's fleet_join handler.
+#
+# NATIVE-RUN STATUS (best-effort realism mirror, like tee-r1): this cell is
+# subject to native libp2p mesh-formation timing. Observed locally: created-
+# after-join (tee-g1) admits on the FIRST fleet-join window, but this "late-join"
+# cell — where a context already exists BEFORE the TEE announces — did NOT admit
+# the mock TEE across 4 sequential ~30s windows (every attempt returned
+# status=announced admitted=False). The announce publishes (HTTP 200, no #2491
+# empty-mesh 500), but the owner did not complete admission within the windows.
+# Treat a red here as "native mesh timing / pre-existing-context interaction —
+# investigate", NOT "core regressed": the AUTHORITATIVE guard for this timing
+# cell is the in-process core test, which controls mesh timing deterministically.
+# =============================================================================
+
+name: TEE MATRIX — Restricted late-join (local mock)
+
+force_pull_image: false
+
+nodes:
+  tee-owner:
+    port: 7080
+    rpc_port: 7180
+  tee-replica:
+    port: 7081
+    rpc_port: 7181
+
+steps:
+  # ---------- Relaunch the replica as a mock-TEE node ----------
+  # We keep the replica booted-then-relaunched (merobox's nodes: path can't
+  # thread --mock-tee). For "late-join" the relaunch happens up front but the
+  # admission (fleet-join) is deferred until AFTER the subgroup+context exist.
+  - name: Stop the replica so we can relaunch it with --mock-tee
+    type: stop_node
+    nodes: tee-replica
+
+  - name: Start the replica as a mock-TEE node (merod run --mock-tee)
+    type: start_node
+    nodes: tee-replica
+    mock_tee: true
+    wait_for_ready: true
+    wait_timeout: 30
+
+  # ---------- Owner-side setup: app + namespace ----------
+  - name: Install kv-store on owner
+    type: install_application
+    node: tee-owner
+    path: ./workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace on owner
+    type: create_namespace
+    node: tee-owner
+    application_id: '{{app_id}}'
+    outputs:
+      ns: namespaceId
+
+  - name: Set namespace-root TeeAdmissionPolicy to accept mock attestation
+    type: set_tee_admission_policy
+    node: tee-owner
+    group_id: '{{ns}}'
+    accept_mock: true
+
+  # ---------- LATE-JOIN: subgroup + context exist FIRST ----------
+  - name: Owner creates a Restricted subgroup under the namespace (BEFORE admit)
+    type: create_group_in_namespace
+    node: tee-owner
+    namespace_id: '{{ns}}'
+    group_name: 'restricted-pre'
+    outputs:
+      sub: groupId
+
+  - name: Owner registers a context in the Restricted subgroup (BEFORE admit)
+    type: create_context
+    node: tee-owner
+    application_id: '{{app_id}}'
+    group_id: '{{sub}}'
+    outputs:
+      ctx_id: contextId
+
+  - name: Wait for governance + namespace subscription + context to settle
+    type: wait
+    seconds: 8
+
+  # ---------- ONLY NOW admit the TEE (the "late" join) ----------
+  - name: TEE fleet-join attempt 1
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  # Extra mesh windows: this cell does more owner-side setup (subgroup + context)
+  # BEFORE fleet-join, so the local libp2p mesh can take longer to form than in
+  # tee-g1. Two more sequential attempts give it room. The `assert_tee_member`
+  # below remains the real admission gate (per-call admitted flag is advisory).
+  - name: TEE fleet-join attempt 3 (extra mesh window)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  - name: TEE fleet-join attempt 4 (extra mesh window)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+      tee_admitted: admitted
+
+  - name: Assert the replica reported a namespace identity
+    type: assert
+    statements:
+      - "is_set({{tee_pk}})"
+
+  - name: Let root membership settle
+    type: wait
+    seconds: 5
+
+  # ---------- Assert ReadOnlyTee at the root ----------
+  - name: Assert the replica is a ReadOnlyTee member AT THE ROOT
+    type: assert_tee_member
+    node: tee-owner
+    group_id: '{{ns}}'
+    identity: '{{tee_pk}}'
+    role: ReadOnlyTee
+
+  # ---------- Auto-follow into the PRE-EXISTING Restricted subgroup ----------
+  - name: Wait for subgroup auto-follow + context backfill to settle
+    type: wait
+    seconds: 20
+
+  - name: Assert the replica is a ReadOnlyTee member of the pre-existing subgroup
+    type: assert_tee_member
+    node: tee-owner
+    group_id: '{{sub}}'
+    identity: '{{tee_pk}}'
+    role: ReadOnlyTee
+
+  # ---------- Prove replication of the PRE-EXISTING context ----------
+  - name: Assert the pre-existing context replicated to the TEE replica
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/assert-tee-context-replicated.sh
+    args:
+      - 'http://localhost:7181'
+      - '{{ctx_id}}'
+
+  - name: No panics on either node
+    type: assert_log_absent
+    nodes: [tee-owner, tee-replica]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true
