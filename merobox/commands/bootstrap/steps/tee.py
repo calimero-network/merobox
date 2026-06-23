@@ -194,10 +194,13 @@ class TeeFleetJoinStep(BaseStep):
         try:
             admin_url = self._get_node_rpc_url(node_name)
             url = f"{admin_url}/admin-api/tee/fleet-join"
+            # The admin API deserializes camelCase (serde rename_all =
+            # "camelCase"), so the body field must be `groupId` — a snake_case
+            # `group_id` is rejected with HTTP 400 "missing field `groupId`".
             response = _admin_request(
                 "POST",
                 url,
-                json={"group_id": group_id},
+                json={"groupId": group_id},
                 timeout=(DEFAULT_CONNECTION_TIMEOUT, _FLEET_JOIN_READ_TIMEOUT),
             )
             if response.status_code != 200:

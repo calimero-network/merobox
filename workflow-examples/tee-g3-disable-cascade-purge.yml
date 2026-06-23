@@ -1,0 +1,149 @@
+# =============================================================================
+# TEE G3 — Disable cascade purge (GREEN)
+# =============================================================================
+#
+# Local, mock-TEE, two-node scenario. Removing an admitted TEE at the namespace
+# root must cascade: the TEE is purged from the root AND from every subgroup it
+# was auto-followed into.
+#
+# What it proves:
+#   - Owner admits a mock-TEE replica at the namespace root and it is
+#     auto-followed into a Restricted subgroup as ReadOnlyTee.
+#   - Owner `remove_group_members` of the TEE AT THE ROOT.
+#   - After sync, the TEE is ABSENT from BOTH the root AND the subgroup
+#     (assert_not_member on each).
+#
+# Run natively (macOS):
+#   merobox bootstrap run workflow-examples/tee-g3-disable-cascade-purge.yml \
+#     --no-docker \
+#     --binary-path /Users/xilosada/dev/calimero-work/core/target/release/merod
+#
+# See tee-g1 for the boot/admit mechanics and the known first-publish
+# mesh-timing caveat in core's fleet_join handler.
+# =============================================================================
+
+name: TEE G3 — Disable cascade purge (local mock)
+
+force_pull_image: false
+
+nodes:
+  tee-owner:
+    port: 7080
+    rpc_port: 7180
+  tee-replica:
+    port: 7081
+    rpc_port: 7181
+
+steps:
+  - name: Stop the replica so we can relaunch it with --mock-tee
+    type: stop_node
+    nodes: tee-replica
+
+  - name: Start the replica as a mock-TEE node (merod run --mock-tee)
+    type: start_node
+    nodes: tee-replica
+    mock_tee: true
+    wait_for_ready: true
+    wait_timeout: 30
+
+  - name: Install kv-store on owner
+    type: install_application
+    node: tee-owner
+    path: ./workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace on owner
+    type: create_namespace
+    node: tee-owner
+    application_id: '{{app_id}}'
+    outputs:
+      ns: namespaceId
+
+  - name: Set namespace-root TeeAdmissionPolicy to accept mock attestation
+    type: set_tee_admission_policy
+    node: tee-owner
+    group_id: '{{ns}}'
+    accept_mock: true
+
+  # Restricted subgroup created up front (also subscribes the owner to the
+  # namespace topic — see tee-g1 rationale).
+  - name: Owner creates a Restricted subgroup under the namespace
+    type: create_group_in_namespace
+    node: tee-owner
+    namespace_id: '{{ns}}'
+    group_name: 'restricted-sub'
+    outputs:
+      sub: groupId
+
+  - name: Wait for governance + namespace subscription to settle
+    type: wait
+    seconds: 8
+
+  - name: TEE fleet-join attempt 1
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+
+  - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+
+  - name: Assert the replica is a ReadOnlyTee member at the root
+    type: assert_tee_member
+    node: tee-owner
+    group_id: '{{ns}}'
+    identity: '{{tee_pk}}'
+    role: ReadOnlyTee
+
+  - name: Wait for subgroup auto-follow to settle
+    type: wait
+    seconds: 10
+
+  - name: Assert the replica is a ReadOnlyTee member of the subgroup
+    type: assert_tee_member
+    node: tee-owner
+    group_id: '{{sub}}'
+    identity: '{{tee_pk}}'
+    role: ReadOnlyTee
+
+  # ---------- Remove the TEE at the root ----------
+  - name: Owner removes the TEE member AT THE ROOT
+    type: remove_group_members
+    node: tee-owner
+    group_id: '{{ns}}'
+    members:
+      - '{{tee_pk}}'
+
+  - name: Wait for the cascade purge to propagate
+    type: wait
+    seconds: 15
+
+  # ---------- Assert cascade purge: absent from root AND subgroup ----------
+  - name: Assert the TEE is ABSENT from the root
+    type: assert_not_member
+    node: tee-owner
+    group_id: '{{ns}}'
+    identity: '{{tee_pk}}'
+
+  - name: Assert the TEE is ABSENT from the subgroup (cascade)
+    type: assert_not_member
+    node: tee-owner
+    group_id: '{{sub}}'
+    identity: '{{tee_pk}}'
+
+  - name: No panics on either node
+    type: assert_log_absent
+    nodes: [tee-owner, tee-replica]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true
