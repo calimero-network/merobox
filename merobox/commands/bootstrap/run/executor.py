@@ -1494,6 +1494,12 @@ class WorkflowExecutor:
                 node_use_image_entrypoint = node_cfg.get(
                     "use_image_entrypoint", use_image_entrypoint
                 )
+                # Per-node opt-in to `merod run --mock-tee`. Threading it here
+                # (the initial boot path) lets a TEE replica come up mock from
+                # the start, avoiding the stop_node + start_node restart that
+                # would otherwise perturb the gossipsub topic mesh right when
+                # the namespace fleet-join needs a stable bidirectional mesh.
+                node_mock_tee = bool(node_cfg.get("mock_tee", False))
             else:
                 port = base_port
                 rpc_port = base_rpc_port
@@ -1501,6 +1507,7 @@ class WorkflowExecutor:
                 data_dir = None
                 node_config_path = config_path
                 node_use_image_entrypoint = use_image_entrypoint
+                node_mock_tee = False
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
@@ -1533,6 +1540,7 @@ class WorkflowExecutor:
                         data_dir=data_dir,
                         config_path=node_config_path,
                         use_image_entrypoint=node_use_image_entrypoint,
+                        mock_tee=node_mock_tee,
                     )
                     if not self.is_binary_mode:
                         self._apply_fault_kwargs(
@@ -1555,6 +1563,7 @@ class WorkflowExecutor:
                     data_dir=data_dir,
                     config_path=node_config_path,
                     use_image_entrypoint=node_use_image_entrypoint,
+                    mock_tee=node_mock_tee,
                 )
                 if not self.is_binary_mode:
                     self._apply_fault_kwargs(run_node_kwargs, node_cfg, nodes_config)

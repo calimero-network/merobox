@@ -160,3 +160,40 @@ def test_binary_argv_includes_mock_tee_when_true(tmp_path):
 def test_binary_argv_omits_mock_tee_when_false(tmp_path):
     cmd = _run_binary_node(tmp_path, mock_tee=False)
     assert "--mock-tee" not in cmd
+
+
+# ---------------------------------------------------------------------------
+# Initial `nodes:` boot path: a per-node `mock_tee: true` in the workflow node
+# definition must reach manager.run_node(mock_tee=True), so a TEE replica can
+# boot mock from the start without a stop_node + start_node restart (the
+# restart perturbed the gossipsub topic mesh and broke fleet-join admission).
+# ---------------------------------------------------------------------------
+
+
+def _run_start_nodes(node_cfg):
+    """Drive WorkflowExecutor._start_nodes for one binary-mode node and return
+    the kwargs handed to manager.run_node()."""
+    from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+
+    manager = MagicMock()
+    manager.binary_path = "merod"  # binary mode
+    manager.run_node = MagicMock(return_value=True)
+
+    config = {"name": "wf", "nodes": {"tee-replica": node_cfg}}
+    executor = WorkflowExecutor(config, manager)
+    # Force the "not already running" branch so run_node is actually invoked.
+    executor._is_node_running = MagicMock(return_value=False)
+
+    assert asyncio.run(executor._start_nodes(restart=False)) is True
+    assert manager.run_node.call_count == 1
+    return manager.run_node.call_args.kwargs
+
+
+def test_nodes_boot_path_forwards_mock_tee_when_true():
+    kwargs = _run_start_nodes({"port": 7081, "rpc_port": 7181, "mock_tee": True})
+    assert kwargs.get("mock_tee") is True
+
+
+def test_nodes_boot_path_defaults_mock_tee_false_when_absent():
+    kwargs = _run_start_nodes({"port": 7081, "rpc_port": 7181})
+    assert kwargs.get("mock_tee") is False

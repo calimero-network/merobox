@@ -40,6 +40,14 @@ name: TEE MATRIX — Open late-join (local mock)
 
 force_pull_image: false
 
+# Enable merobox e2e isolation: clears merod's default public-devnet
+# bootstrap node and assigns a private per-workflow rendezvous namespace
+# (plus mDNS) so LAN nodes discover each other instantly instead of through
+# the busy public devnet swarm (~28-30s, which races core's 30s
+# MAX_ADMISSION_WAIT and drops the TEE fleet-join). Config is written at
+# `merod init` and reused across stop/restart, so it survives start_node.
+e2e_mode: true
+
 nodes:
   tee-owner:
     port: 7080
@@ -47,19 +55,15 @@ nodes:
   tee-replica:
     port: 7081
     rpc_port: 7181
+    # Boot the replica directly as a mock-TEE node (merod run --mock-tee).
+    # Booting it mock from the start avoids the stop_node + start_node restart
+    # that perturbs the gossipsub topic mesh exactly when the namespace
+    # fleet-join needs a stable bidirectional mesh. For "late-join" the
+    # admission (fleet-join) is still deferred until AFTER the subgroup+context
+    # exist — only the mock-TEE relaunch is removed, not the late timing.
+    mock_tee: true
 
 steps:
-  - name: Stop the replica so we can relaunch it with --mock-tee
-    type: stop_node
-    nodes: tee-replica
-
-  - name: Start the replica as a mock-TEE node (merod run --mock-tee)
-    type: start_node
-    nodes: tee-replica
-    mock_tee: true
-    wait_for_ready: true
-    wait_timeout: 30
-
   - name: Install kv-store on owner
     type: install_application
     node: tee-owner
