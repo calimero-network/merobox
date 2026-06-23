@@ -4,6 +4,8 @@ Namespace-related workflow step executors.
 
 from typing import Any
 
+import requests
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -135,6 +137,33 @@ class CreateGroupInNamespaceStep(BaseStep):
             self.config.get("group_name"), str
         ):
             raise ValueError(f"Step '{step_name}': 'group_name' must be a string")
+        if "visibility" in self.config:
+            vis = self.config.get("visibility")
+            if not isinstance(vis, str):
+                raise ValueError(f"Step '{step_name}': 'visibility' must be a string")
+            if vis.lower() not in ("open", "restricted"):
+                raise ValueError(
+                    f"Step '{step_name}': 'visibility' must be 'open' or 'restricted'"
+                )
+
+    def _create_via_http(
+        self, rpc_url: str, namespace_id: str, group_name, visibility: str
+    ) -> dict[str, Any]:
+        """Create a born-visibility subgroup via the raw admin-api REST call.
+
+        The compiled calimero client's `create_group_in_namespace` does not yet
+        forward the `visibility` body field (#2771), so when visibility is set we
+        POST the admin-api endpoint directly. The body is camelCase to match
+        `CreateGroupInNamespaceBody` and the response is returned verbatim so the
+        normal `data.groupId` export path keeps working.
+        """
+        url = f"{rpc_url.rstrip('/')}/admin-api/namespaces/{namespace_id}/groups"
+        body: dict[str, Any] = {"visibility": visibility}
+        if group_name is not None:
+            body["groupName"] = group_name
+        resp = requests.post(url, json=body, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -148,24 +177,39 @@ class CreateGroupInNamespaceStep(BaseStep):
             group_name = self._resolve_dynamic_value(
                 self.config["group_name"], workflow_results, dynamic_values
             )
+        visibility = None
+        if self.config.get("visibility") is not None:
+            visibility = self._resolve_dynamic_value(
+                self.config["visibility"], workflow_results, dynamic_values
+            )
         try:
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
-            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-            create_group_in_namespace = getattr(
-                client, "create_group_in_namespace", None
-            )
-            if callable(create_group_in_namespace):
+            if visibility is not None:
+                # Born-visibility create: drive the REST endpoint directly so the
+                # `visibility` field reaches the server (the compiled client does
+                # not forward it yet — #2771).
                 result = ok(
-                    create_group_in_namespace(
-                        namespace_id=namespace_id,
-                        group_name=group_name,
+                    self._create_via_http(
+                        rpc_url, namespace_id, group_name, visibility
                     )
                 )
             else:
-                # No strict fallback available in old clients.
-                raise RuntimeError(
-                    "create_group_in_namespace is not available in current client"
+                client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+                create_group_in_namespace = getattr(
+                    client, "create_group_in_namespace", None
                 )
+                if callable(create_group_in_namespace):
+                    result = ok(
+                        create_group_in_namespace(
+                            namespace_id=namespace_id,
+                            group_name=group_name,
+                        )
+                    )
+                else:
+                    # No strict fallback available in old clients.
+                    raise RuntimeError(
+                        "create_group_in_namespace is not available in current client"
+                    )
         except Exception as e:
             result = fail("create_group_in_namespace failed", error=e)
 
