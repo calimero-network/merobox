@@ -207,7 +207,9 @@ def test_nodes_boot_path_defaults_mock_tee_false_when_absent():
 # ---------------------------------------------------------------------------
 
 
-def _run_start_single_node(node_name, *, node_config=None, nodes_config=None, mock_tee=False):
+def _run_start_single_node(
+    node_name, *, node_config=None, nodes_config=None, mock_tee=False
+):
     """Drive WorkflowExecutor._start_single_node and return the run_node kwargs."""
     from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 
@@ -237,7 +239,9 @@ def _run_start_single_node(node_name, *, node_config=None, nodes_config=None, mo
 def test_start_single_node_honours_per_node_mock_tee_from_nodes_config():
     kwargs = _run_start_single_node(
         "tee-replica",
-        nodes_config={"tee-replica": {"port": 7081, "rpc_port": 7181, "mock_tee": True}},
+        nodes_config={
+            "tee-replica": {"port": 7081, "rpc_port": 7181, "mock_tee": True}
+        },
         mock_tee=False,
     )
     assert kwargs.get("mock_tee") is True

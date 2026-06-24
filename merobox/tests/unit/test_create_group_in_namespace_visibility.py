@@ -16,7 +16,14 @@ from merobox.commands.bootstrap.steps.namespace import CreateGroupInNamespaceSte
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # Use a fresh loop rather than the deprecated `asyncio.get_event_loop()`,
+    # which raises "no current event loop" once a sibling test in the same run
+    # has already closed the default loop via `asyncio.run()`.
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _base_config(**overrides):
@@ -113,6 +120,16 @@ class TestVisibilityBody:
         assert result is True
         body = mock_post.call_args[1]["json"]
         assert body["visibility"] == "restricted"
+
+    def test_visibility_casing_normalized_to_lowercase_in_body(self):
+        # A workflow value like `Open` passes case-insensitive validation; the
+        # POST body must still carry the lowercase enum the server expects.
+        step = CreateGroupInNamespaceStep(_base_config(visibility="Open"))
+        result, mock_post, _ = self._exec(step)
+
+        assert result is True
+        body = mock_post.call_args[1]["json"]
+        assert body["visibility"] == "open"
 
     def test_no_visibility_uses_client_and_omits_body(self):
         step = CreateGroupInNamespaceStep(_base_config())

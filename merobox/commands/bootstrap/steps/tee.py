@@ -138,6 +138,9 @@ class SetTeeAdmissionPolicyStep(BaseStep):
             url = (
                 f"{admin_url}/admin-api/groups/{group_id}/settings/tee-admission-policy"
             )
+            # No fleet-join-style timeout override: this PUT is a fast
+            # owner-local policy write, not a blocking admission window, so the
+            # default read timeout is intentional.
             response = _admin_request("PUT", url, json=body)
             if response.status_code != 200:
                 result = fail(
@@ -145,7 +148,9 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                     f"{response.text}"
                 )
             else:
-                result = ok(self._parse_json(response.text))
+                # Tolerate an empty/`null` body (e.g. a bare 200) so downstream
+                # readers always get a dict, not None.
+                result = ok(self._parse_json(response.text) or {})
         except Exception as e:
             result = fail("set_tee_admission_policy failed", error=e)
 
@@ -178,6 +183,11 @@ class TeeFleetJoinStep(BaseStep):
     ``meroctl tee fleet-join <GROUP_ID>`` command invokes. The response's
     ``admitted`` flag is parsed and stored. A single call covers one mesh
     window, so compose this with the ``repeat`` step to retry until admitted.
+
+    The step returns ``True`` (the HTTP call succeeded) even when
+    ``admitted=False`` — a single window simply may not have admitted yet. Use
+    ``assert_tee_member`` as the authoritative admission gate, not the per-call
+    ``admitted`` flag.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -215,7 +225,16 @@ class TeeFleetJoinStep(BaseStep):
                     f"{response.text}"
                 )
             else:
-                result = ok(self._parse_json(response.text))
+                payload = self._parse_json(response.text)
+                if not isinstance(payload, dict):
+                    # A 200 with a non-dict body means the response envelope
+                    # changed — surface it instead of reporting admitted=False.
+                    result = fail(
+                        "tee_fleet_join: unexpected response shape: "
+                        f"{response.text[:200]}"
+                    )
+                else:
+                    result = ok(payload)
         except Exception as e:
             result = fail("tee_fleet_join failed", error=e)
 

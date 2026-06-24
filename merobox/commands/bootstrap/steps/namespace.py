@@ -166,7 +166,10 @@ class CreateGroupInNamespaceStep(BaseStep):
         e2e workflows). It attaches no Authorization header.
         """
         url = f"{rpc_url.rstrip('/')}/admin-api/namespaces/{namespace_id}/groups"
-        body: dict[str, Any] = {"visibility": visibility}
+        # `_validate_field_types` accepts visibility case-insensitively, so
+        # normalise to lowercase here to match the server's camelCase enum
+        # (`open` / `restricted`) regardless of how the workflow cased it.
+        body: dict[str, Any] = {"visibility": visibility.lower()}
         if group_name is not None:
             body["groupName"] = group_name
         resp = requests.post(
@@ -199,9 +202,7 @@ class CreateGroupInNamespaceStep(BaseStep):
                 # `visibility` field reaches the server (the compiled client does
                 # not forward it yet — #2771).
                 result = ok(
-                    self._create_via_http(
-                        rpc_url, namespace_id, group_name, visibility
-                    )
+                    self._create_via_http(rpc_url, namespace_id, group_name, visibility)
                 )
             else:
                 client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
