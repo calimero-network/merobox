@@ -8,6 +8,12 @@ on:
 
 env:
   CALIMERO_CONTRACTS_VERSION: "latest"
+  # Harden crates.io downloads against transient CI network blips that fail the
+  # maturin build of calimero-client-py during `pip install` (seen as
+  # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,
+  # and disable HTTP/2 multiplexing which is the source of the framing errors.
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
   format:

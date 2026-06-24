@@ -175,7 +175,12 @@ class CreateGroupInNamespaceStep(BaseStep):
         resp = requests.post(
             url, json=body, timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT)
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            # Surface the server's error body (raise_for_status would drop it),
+            # matching the explicit-status pattern the TEE admin steps use.
+            raise RuntimeError(
+                f"create_group_in_namespace HTTP {resp.status_code}: {resp.text}"
+            )
         return resp.json()
 
     async def execute(

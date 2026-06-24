@@ -84,6 +84,7 @@ class TestVisibilityBody:
             ) as mock_get_client,
         ):
             mock_resp = MagicMock()
+            mock_resp.status_code = 200
             mock_resp.json.return_value = {"data": {"groupId": "sub-hex"}}
             mock_resp.raise_for_status.return_value = None
             mock_post.return_value = mock_resp
