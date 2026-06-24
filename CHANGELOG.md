@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.40] - 2026-06-22
+
+### Removed
+
+- Dropped the unused `protocol` field from the `create_context` and `create_mesh` workflow steps, plus the corresponding "Protocol" line from context display output. Calimero core is chain-free (DAG-based local group governance), so the field was parsed but never forwarded to the client. Removal is non-breaking: `BaseStepConfig` is `extra="allow"`, so any legacy workflow still specifying `protocol:` continues to load and is simply ignored.
+
 ## [0.6.39] - 2026-06-17
 
 ### Added
