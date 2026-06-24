@@ -261,10 +261,20 @@ class TeeFleetJoinStep(BaseStep):
         self._export_variables(data, node_name, dynamic_values)
 
         status = data.get("status", "unknown")
-        console.print(
-            f"[green]✓ tee_fleet_join on {node_name}: status={status} "
-            f"admitted={admitted}[/green]"
-        )
+        if admitted:
+            console.print(
+                f"[green]✓ tee_fleet_join on {node_name}: status={status} "
+                f"admitted=True[/green]"
+            )
+        else:
+            # Not a failure (the HTTP call succeeded), but make the not-yet-
+            # admitted case visually distinct from an admission so CI logs don't
+            # read a green ✓ as "admitted". assert_tee_member is the real gate.
+            console.print(
+                f"[yellow]• tee_fleet_join on {node_name}: status={status} "
+                f"admitted=False (no admission this window — "
+                f"assert_tee_member is the gate)[/yellow]"
+            )
         if expected_failure:
             self._report_unexpected_success()
         return True
