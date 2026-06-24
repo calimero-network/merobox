@@ -251,6 +251,10 @@ class TeeFleetJoinStep(BaseStep):
 
         data = result["data"] if isinstance(result["data"], dict) else {}
         admitted = bool(data.get("admitted", False))
+        # Write the coerced bool back so an `outputs:`-driven export of `admitted`
+        # sees the same canonical value as `tee_fleet_join_admitted_{node}` (the
+        # server may omit the key or send null, which would otherwise export as None).
+        data["admitted"] = admitted
 
         workflow_results[f"tee_fleet_join_{node_name}"] = data
         workflow_results[f"tee_fleet_join_admitted_{node_name}"] = admitted

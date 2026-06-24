@@ -119,15 +119,21 @@ jobs:
   build-binary:
     name: Build (binary mode)
     runs-on: ubuntu-latest
+    # Expose the resolved release tag so the binary test job pins meroctl to the
+    # exact same release merod came from (no independent "latest" re-resolution).
+    outputs:
+      core_tag: ${{ steps.download-merod.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Download pre-built merod from latest core release
+        id: download-merod
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Get the latest release tag (including pre-releases / RCs)
           TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Downloading merod from calimero-network/core release: $TAG"
           gh release download "$TAG" --repo calimero-network/core \
             --pattern "merod_x86_64-unknown-linux-gnu.tar.gz" \
@@ -196,14 +202,15 @@ jobs:
           sudo cp /tmp/merod /usr/local/bin/
           merod --version
 
-      - name: Download and install meroctl from latest core release
+      - name: Download and install meroctl (pinned to merod's release)
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-binary.outputs.core_tag }}
         run: |
           # The tee-* replication scenarios assert via `meroctl context ls`
           # (script step, target: local), so meroctl must be on the host PATH.
-          # Only merod is installed above; fetch meroctl from the same release.
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          # Pin to the SAME release merod came from (build-binary's resolved tag)
+          # so the two binaries can't diverge if a new release lands mid-run.
           echo "Downloading meroctl from calimero-network/core release: $TAG"
           gh release download "$TAG" --repo calimero-network/core \
             --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
@@ -263,6 +270,8 @@ jobs:
           # Docker-mode tee-* scenarios still run their assert scripts on the
           # host (script step, target: local) via `meroctl context ls`, so
           # meroctl must be on the host PATH even though merod runs in a container.
+          # Here merod is a container image (not a release binary), so there is no
+          # release tag to pin against — resolve latest, matching the image's edge.
           TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
           echo "Downloading meroctl from calimero-network/core release: $TAG"
           gh release download "$TAG" --repo calimero-network/core \
