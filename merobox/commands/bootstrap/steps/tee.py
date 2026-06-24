@@ -43,7 +43,13 @@ _FLEET_JOIN_READ_TIMEOUT = 60.0
 
 
 def _admin_request(method: str, url: str, **kwargs) -> requests.Response:
-    """Issue an admin-API HTTP request with merobox's default timeouts."""
+    """Issue an admin-API HTTP request with merobox's default timeouts.
+
+    These TEE steps target a node's admin API on loopback for local mock-TEE /
+    e2e workflows, so no Authorization header is attached (same posture as the
+    other raw admin-API helpers in the harness). If a workflow ever needs to
+    drive an auth-enabled node, attach a token via ``kwargs['headers']``.
+    """
     kwargs.setdefault("timeout", (DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT))
     return requests.request(method, url, **kwargs)
 
@@ -253,10 +259,13 @@ def _fetch_members(step: BaseStep, node_name: str, group_id: str) -> list[dict]:
     if response.status_code != 200:
         raise RuntimeError(f"HTTP {response.status_code}: {response.text}")
     payload = step._parse_json(response.text)
-    if isinstance(payload, dict):
-        members = payload.get("members", [])
-        return members if isinstance(members, list) else []
-    return []
+    if not isinstance(payload, dict):
+        # A 200 with an unexpected (non-dict) body means the server returned
+        # something other than the members envelope — surface it instead of
+        # reporting the identity as absent.
+        raise RuntimeError(f"Unexpected members response shape: {response.text[:200]}")
+    members = payload.get("members", [])
+    return members if isinstance(members, list) else []
 
 
 class AssertTeeMemberStep(BaseStep):

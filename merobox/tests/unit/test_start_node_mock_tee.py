@@ -197,3 +197,65 @@ def test_nodes_boot_path_forwards_mock_tee_when_true():
 def test_nodes_boot_path_defaults_mock_tee_false_when_absent():
     kwargs = _run_start_nodes({"port": 7081, "rpc_port": 7181})
     assert kwargs.get("mock_tee") is False
+
+
+# ---------------------------------------------------------------------------
+# start_node restart path (`_start_single_node`): a per-node `mock_tee: true`
+# in the workflow node definition must survive a restart even when the
+# `start_node` step itself does not set `mock_tee`, otherwise a restarted TEE
+# replica silently comes back without `--mock-tee`.
+# ---------------------------------------------------------------------------
+
+
+def _run_start_single_node(node_name, *, node_config=None, nodes_config=None, mock_tee=False):
+    """Drive WorkflowExecutor._start_single_node and return the run_node kwargs."""
+    from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+
+    manager = MagicMock()
+    manager.binary_path = "merod"  # binary mode
+    manager.run_node = MagicMock(return_value=True)
+
+    config = {"name": "wf", "nodes": nodes_config or {}}
+    executor = WorkflowExecutor(config, manager)
+    executor._is_node_running = MagicMock(return_value=False)
+
+    assert (
+        asyncio.run(
+            executor._start_single_node(
+                node_name,
+                node_config=node_config,
+                nodes_config=nodes_config,
+                mock_tee=mock_tee,
+            )
+        )
+        is True
+    )
+    assert manager.run_node.call_count == 1
+    return manager.run_node.call_args.kwargs
+
+
+def test_start_single_node_honours_per_node_mock_tee_from_nodes_config():
+    kwargs = _run_start_single_node(
+        "tee-replica",
+        nodes_config={"tee-replica": {"port": 7081, "rpc_port": 7181, "mock_tee": True}},
+        mock_tee=False,
+    )
+    assert kwargs.get("mock_tee") is True
+
+
+def test_start_single_node_honours_per_node_mock_tee_from_node_config():
+    kwargs = _run_start_single_node(
+        "tee-replica",
+        node_config={"port": 7081, "rpc_port": 7181, "mock_tee": True},
+        mock_tee=False,
+    )
+    assert kwargs.get("mock_tee") is True
+
+
+def test_start_single_node_mock_tee_false_when_unset_everywhere():
+    kwargs = _run_start_single_node(
+        "tee-replica",
+        nodes_config={"tee-replica": {"port": 7081, "rpc_port": 7181}},
+        mock_tee=False,
+    )
+    assert kwargs.get("mock_tee") is False

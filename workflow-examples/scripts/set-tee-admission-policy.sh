@@ -37,6 +37,16 @@ fi
 NS="$1"
 : "${PROD_MRTD:?PROD_MRTD not set in env}"
 
+# MRTD is a hex measurement; reject anything else so a mis-set value can't
+# break (or inject into) the JSON body interpolated into curl below. POSIX
+# `case` glob — no jq dependency needed in the container.
+case "$PROD_MRTD" in
+    "" | *[!0-9A-Fa-f]*)
+        echo "[set-tee-admission-policy] ERROR: PROD_MRTD must be hex, got '${PROD_MRTD}'" >&2
+        exit 2
+        ;;
+esac
+
 # Merod admin is exposed on the host at the RPC/Admin port that merobox
 # mapped (see 'RPC/Admin Port: 9180' in the merobox run log).
 MEROD_ADMIN="${MEROD_ADMIN:-http://localhost:9180}"

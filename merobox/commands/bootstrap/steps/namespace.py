@@ -8,6 +8,10 @@ import requests
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import (
+    DEFAULT_CONNECTION_TIMEOUT,
+    DEFAULT_READ_TIMEOUT,
+)
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -156,12 +160,18 @@ class CreateGroupInNamespaceStep(BaseStep):
         POST the admin-api endpoint directly. The body is camelCase to match
         `CreateGroupInNamespaceBody` and the response is returned verbatim so the
         normal `data.groupId` export path keeps working.
+
+        Like the other raw admin-API helpers in the harness, this assumes the
+        node's admin API is reachable on loopback without auth (local mock-TEE /
+        e2e workflows). It attaches no Authorization header.
         """
         url = f"{rpc_url.rstrip('/')}/admin-api/namespaces/{namespace_id}/groups"
         body: dict[str, Any] = {"visibility": visibility}
         if group_name is not None:
             body["groupName"] = group_name
-        resp = requests.post(url, json=body, timeout=30)
+        resp = requests.post(
+            url, json=body, timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT)
+        )
         resp.raise_for_status()
         return resp.json()
 

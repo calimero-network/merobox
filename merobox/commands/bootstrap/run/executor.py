@@ -1644,6 +1644,10 @@ class WorkflowExecutor:
             node_use_image_entrypoint = node_config.get(
                 "use_image_entrypoint", use_image_entrypoint
             )
+            # Honour a per-node `mock_tee: true` from the node definition so a
+            # restart via `start_node` keeps `--mock-tee` even when the step
+            # itself didn't set it (mirrors the initial boot path).
+            mock_tee = mock_tee or bool(node_config.get("mock_tee", False))
         else:
             # Try to extract from nodes_config if it's a dict with node-specific entries
             if isinstance(nodes_config, dict) and node_name in nodes_config:
@@ -1660,6 +1664,10 @@ class WorkflowExecutor:
                 node_use_image_entrypoint = node_cfg.get(
                     "use_image_entrypoint", use_image_entrypoint
                 )
+                # Honour a per-node `mock_tee: true` from the node definition so
+                # a restart via `start_node` keeps `--mock-tee` even when the
+                # step itself didn't set it (mirrors the initial boot path).
+                mock_tee = mock_tee or bool(node_cfg.get("mock_tee", False))
             elif isinstance(nodes_config, dict) and "count" in nodes_config:
                 # Count mode: derive the port offset from the node's index in
                 # its "{prefix}-{N}" name (1-based).
