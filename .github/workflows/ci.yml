@@ -196,6 +196,24 @@ jobs:
           sudo cp /tmp/merod /usr/local/bin/
           merod --version
 
+      - name: Download and install meroctl from latest core release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The tee-* replication scenarios assert via `meroctl context ls`
+          # (script step, target: local), so meroctl must be on the host PATH.
+          # Only merod is installed above; fetch meroctl from the same release.
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          echo "Downloading meroctl from calimero-network/core release: $TAG"
+          gh release download "$TAG" --repo calimero-network/core \
+            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
+            --output /tmp/meroctl.tar.gz --clobber
+          tar -xzf /tmp/meroctl.tar.gz -C /tmp
+          chmod +x /tmp/meroctl
+          sudo cp /tmp/meroctl /usr/local/bin/
+          meroctl --version
+          echo "✓ meroctl $TAG installed"
+
       - name: Download WASM artifacts
         uses: actions/download-artifact@v4
         with:
@@ -237,6 +255,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
+
+      - name: Download and install meroctl from latest core release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Docker-mode tee-* scenarios still run their assert scripts on the
+          # host (script step, target: local) via `meroctl context ls`, so
+          # meroctl must be on the host PATH even though merod runs in a container.
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          echo "Downloading meroctl from calimero-network/core release: $TAG"
+          gh release download "$TAG" --repo calimero-network/core \
+            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
+            --output /tmp/meroctl.tar.gz --clobber
+          tar -xzf /tmp/meroctl.tar.gz -C /tmp
+          chmod +x /tmp/meroctl
+          sudo cp /tmp/meroctl /usr/local/bin/
+          meroctl --version
+          echo "✓ meroctl $TAG installed"
 
       - name: Set up Rust (wasm32 target for workflow apps)
         uses: dtolnay/rust-toolchain@stable
