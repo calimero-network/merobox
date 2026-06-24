@@ -35,6 +35,12 @@ from merobox.commands.bootstrap.steps.subgroup import (
     ListSubgroupsStep,
     ReparentGroupStep,
 )
+from merobox.commands.bootstrap.steps.tee import (
+    AssertNotMemberStep,
+    AssertTeeMemberStep,
+    SetTeeAdmissionPolicyStep,
+    TeeFleetJoinStep,
+)
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, vprint
 
@@ -433,6 +439,14 @@ class RepeatStep(BaseStep):
             return ListProposalsStep(step_config, **common_kwargs)
         elif step_type == "get_proposal_approvers":
             return GetProposalApproversStep(step_config, **common_kwargs)
+        elif step_type == "set_tee_admission_policy":
+            return SetTeeAdmissionPolicyStep(step_config, **common_kwargs)
+        elif step_type == "tee_fleet_join":
+            return TeeFleetJoinStep(step_config, **common_kwargs)
+        elif step_type == "assert_tee_member":
+            return AssertTeeMemberStep(step_config, **common_kwargs)
+        elif step_type == "assert_not_member":
+            return AssertNotMemberStep(step_config, **common_kwargs)
         else:
             console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None

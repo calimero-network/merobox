@@ -8,6 +8,12 @@ on:
 
 env:
   CALIMERO_CONTRACTS_VERSION: "latest"
+  # Harden crates.io downloads against transient CI network blips that fail the
+  # maturin build of calimero-client-py during `pip install` (seen as
+  # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,
+  # and disable HTTP/2 multiplexing which is the source of the framing errors.
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
   format:
@@ -119,15 +125,21 @@ jobs:
   build-binary:
     name: Build (binary mode)
     runs-on: ubuntu-latest
+    # Expose the resolved release tag so the binary test job pins meroctl to the
+    # exact same release merod came from (no independent "latest" re-resolution).
+    outputs:
+      core_tag: ${{ steps.download-merod.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Download pre-built merod from latest core release
+        id: download-merod
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Get the latest release tag (including pre-releases / RCs)
           TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Downloading merod from calimero-network/core release: $TAG"
           gh release download "$TAG" --repo calimero-network/core \
             --pattern "merod_x86_64-unknown-linux-gnu.tar.gz" \
@@ -196,6 +208,25 @@ jobs:
           sudo cp /tmp/merod /usr/local/bin/
           merod --version
 
+      - name: Download and install meroctl (pinned to merod's release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-binary.outputs.core_tag }}
+        run: |
+          # The tee-* replication scenarios assert via `meroctl context ls`
+          # (script step, target: local), so meroctl must be on the host PATH.
+          # Pin to the SAME release merod came from (build-binary's resolved tag)
+          # so the two binaries can't diverge if a new release lands mid-run.
+          echo "Downloading meroctl from calimero-network/core release: $TAG"
+          gh release download "$TAG" --repo calimero-network/core \
+            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
+            --output /tmp/meroctl.tar.gz --clobber
+          tar -xzf /tmp/meroctl.tar.gz -C /tmp
+          chmod +x /tmp/meroctl
+          sudo cp /tmp/meroctl /usr/local/bin/
+          meroctl --version
+          echo "✓ meroctl $TAG installed"
+
       - name: Download WASM artifacts
         uses: actions/download-artifact@v4
         with:
@@ -237,6 +268,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
+
+      - name: Download and install meroctl from latest core release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Docker-mode tee-* scenarios still run their assert scripts on the
+          # host (script step, target: local) via `meroctl context ls`, so
+          # meroctl must be on the host PATH even though merod runs in a container.
+          # Here merod is a container image (not a release binary), so there is no
+          # release tag to pin against — resolve latest, matching the image's edge.
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          echo "Downloading meroctl from calimero-network/core release: $TAG"
+          gh release download "$TAG" --repo calimero-network/core \
+            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
+            --output /tmp/meroctl.tar.gz --clobber
+          tar -xzf /tmp/meroctl.tar.gz -C /tmp
+          chmod +x /tmp/meroctl
+          sudo cp /tmp/meroctl /usr/local/bin/
+          meroctl --version
+          echo "✓ meroctl $TAG installed"
 
       - name: Set up Rust (wasm32 target for workflow apps)
         uses: dtolnay/rust-toolchain@stable

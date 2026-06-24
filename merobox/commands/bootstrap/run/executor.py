@@ -24,6 +24,8 @@ from merobox.commands.bootstrap.steps import (
     AddGroupMembersStep,
     AssertCascadeCompleteStep,
     AssertMigrationCompleteStep,
+    AssertNotMemberStep,
+    AssertTeeMemberStep,
     CascadeNamespaceApplicationStep,
     CreateContextStep,
     CreateGroupInNamespaceStep,
@@ -77,7 +79,9 @@ from merobox.commands.bootstrap.steps import (
     SetMemberCapabilitiesStep,
     SetMemberMetadataStep,
     SetSubgroupVisibilityStep,
+    SetTeeAdmissionPolicyStep,
     SyncGroupStep,
+    TeeFleetJoinStep,
     UninstallApplicationStep,
     UpdateGroupSettingsStep,
     UpdateMemberRoleStep,
@@ -975,13 +979,15 @@ class WorkflowExecutor:
         data_dir: Optional[str] = None,
         config_path: Optional[str] = None,
         use_image_entrypoint: bool = False,
+        mock_tee: bool = False,
     ) -> dict[str, Any]:
         """Build the keyword arguments for ``manager.run_node()``.
 
         Shared by every node-startup path (``_start_nodes`` and
         ``_start_single_node``) so they stay in sync. ``merod_args`` /
         ``auth_mode`` only apply in binary mode; ``use_image_entrypoint`` only
-        in Docker mode.
+        in Docker mode. ``mock_tee`` appends ``--mock-tee`` to ``merod run`` in
+        both modes.
         """
         kwargs: dict[str, Any] = {
             "node_name": node_name,
@@ -1001,6 +1007,8 @@ class WorkflowExecutor:
             "bootstrap_nodes": self.bootstrap_nodes,
             # keep merod-init bootstrap.nodes when True (opt-out of e2e isolation)
             "preserve_default_bootstrap": self.preserve_default_bootstrap,
+            # launch with `merod run --mock-tee` for local TEE testing
+            "mock_tee": mock_tee,
         }
         if self.is_binary_mode:
             if self.auth_mode:
@@ -1486,6 +1494,12 @@ class WorkflowExecutor:
                 node_use_image_entrypoint = node_cfg.get(
                     "use_image_entrypoint", use_image_entrypoint
                 )
+                # Per-node opt-in to `merod run --mock-tee`. Threading it here
+                # (the initial boot path) lets a TEE replica come up mock from
+                # the start, avoiding the stop_node + start_node restart that
+                # would otherwise perturb the gossipsub topic mesh right when
+                # the namespace fleet-join needs a stable bidirectional mesh.
+                node_mock_tee = bool(node_cfg.get("mock_tee", False))
             else:
                 port = base_port
                 rpc_port = base_rpc_port
@@ -1493,6 +1507,7 @@ class WorkflowExecutor:
                 data_dir = None
                 node_config_path = config_path
                 node_use_image_entrypoint = use_image_entrypoint
+                node_mock_tee = False
 
             # Check if node is running
             is_running = self._is_node_running(node_name)
@@ -1525,6 +1540,7 @@ class WorkflowExecutor:
                         data_dir=data_dir,
                         config_path=node_config_path,
                         use_image_entrypoint=node_use_image_entrypoint,
+                        mock_tee=node_mock_tee,
                     )
                     if not self.is_binary_mode:
                         self._apply_fault_kwargs(
@@ -1547,6 +1563,7 @@ class WorkflowExecutor:
                     data_dir=data_dir,
                     config_path=node_config_path,
                     use_image_entrypoint=node_use_image_entrypoint,
+                    mock_tee=node_mock_tee,
                 )
                 if not self.is_binary_mode:
                     self._apply_fault_kwargs(run_node_kwargs, node_cfg, nodes_config)
@@ -1561,6 +1578,8 @@ class WorkflowExecutor:
         node_name: str,
         node_config: dict | None = None,
         nodes_config: dict | None = None,
+        *,
+        mock_tee: bool = False,
     ) -> bool:
         """
         Start a single node with proper configuration.
@@ -1625,6 +1644,10 @@ class WorkflowExecutor:
             node_use_image_entrypoint = node_config.get(
                 "use_image_entrypoint", use_image_entrypoint
             )
+            # Honour a per-node `mock_tee: true` from the node definition so a
+            # restart via `start_node` keeps `--mock-tee` even when the step
+            # itself didn't set it (mirrors the initial boot path).
+            mock_tee = mock_tee or bool(node_config.get("mock_tee", False))
         else:
             # Try to extract from nodes_config if it's a dict with node-specific entries
             if isinstance(nodes_config, dict) and node_name in nodes_config:
@@ -1641,6 +1664,10 @@ class WorkflowExecutor:
                 node_use_image_entrypoint = node_cfg.get(
                     "use_image_entrypoint", use_image_entrypoint
                 )
+                # Honour a per-node `mock_tee: true` from the node definition so
+                # a restart via `start_node` keeps `--mock-tee` even when the
+                # step itself didn't set it (mirrors the initial boot path).
+                mock_tee = mock_tee or bool(node_cfg.get("mock_tee", False))
             elif isinstance(nodes_config, dict) and "count" in nodes_config:
                 # Count mode: derive the port offset from the node's index in
                 # its "{prefix}-{N}" name (1-based).
@@ -1684,6 +1711,7 @@ class WorkflowExecutor:
             data_dir=data_dir,
             config_path=node_config_path,
             use_image_entrypoint=node_use_image_entrypoint,
+            mock_tee=mock_tee,
         )
         return self.manager.run_node(**run_node_kwargs)
 
@@ -2264,6 +2292,14 @@ class WorkflowExecutor:
             return JoinContextStep(step_config, **common_kwargs)
         elif step_type == "join_subgroup_inheritance":
             return JoinSubgroupInheritanceStep(step_config, **common_kwargs)
+        elif step_type == "set_tee_admission_policy":
+            return SetTeeAdmissionPolicyStep(step_config, **common_kwargs)
+        elif step_type == "tee_fleet_join":
+            return TeeFleetJoinStep(step_config, **common_kwargs)
+        elif step_type == "assert_tee_member":
+            return AssertTeeMemberStep(step_config, **common_kwargs)
+        elif step_type == "assert_not_member":
+            return AssertNotMemberStep(step_config, **common_kwargs)
         elif step_type == "leave_context":
             return LeaveContextStep(step_config, **common_kwargs)
         elif step_type == "leave_group":

@@ -116,6 +116,12 @@ from merobox.commands.bootstrap.steps.subgroup import (
     ListSubgroupsStep,
     ReparentGroupStep,
 )
+from merobox.commands.bootstrap.steps.tee import (
+    AssertNotMemberStep,
+    AssertTeeMemberStep,
+    SetTeeAdmissionPolicyStep,
+    TeeFleetJoinStep,
+)
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
 
@@ -213,4 +219,8 @@ __all__ = [
     "RetryGroupUpgradeStep",
     "StopNodeStep",
     "StartNodeStep",
+    "SetTeeAdmissionPolicyStep",
+    "TeeFleetJoinStep",
+    "AssertTeeMemberStep",
+    "AssertNotMemberStep",
 ]

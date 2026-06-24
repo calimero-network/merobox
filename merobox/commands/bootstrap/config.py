@@ -117,6 +117,10 @@ VALID_STEP_TYPES = frozenset(
         "fuzzy_test",
         "stop_node",
         "start_node",
+        "set_tee_admission_policy",
+        "tee_fleet_join",
+        "assert_tee_member",
+        "assert_not_member",
         "login",
         "refresh",
         "ws_connect",
@@ -843,6 +847,15 @@ class CreateGroupInNamespaceStepConfig(BaseStepConfig):
     node: str = Field(..., description="Target node")
     namespace_id: str = Field(..., description="Namespace ID")
     group_name: Optional[str] = Field(None, description="Optional group display name")
+    visibility: Optional[str] = Field(
+        None,
+        description=(
+            "Optional birth visibility for the subgroup: 'open' or 'restricted' "
+            "(#2771). Absent ⇒ server default ('restricted'). When 'open', the "
+            "subgroup is Open at creation time so tee_subgroup_admit skips it and "
+            "no transient direct ReadOnlyTee row is written."
+        ),
+    )
 
 
 class ListNamespaceGroupsStepConfig(BaseStepConfig):

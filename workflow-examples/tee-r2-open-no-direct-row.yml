@@ -1,0 +1,177 @@
+# =============================================================================
+# TEE R2 — Open subgroup has NO direct ReadOnlyTee row (born-Open guard, GREEN)
+# =============================================================================
+#
+# Born-Open atomic create (calimero-network/core#2771) has landed. This
+# scenario is now a GREEN guard: it proves that a subgroup created directly as
+# Open (visibility: open on create_group_in_namespace) never materialises a
+# transient direct ReadOnlyTee row for an inherited root TEE.
+#
+# Local, mock-TEE, two-node scenario. The TEE is admitted at the namespace ROOT
+# BEFORE the Open subgroup is created, so the create-time `tee_subgroup_admit`
+# path is exercised — and because the subgroup is Open at SubgroupCreated time,
+# that handler SKIPS it ("skip — Open subgroup (TEE reads via inheritance)") and
+# writes NO direct row. The TEE is a member of the Open subgroup purely via
+# namespace-root inheritance.
+#
+# The final `assert_log_present` step requires that BOTH nodes logged the
+# tee_subgroup_admit "skip — Open subgroup" decision for the born-Open subgroup.
+# That skip is the truthful #2771 signal: no transient direct ReadOnlyTee row is
+# written. (A node-local member-list lookup would still surface the EFFECTIVE
+# inherited ReadOnlyTee entry, which is correct inheritance, not a stored
+# admission row — hence we assert on the skip log, not on member-list contents.)
+#
+# Run natively (macOS):
+#   PATH="/Users/xilosada/dev/calimero-work/core/target/release:$PATH" \
+#   merobox bootstrap run workflow-examples/tee-r2-open-no-direct-row.yml \
+#     --no-docker \
+#     --binary-path /Users/xilosada/dev/calimero-work/core/target/release/merod
+#
+# See tee-g1 for the boot/admit mechanics and the known first-publish
+# mesh-timing caveat in core's fleet_join handler.
+# =============================================================================
+
+name: TEE R2 — Open no-direct-row (#2771, born-Open guard)
+
+force_pull_image: false
+
+# Enable merobox e2e isolation: clears merod's default public-devnet
+# bootstrap node and assigns a private per-workflow rendezvous namespace
+# (plus mDNS) so LAN nodes discover each other instantly instead of through
+# the busy public devnet swarm (~28-30s, which races core's 30s
+# MAX_ADMISSION_WAIT and drops the TEE fleet-join). Config is written at
+# `merod init` and reused across stop/restart, so it survives start_node.
+e2e_mode: true
+
+nodes:
+  tee-owner:
+    port: 7080
+    rpc_port: 7180
+  tee-replica:
+    port: 7081
+    rpc_port: 7181
+    # Boot the replica directly as a mock-TEE node (merod run --mock-tee).
+    # Booting it mock from the start avoids the stop_node + start_node restart
+    # that perturbs the gossipsub topic mesh exactly when the namespace
+    # fleet-join needs a stable bidirectional mesh (the restart left the
+    # replica unable to publish its TeeAttestationAnnounce to the owner —
+    # NoPeersSubscribedToTopic — so admission never happened).
+    mock_tee: true
+
+steps:
+
+  - name: Install kv-store on owner
+    type: install_application
+    node: tee-owner
+    path: ./workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace on owner
+    type: create_namespace
+    node: tee-owner
+    application_id: '{{app_id}}'
+    outputs:
+      ns: namespaceId
+
+  - name: Set namespace-root TeeAdmissionPolicy to accept mock attestation
+    type: set_tee_admission_policy
+    node: tee-owner
+    group_id: '{{ns}}'
+    accept_mock: true
+
+  - name: Let the policy propagate
+    type: wait
+    seconds: 5
+
+  # Create a Restricted subgroup FIRST. This subscribes the OWNER to the
+  # namespace gossipsub topic (create_group_in_namespace -> subscribe_namespace
+  # in core), which is what lets the replica's TeeAttestationAnnounce reach a
+  # subscribed peer — otherwise fleet-join's publish fails with
+  # NoPeersSubscribedToTopic (HTTP 500) on a fresh, otherwise-idle owner.
+  # It is NOT the subgroup under test; it just primes the owner subscription so
+  # the TEE can be admitted at the ROOT before the born-Open subgroup exists.
+  - name: Owner creates a Restricted subgroup to prime the namespace subscription
+    type: create_group_in_namespace
+    node: tee-owner
+    namespace_id: '{{ns}}'
+    group_name: 'restricted-prime'
+
+  - name: Wait for governance + namespace subscription to settle
+    type: wait
+    seconds: 8
+
+  # ---------- TEE fleet-join (root admission) BEFORE the Open subgroup ----------
+  - name: TEE fleet-join attempt 1
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+
+  - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
+    type: tee_fleet_join
+    node: tee-replica
+    group_id: '{{ns}}'
+    outputs:
+      tee_pk: public_key
+
+  - name: Assert the replica is a ReadOnlyTee member at the root
+    type: assert_tee_member
+    node: tee-owner
+    group_id: '{{ns}}'
+    identity: '{{tee_pk}}'
+    role: ReadOnlyTee
+
+  # ---------- Born-Open subgroup created AFTER root admission ----------
+  # One-shot born-Open create (#2771): visibility=open means the subgroup is
+  # Open at SubgroupCreated time, so the now-admitted root TEE's
+  # tee_subgroup_admit handler SKIPS it (TEE reads via inheritance) and writes
+  # NO transient direct ReadOnlyTee row. Look for the owner-node log line:
+  #   "tee-subgroup-admit: skip — Open subgroup (TEE reads via inheritance)"
+  - name: Owner creates the subgroup born Open (no separate visibility flip)
+    type: create_group_in_namespace
+    node: tee-owner
+    namespace_id: '{{ns}}'
+    group_name: 'open-sub'
+    visibility: open
+
+  # Let the born-Open SubgroupCreated event propagate to the replica so its
+  # tee_subgroup_admit handler also processes (and skips) the Open subgroup.
+  # We deliberately do NOT register a context in the Open subgroup here: a
+  # context registration would make the TEE auto-follow/join the context and
+  # MATERIALISE a ReadOnlyTee row in the subgroup's member list (the
+  # context-inheritance path, distinct from tee_subgroup_admit). This scenario
+  # isolates the tee_subgroup_admit decision: born-Open ⇒ skip ⇒ no direct row.
+  - name: Wait for Open-subgroup SubgroupCreated to settle on the replica
+    type: wait
+    seconds: 15
+
+  # ---------- GREEN born-Open guard: admission was SKIPPED ----------
+  # The truthful #2771 signal is the namespace-root tee_subgroup_admit decision:
+  # because the subgroup is Open at SubgroupCreated time, the handler SKIPS it
+  # ("skip — Open subgroup (TEE reads via inheritance)") and writes NO transient
+  # direct ReadOnlyTee row. This skip line is emitted by BOTH the owner and the
+  # replica for the born-Open subgroup, so we require it on each node.
+  #
+  # NOTE: a node-local `meroctl group members list <open_gid>` would still show a
+  # ReadOnlyTee entry — but that is the EFFECTIVE (inherited) member set folded
+  # in by core's list_group_members, NOT a stored direct admission row. The skip
+  # log below is what proves the born-Open admission path wrote no transient row.
+  - name: Assert born-Open subgroup SKIPPED tee_subgroup_admit on both nodes (#2771)
+    type: assert_log_present
+    nodes: [tee-owner, tee-replica]
+    patterns:
+      - "tee-subgroup-admit: skip — Open subgroup (TEE reads via inheritance)"
+    min_matches: 2
+
+  - name: No panics on either node
+    type: assert_log_absent
+    nodes: [tee-owner, tee-replica]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true

@@ -364,6 +364,7 @@ class DockerManager(CleanupMixin):
         mdns: Optional[bool] = None,  # force discovery.mdns in node config
         network_admin: bool = True,  # add NET_ADMIN cap for fault-injection steps
         preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
+        mock_tee: bool = False,  # launch with `merod run --mock-tee` (mock TEE attestation)
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -795,6 +796,11 @@ class DockerManager(CleanupMixin):
                     node_name,
                     "run",
                 ]
+
+            # Mock TEE attestation for local testing (`merod run --mock-tee`).
+            # Applies to both the entrypoint and bypass-entrypoint command forms.
+            if mock_tee:
+                run_config["command"].append("--mock-tee")
 
             # Set primary network for auth service
             if auth_service:

@@ -110,6 +110,12 @@ from merobox.commands.bootstrap.steps.subgroup import (
     ListSubgroupsStep,
     ReparentGroupStep,
 )
+from merobox.commands.bootstrap.steps.tee import (
+    AssertNotMemberStep,
+    AssertTeeMemberStep,
+    SetTeeAdmissionPolicyStep,
+    TeeFleetJoinStep,
+)
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
@@ -368,6 +374,14 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = DeleteBlobStep
         elif step_type == "get_application":
             step_class = GetApplicationStep
+        elif step_type == "set_tee_admission_policy":
+            step_class = SetTeeAdmissionPolicyStep
+        elif step_type == "tee_fleet_join":
+            step_class = TeeFleetJoinStep
+        elif step_type == "assert_tee_member":
+            step_class = AssertTeeMemberStep
+        elif step_type == "assert_not_member":
+            step_class = AssertNotMemberStep
         else:
             errors.append(f"Step '{step_name}' has unknown type: {step_type}")
             return errors

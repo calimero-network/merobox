@@ -12,8 +12,9 @@ from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.health import check_node_health
 from merobox.commands.utils import console
 
-# Coroutine that starts one node: (node_name, node_config, nodes_config) -> bool
-StartNodeFn = Callable[[str, Optional[dict], Optional[dict]], Awaitable[bool]]
+# Coroutine that starts one node:
+# (node_name, node_config, nodes_config, *, mock_tee) -> bool
+StartNodeFn = Callable[..., Awaitable[bool]]
 
 
 class StartNodeStep(BaseStep):
@@ -78,6 +79,12 @@ class StartNodeStep(BaseStep):
         if "wait_timeout" in self.config and self.config["wait_timeout"] <= 0:
             raise ValueError(f"Step '{step_name}': 'wait_timeout' must be positive")
 
+        # Validate mock_tee is a boolean if provided (optional). When true the
+        # node is launched with `merod run --mock-tee` so it produces/accepts
+        # MOCK TEE attestation quotes for local testing.
+        if "mock_tee" in self.config:
+            self._validate_boolean_field("mock_tee")
+
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
@@ -128,6 +135,10 @@ class StartNodeStep(BaseStep):
         # Get node configuration from workflow config
         workflow_nodes_config = self.workflow_config.get("nodes", {})
 
+        # When set, launch each node with `merod run --mock-tee` (mock TEE
+        # attestation for local testing). Optional; defaults to False.
+        mock_tee = bool(self.config.get("mock_tee", False))
+
         started_nodes = []
         failed_to_start = []
 
@@ -140,7 +151,7 @@ class StartNodeStep(BaseStep):
                 else None
             )
             success = await self.start_node_fn(
-                node_name, node_config, workflow_nodes_config
+                node_name, node_config, workflow_nodes_config, mock_tee=mock_tee
             )
             (started_nodes if success else failed_to_start).append(node_name)
 
