@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Embedded auth in Docker mode**: `auth_mode: embedded` (workflow YAML) and
+  `--auth-mode embedded` (`merobox run` / `bootstrap run`) now work without
+  `--no-docker`. `--auth-mode` is a `merod init` flag, so containers accept it
+  the same way native processes do — node containers are initialised with the
+  in-node auth router and every API endpoint requires a JWT, exactly like
+  binary mode. `login`/`refresh` steps and the auto-auth
+  `--auth-username`/`--auth-password` path work unchanged against container
+  URLs. (`--auth-service` remains the separate proxy topology: a standalone
+  mero-auth container behind Traefik.) This unblocks flipping docker-mode e2e
+  fleets — e.g. calimero-network/core's scenario matrix — to run with auth
+  enforced, matching production shape.
+
+### Fixed
+
+- `bootstrap validate` no longer rejects the auth step types shipped in
+  0.6.33: `login`, `refresh`, and `ws_connect`/`ws_subscribe` were missing
+  from the validator's known-type list, so valid workflows (including
+  `workflow-embedded-auth-example.yml`) failed validation while executing
+  fine under `bootstrap run`.
+- Refresh 401s now surface the server's actual reason instead of a hardcoded
+  "Refresh token expired or invalid" — core also 401s *proactive* refresh
+  ("Access token still valid": `/auth/refresh` is only honored once the
+  access token has expired), and the canned message misdiagnosed that case.
+  `workflow-embedded-auth-example.yml` now pins core's real behavior: the
+  post-login refresh asserts `expected_failure: true`.
+
 ## [0.6.40] - 2026-06-22
 
 ### Removed

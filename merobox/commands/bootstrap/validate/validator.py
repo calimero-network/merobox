@@ -77,6 +77,7 @@ from merobox.commands.bootstrap.steps.join_subgroup_inheritance import (
     JoinSubgroupInheritanceStep,
 )
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+from merobox.commands.bootstrap.steps.login import LoginStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.namespace import (
     CreateGroupInNamespaceStep,
@@ -100,6 +101,7 @@ from merobox.commands.bootstrap.steps.proposals import (
     GetProposalStep,
     ListProposalsStep,
 )
+from merobox.commands.bootstrap.steps.refresh import RefreshStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.restart import RestartContainerStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
@@ -118,6 +120,7 @@ from merobox.commands.bootstrap.steps.tee import (
 )
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
+from merobox.commands.bootstrap.steps.websocket import WebSocketConnectStep
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 
 
@@ -374,6 +377,12 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = DeleteBlobStep
         elif step_type == "get_application":
             step_class = GetApplicationStep
+        elif step_type == "login":
+            step_class = LoginStep
+        elif step_type == "refresh":
+            step_class = RefreshStep
+        elif step_type in ("ws_connect", "ws_subscribe"):
+            step_class = WebSocketConnectStep
         elif step_type == "set_tee_admission_policy":
             step_class = SetTeeAdmissionPolicyStep
         elif step_type == "tee_fleet_join":

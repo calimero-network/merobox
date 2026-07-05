@@ -109,7 +109,7 @@ async def run_workflow(
             detail); final summaries and errors are always shown
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
-        auth_mode: Authentication mode for merod (binary mode only)
+        auth_mode: Authentication mode for merod (binary and Docker mode)
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps
@@ -141,15 +141,12 @@ async def run_workflow(
         yaml_auth_mode = config.get("auth_mode")
         effective_auth_mode = auth_mode or yaml_auth_mode
 
-        # Validate auth_mode configuration
+        # Validate auth_mode configuration. Works in both binary and Docker
+        # mode: `--auth-mode` is a merod init flag, so containers accept it
+        # the same way native processes do. (`--auth-service` remains the
+        # separate proxy-topology option: a standalone mero-auth container
+        # behind Traefik.)
         if effective_auth_mode:
-            if not effective_no_docker:
-                console.print(
-                    "[red]auth_mode is only supported with --no-docker (binary mode) or no_docker: true in workflow config. "
-                    "For Docker mode, use --auth-service instead.[/red]"
-                )
-                return False
-
             # Note: --auth-username/--auth-password are optional. When provided,
             # merobox auto-authenticates every node up front (legacy convenience).
             # When omitted, the workflow is expected to drive auth declaratively
@@ -272,7 +269,7 @@ def run_workflow_sync(
             detail); final summaries and errors are always shown
         auth_service: Whether to enable authentication service integration
         cli_remote_nodes: Remote nodes config from CLI options (--remote-node/--remote-auth)
-        auth_mode: Authentication mode for merod (binary mode only)
+        auth_mode: Authentication mode for merod (binary and Docker mode)
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps

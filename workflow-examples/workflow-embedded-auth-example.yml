@@ -5,8 +5,10 @@ description: >
   the refresh flow. Runs a single native `merod` node with the auth router
   mounted inside the node (no separate mero-auth container needed).
 
-# Embedded auth is only supported in binary/native mode (the auth router is
-# mounted inside merod itself). In Docker mode use `auth_service`/`auth_image`.
+# Embedded auth mounts the auth router inside merod itself and works in both
+# binary/native and Docker mode. (`auth_service`/`auth_image` remains the
+# separate proxy topology: a standalone mero-auth container behind Traefik.)
+# This example uses binary mode; drop `no_docker` to run it in Docker.
 no_docker: true
 
 # Enable the embedded auth router on the node (passes --auth-mode embedded to
@@ -110,15 +112,20 @@ steps:
     expected_failure: true
 
   # --- 6. Refresh flow ------------------------------------------------------
-  # Swap the refresh token for a fresh access token and re-seed the cache.
-  - name: "Refresh the access token"
+  # Core only honors /auth/refresh once the ACCESS token has expired; a
+  # proactive refresh while it is still valid is rejected with 401
+  # "Access token still valid" (refresh_token_handler). Seconds after login
+  # the access token is nowhere near expiry, so the correct assertion here
+  # is that the refresh is REJECTED. (A positive refresh e2e would need an
+  # expired access token, i.e. a node configured with a very short
+  # access_token_expiry.)
+  - name: "Proactive refresh is rejected while the access token is valid"
     type: refresh
     node: calimero-node-1
-    outputs:
-      access_token: access_token
+    expected_failure: true
 
-  # The refreshed token still authorizes calls.
-  - name: "Authenticated call after refresh"
+  # The cached (still-valid) token keeps authorizing calls.
+  - name: "Authenticated call after rejected refresh"
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"

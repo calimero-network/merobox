@@ -337,8 +337,11 @@ class AuthManager:
                                 f"Invalid JSON response from refresh endpoint: {e}"
                             ) from e
                     elif response.status == 401:
+                        # Surface the server's own reason: core also 401s
+                        # proactive refresh ("Access token still valid"), which
+                        # is the opposite of an expired refresh token.
                         raise AuthenticationError(
-                            "Refresh token expired or invalid. Please re-authenticate."
+                            f"Refresh rejected (401): {response_text.strip() or 'no reason given'}"
                         )
                     else:
                         raise AuthenticationError(
