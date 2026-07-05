@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.41] - 2026-07-05
+
 ### Added
 
 - **Embedded auth in Docker mode**: `auth_mode: embedded` (workflow YAML) and
@@ -34,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   access token has expired), and the canned message misdiagnosed that case.
   `workflow-embedded-auth-example.yml` now pins core's real behavior: the
   post-login refresh asserts `expected_failure: true`.
+- `workflow-blob-upload-example.yml` now passes the captured file ids to `get_file`/`delete` (and captures `result.output`, the id string) instead of the hardcoded `file_0`/`file_1`. core#3047 changed the blobs app's file-id scheme (`file_<n>` → `<uploader>_<n>`), so the literals produced `File not found: file_0` against current merod.
 
 ## [0.6.40] - 2026-06-22
 
