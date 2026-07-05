@@ -95,7 +95,7 @@ steps:
       size: "{{pdf_blob_size}}"
       mime_type: application/pdf
     outputs:
-      file_0_id: result
+      file_0_id: result.output
 
   - name: Wait for blob announcement to propagate
     type: wait_for_sync
@@ -129,7 +129,7 @@ steps:
       size: "{{png_blob_size}}"
       mime_type: image/png
     outputs:
-      file_1_id: result
+      file_1_id: result.output
 
   # Step 8a: Upload real text file to blob storage
   - name: Upload TXT to Blob Storage
@@ -153,7 +153,7 @@ steps:
       size: "{{txt_blob_size}}"
       mime_type: text/plain
     outputs:
-      file_2_id: result
+      file_2_id: result.output
 
   # Step 9: List all files from Node 1
   - name: List All Files (Node 1)
@@ -200,7 +200,7 @@ steps:
     context_id: "{{context_id}}"
     method: get_file
     args:
-      file_id: file_0
+      file_id: "{{file_0_id}}"
     outputs:
       pdf_metadata: result
 
@@ -211,7 +211,7 @@ steps:
     context_id: "{{context_id}}"
     method: get_blob_id_b58
     args:
-      file_id: file_0
+      file_id: "{{file_0_id}}"
     outputs:
       retrieved_pdf_blob_id: result
 
@@ -255,7 +255,7 @@ steps:
     context_id: "{{context_id}}"
     method: delete_file
     args:
-      file_id: file_1
+      file_id: "{{file_1_id}}"
     outputs:
       delete_result: result
 
