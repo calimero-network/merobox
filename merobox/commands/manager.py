@@ -365,6 +365,7 @@ class DockerManager(CleanupMixin):
         network_admin: bool = True,  # add NET_ADMIN cap for fault-injection steps
         preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
         mock_tee: bool = False,  # launch with `merod run --mock-tee` (mock TEE attestation)
+        auth_mode: str = None,  # merod auth mode ('embedded' mounts the auth router in-node)
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -691,6 +692,8 @@ class DockerManager(CleanupMixin):
                         "--swarm-port",
                         str(DEFAULT_P2P_PORT),
                     ]
+                    if auth_mode:
+                        init_config["command"].extend(["--auth-mode", auth_mode])
                     # Note: Don't set entrypoint - use image default
                 else:
                     # Original behavior - bypass entrypoint for direct merod control
@@ -709,6 +712,8 @@ class DockerManager(CleanupMixin):
                         "--swarm-port",
                         str(DEFAULT_P2P_PORT),
                     ]
+                    if auth_mode:
+                        init_config["command"].extend(["--auth-mode", auth_mode])
                 init_config["detach"] = False
 
                 try:
@@ -882,6 +887,13 @@ class DockerManager(CleanupMixin):
                 hostname = node_name.replace("calimero-", "").replace("-", "")
                 console.print(
                     f"  - Auth Node URL: [link]http://{hostname}.127.0.0.1.nip.io[/link]"
+                )
+            if auth_mode == "embedded":
+                console.print(
+                    f"  - Auth endpoints: http://localhost:{display_rpc_port}/auth (register/login)"
+                )
+                console.print(
+                    "[yellow]  All API endpoints require a valid JWT token (embedded auth enabled)[/yellow]"
                 )
             return True
 
@@ -1311,6 +1323,7 @@ class DockerManager(CleanupMixin):
         mdns: Optional[bool] = None,
         network_admin: bool = True,
         preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
+        auth_mode: str = None,  # merod auth mode ('embedded' mounts the auth router in-node)
     ) -> bool:
         """Run multiple Calimero nodes with automatic port allocation."""
         console.print(f"[bold]Starting {count} Calimero nodes...[/bold]")
@@ -1372,6 +1385,7 @@ class DockerManager(CleanupMixin):
                 mdns=mdns,
                 network_admin=network_admin,
                 preserve_default_bootstrap=preserve_default_bootstrap,
+                auth_mode=auth_mode,
             )
 
         success_count = 0

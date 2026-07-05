@@ -231,7 +231,7 @@ def bootstrap():
     "--auth-mode",
     type=click.Choice(["embedded", "proxy"], case_sensitive=False),
     default=None,
-    help="Authentication mode for merod (binary mode only). 'embedded' enables built-in auth with JWT protection on all endpoints. Default is 'proxy' (no embedded auth).",
+    help="Authentication mode for merod (binary and Docker mode). 'embedded' enables built-in auth with JWT protection on all endpoints. Default is 'proxy' (no embedded auth).",
 )
 @click.option(
     "--auth-username",
@@ -294,14 +294,6 @@ def run(
             "[yellow]⚠ --verbose and --quiet are mutually exclusive; "
             "--verbose takes precedence.[/yellow]"
         )
-
-    # Validate --auth-mode is only used with --no-docker (binary mode)
-    if auth_mode and not no_docker:
-        console.print(
-            "[red]--auth-mode is only supported with --no-docker (binary mode). "
-            "For Docker mode, use --auth-service instead.[/red]"
-        )
-        sys.exit(1)
 
     # --auth-username/--auth-password are optional under --auth-mode=embedded:
     # provide both to auto-authenticate every node up front, or omit both and

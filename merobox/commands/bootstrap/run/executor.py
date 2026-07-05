@@ -984,10 +984,10 @@ class WorkflowExecutor:
         """Build the keyword arguments for ``manager.run_node()``.
 
         Shared by every node-startup path (``_start_nodes`` and
-        ``_start_single_node``) so they stay in sync. ``merod_args`` /
-        ``auth_mode`` only apply in binary mode; ``use_image_entrypoint`` only
-        in Docker mode. ``mock_tee`` appends ``--mock-tee`` to ``merod run`` in
-        both modes.
+        ``_start_single_node``) so they stay in sync. ``merod_args`` only
+        applies in binary mode; ``use_image_entrypoint`` only in Docker mode.
+        ``auth_mode`` and ``mock_tee`` apply in both modes (``--auth-mode`` is
+        a merod init flag, mode-independent).
         """
         kwargs: dict[str, Any] = {
             "node_name": node_name,
@@ -1010,9 +1010,9 @@ class WorkflowExecutor:
             # launch with `merod run --mock-tee` for local TEE testing
             "mock_tee": mock_tee,
         }
+        if self.auth_mode:
+            kwargs["auth_mode"] = self.auth_mode
         if self.is_binary_mode:
-            if self.auth_mode:
-                kwargs["auth_mode"] = self.auth_mode
             if self.merod_args:
                 kwargs["merod_args"] = self.merod_args
         else:
@@ -1423,9 +1423,9 @@ class WorkflowExecutor:
                         run_multiple_kwargs["network_admin"] = nodes_config[
                             "network_admin"
                         ]
+                if self.auth_mode:
+                    run_multiple_kwargs["auth_mode"] = self.auth_mode
                 if self.is_binary_mode:
-                    if self.auth_mode:
-                        run_multiple_kwargs["auth_mode"] = self.auth_mode
                     if self.merod_args:
                         run_multiple_kwargs["merod_args"] = self.merod_args
                 else:

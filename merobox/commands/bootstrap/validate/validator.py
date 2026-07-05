@@ -19,6 +19,9 @@ from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 from merobox.commands.bootstrap.steps.get_application import GetApplicationStep
+from merobox.commands.bootstrap.steps.login import LoginStep
+from merobox.commands.bootstrap.steps.refresh import RefreshStep
+from merobox.commands.bootstrap.steps.websocket import WebSocketConnectStep
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
 from merobox.commands.bootstrap.steps.group_governance import (
     DetachContextFromGroupStep,
@@ -374,6 +377,12 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = DeleteBlobStep
         elif step_type == "get_application":
             step_class = GetApplicationStep
+        elif step_type == "login":
+            step_class = LoginStep
+        elif step_type == "refresh":
+            step_class = RefreshStep
+        elif step_type in ("ws_connect", "ws_subscribe"):
+            step_class = WebSocketConnectStep
         elif step_type == "set_tee_admission_policy":
             step_class = SetTeeAdmissionPolicyStep
         elif step_type == "tee_fleet_join":
