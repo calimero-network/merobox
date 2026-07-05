@@ -19,9 +19,6 @@ from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
 from merobox.commands.bootstrap.steps.get_application import GetApplicationStep
-from merobox.commands.bootstrap.steps.login import LoginStep
-from merobox.commands.bootstrap.steps.refresh import RefreshStep
-from merobox.commands.bootstrap.steps.websocket import WebSocketConnectStep
 from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
 from merobox.commands.bootstrap.steps.group_governance import (
     DetachContextFromGroupStep,
@@ -80,6 +77,7 @@ from merobox.commands.bootstrap.steps.join_subgroup_inheritance import (
     JoinSubgroupInheritanceStep,
 )
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
+from merobox.commands.bootstrap.steps.login import LoginStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.namespace import (
     CreateGroupInNamespaceStep,
@@ -103,6 +101,7 @@ from merobox.commands.bootstrap.steps.proposals import (
     GetProposalStep,
     ListProposalsStep,
 )
+from merobox.commands.bootstrap.steps.refresh import RefreshStep
 from merobox.commands.bootstrap.steps.repeat import RepeatStep
 from merobox.commands.bootstrap.steps.restart import RestartContainerStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
@@ -121,6 +120,7 @@ from merobox.commands.bootstrap.steps.tee import (
 )
 from merobox.commands.bootstrap.steps.wait import WaitStep
 from merobox.commands.bootstrap.steps.wait_for_sync import WaitForSyncStep
+from merobox.commands.bootstrap.steps.websocket import WebSocketConnectStep
 from merobox.commands.constants import RESERVED_NODE_CONFIG_KEYS
 
 
