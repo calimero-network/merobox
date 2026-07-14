@@ -1181,9 +1181,7 @@ class DockerManager(CleanupMixin):
             # bootstrap is disabled unless a secret is configured).
             auth_bootstrap_secret = os.getenv("MERO_AUTH_BOOTSTRAP_SECRET")
             if auth_bootstrap_secret:
-                auth_env.append(
-                    f"MERO_AUTH_BOOTSTRAP_SECRET={auth_bootstrap_secret}"
-                )
+                auth_env.append(f"MERO_AUTH_BOOTSTRAP_SECRET={auth_bootstrap_secret}")
 
             # By default, fetch fresh auth frontend unless explicitly disabled
             env_auth_fetch = os.getenv("CALIMERO_AUTH_FRONTEND_FETCH", "1")
