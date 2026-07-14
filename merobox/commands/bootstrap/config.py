@@ -344,6 +344,15 @@ class LoginStepConfig(BaseStepConfig):
 
     type: Literal["login"] = "login"
     node: str = Field(..., description="Target node to authenticate against")
+    bootstrap_secret: Optional[str] = Field(
+        None,
+        description=(
+            "Out-of-band secret required by core to mint the FIRST root key on "
+            "a fresh node (sent as provider_data.bootstrap_secret). Defaults "
+            "from the MERO_AUTH_BOOTSTRAP_SECRET environment variable; omitted "
+            "when unset. Existing-user logins never need it."
+        ),
+    )
     username: str = Field(
         ..., description="Username (public key) for user_password auth"
     )

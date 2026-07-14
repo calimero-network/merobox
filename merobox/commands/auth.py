@@ -200,6 +200,7 @@ class AuthManager:
         username: str,
         password: str,
         timeout: float = DEFAULT_READ_TIMEOUT,
+        bootstrap_secret: Optional[str] = None,
     ) -> AuthToken:
         """Authenticate with a remote node using username/password.
 
@@ -210,11 +211,22 @@ class AuthManager:
         - timestamp: current unix timestamp
         - provider_data: {"username": "...", "password": "..."}
 
+        On a fresh node, core only mints the first root key when the login
+        presents the node's out-of-band bootstrap secret
+        (``provider_data.bootstrap_secret``). When ``bootstrap_secret`` is not
+        given explicitly it defaults from the ``MERO_AUTH_BOOTSTRAP_SECRET``
+        environment variable — the same variable merobox forwards into the
+        node's environment — so existing workflows bootstrap unchanged when the
+        operator exports it once. It is omitted from the payload when unset;
+        logins for existing users never need it.
+
         Args:
             node_url: The base URL of the node (e.g., "http://node1.example.com").
             username: The username for authentication.
             password: The password for authentication.
             timeout: Request timeout in seconds.
+            bootstrap_secret: Out-of-band first-root-key bootstrap secret;
+                defaults from ``MERO_AUTH_BOOTSTRAP_SECRET``.
 
         Returns:
             An AuthToken on success.
@@ -225,13 +237,20 @@ class AuthManager:
         # Normalize node URL (remove trailing slash)
         normalized_url = node_url.rstrip("/")
 
+        if bootstrap_secret is None:
+            bootstrap_secret = os.environ.get("MERO_AUTH_BOOTSTRAP_SECRET")
+
+        provider_data = {"username": username, "password": password}
+        if bootstrap_secret:
+            provider_data["bootstrap_secret"] = bootstrap_secret
+
         # Build the authentication payload per server contract
         payload = {
             "auth_method": AUTH_METHOD_USER_PASSWORD,
             "public_key": username,
             "client_name": normalized_url,
             "timestamp": int(time.time()),
-            "provider_data": {"username": username, "password": password},
+            "provider_data": provider_data,
         }
 
         auth_endpoint = f"{normalized_url}{AUTH_TOKEN_ENDPOINT}"
