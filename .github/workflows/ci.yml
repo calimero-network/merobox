@@ -97,6 +97,29 @@ jobs:
           # nothing. Docker mode runs against merod:edge (master), which
           # has the fix, so cascade-namespace keeps full coverage there.
           # Re-add to binary once the pinned release carries #2507.
+          #
+          # tee-g2-open-inheritance-replication / tee-matrix-open-join-with-created
+          # / tee-matrix-open-late-join exercise POSITIVE Open-subgroup context
+          # replication to an admitted mock-TEE replica: a context registered in
+          # an Open subgroup must replicate to the TEE via namespace-root
+          # inheritance (no direct ReadOnlyTee row — the context-inheritance
+          # auto-follow path). On current merod this path does not deliver: the
+          # replica's `meroctl context ls` stays `{"contexts":[]}` and the assert
+          # fails after 3 retries. This is a MEROD gap, not a merobox bug — it
+          # reproduces on BOTH the pinned release (Binary) and merod:edge/master
+          # (Docker), and ONLY for these three positive-inheritance scenarios.
+          # Every counterpart passes: the Restricted variants (tee-g1,
+          # tee-matrix-restricted-*) use direct-row auto-follow, and
+          # tee-r2-open-no-direct-row is Open but asserts NO replication row — so
+          # the break is specifically the Open inheritance replication path.
+          # Tracked upstream by calimero-network/core#3198 (regression first seen
+          # rc.9→rc.10, since widened from Docker-only to both transports); cf. the
+          # now-closed #2771 (born-Open no transient row) and #2491 (fleet-join
+          # mesh race). Excluded from the required matrix (both Binary and Docker)
+          # so master CI is not permanently red on an upstream gap; the scenarios
+          # remain in workflow-examples/ and runnable manually. Re-add to both
+          # matrices once core#3198 lands and merod replicates Open-subgroup
+          # contexts to inherited TEE replicas. Do NOT weaken the assert script.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
@@ -105,12 +128,19 @@ jobs:
             grep -v fault-injection | \
             grep -v nat-topology | \
             grep -v cascade-namespace | \
+            grep -v tee-g2-open-inheritance-replication | \
+            grep -v tee-matrix-open-join-with-created | \
+            grep -v tee-matrix-open-late-join | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
 
           # Docker mode: same but also exclude binary-only workflow.
           # fault-injection-tc requires a custom merod image with iproute2
           # installed (the stock image lacks `tc`); skipped in CI.
+          # tee-*-open positive-inheritance scenarios excluded here too — same
+          # merod Open-subgroup context-replication gap as documented for the
+          # Binary matrix above (core#3198). Keep the exclusion symmetric across
+          # both matrices; re-add together once core#3198 lands.
           DOCKER=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
@@ -118,6 +148,9 @@ jobs:
             grep -v cached-frontends | \
             grep -v example-binary | \
             grep -v fault-injection-tc | \
+            grep -v tee-g2-open-inheritance-replication | \
+            grep -v tee-matrix-open-join-with-created | \
+            grep -v tee-matrix-open-late-join | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT
 
