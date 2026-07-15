@@ -51,6 +51,13 @@ class LoginStep(BaseStep):
         password = self._resolve_dynamic_value(
             self.config["password"], workflow_results, dynamic_values
         )
+        # First-root-key bootstrap secret: an explicit step field wins;
+        # otherwise AuthManager defaults it from MERO_AUTH_BOOTSTRAP_SECRET.
+        bootstrap_secret = self.config.get("bootstrap_secret")
+        if bootstrap_secret is not None:
+            bootstrap_secret = self._resolve_dynamic_value(
+                bootstrap_secret, workflow_results, dynamic_values
+            )
         expected_failure = self._is_expected_failure()
 
         # Resolve the node URL and the stable name used as the token-cache key.
@@ -65,7 +72,9 @@ class LoginStep(BaseStep):
         auth_manager = AuthManager()
 
         try:
-            token = await auth_manager.authenticate(rpc_url, username, password)
+            token = await auth_manager.authenticate(
+                rpc_url, username, password, bootstrap_secret=bootstrap_secret
+            )
         except AuthenticationError as e:
             if expected_failure:
                 # A negative test must assert an *auth* rejection, not pass just

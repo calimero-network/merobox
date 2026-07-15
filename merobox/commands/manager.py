@@ -474,6 +474,16 @@ class DockerManager(CleanupMixin):
                 "RUST_BACKTRACE": rust_backtrace,
             }
 
+            # Forward the embedded-auth bootstrap secret into the node container
+            # when the operator has one configured. Core requires an out-of-band
+            # secret to mint the first root key; without it, first-login
+            # bootstrap is disabled (fail closed) and every fresh-node login is
+            # rejected. Binary mode inherits the environment automatically; the
+            # container needs an explicit forward.
+            bootstrap_secret = os.getenv("MERO_AUTH_BOOTSTRAP_SECRET")
+            if bootstrap_secret:
+                node_env["MERO_AUTH_BOOTSTRAP_SECRET"] = bootstrap_secret
+
             # Debug: Print the RUST_LOG value being set
             console.print(
                 f"[cyan]Setting RUST_LOG for node {node_name}: {log_level}[/cyan]"
@@ -486,6 +496,9 @@ class DockerManager(CleanupMixin):
             # Also print all environment variables being set for debugging
             console.print(f"[yellow]Environment variables for {node_name}:[/yellow]")
             for key, value in node_env.items():
+                # Never echo secrets into (CI) logs.
+                if "SECRET" in key or "PASSWORD" in key or "TOKEN" in key:
+                    value = "<redacted>"
                 console.print(f"  {key}={value}")
 
             # By default, fetch fresh WebUI unless explicitly disabled
@@ -1162,6 +1175,13 @@ class DockerManager(CleanupMixin):
             # Create and start Auth service container
             # Prepare environment variables for auth service
             auth_env = ["RUST_LOG=debug"]
+
+            # Forward the bootstrap secret to the standalone auth service too
+            # (same rationale as the node container: core's first-root-key
+            # bootstrap is disabled unless a secret is configured).
+            auth_bootstrap_secret = os.getenv("MERO_AUTH_BOOTSTRAP_SECRET")
+            if auth_bootstrap_secret:
+                auth_env.append(f"MERO_AUTH_BOOTSTRAP_SECRET={auth_bootstrap_secret}")
 
             # By default, fetch fresh auth frontend unless explicitly disabled
             env_auth_fetch = os.getenv("CALIMERO_AUTH_FRONTEND_FETCH", "1")

@@ -92,6 +92,41 @@ class TestLoginStep:
         # Token material exported for downstream steps.
         assert dynamic["access_token"] == "acc.jwt.tok"
 
+    def test_login_passes_explicit_bootstrap_secret_to_authenticate(self):
+        step = self._step(bootstrap_secret="ci-bootstrap")
+        fake_auth = MagicMock()
+        fake_auth.authenticate = AsyncMock(return_value=_token())
+        fake_auth.save_token.return_value = True
+
+        with patch(
+            "merobox.commands.bootstrap.steps.login.AuthManager",
+            return_value=fake_auth,
+        ):
+            result = _run(step.execute({}, {}))
+
+        assert result is True
+        assert (
+            fake_auth.authenticate.call_args.kwargs["bootstrap_secret"]
+            == "ci-bootstrap"
+        )
+
+    def test_login_without_field_defers_bootstrap_secret_to_env_default(self):
+        # No step field → the step passes None and AuthManager applies the
+        # MERO_AUTH_BOOTSTRAP_SECRET env default itself.
+        step = self._step()
+        fake_auth = MagicMock()
+        fake_auth.authenticate = AsyncMock(return_value=_token())
+        fake_auth.save_token.return_value = True
+
+        with patch(
+            "merobox.commands.bootstrap.steps.login.AuthManager",
+            return_value=fake_auth,
+        ):
+            result = _run(step.execute({}, {}))
+
+        assert result is True
+        assert fake_auth.authenticate.call_args.kwargs["bootstrap_secret"] is None
+
     def test_login_failure_fails_step(self):
         step = self._step()
         fake_auth = MagicMock()
