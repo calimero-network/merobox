@@ -22,6 +22,11 @@
 #   4. The pre-existing Restricted context REPLICATES to the TEE replica
 #      (`meroctl context ls` on the replica greps the context id).
 #
+# Build the harness merod WITH mock attestation — `mock-attestation` is a
+# default-OFF Cargo feature; without it merod has no `--mock-tee` and the node
+# fails to boot:
+#   cargo build --release -p merod --features mock-attestation
+#
 # Run natively (macOS), meroctl on PATH for the script step:
 #   PATH="/Users/xilosada/dev/calimero-work/core/target/release:$PATH" \
 #   merobox bootstrap run workflow-examples/tee-matrix-restricted-late-join.yml \
