@@ -484,6 +484,17 @@ class DockerManager(CleanupMixin):
             if bootstrap_secret:
                 node_env["MERO_AUTH_BOOTSTRAP_SECRET"] = bootstrap_secret
 
+            # Forward init-time admin credentials (core rc.17+). `merod init`
+            # mints the admin root key from these before the node ever
+            # listens — the login path never mints keys, and the bootstrap
+            # secret above is inert on those cores. The init container reuses
+            # this same environment, so forwarding here covers both init and
+            # run. Binary mode inherits the environment automatically.
+            for admin_var in ("MERO_AUTH_ADMIN_USER", "MERO_AUTH_ADMIN_PASSWORD"):
+                admin_value = os.getenv(admin_var)
+                if admin_value:
+                    node_env[admin_var] = admin_value
+
             # Debug: Print the RUST_LOG value being set
             console.print(
                 f"[cyan]Setting RUST_LOG for node {node_name}: {log_level}[/cyan]"
@@ -1182,6 +1193,15 @@ class DockerManager(CleanupMixin):
             auth_bootstrap_secret = os.getenv("MERO_AUTH_BOOTSTRAP_SECRET")
             if auth_bootstrap_secret:
                 auth_env.append(f"MERO_AUTH_BOOTSTRAP_SECRET={auth_bootstrap_secret}")
+
+            # Forward init-time admin credentials to the standalone auth
+            # service too (core rc.17+ mints the admin root key at startup
+            # from these when no root keys exist; the login path never mints
+            # keys).
+            for admin_var in ("MERO_AUTH_ADMIN_USER", "MERO_AUTH_ADMIN_PASSWORD"):
+                admin_value = os.getenv(admin_var)
+                if admin_value:
+                    auth_env.append(f"{admin_var}={admin_value}")
 
             # By default, fetch fresh auth frontend unless explicitly disabled
             env_auth_fetch = os.getenv("CALIMERO_AUTH_FRONTEND_FETCH", "1")
