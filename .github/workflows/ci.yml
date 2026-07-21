@@ -248,19 +248,27 @@ jobs:
           chmod +x /tmp/merod-mock
           /tmp/merod-mock --version
 
-      - name: Smoke-check the mock-attestation flag is accepted
+      - name: Smoke-check the mock-attestation flag is honored
         run: |
-          # A merod WITHOUT the feature hard-errors on --mock-tee with
-          # "built without mock-attestation support". A feature-enabled binary
-          # instead only fails because no home is initialised — assert we never
-          # see the former (timeout guards against the daemon actually starting).
+          # merod CLI: root args (--node/--home) MUST precede the subcommand:
+          #   merod --node <NAME> --home <PATH> run --mock-tee
+          # The feature gate is at the top of run() (crates/merod/src/cli/run.rs):
+          #   - feature ABSENT  -> bail "built without mock-attestation support"
+          #   - feature PRESENT -> passes the gate, then bails "Node is not
+          #                        initialized" (we didn't init a node here).
+          # Require the PRESENT signal and forbid the ABSENT one, so a wrong
+          # invocation (usage error -> neither string) fails instead of passing
+          # vacuously. timeout guards against the daemon actually starting.
           set +e
-          OUT=$(timeout 20 /tmp/merod-mock --home /tmp/nohome run --mock-tee 2>&1)
+          OUT=$(timeout 20 /tmp/merod-mock --node smoke --home /tmp/smoke-home run --mock-tee 2>&1)
           echo "$OUT"
           if echo "$OUT" | grep -qi "without mock-attestation support"; then
-            echo "::error::merod-mock lacks the mock-attestation feature"; exit 1
+            echo "::error::merod-mock was built WITHOUT the mock-attestation feature"; exit 1
           fi
-          echo "✓ --mock-tee accepted (feature present)"
+          if ! echo "$OUT" | grep -qi "Node is not initialized"; then
+            echo "::error::--mock-tee was not exercised as expected (see output above)"; exit 1
+          fi
+          echo "✓ --mock-tee honored past the feature gate (feature present)"
 
       - name: Upload merod-mock binary
         uses: actions/upload-artifact@v4
