@@ -8,6 +8,9 @@ export default defineConfig({
   site: 'https://calimero-network.github.io',
   // GitHub project Pages serve under /<repo>/. Change if a custom domain is used.
   base: '/merobox',
+  // Keep the animated-diagram engine as an external module (like core) instead
+  // of inlining it per page — assetsInlineLimit 0 stops small-asset inlining.
+  vite: { build: { assetsInlineLimit: 0 } },
   integrations: [
     starlight({
       title: 'merobox',
