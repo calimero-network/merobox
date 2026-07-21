@@ -12,6 +12,11 @@
 #   - The TEE replica replicates that context: `meroctl context ls` on the
 #     replica lists the context id (the `script` step greps for it).
 #
+# Build the harness merod WITH mock attestation — `mock-attestation` is a
+# default-OFF Cargo feature; without it merod has no `--mock-tee` and the node
+# fails to boot:
+#   cargo build --release -p merod --features mock-attestation
+#
 # Run natively (macOS), with the locally-built --mock-tee merod on PATH so the
 # `script` step's meroctl resolves to it:
 #   PATH="/Users/xilosada/dev/calimero-work/core/target/release:$PATH" \

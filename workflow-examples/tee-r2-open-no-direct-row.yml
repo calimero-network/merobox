@@ -21,6 +21,11 @@
 # inherited ReadOnlyTee entry, which is correct inheritance, not a stored
 # admission row — hence we assert on the skip log, not on member-list contents.)
 #
+# Build the harness merod WITH mock attestation — `mock-attestation` is a
+# default-OFF Cargo feature; without it merod has no `--mock-tee` and the node
+# fails to boot:
+#   cargo build --release -p merod --features mock-attestation
+#
 # Run natively (macOS):
 #   PATH="/Users/xilosada/dev/calimero-work/core/target/release:$PATH" \
 #   merobox bootstrap run workflow-examples/tee-r2-open-no-direct-row.yml \

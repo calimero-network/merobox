@@ -14,17 +14,21 @@
 #      already-admitted root TEE is auto-followed into the subgroup as a
 #      ReadOnlyTee member (direct-row auto-follow — the Restricted path).
 #
-# Run natively (macOS) against a locally-built --mock-tee merod:
+# Build the harness merod WITH mock attestation. `mock-attestation` is a
+# default-OFF Cargo feature in core: a plain `cargo build -p merod` produces a
+# binary with NO `--mock-tee` support, and every node below fails to boot.
+#   cargo build --release -p merod --features mock-attestation
+#
+# Run natively (macOS) against that locally-built --mock-tee merod:
 #   merobox bootstrap run workflow-examples/tee-g1-restricted-auto-admit.yml \
 #     --no-docker \
 #     --binary-path /Users/xilosada/dev/calimero-work/core/target/release/merod
 #
 # meroctl is not needed for G1 (assertions go through the admin API directly).
 #
-# NOTE on node boot: merobox's initial `nodes:` boot path does not thread the
-# `mock_tee` flag (only the `start_node` step does). So both nodes boot normally,
-# then we stop + restart the TEE replica with `mock_tee: true` to relaunch it as
-# `merod run --mock-tee`.
+# NOTE on node boot: merobox's initial `nodes:` boot path threads the `mock_tee`
+# flag, so the TEE replica is declared with `mock_tee: true` under `nodes:` below
+# and boots directly as `merod run --mock-tee` — no stop/restart dance needed.
 # =============================================================================
 
 name: TEE G1 — Restricted auto-admit (local mock)

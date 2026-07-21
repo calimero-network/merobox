@@ -12,6 +12,11 @@
 #   - The TEE is a member of the Open subgroup with role == ReadOnlyTee
 #     (assert_tee_member with role: ReadOnlyTee against the Open subgroup id).
 #
+# Build the harness merod WITH mock attestation — `mock-attestation` is a
+# default-OFF Cargo feature; without it merod has no `--mock-tee` and the node
+# fails to boot:
+#   cargo build --release -p merod --features mock-attestation
+#
 # Run natively (macOS):
 #   merobox bootstrap run workflow-examples/tee-g4-inherited-role.yml \
 #     --no-docker \
