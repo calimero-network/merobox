@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Steps } from '@astrojs/starlight/components';
+import SeqDiagram from '../../../components/SeqDiagram.astro';
 
 This tutorial builds a single workflow from scratch. By the end you will have a
 YAML file that boots two Calimero nodes, writes a value on one node, waits for it
@@ -256,6 +257,35 @@ responses. See the [workflow YAML reference](/workflows/yaml/).
 :::
 
 ## The complete workflow
+
+The whole run as one sequence across `merobox` and the two nodes it drives:
+
+<SeqDiagram
+  id="d-first-workflow"
+  title="First workflow: write on node 1, read on node 2"
+  lanes={[
+    { label: 'merobox', color: '#3fb950' },
+    { label: 'Node 1', color: '#58a6ff' },
+    { label: 'Node 2', color: '#a371f7' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: 'install_application → app_id' },
+    { from: 0, to: 1, label: 'create_namespace → namespace_id' },
+    { from: 0, to: 1, label: 'create_context → context_id' },
+    { from: 0, to: 1, label: 'create_namespace_invitation → invitation' },
+    { from: 0, to: 0, label: 'wait 5s (namespace gossip)' },
+    { from: 0, to: 2, label: 'join_namespace (invitation)' },
+    { from: 0, to: 2, label: 'join_context (context_id)' },
+    { from: 0, to: 1, label: 'call set(hello=world)', color: '#a5ff11' },
+    { from: 0, to: 1, label: 'wait_for_sync: poll state hash' },
+    { from: 0, to: 2, label: 'poll state hash' },
+    { from: 1, to: 2, label: 'context state converges', dashed: true },
+    { type: 'divider', label: 'nodes agree on context state' },
+    { from: 0, to: 2, label: 'call get(hello) → get_result' },
+    { from: 0, to: 0, label: 'assert contains(get_result, "world")' },
+    { type: 'divider', label: 'value propagated' },
+  ]}
+/>
 
 Putting every step together:
 

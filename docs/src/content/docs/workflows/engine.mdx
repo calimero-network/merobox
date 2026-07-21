@@ -5,6 +5,8 @@ sidebar:
   order: 1
 ---
 
+import SeqDiagram from '../../../components/SeqDiagram.astro';
+
 A merobox **workflow** is a YAML file that boots one or more Calimero nodes and
 drives them through an ordered list of typed **steps**. This page explains *how*
 a workflow runs — the execution model behind `merobox bootstrap run`. For the
@@ -58,6 +60,31 @@ running after `bootstrap run` returns — otherwise the manager's exit handler
 would tear them down immediately. Set `stop_all_nodes: true` to shut everything
 down at the end.
 :::
+
+<SeqDiagram
+  id="d-run-lifecycle"
+  title="Run lifecycle of merobox bootstrap run"
+  lanes={[
+    { label: 'merobox', color: '#3fb950' },
+    { label: 'Docker', color: '#58a6ff' },
+    { label: 'Nodes', color: '#a371f7' },
+  ]}
+  steps={[
+    { from: 0, to: 0, label: 'Resolver setup' },
+    { from: 0, to: 1, label: 'Nuke on start (delete data)', dashed: true },
+    { from: 0, to: 1, label: 'Force pull images', dashed: true },
+    { from: 0, to: 1, label: 'Start / restart nodes' },
+    { from: 1, to: 2, label: 'Boot merod containers' },
+    { from: 0, to: 2, label: 'Poll /admin-api/health' },
+    { from: 2, to: 0, label: 'Ready', dashed: true },
+    { from: 0, to: 2, label: 'Embedded-auth login', dashed: true },
+    { type: 'divider', label: 'run steps sequentially' },
+    { from: 0, to: 2, label: 'Execute step (admin-API / JSON-RPC)', color: '#a5ff11' },
+    { from: 2, to: 0, label: 'Result + capture outputs', dashed: true },
+    { type: 'divider', label: 'teardown (always)' },
+    { from: 0, to: 1, label: 'Stop nodes / nuke data' },
+  ]}
+/>
 
 ## Step lifecycle
 
