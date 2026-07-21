@@ -1,7 +1,7 @@
 /**
  * Internal-link checker for the built site. Runs after `astro build` +
  * postbuild-base (see the `check` npm script). Fails on:
- *   - a root-absolute internal link missing the `/core` base (the bug that
+ *   - a root-absolute internal link missing the `/merobox` base (the bug that
  *     previously slipped through), or
  *   - a link that doesn't resolve to a built page.
  */
@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const DIST = 'dist';
-const BASE = '/core';
+const BASE = '/merobox';
 
 function htmlFiles(dir) {
   const out = [];
