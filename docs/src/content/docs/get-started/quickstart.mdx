@@ -1,0 +1,180 @@
+---
+title: Quickstart
+description: Install merobox, verify the install, start a two-node Calimero cluster, check its health, run your first workflow, and tear everything down.
+sidebar:
+  order: 1
+---
+
+import { Steps, Tabs, TabItem, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+merobox is a Python CLI that boots real Calimero (`merod`) nodes — as Docker
+containers by default — and drives them through declarative YAML
+[workflows](/workflows/engine/). This page takes you from an empty machine to a
+running two-node cluster and a first passing workflow.
+
+## Prerequisites
+
+- **Docker** running locally (the default backend runs each node as a
+  container). Binary mode (`--no-docker`) is available if you have a local
+  `merod` build — see [node management](/guides/node-management/).
+- **Python 3.9+** if you install from PyPI or source.
+
+## Install
+
+<Tabs>
+  <TabItem label="pipx (PyPI)">
+
+```bash
+pipx install merobox
+```
+
+  </TabItem>
+  <TabItem label="APT (Debian/Ubuntu)">
+
+```bash
+curl -fsSL https://calimero-network.github.io/merobox/gpg.key \
+  | sudo tee /usr/share/keyrings/merobox.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/merobox.gpg] https://calimero-network.github.io/merobox stable main" \
+  | sudo tee /etc/apt/sources.list.d/merobox.list
+sudo apt update
+sudo apt install merobox
+```
+
+  </TabItem>
+  <TabItem label="Homebrew">
+
+```bash
+brew install merobox
+```
+
+  </TabItem>
+  <TabItem label="From source">
+
+```bash
+git clone https://github.com/calimero-network/merobox.git
+cd merobox
+pipx install -e .
+```
+
+  </TabItem>
+</Tabs>
+
+### Verify
+
+```bash
+merobox --version
+```
+
+If that prints a version, you are ready. `merobox --help` lists every command.
+
+## Start two nodes
+
+```bash
+merobox run --count 2
+```
+
+This starts two Docker containers named `calimero-node-1` and `calimero-node-2`.
+Each node opens a libp2p **swarm** port and an HTTP **server / RPC** port,
+allocated per node from an auto-detected base (override with `--base-port` /
+`--base-rpc-port`). See [node management](/guides/node-management/) for the
+full set of `run` flags.
+
+:::note
+`merobox run` **only starts nodes** — it does not execute workflow YAML. Running
+a workflow is a separate command, `merobox bootstrap run` (below).
+:::
+
+## Check health
+
+```bash
+merobox health
+```
+
+`merobox health` polls each running node's admin API (`/admin-api/health`,
+`/admin-api/is-authed`, `/admin-api/peers`) and prints a table of health status,
+auth state, and connected-peer count. Target a single node with
+`merobox health --node calimero-node-1`, or add `--verbose` for raw responses.
+
+:::tip
+`merobox list` shows which node containers are running, and
+`merobox logs calimero-node-1 --follow` streams a node's logs live.
+:::
+
+## Run your first workflow
+
+A workflow is a YAML file describing nodes and an ordered list of steps. The
+repository ships runnable examples under `workflow-examples/`. Run one:
+
+```bash
+merobox bootstrap run workflow-examples/workflow-groups-example.yml
+```
+
+This boots the nodes the file declares, then executes each step in order —
+installing an app, creating a namespace and context, inviting the second node,
+and verifying that state syncs between the two. The process exits non-zero the
+moment any step fails.
+
+Two flags worth knowing early:
+
+```bash
+# Validate the YAML without starting anything — a fast lint for CI
+merobox bootstrap run workflow-examples/workflow-groups-example.yml --dry-run
+
+# Generate a starter workflow to edit
+merobox bootstrap create-sample
+```
+
+:::note
+`bootstrap run` starts the nodes a workflow declares under `nodes:`, so you do
+not need a prior `merobox run`. Unless the workflow sets `stop_all_nodes: true`,
+the nodes are left running after it finishes so you can inspect them.
+:::
+
+Ready to build one yourself? The [first workflow tutorial](/get-started/first-workflow/)
+walks through writing one step by step.
+
+## Stop and clean up
+
+```bash
+# Stop every running node (and the auth stack, if any)
+merobox stop --all
+
+# Or stop just one node
+merobox stop calimero-node-1
+```
+
+`stop` leaves each node's data on disk (under `./data/<node-name>/`) so a
+restart keeps its identity and state. To wipe that data for a completely fresh
+start, use `nuke`:
+
+:::caution
+`merobox nuke` is destructive and has no undo. It deletes node **data
+directories** under `./data/`, removes the node/auth/proxy containers, and drops
+the `auth_data` volume — a nuked node loses its identity and replicated state.
+
+```bash
+merobox nuke --dry-run   # show what would be deleted, delete nothing
+merobox nuke --force     # delete without the confirmation prompt
+```
+:::
+
+## Next steps
+
+<CardGrid>
+  <LinkCard
+    title="Write your first workflow"
+    href="/get-started/first-workflow/"
+    description="A narrated tutorial that builds one workflow step by step." />
+  <LinkCard
+    title="Workflow engine"
+    href="/workflows/engine/"
+    description="How a workflow runs: lifecycle, variables, failure handling." />
+  <LinkCard
+    title="Node management"
+    href="/guides/node-management/"
+    description="Docker vs binary backends, ports, auth, and logging." />
+  <LinkCard
+    title="CLI reference"
+    href="/reference/cli/"
+    description="Every command and flag in full." />
+</CardGrid>

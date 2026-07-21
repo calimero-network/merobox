@@ -1,0 +1,262 @@
+---
+title: Recipes
+description: Goal-first how-tos for common merobox tasks — sync recovery after a partition, negative auth tests, namespace upgrades, load tests, blob sharing, capturing values between steps, and keeping nodes alive.
+sidebar:
+  order: 5
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Short, task-oriented answers to "how do I …" questions. Each recipe shows only
+the distinctive steps — assume nodes, an installed application, and a context
+already exist. Every step, field, and flag here is grounded in the
+[workflow YAML reference](/workflows/yaml/) (which also covers the setup steps)
+and a real `workflow-examples/*.yml` scenario. Validate any file first:
+
+```bash
+merobox bootstrap run workflow.yml --dry-run
+```
+
+## How do I test sync recovery after a network partition?
+
+Cut libp2p traffic between a node and its peers with
+[`partition_peers`](/workflows/yaml/#partition_peers--heal_peers), write to the
+isolated node (its RPC stays reachable), then restore delivery with `heal_peers`
+and confirm state reconverges with
+[`wait_for_sync`](/workflows/yaml/#wait_for_sync). This is the surgical
+alternative to `disconnect_node`, which also severs RPC. It is Docker-only and
+needs Linux with `iptables` and passwordless `sudo`.
+
+```yaml
+# after a baseline key has replicated to node-1, node-2 and node-3…
+- type: partition_peers
+  node: calimero-node-1
+  peers: [calimero-node-2, calimero-node-3]
+
+- type: call            # RPC still works on the isolated node
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  method: set
+  args: { key: from_n1, value: while_partitioned }
+
+- type: heal_peers
+  node: calimero-node-1
+  peers: [calimero-node-2, calimero-node-3]
+
+- type: wait_for_sync   # the write converges everywhere after the heal
+  context_id: '{{context_id}}'
+  nodes: [calimero-node-1, calimero-node-2, calimero-node-3]
+  timeout: 90
+  trigger_sync: true
+```
+
+<Aside type="tip">
+For a coarser fault, [`inject_network_fault`](/workflows/yaml/#inject_network_fault)
+adds packet `loss` or `delay` for a duration, and `disconnect_node` /
+`connect_node` detach a container from its Docker network entirely.
+</Aside>
+
+## How do I write a negative / auth-failure test?
+
+Set [`expected_failure: true`](/workflows/engine/#failure-handling) on a
+[`call`](/workflows/yaml/#call) so the step passes **only if** the operation is
+rejected — the workflow fails if it unexpectedly succeeds. For an authorization
+test, add `unauthenticated: true` to force a no-token request and assert the 401.
+The same flags work on [`ws_connect`](/workflows/yaml/#ws_connect),
+[`login`](/workflows/yaml/#login), and `refresh`.
+
+```yaml
+# a bad call is expected to be rejected
+- type: call
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  method: invalid_method_that_does_not_exist
+  args: {}
+  expected_failure: true
+
+# a no-token call against an auth-protected node must 401
+- type: call
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  method: get
+  args: { key: hello }
+  unauthenticated: true
+  expected_failure: true
+```
+
+## How do I upgrade an app across a namespace?
+
+Emit one signed cascade with
+[`cascade_namespace_application`](/workflows/yaml/#cascade_namespace_application)
+from an admin node; it fans the target-application change out to every matching
+descendant subgroup in one sync round. Then block until it lands with
+[`assert_cascade_complete`](/workflows/yaml/#assert_cascade_complete), which
+polls [`get_cascade_status`](/workflows/yaml/#get_cascade_status) under the hood
+until the subtree finishes or the timeout elapses.
+
+```yaml
+- type: cascade_namespace_application
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  target_application_id: '{{app_v2}}'
+
+- type: assert_cascade_complete
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  timeout_seconds: 60
+```
+
+## How do I load-test a context?
+
+Use [`fuzzy_test`](/workflows/yaml/#fuzzy_test) to hammer a context with
+weighted, randomized operation patterns for a set duration. Each operation is a
+mini-sequence of steps; random generators (`{{random_int(min, max)}}`, `{{uuid}}`,
+`{{random_node}}`) and the auto-captured `{{fuzzy_key}}` / `{{fuzzy_value}}` from a
+prior `call` keep the load varied. Mark per-iteration checks `non_blocking: true`
+so a single miss is tracked, not fatal.
+
+```yaml
+- type: fuzzy_test
+  duration_minutes: 5          # 30–60 for a real run
+  context_id: '{{context_id}}'
+  nodes:
+    - name: calimero-node-1
+    - name: calimero-node-2
+  operations:
+    - name: set_and_verify
+      weight: 70
+      steps:
+        - type: call
+          node: '{{random_node}}'
+          context_id: '{{context_id}}'
+          method: set
+          args:
+            key: 'fuzzy_key_{{random_int(1, 10000)}}'
+            value: 'value_{{uuid}}'
+        - type: call
+          node: '{{random_node}}'
+          context_id: '{{context_id}}'
+          method: get
+          args: { key: '{{fuzzy_key}}' }
+          outputs:
+            fuzzy_get_result: result
+        - type: assert
+          non_blocking: true
+          statements:
+            - 'contains({{fuzzy_get_result}}, {{fuzzy_value}})'
+```
+
+## How do I run against a locally-built merod?
+
+Pass `--no-docker` to run `merod` as a native process instead of a container,
+and `--binary-path` to point at your build. Extra `merod run` arguments go
+through `--merod-args` (binary mode only — it is ignored under Docker). See
+[`bootstrap run`](/reference/cli/#bootstrap-run) for the full flag list.
+
+```bash
+merobox bootstrap run workflow.yml \
+  --no-docker \
+  --binary-path ./target/release/merod \
+  --merod-args="--sync-strategy delta"
+```
+
+<Aside type="note">
+A workflow can opt into binary mode itself with top-level `no_docker: true` and
+`binary_path:` keys; the CLI flags take precedence when both are set. To pin a
+specific Docker image instead, use `--image` (or the `image:` field under
+`nodes:`).
+</Aside>
+
+## How do I share a file via blobs?
+
+Push a file into a node's blob store with
+[`upload_blob`](/workflows/yaml/#upload_blob) and capture the returned `blob_id`
+(and `size`) for later steps — for example, to register the blob inside your
+application. Remove it later through the admin API with
+[`delete_blob`](/workflows/yaml/#delete_blob), which cascades chunked blobs.
+
+```yaml
+- type: upload_blob
+  node: calimero-node-1
+  file_path: workflow-examples/blob-test-files/sample.pdf
+  context_id: '{{context_id}}'
+  outputs:
+    pdf_blob_id: blob_id
+    pdf_blob_size: size
+
+# …use {{pdf_blob_id}} in a call, then clean up:
+- type: delete_blob
+  node: calimero-node-1
+  blob_id: '{{pdf_blob_id}}'
+```
+
+## How do I capture a value from one step and reuse it?
+
+Add an [`outputs:`](/workflows/engine/#capturing-outputs) block that maps a new
+variable name to a field in the step's response, then reference it anywhere later
+as `{{name}}` (see [variable substitution](/workflows/engine/#variable-substitution)).
+This is how ids thread through a workflow — an `applicationId` becomes a
+namespace's `application_id`, whose `contextId` becomes a call's `context_id`.
+
+```yaml
+- type: install_application
+  node: calimero-node-1
+  path: ./workflow-examples/res/kv_store.wasm
+  dev: true
+  outputs:
+    app_id: applicationId        # store response.applicationId as {{app_id}}
+
+- type: create_context
+  node: calimero-node-1
+  application_id: '{{app_id}}'   # …and read it back here
+  group_id: '{{namespace_id}}'
+  outputs:
+    context_id: contextId
+    member_key: memberPublicKey
+```
+
+## How do I keep nodes running after a workflow?
+
+Leave `stop_all_nodes` at its default of `false` (or set it explicitly) and the
+executor calls `keep_resources_on_exit()` during
+[teardown](/workflows/engine/#teardown), so the containers stay up after
+`bootstrap run` returns — ready for inspection or a follow-up workflow. Set it to
+`true` to shut everything down at the end instead.
+
+```yaml
+name: Leave nodes running
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+
+steps:
+  - type: wait
+    seconds: 1
+
+stop_all_nodes: false   # default — nodes keep running after the run
+```
+
+<Aside type="tip">
+Inspect the still-running nodes afterwards with `merobox list`, `merobox health`,
+and `merobox logs <node>`, and tear them down when done with `merobox stop --all`
+(see [node management](/guides/node-management/)).
+</Aside>
+
+<CardGrid>
+  <LinkCard
+    title="Workflow YAML reference"
+    href="/workflows/yaml/"
+    description="Every step type with its full field list." />
+  <LinkCard
+    title="Workflow engine"
+    href="/workflows/engine/"
+    description="Outputs, substitution, failure handling, teardown." />
+  <LinkCard
+    title="Testing with merobox"
+    href="/guides/testing/"
+    description="Drive these flows from pytest, and the fuzzy load model." />
+  <LinkCard
+    title="Node management"
+    href="/guides/node-management/"
+    description="Docker vs binary backends, lifecycle, and logs." />
+</CardGrid>

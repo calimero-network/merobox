@@ -47,16 +47,20 @@ export default defineConfig({
           href: 'https://github.com/calimero-network/merobox',
         },
       ],
-      // Explicit, grouped navigation: Understand → Workflows → Guides → Reference.
+      // Explicit, grouped navigation: Get Started → Understand → Workflows → Guides → Reference.
       sidebar: [
         { label: 'Home', link: '/' },
+        {
+          label: 'Get Started',
+          items: ['get-started/quickstart', 'get-started/first-workflow'],
+        },
         {
           label: 'Understand',
           items: ['understand/system-overview', 'understand/glossary'],
         },
         {
           label: 'Workflows',
-          items: ['workflows/engine', 'workflows/yaml'],
+          items: ['workflows/engine', 'workflows/yaml', 'workflows/examples'],
         },
         {
           label: 'Guides',
@@ -64,6 +68,8 @@ export default defineConfig({
             'guides/node-management',
             'guides/remote-nodes',
             'guides/testing',
+            'guides/pytest-tutorial',
+            'guides/recipes',
             'guides/near-integration',
           ],
         },

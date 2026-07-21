@@ -98,7 +98,7 @@ steps:
 ## Features
 
 - **Node Management** — Start, stop, and monitor nodes in Docker or as native processes
-- **Workflow Orchestration** — 35+ step types for complex multi-step YAML workflows
+- **Workflow Orchestration** — ~100 step types for complex multi-step YAML workflows
 - **Remote Nodes** — Connect to remote Calimero nodes with user/password or API key auth
 - **Auth Integration** — Traefik proxy (Docker) or embedded JWT auth (binary mode)
 - **Fuzzy Testing** — Long-duration randomized load tests with weighted operations

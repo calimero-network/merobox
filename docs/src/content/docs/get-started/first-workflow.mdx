@@ -1,0 +1,374 @@
+---
+title: Your first workflow
+description: Build one merobox workflow step by step — two nodes, install an app, create a namespace and context, invite and join a second node, call a method, wait for sync, and assert the result.
+sidebar:
+  order: 2
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+This tutorial builds a single workflow from scratch. By the end you will have a
+YAML file that boots two Calimero nodes, writes a value on one node, waits for it
+to replicate, reads it back on the other node, and asserts the result — the
+canonical shape of a merobox end-to-end test.
+
+We build it one step at a time and explain each piece as it appears, including
+how `outputs:` captures values and how `{{name}}` references them later. The
+finished file is at the [end of the page](#the-complete-workflow).
+
+:::note
+This assumes merobox is installed and Docker is running. If not, start with the
+[quickstart](/get-started/quickstart/). For the execution model behind these
+steps, see the [workflow engine](/workflows/engine/); for every step type and
+field, the [workflow YAML reference](/workflows/yaml/).
+:::
+
+## The shape of a workflow
+
+Every workflow is a YAML file with a bit of metadata, a `nodes:` block declaring
+the cluster, and an ordered list of `steps:`. Steps run top to bottom, and the
+run stops the moment one fails.
+
+```yaml
+name: My First Workflow
+description: Write a value on one node and read it back on another.
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  # ... we fill this in below
+```
+
+`count: 2` boots two nodes named by `prefix` with a numeric suffix:
+`calimero-node-1` and `calimero-node-2`. Every step addresses a node by that
+full name.
+
+Run the file at any point with:
+
+```bash
+merobox bootstrap run my-first-workflow.yml
+```
+
+## Step 1 — install the application
+
+A context runs a WASM application, so the first step installs one. We use the
+bundled `kv_store` app (a simple key/value store) that ships under
+`workflow-examples/res/`.
+
+```yaml
+- name: Install Application on Node 1
+  type: install_application
+  node: calimero-node-1
+  path: workflow-examples/res/kv_store.wasm
+  dev: true
+  outputs:
+    app_id: applicationId
+```
+
+This is where **variable capture** enters. When a step succeeds, its `outputs:`
+block copies fields out of the response into a shared value store:
+
+```yaml
+outputs:
+  app_id: applicationId   # store response.applicationId under the name "app_id"
+```
+
+The left side (`app_id`) is a **name you choose**; the right side
+(`applicationId`) is the **field in the step's response**. From now on,
+`{{app_id}}` anywhere in a later step resolves to that installed application's
+ID. Nothing is hardcoded — the ID is discovered at runtime and threaded forward.
+
+## Step 2 — create a namespace
+
+A namespace is the identity and application-instance boundary that a shared
+context lives in. We create one on node 1, tied to the app we just installed —
+note the `{{app_id}}` reference pulling in the value captured in step 1.
+
+```yaml
+- name: Create Namespace on Node 1
+  type: create_namespace
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+  outputs:
+    namespace_id: namespaceId
+```
+
+We capture the new namespace's ID as `namespace_id` for the steps that create
+the context and the invitation.
+
+## Step 3 — create a context
+
+The context is the actual running instance of the app whose state the nodes will
+keep in sync. It belongs to the namespace (passed as `group_id`) and runs the
+installed app.
+
+```yaml
+- name: Create Context on Node 1
+  type: create_context
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+  group_id: '{{namespace_id}}'
+  outputs:
+    context_id: contextId
+    member_public_key: memberPublicKey
+```
+
+A single step can capture **several** outputs. Here we keep `context_id` (which
+every later `call` targets) and `member_public_key` (node 1's identity inside
+the context). Both come from the same response.
+
+## Step 4 — invite and join
+
+Node 2 does not know about the context yet. Bringing it in is a two-part
+handshake: node 1 issues a namespace invitation, then node 2 joins the namespace
+and the context.
+
+<Steps>
+
+1. **Node 1 creates an invitation** to its namespace and captures the
+   invitation payload:
+
+   ```yaml
+   - name: Invite Node 2
+     type: create_namespace_invitation
+     node: calimero-node-1
+     namespace_id: '{{namespace_id}}'
+     outputs:
+       invitation: invitation
+   ```
+
+2. **Wait briefly** so the namespace gossip reaches node 2 before it tries to
+   join. `wait` just pauses for a fixed number of seconds:
+
+   ```yaml
+   - name: Wait for Namespace Gossip
+     type: wait
+     seconds: 5
+   ```
+
+3. **Node 2 joins the namespace** using the captured invitation:
+
+   ```yaml
+   - name: Node 2 Joins Namespace
+     type: join_namespace
+     node: calimero-node-2
+     namespace_id: '{{namespace_id}}'
+     invitation: '{{invitation}}'
+   ```
+
+4. **Node 2 joins the context** via its group membership. It references the same
+   `context_id` node 1 created:
+
+   ```yaml
+   - name: Node 2 Joins Context
+     type: join_context
+     node: calimero-node-2
+     context_id: '{{context_id}}'
+   ```
+
+</Steps>
+
+Both nodes are now members of the same context and will replicate its state.
+
+## Step 5 — call a method (set)
+
+`call` invokes a method on the app running in a context. The `kv_store` app
+exposes `set` and `get`. We write `hello = world` on node 1:
+
+```yaml
+- name: Set a Value on Node 1
+  type: call
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  method: set
+  args:
+    key: hello
+    value: world
+```
+
+`args:` are passed to the method as its arguments. This mutates the context's
+state on node 1 — which then needs to propagate to node 2.
+
+## Step 6 — wait for sync
+
+Rather than guessing with a fixed `wait`, use `wait_for_sync`. It polls the
+named nodes' context state hashes and returns as soon as they **converge** (or
+fails after `timeout` seconds). This is the reliable way to gate on replicated
+state.
+
+```yaml
+- name: Wait for State Sync
+  type: wait_for_sync
+  context_id: '{{context_id}}'
+  nodes:
+    - calimero-node-1
+    - calimero-node-2
+  timeout: 30
+```
+
+When this step passes, both nodes agree on the context state — so node 2 now has
+the value node 1 wrote.
+
+## Step 7 — read it back (get)
+
+Now we `call` `get` on **node 2** and capture the result, proving the write
+crossed the network:
+
+```yaml
+- name: Get the Value from Node 2
+  type: call
+  node: calimero-node-2
+  context_id: '{{context_id}}'
+  method: get
+  args:
+    key: hello
+  outputs:
+    get_result: result
+```
+
+We store the returned value as `get_result` so the final step can check it.
+
+## Step 8 — assert the result
+
+`assert` evaluates one or more boolean `statements` and fails the workflow if any
+is false. This turns the workflow into a real test. `{{get_result}}` expands to
+the value we captured from node 2:
+
+```yaml
+- name: Assert the Value Propagated
+  type: assert
+  statements:
+    - "is_set({{context_id}})"
+    - "contains({{get_result}}, 'world')"
+```
+
+`is_set(...)` checks a value is present and non-empty; `contains(...)` checks a
+substring. If node 2 returned `world`, the assertion passes and the workflow
+exits successfully.
+
+:::tip
+`assert` supports many helpers (`equal`, `not_contains`, `regex`, numeric
+comparisons), and `json_assert` adds `json_equal` / `json_subset` for structured
+responses. See the [workflow YAML reference](/workflows/yaml/).
+:::
+
+## The complete workflow
+
+Putting every step together:
+
+```yaml
+name: My First Workflow
+description: Write a value on one node and read it back on another.
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  - name: Install Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  - name: Invite Node 2
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - name: Wait for Namespace Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins Namespace
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - name: Node 2 Joins Context
+    type: join_context
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+
+  - name: Set a Value on Node 1
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    method: set
+    args:
+      key: hello
+      value: world
+
+  - name: Wait for State Sync
+    type: wait_for_sync
+    context_id: '{{context_id}}'
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 30
+
+  - name: Get the Value from Node 2
+    type: call
+    node: calimero-node-2
+    context_id: '{{context_id}}'
+    method: get
+    args:
+      key: hello
+    outputs:
+      get_result: result
+
+  - name: Assert the Value Propagated
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+      - "contains({{get_result}}, 'world')"
+
+stop_all_nodes: false
+```
+
+Save it as `my-first-workflow.yml` and run:
+
+```bash
+# Validate the schema first (no nodes started)
+merobox bootstrap run my-first-workflow.yml --dry-run
+
+# Then run it for real
+merobox bootstrap run my-first-workflow.yml
+```
+
+`stop_all_nodes: false` leaves the nodes running afterward so you can inspect
+them with `merobox health` or `merobox logs`. Set it to `true` to shut them down
+at the end, or clean up manually with `merobox stop --all`.
+
+## Where to go next
+
+- [Workflow engine](/workflows/engine/) — the full run and step lifecycle,
+  variable substitution, failure handling, retries, and parallelism.
+- [Workflow YAML reference](/workflows/yaml/) — every step type and field.
+- [Testing with merobox](/guides/testing/) — drive workflows from pytest.
+- [CLI reference](/reference/cli/) — every command and flag.

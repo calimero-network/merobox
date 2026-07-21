@@ -1,0 +1,339 @@
+---
+title: Using merobox in pytest
+description: A hands-on walkthrough of merobox's Python harness — build a pytest suite around real merod nodes with cluster()/workflow(), the nodes()/run_workflow() fixture decorators, and a session-scoped shared cluster, following the repo's example-project.
+sidebar:
+  order: 6
+---
+
+import { Steps, Aside, Tabs, TabItem, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+This is the hands-on companion to [Testing with pytest](/guides/testing/). Where
+that page is the reference for the harness, this tutorial walks you through
+building a real suite: start nodes, point a client at them, assert, and reuse one
+cluster across the whole run. Every fixture and helper here is copied from the
+harness in `merobox/testing.py` and the working consumer in the repo's
+`example-project/` — nothing is invented.
+
+<Aside type="note">
+The harness starts **real `merod` Docker containers** via `DockerManager`, so
+your tests exercise the actual node over its RPC endpoint. That makes it the
+end-to-end layer — expect container start-up to be the slow part, and design the
+suite to reuse nodes (see [Reuse one cluster](#reuse-one-cluster-per-session)).
+</Aside>
+
+## Before you start
+
+<Steps>
+
+1. **Python 3.9–3.11** (3.12+ is not supported) and **Docker 20.10+** running
+   locally — the same requirements as the rest of merobox.
+
+2. Install merobox plus pytest into your project's virtualenv:
+
+   ```bash
+   python -m venv .venv && source .venv/bin/activate
+   pip install merobox pytest requests
+   ```
+
+3. Confirm Docker can pull and run the node image once, so the first test run
+   isn't waiting on a cold pull. See [Node Management](/guides/node-management/)
+   for what gets started under the hood.
+
+</Steps>
+
+## Two ways in: context manager or fixture
+
+`merobox/testing.py` gives you the same capability in two shapes. The **context
+managers** (`cluster()`, `workflow()`) are for a `with` block — good for a script
+or a single self-contained test. The **decorators** (`nodes()`, `run_workflow()`)
+wrap those same context managers as pytest fixtures — the form you'll use for a
+real suite. Start with the context-manager form to see the shape, then graduate
+to fixtures.
+
+<Aside type="caution" title="They are synchronous">
+`cluster()` and `workflow()` are ordinary (synchronous) context managers — use
+plain `with`, not `async with`. `workflow()` runs its own event loop internally
+via `asyncio.run(...)`.
+</Aside>
+
+## Step 1 — a cluster in a `with` block
+
+`cluster(count)` starts N nodes, waits for readiness, yields a `ClusterEnv`, and
+tears the nodes down on exit:
+
+```python
+from merobox.testing import cluster
+
+def test_nodes_are_up():
+    with cluster(count=2, prefix="tut") as env:
+        assert len(env["nodes"]) == 2            # ["tut-1", "tut-2"]
+        for name, url in env["endpoints"].items():
+            assert url.startswith("http://")     # name -> RPC URL
+```
+
+The yielded `ClusterEnv` is a dict with exactly three keys — `nodes`
+(`list[str]`), `endpoints` (`dict[str, str]`, node name → RPC URL), and `manager`
+(the live `DockerManager`). Keyword parameters, all optional except `count`:
+`prefix="test"`, `image=None`, `base_port=None`, `base_rpc_port=None`,
+`stop_all=True`, `wait_for_ready=True`. Leave `base_port` / `base_rpc_port` as
+`None` to auto-detect free ports.
+
+## Step 2 — a workflow in a `with` block
+
+`workflow(path)` executes a [workflow YAML](/workflows/yaml/) end to end, then
+exposes the nodes it left running so you can assert against the result:
+
+```python
+from merobox.testing import workflow
+
+def test_workflow_runs():
+    with workflow("./workflows/workflow-example.yml", prefix="e2e") as env:
+        assert env["workflow_result"] is True    # bool — not a result object
+        for value_key, value in (env["dynamic_values"] or {}).items():
+            ...                                   # values captured by `outputs:`
+```
+
+`WorkflowEnv` adds two keys to the cluster set: `workflow_result` (a **`bool`** —
+`True` on success) and `dynamic_values` (a `dict | None` holding everything the
+workflow captured via its `outputs:` blocks, e.g. `app_id`, `context_id`,
+`public_key`). Same keyword parameters as `cluster()`, but `prefix` defaults to
+`"test-node"`, and the workflow path is the one positional argument.
+
+<Aside type="caution">
+Assert `env["workflow_result"] is True`, not truthiness of an object. A workflow
+that fails raises inside the context manager, so a green `with` block already
+means it ran; the bool is there for explicit assertions.
+</Aside>
+
+## Step 3 — turn it into a fixture
+
+For a suite, decorate a placeholder function. The body is ignored (`pass` is
+fine) — the decorator returns a real `@pytest.fixture` that yields a convenience
+object with attribute access instead of a raw dict.
+
+<Tabs>
+  <TabItem label="nodes()">
+
+```python
+from merobox.testing import nodes
+
+@nodes(count=2, prefix="multi-test", scope="function")
+def multi_test_nodes():
+    """Two nodes, function-scoped for isolation."""
+    pass
+
+def test_two_nodes(multi_test_nodes):
+    assert len(multi_test_nodes.nodes) == 2
+    endpoint = multi_test_nodes.endpoint(0)      # by index
+```
+
+  </TabItem>
+  <TabItem label="run_workflow()">
+
+```python
+from merobox.testing import run_workflow
+
+@run_workflow("./workflows/workflow-example.yml",
+              prefix="shared-workflow", scope="session")
+def shared_workflow():
+    """Workflow-provisioned environment, reused across the session."""
+    pass
+
+def test_workflow_env(shared_workflow):
+    assert shared_workflow.success is True
+    ep = shared_workflow.endpoint(0)
+    context_id = shared_workflow.get_captured_value("context_id")
+```
+
+  </TabItem>
+</Tabs>
+
+The object handed to your test exposes:
+
+- `.nodes`, `.endpoints`, `.manager` — mirror the env dict (dict-style
+  `obj["nodes"]` also works for backward compatibility).
+- `.node(index_or_name)` — the node name by list index (int) or passed through by
+  name (str).
+- `.endpoint(index_or_name)` — the RPC URL for that node; accepts an index
+  **or** a name, so `env.endpoint(0)` and `env.endpoint(env.nodes[0])` return the
+  same URL.
+- **From `run_workflow()` only:** `.success` (the `workflow_result` bool),
+  `.dynamic_values`, `.get_captured_value(key, default=None)`, and
+  `.list_captured_values()` (the list of captured keys).
+
+`scope` takes any pytest scope — `function`, `class`, `module`, or `session`.
+
+## Step 4 — drive a real client and assert
+
+The endpoint is a plain RPC URL, so point any HTTP client at it. The example
+project ships a small `Client` and tests it against a live node exactly this way:
+
+```python
+from hello_world.client import Client
+
+def test_client_against_node(single_node):
+    endpoint = single_node.endpoint(0)
+    client = Client(endpoint)
+
+    assert client.base_url == endpoint
+    assert endpoint.startswith("http://") and ":" in endpoint  # host:port
+```
+
+Because `.endpoint()` accepts either form, you can cross-check index vs name —
+this is a real assertion from `example-project/tests/`:
+
+```python
+def test_endpoint_consistency(single_node):
+    by_index = single_node.endpoint(0)
+    by_name  = single_node.endpoint(single_node.nodes[0])
+    assert by_index == by_name
+```
+
+You can also reach the underlying `DockerManager` through `.manager` — e.g.
+`single_node.manager.get_running_nodes()` returns the live node list, and the
+example project even reads a node's `config.toml` out of the container through
+`manager.client.containers.get(name)`.
+
+## Step 5 — assert on captured workflow values
+
+When you provision with `run_workflow()`, the workflow's `outputs:` become
+captured values you can assert on. The example workflow captures `app_id`,
+`context_id`, `public_key`, and contract-call results like `set_result` /
+`get_result`:
+
+```python
+def test_workflow_captured_values(workflow_environment):
+    assert workflow_environment.success is True
+
+    keys = workflow_environment.list_captured_values()   # e.g. ["app_id", ...]
+    context_id = workflow_environment.get_captured_value("context_id")
+    if context_id:
+        assert isinstance(context_id, str) and len(context_id) > 0
+```
+
+<Aside type="tip">
+`get_captured_value(key, default)` never raises on a missing key — it returns the
+default (`None` unless you pass one). Use `list_captured_values()` first if you
+want to assert a key is present.
+</Aside>
+
+## Reuse one cluster per session
+
+Starting containers is the slow part, so the winning pattern — and what
+`example-project/conftest.py` does — is **one session-scoped fixture** with a
+layer of thin aliases pointing at it. Every test that asks for any alias shares
+the same running nodes:
+
+```python
+# conftest.py
+import pytest
+from merobox.testing import nodes, run_workflow
+
+@nodes(count=3, prefix="shared-test", scope="session")
+def shared_cluster():
+    """Main shared cluster with 3 nodes — session scoped for maximum reuse."""
+    pass
+
+@run_workflow("./workflows/workflow-example.yml",
+              prefix="shared-workflow", scope="session")
+def shared_workflow():
+    """Shared workflow setup — session scoped for reuse."""
+    pass
+
+# Thin aliases — each just returns the one shared fixture.
+@pytest.fixture
+def single_node(shared_cluster):
+    return shared_cluster
+
+@pytest.fixture
+def workflow_environment(shared_workflow):
+    return shared_workflow
+
+@pytest.fixture
+def client(shared_cluster):
+    from hello_world.client import Client
+    return Client(shared_cluster.endpoint(0))   # pre-wired client fixture
+```
+
+Tests then request whichever alias reads best; they all resolve to the same
+session cluster:
+
+```python
+def test_simple_setup(single_node):
+    assert len(single_node.nodes) == 3
+    client = Client(single_node.endpoint(0))
+    assert client.base_url == single_node.endpoint(0)
+
+def test_preconfigured_client(client):       # uses the pre-wired fixture
+    assert client.base_url.startswith("http://")
+```
+
+<Aside type="tip">
+Prefer one `scope="session"` cluster shared by aliases over many small clusters.
+It avoids port conflicts and cuts total run time, since the containers start once
+per session rather than once per test.
+</Aside>
+
+## Combining fixtures with `using()`
+
+`testing.py` also exports a `using(*fixtures)` helper for grouping fixtures. It is
+exported but the example project does not exercise it, so treat this as the basic
+form from its signature — it takes the fixtures to combine and returns a wrapper
+applied to the test function:
+
+```python
+from merobox.testing import nodes, run_workflow, using
+
+@nodes(count=2)
+def cluster_fixture():
+    pass
+
+@run_workflow("./workflows/workflow-example.yml")
+def workflow_fixture():
+    pass
+
+@using(cluster_fixture, workflow_fixture)
+def test_combined(cluster_fixture, workflow_fixture):
+    ...
+```
+
+<Aside type="note">
+In its current form `using()` is a light wrapper that returns the test function
+unchanged; the fixtures are still resolved by pytest through the parameter names.
+For most suites, requesting the fixtures directly as test arguments (as in the
+earlier steps) is all you need.
+</Aside>
+
+## Running the suite
+
+The example project configures pytest in its own `pyproject.toml`
+(`testpaths = ["tests"]`, `addopts = "-v --tb=short"`), so from the project root:
+
+```bash
+pytest                     # discover and run tests/
+pytest -k workflow         # just the workflow tests
+pytest tests/test_merobox_integration.py::test_simple_setup
+```
+
+Each session-scoped fixture starts its nodes on first use and tears them down at
+the end of the run; if a run is interrupted, `stop_all=True` (the default) still
+tries to clean up the containers it created.
+
+<CardGrid>
+  <LinkCard
+    title="Testing with pytest (reference)"
+    href="/guides/testing/"
+    description="The full API surface this tutorial is built on." />
+  <LinkCard
+    title="Workflow YAML"
+    href="/workflows/yaml/"
+    description="Author the scenarios run_workflow() executes, and their outputs:." />
+  <LinkCard
+    title="Node management"
+    href="/guides/node-management/"
+    description="What cluster() starts under the hood." />
+  <LinkCard
+    title="System overview"
+    href="/understand/system-overview/"
+    description="Where this end-to-end layer sits in the bigger picture." />
+</CardGrid>

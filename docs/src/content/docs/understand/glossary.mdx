@@ -48,7 +48,7 @@ these build on (context, group, namespace, CRDT), see the
 | **RetryConfig / `@with_retry`** | Retry primitives (`commands/retry.py`): `RetryConfig` holds retry settings (max attempts, delay, exponential backoff) and `@with_retry` wraps async network calls with them. `NETWORK_RETRY_CONFIG` is the shared preset. |
 | **scenario** | An informal name for a workflow YAML file — a declarative description of nodes and steps that merobox executes end to end. |
 | **`script` (step)** | Step that runs a shell command or script, optionally targeting the host image or the nodes. |
-| **step** | The atomic unit of work in a workflow. Each step has a `type`, an optional `name`, an optional `outputs:` map, and type-specific fields. There are more than eighty step types. |
+| **step** | The atomic unit of work in a workflow. Each step has a `type`, an optional `name`, an optional `outputs:` map, and type-specific fields. There are nearly 100 step types. |
 | **Traefik** | Reverse proxy that `DockerManager` deploys alongside the containers when the auth service is enabled, routing requests to nodes and applying the auth middleware. |
 | **`wait` / `wait_for_sync` (step)** | `wait` pauses for a fixed duration; `wait_for_sync` polls nodes until they report a synchronized state for a context. |
 | **workflow** | A YAML file declaring `nodes:` and an ordered list of `steps:`, executed by `WorkflowExecutor` from setup through teardown. |
