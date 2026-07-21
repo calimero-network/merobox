@@ -166,9 +166,9 @@ jobs:
           TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Downloading merod from calimero-network/core release: $TAG"
-          gh release download "$TAG" --repo calimero-network/core \
-            --pattern "merod_x86_64-unknown-linux-gnu.tar.gz" \
-            --output /tmp/merod.tar.gz --clobber
+          bash .github/scripts/gh-release-download-retry.sh \
+            calimero-network/core "$TAG" \
+            "merod_x86_64-unknown-linux-gnu.tar.gz" /tmp/merod.tar.gz
           tar -xzf /tmp/merod.tar.gz -C /tmp
           chmod +x /tmp/merod
           /tmp/merod --version
@@ -322,9 +322,9 @@ jobs:
           # Pin to the SAME release merod came from (build-binary's resolved tag)
           # so the two binaries can't diverge if a new release lands mid-run.
           echo "Downloading meroctl from calimero-network/core release: $TAG"
-          gh release download "$TAG" --repo calimero-network/core \
-            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
-            --output /tmp/meroctl.tar.gz --clobber
+          bash .github/scripts/gh-release-download-retry.sh \
+            calimero-network/core "$TAG" \
+            "meroctl_x86_64-unknown-linux-gnu.tar.gz" /tmp/meroctl.tar.gz
           tar -xzf /tmp/meroctl.tar.gz -C /tmp
           chmod +x /tmp/meroctl
           sudo cp /tmp/meroctl /usr/local/bin/
@@ -389,9 +389,9 @@ jobs:
           # (script step, target: local), so meroctl must be on the host PATH.
           # Pin to the SAME release merod-mock was built from.
           echo "Downloading meroctl from calimero-network/core release: $TAG"
-          gh release download "$TAG" --repo calimero-network/core \
-            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
-            --output /tmp/meroctl.tar.gz --clobber
+          bash .github/scripts/gh-release-download-retry.sh \
+            calimero-network/core "$TAG" \
+            "meroctl_x86_64-unknown-linux-gnu.tar.gz" /tmp/meroctl.tar.gz
           tar -xzf /tmp/meroctl.tar.gz -C /tmp
           chmod +x /tmp/meroctl
           sudo cp /tmp/meroctl /usr/local/bin/
@@ -456,9 +456,9 @@ jobs:
           # release tag to pin against — resolve latest, matching the image's edge.
           TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
           echo "Downloading meroctl from calimero-network/core release: $TAG"
-          gh release download "$TAG" --repo calimero-network/core \
-            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
-            --output /tmp/meroctl.tar.gz --clobber
+          bash .github/scripts/gh-release-download-retry.sh \
+            calimero-network/core "$TAG" \
+            "meroctl_x86_64-unknown-linux-gnu.tar.gz" /tmp/meroctl.tar.gz
           tar -xzf /tmp/meroctl.tar.gz -C /tmp
           chmod +x /tmp/meroctl
           sudo cp /tmp/meroctl /usr/local/bin/
