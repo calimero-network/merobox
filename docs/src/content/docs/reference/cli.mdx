@@ -1,0 +1,372 @@
+---
+title: CLI Reference
+description: Every merobox command — run, stop, health, logs, nuke, bootstrap, group, namespace, and remote — with their real flags, arguments, and defaults.
+sidebar:
+  label: CLI reference
+  order: 1
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+`merobox` is a Python (Click) CLI for running Calimero nodes — as Docker
+containers by default, or as native `merod` processes with `--no-docker` — and
+for driving them through declarative YAML workflows.
+
+```bash
+merobox --version    # print the installed version
+merobox --help       # list top-level commands
+merobox <cmd> --help # flags and arguments for a command
+```
+
+## Command overview
+
+The CLI exposes **nine** top-level commands. Four of them (`bootstrap`,
+`group`, `namespace`, and `remote`) are command *groups* with their own
+subcommands.
+
+| Command                     | Kind    | Purpose                                                      |
+| --------------------------- | ------- | ------------------------------------------------------------ |
+| [`run`](#run)               | command | Start one or more Calimero nodes.                            |
+| [`stop`](#stop)             | command | Stop nodes and/or the auth service stack.                    |
+| [`health`](#health)         | command | Check node health via the admin API.                         |
+| [`logs`](#logs)             | command | Show logs for a node.                                        |
+| [`nuke`](#nuke)             | command | Delete node data directories for a clean reset.              |
+| [`bootstrap`](#bootstrap)   | group   | Run, validate, or scaffold YAML workflows.                   |
+| [`group`](#group)           | group   | Inspect and manage context groups on a node.                 |
+| [`namespace`](#namespace)   | group   | Manage namespaces (root groups) on a node.                   |
+| [`remote`](#remote)         | group   | Register and authenticate against remote nodes.              |
+
+<Aside type="note">
+  Node data directories live under `./data/<node-name>/` relative to the current
+  working directory. The default node name prefix is `calimero-node`, the
+  default Docker image is `ghcr.io/calimero-network/merod:prerelease`, and the
+  default ports are P2P `2428` and RPC `2528`.
+</Aside>
+
+<Aside type="caution" title="Not standalone commands">
+  Application install, context creation, identity generation, method calls,
+  blob storage, context joining, and proposals are **not** top-level `merobox`
+  commands in the current release. That functionality is expressed as
+  [workflow step types](/workflows/yaml/) (`install_application`,
+  `create_context`, `create_identity`, `call`, `upload_blob`, `join_context`,
+  and so on) driven by [`bootstrap run`](#bootstrap). Older documentation that
+  shows `merobox install`, `merobox context`, `merobox call`, `merobox blob`,
+  `merobox join`, or `merobox list` as direct commands is out of date.
+</Aside>
+
+---
+
+## run
+
+Start one or more Calimero nodes. Docker mode is the default; `--no-docker`
+runs native `merod` processes instead.
+
+```bash
+merobox run                                   # one Docker node
+merobox run --count 3                          # three nodes
+merobox run --no-docker --binary-path ./merod  # native binary mode
+merobox run --auth-service                      # with Traefik + auth stack
+```
+
+| Flag                       | Default            | Purpose                                                                 |
+| -------------------------- | ------------------ | ----------------------------------------------------------------------- |
+| `--count` / `-c`           | `1`                | Number of nodes to run.                                                 |
+| `--base-port` / `-p`       | auto-detect        | Base P2P (swarm) port.                                                  |
+| `--base-rpc-port` / `-r`   | auto-detect        | Base RPC (server) port.                                                 |
+| `--prefix`                 | `calimero-node`    | Node name prefix.                                                       |
+| `--data-dir`               | —                  | Custom data directory (single node only).                              |
+| `--image`                  | prerelease image   | Custom Docker image.                                                    |
+| `--force-pull`             | off                | Force-pull the Docker image even if present locally.                   |
+| `--auth-service`           | off                | Enable the authentication service with a Traefik proxy (Docker only).  |
+| `--auth-image`             | `mero-auth:edge`   | Custom Docker image for the auth service.                              |
+| `--auth-use-cached`        | off                | Use the cached auth frontend instead of fetching fresh.                |
+| `--webui-use-cached`       | off                | Use the cached WebUI frontend instead of fetching fresh.               |
+| `--log-level`              | `debug`            | `RUST_LOG` level for the node. Accepts patterns like `info,mod::path=debug`. |
+| `--rust-backtrace`         | `0`                | `RUST_BACKTRACE` level for the node.                                    |
+| `--no-docker`              | off                | Run nodes as native `merod` processes (binary mode).                   |
+| `--binary-path`            | search `PATH`      | Path to the `merod` binary (binary mode). Falls back to `PATH` and `/usr/local/bin`, `/usr/bin`, `~/bin`. |
+| `--foreground`             | off                | Attach to `merod`'s interactive UI. Binary mode only; requires `--count 1`. |
+| `--use-image-entrypoint`   | off                | Preserve the image entrypoint instead of running `merod` directly (Docker mode). |
+| `--auth-mode`              | `proxy`            | `embedded` (built-in JWT auth on all endpoints) or `proxy` (no embedded auth). |
+
+<Aside type="note">
+  `--foreground` is only valid with `--no-docker` and a single node; combining
+  it with `--count` other than `1`, or with Docker mode, is rejected. Ports are
+  validated on entry — an out-of-range value exits with an error before any node
+  starts.
+</Aside>
+
+---
+
+## stop
+
+Stop a specific node, all nodes, or the auth service stack.
+
+```bash
+merobox stop calimero-node-1   # stop one node
+merobox stop --all             # stop all nodes (and the auth stack if running)
+merobox stop --auth-service    # stop only the Traefik + auth stack
+```
+
+| Arg / flag           | Default | Purpose                                                                          |
+| -------------------- | ------- | -------------------------------------------------------------------------------- |
+| `NODE_NAME`          | —       | Positional; the node to stop. Optional if `--all` or `--auth-service` is given.  |
+| `--all`              | off     | Stop all running nodes (and the auth stack in Docker mode).                      |
+| `--auth-service`     | off     | Stop the Traefik + auth service stack. Ignored in binary mode.                  |
+| `--no-docker`        | off     | Stop nodes managed as native processes (binary mode).                           |
+| `--timeout`          | `10`    | Seconds the daemon waits after `SIGTERM` before `SIGKILL`. Env: `MEROBOX_STOP_TIMEOUT`. |
+| `--drain-timeout`    | `5`     | Seconds to wait after the initial `SIGTERM` before issuing the stop. Env: `MEROBOX_DRAIN_TIMEOUT`. |
+
+Running `merobox stop` with no node name and no flag prints usage and exits
+non-zero.
+
+---
+
+## health
+
+Check node health via the admin API (`/admin-api/health`, `is-authed`, and
+`peers`). With no `--node`, every running node is checked and rendered in a
+table.
+
+```bash
+merobox health                 # all running nodes
+merobox health --node calimero-node-1
+merobox health --node calimero-node-1 --verbose
+```
+
+| Flag               | Default | Purpose                                                    |
+| ------------------ | ------- | ---------------------------------------------------------- |
+| `--node` / `-n`    | all     | Specific node to check.                                    |
+| `--timeout`        | `10`    | Timeout in seconds for the health check.                   |
+| `--verbose` / `-v` | off     | Show raw responses in addition to the summary table.       |
+
+---
+
+## logs
+
+Show logs for a specific node.
+
+```bash
+merobox logs calimero-node-1
+merobox logs calimero-node-1 --tail 200
+merobox logs calimero-node-1 --follow
+```
+
+| Arg / flag         | Default | Purpose                                                      |
+| ------------------ | ------- | ------------------------------------------------------------ |
+| `NODE_NAME`        | —       | Positional; **required**. The node whose logs to show.       |
+| `--tail`           | `100`   | Number of log lines to show.                                 |
+| `--follow` / `-f`  | off     | Follow log output live.                                      |
+| `--no-docker`      | off     | Fetch logs for a node run as a native process (binary mode). |
+
+<Aside type="note">
+  In binary mode logs come from `./data/<node>/logs/<node>.log`. To raise node
+  log verbosity, set `--log-level` on [`run`](#run) or `bootstrap run`
+  (it maps to `RUST_LOG`).
+</Aside>
+
+---
+
+## nuke
+
+Delete Calimero node data directories under `./data/` for a complete reset. In
+Docker mode it also stops node containers and tears down the auth service stack
+and its data volume. Without `--force` it prompts for confirmation (type
+`YES`).
+
+```bash
+merobox nuke --dry-run    # show what would be deleted
+merobox nuke --force      # delete without confirmation
+merobox nuke --prefix prop-test-
+```
+
+| Flag               | Default | Purpose                                                        |
+| ------------------ | ------- | -------------------------------------------------------------- |
+| `--dry-run`        | off     | Show what would be deleted without deleting.                   |
+| `--force` / `-f`   | off     | Delete without the confirmation prompt.                        |
+| `--verbose` / `-v` | off     | Show per-directory detail.                                     |
+| `--prefix`         | all     | Only delete directories whose names start with this prefix.    |
+
+<Aside type="caution">
+  `nuke` is destructive and cannot be undone. There is **no** `-y` flag — use
+  `--force` (or `-f`) to skip the prompt.
+</Aside>
+
+---
+
+## bootstrap
+
+Run, validate, or scaffold YAML workflows. See the
+[Workflow YAML reference](/workflows/yaml/) for the schema and step types.
+
+```bash
+merobox bootstrap run workflow.yml
+merobox bootstrap validate workflow.yml
+merobox bootstrap create-sample
+```
+
+### bootstrap run
+
+Execute a workflow from a YAML file (must exist).
+
+```bash
+merobox bootstrap run workflow.yml
+merobox bootstrap run workflow.yml --dry-run
+merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
+  --merod-args="--sync-strategy delta --state-sync-strategy hash"
+```
+
+| Arg / flag                 | Default          | Purpose                                                                 |
+| -------------------------- | ---------------- | ----------------------------------------------------------------------- |
+| `CONFIG_FILE`              | —                | Positional; **required**. Path to the workflow YAML.                    |
+| `--verbose` / `-v`         | off              | Verbose output. Equivalent to `MEROBOX_LOG_LEVEL=verbose`.              |
+| `--quiet` / `-q`           | off              | Suppress non-essential output. Equivalent to `MEROBOX_LOG_LEVEL=quiet`. Ignored if `--verbose` is set. |
+| `--image`                  | workflow value   | Override the Docker image for nodes.                                    |
+| `--auth-service`           | off              | Enable the Traefik + auth service stack.                                |
+| `--auth-image`             | `mero-auth:edge` | Custom auth service image.                                              |
+| `--auth-use-cached`        | off              | Use the cached auth frontend.                                          |
+| `--webui-use-cached`       | off              | Use the cached WebUI frontend.                                         |
+| `--log-level`              | `debug`          | `RUST_LOG` level for nodes.                                            |
+| `--rust-backtrace`         | `0`              | `RUST_BACKTRACE` level for nodes.                                      |
+| `--no-docker`              | off              | Run nodes as native `merod` binaries.                                   |
+| `--binary-path`            | search `PATH`    | Path to the `merod` binary (binary mode).                              |
+| `--merod-args`             | —                | Extra arguments passed to `merod run`. Binary mode only (ignored otherwise). |
+| `--e2e-mode`               | off              | Aggressive-sync e2e test mode with unique rendezvous namespaces and no bootstrap nodes. |
+| `--remote-node`            | —                | Register a remote node for this run: `name=url`. Repeatable.            |
+| `--remote-auth`            | —                | Auth for a remote node: `name=user:pass` or `name=apikey:KEY`. Repeatable. |
+| `--api-key`                | —                | Default API key for remote nodes without explicit auth.                |
+| `--auth-mode`              | `proxy`          | `embedded` or `proxy` authentication mode for `merod`.                  |
+| `--auth-username`          | —                | Username for embedded auth. Must be paired with `--auth-password`.      |
+| `--auth-password`          | —                | Password for embedded auth. Must be paired with `--auth-username`.      |
+| `--dry-run`                | off              | Validate the workflow (config, variables, node config) without executing. |
+
+<Aside type="note">
+  `--auth-username` and `--auth-password` must be supplied together under
+  `--auth-mode embedded`, or both omitted to drive auth declaratively with
+  `login` steps. `--merod-args` only applies with `--no-docker`.
+</Aside>
+
+### bootstrap validate
+
+Validate a workflow YAML without executing it — checks required fields,
+structure, step configuration, and field types.
+
+| Arg / flag         | Default | Purpose                                  |
+| ------------------ | ------- | ---------------------------------------- |
+| `CONFIG_FILE`      | —       | Positional; **required**. Workflow YAML. |
+| `--verbose` / `-v` | off     | Print a configuration summary.           |
+
+### bootstrap create-sample
+
+Generate a sample workflow configuration file to use as a starting point.
+
+| Flag               | Default | Purpose                |
+| ------------------ | ------- | ---------------------- |
+| `--verbose` / `-v` | off     | Verbose output.        |
+
+---
+
+## group
+
+Inspect and manage context groups on a node. Every subcommand requires
+`--node` / `-n`, and most accept `--verbose` / `-v`. These commands call the
+node's admin API with automatic retry.
+
+```bash
+merobox group list --node calimero-node-1
+merobox group get <group_id> --node calimero-node-1
+merobox group reparent <group_id> <new_parent_id> --node calimero-node-1
+```
+
+| Subcommand                           | Positional args              | Extra options                    | Purpose                                        |
+| ------------------------------------ | ---------------------------- | -------------------------------- | ---------------------------------------------- |
+| `list`                               | —                            | `--node`, `--verbose`            | List all groups on the node.                   |
+| `get`                                | `GROUP_ID`                   | `--node`, `--verbose`            | Show group information.                        |
+| `delete`                             | `GROUP_ID`                   | `--node`                         | Delete a group (must have no registered contexts). |
+| `members list`                       | `GROUP_ID`                   | `--node`, `--verbose`            | List members of a group.                       |
+| `contexts list`                      | `GROUP_ID`                   | `--node`, `--verbose`            | List contexts registered in a group.          |
+| `join-context`                       | `GROUP_ID`                   | `--node`, `--context-id`/`-c`, `--verbose` | Join a context via group membership. |
+| `subgroups`                          | `GROUP_ID`                   | `--node`, `--verbose`            | List a group's subgroups.                      |
+| `reparent`                           | `GROUP_ID` `NEW_PARENT_ID`   | `--node`, `--verbose`            | Atomically move a group to a new parent.       |
+
+<Aside type="note">
+  `members` and `contexts` are subgroups whose only current subcommand is
+  `list` (e.g. `merobox group members list <group_id> --node <node>`).
+</Aside>
+
+---
+
+## namespace
+
+Manage namespaces (root groups / application instances) on a node. Every
+subcommand requires `--node` / `-n`.
+
+```bash
+merobox namespace list --node calimero-node-1
+merobox namespace create <application_id> --node calimero-node-1 --alias my-app
+merobox namespace join <namespace_id> '<invitation_json>' --node calimero-node-2
+```
+
+| Subcommand   | Positional args                   | Extra options                                   | Purpose                                   |
+| ------------ | --------------------------------- | ----------------------------------------------- | ----------------------------------------- |
+| `list`       | —                                 | `--node`, `--verbose`                           | List namespaces on the node.              |
+| `identity`   | `NAMESPACE_ID`                    | `--node`, `--verbose`                           | Get the node's identity for a namespace.  |
+| `create`     | `APPLICATION_ID`                  | `--node`, `--alias`, `--upgrade-policy`, `--verbose` | Create a namespace for an application. |
+| `invite`     | `NAMESPACE_ID`                    | `--node`, `--recursive`, `--verbose`            | Create a namespace invitation.            |
+| `join`       | `NAMESPACE_ID` `INVITATION_JSON`  | `--node`, `--verbose`                           | Join a namespace using an invitation.     |
+| `groups`     | `NAMESPACE_ID`                    | `--node`, `--verbose`                           | List groups in a namespace.               |
+
+---
+
+## remote
+
+Register remote Calimero nodes under friendly names and manage cached
+authentication. See [Remote Nodes](/guides/remote-nodes/) for the full flow.
+
+```bash
+merobox remote register prod https://prod.example.com
+merobox remote login prod --username admin
+merobox remote status
+merobox remote test prod
+```
+
+| Subcommand    | Positional args      | Options                                                              | Purpose                                            |
+| ------------- | -------------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
+| `login`       | `URL_OR_NAME`        | `--username`/`-u`, `--password`/`-p`, `--api-key`/`-k`, `--method`/`-m` (`user_password`\|`api_key`, default `user_password`) | Authenticate with a node and cache the token.      |
+| `logout`      | `URL_OR_NAME` (opt)  | `--all`                                                              | Remove cached authentication (one node or all).    |
+| `status`      | —                    | —                                                                    | Show registered nodes and cached tokens.           |
+| `test`        | `URL_OR_NAME`        | `--username`/`-u`, `--password`/`-p`, `--api-key`/`-k`               | Run a connectivity + auth diagnostic.              |
+| `register`    | `NAME` `URL`         | `--auth-method`/`-m` (`user_password`\|`api_key`\|`none`, default `user_password`), `--username`/`-u`, `--description`/`-d` | Register a node under a name.                       |
+| `unregister`  | `NAME`               | `--remove-token`                                                     | Unregister a node (optionally drop its token).     |
+| `list`        | —                    | —                                                                    | List registered remote nodes.                      |
+
+`URL_OR_NAME` accepts either a registered node name or a direct URL. URLs passed
+to `register` must start with `http://` or `https://`.
+
+---
+
+## Environment variables
+
+| Variable                | Used by                       | Effect                                                            |
+| ----------------------- | ----------------------------- | ----------------------------------------------------------------- |
+| `MEROBOX_USERNAME`      | remote auth / node resolution | Default username when `--username` is not passed.                 |
+| `MEROBOX_PASSWORD`      | remote auth / node resolution | Default password when `--password` is not passed.                 |
+| `MEROBOX_API_KEY`       | remote auth / node resolution | Default API key when `--api-key` is not passed.                   |
+| `MEROBOX_LOG_LEVEL`     | `bootstrap run`               | `verbose`, `quiet`, or normal. Overridden by `--verbose`/`--quiet`. |
+| `MEROBOX_STOP_TIMEOUT`  | `stop`                        | Default container stop timeout in seconds (CLI `--timeout` wins). |
+| `MEROBOX_DRAIN_TIMEOUT` | `stop`                        | Default pre-stop drain wait in seconds (CLI `--drain-timeout` wins). |
+
+<Aside type="note">
+  Remote node registrations are persisted to `~/.merobox/remote_nodes.json` and
+  cached authentication tokens to `~/.merobox/auth_cache/`. Node **data** lives
+  under `./data/<node-name>/` in the working directory.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Workflow YAML" href="/workflows/yaml/" description="The full workflow schema and every step type." />
+  <LinkCard title="Node Management" href="/guides/node-management/" description="Docker and binary backends, ports, and the auth stack." />
+  <LinkCard title="Remote Nodes" href="/guides/remote-nodes/" description="Registering and authenticating against remote nodes." />
+  <LinkCard title="Error Handling" href="/reference/error-handling/" description="The error hierarchy, result pattern, and retries." />
+</CardGrid>

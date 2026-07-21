@@ -1,0 +1,328 @@
+---
+title: Troubleshooting
+description: Symptom-cause-fix guide for the common merobox failure modes — Docker, ports, node startup, workflows, remote auth, and the auth service stack.
+sidebar:
+  label: Troubleshooting
+  order: 3
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Common merobox failure modes mapped to their cause and first fix. Each entry is
+grounded in the CLI's real behaviour and the [error hierarchy](/reference/error-handling/).
+Start with the table, then read the section for your symptom.
+
+## Symptom → cause → fix
+
+| Symptom | Likely cause | First fix |
+| --- | --- | --- |
+| `Cannot connect to the Docker daemon` / `DockerException` | Docker isn't running or the socket isn't accessible | Start Docker, or use binary mode (`--no-docker`). See [Docker not available](#docker-not-available). |
+| `port is already allocated` on start | The P2P/RPC port (default `2428`/`2528`) is in use | Pick other ports with `--base-port`/`--base-rpc-port`, or free them. See [port conflicts](#port-conflicts). |
+| `Node '<name>' not found` (`NodeResolutionError`) | The node isn't a running container, binary process, registered remote, or URL | Confirm it's running; check the name. See [node not found](#node-not-found). |
+| `merod` not found in binary mode | No `merod` on `PATH` and no `--binary-path` | Pass `--binary-path`, ensure it's executable. See [binary mode](#binary-mode-merod-not-found). |
+| Workflow rejected before running (`StepValidationError` / `ConfigurationError`) | Malformed YAML or a step missing a required field | `merobox bootstrap validate` or `--dry-run`. See [workflow validation](#workflow-validation-fails). |
+| `{{variable}}` not resolved | The variable was never captured by a prior step's `outputs` | Fix the producing step's `outputs`. See [variable resolution](#variable-resolution-fails). |
+| A `call` step fails (`ClientError`) | Target node unhealthy, or app/context missing on it | Check health and logs. See [call steps fail](#call-steps-fail). |
+| `AuthenticationError` against a remote node | Bad credentials or an expired/absent cached token | Re-authenticate with `remote login` / `remote test`. See [auth failures](#remote-authentication-fails). |
+| `*.nip.io` won't resolve / 404 on `/auth/*` | The Traefik auth stack (Docker only) isn't reachable | Verify the containers, or use embedded auth. See [auth service](#auth-service-issues-docker). |
+| Image pull failure on start | The registry is unreachable or the tag is wrong | Check connectivity; `--force-pull`. See [image pull](#image-pull-fails). |
+| Slow runs / repeated timeouts | Retries with backoff on an unhealthy node | Turn up logging; fix node health. See [slow runs](#slow-runs-and-timeouts). |
+| `merobox` won't import / install | Unsupported Python version | Use Python 3.9–3.11. See [Python version](#unsupported-python-version). |
+
+---
+
+## Docker not available
+
+**Symptom.** `Cannot connect to the Docker daemon`, or a `docker.errors.DockerException`
+when a command constructs the `DockerManager`.
+
+**Cause.** Docker isn't running, or the socket isn't reachable by your user.
+
+**Fix.**
+
+```bash
+docker info                       # is the daemon up?
+sudo systemctl status docker      # Linux service check
+ls -la /var/run/docker.sock       # socket present/accessible?
+```
+
+If Docker isn't available you can run nodes as native processes instead:
+
+```bash
+merobox run --no-docker --binary-path /path/to/merod
+```
+
+---
+
+## Port conflicts
+
+**Symptom.** A node fails to start because its P2P (`2428`) or RPC (`2528`) port
+is already bound.
+
+**Cause.** Another process — often a leftover node — holds the port.
+
+**Fix.** Choose a different base port, or stop what's holding it:
+
+```bash
+merobox run --base-port 3428 --base-rpc-port 3528
+merobox stop --all       # stop merobox-managed nodes
+docker ps                # find other containers on the port
+merobox nuke --force     # last resort: remove node data + containers
+```
+
+<Aside type="note">
+  With `--count > 1`, ports are allocated per node from the base port, so a
+  single conflict can cascade. Auto-detection is used when `--base-port` /
+  `--base-rpc-port` are omitted.
+</Aside>
+
+---
+
+## Node not found
+
+**Symptom.** `Node '<name>' not found. It's not a registered remote node, valid
+URL, running Docker container, or running binary process.` — a
+`NodeResolutionError`.
+
+**Cause.** The node reference passed to `health`, `logs`, `group`, `namespace`,
+or a workflow step doesn't resolve to any backend.
+
+**Fix.**
+
+```bash
+docker ps                          # which containers are running?
+merobox health                     # health of all running nodes
+```
+
+Ensure the name matches exactly (default prefix `calimero-node`, so the first
+node is `calimero-node-1`). In binary mode, pass `--no-docker` to the command so
+it looks up native processes rather than containers.
+
+---
+
+## Binary mode: merod not found
+
+**Symptom.** `--no-docker` runs fail because the `merod` binary can't be located.
+
+**Cause.** No `merod` on `PATH` and no `--binary-path` given. merobox searches
+`PATH` and the common locations `/usr/local/bin`, `/usr/bin`, and `~/bin`.
+
+**Fix.**
+
+```bash
+merobox run --no-docker --binary-path /path/to/merod
+chmod +x /path/to/merod    # ensure it is executable
+```
+
+<Aside type="note">
+  `--foreground` and `--merod-args` only apply in binary mode, and the auth
+  service stack (`--auth-service`) is Docker-only.
+</Aside>
+
+---
+
+## Workflow validation fails
+
+**Symptom.** `StepValidationError: Missing required field 'xxx'`, or a
+`ConfigurationError` about malformed YAML — the workflow is rejected before (or
+early during) execution.
+
+**Cause.** A step is missing a required field, has a mistyped value, or the YAML
+is misindented so fields don't attach to the step.
+
+**Fix.** Validate first, and dry-run to catch resolution problems without
+starting nodes:
+
+```bash
+merobox bootstrap validate workflow.yml
+merobox bootstrap run workflow.yml --dry-run
+```
+
+Check the step's required fields against the [Workflow YAML reference](/workflows/yaml/),
+and verify field types (some expect strings, others lists or integers).
+
+---
+
+## Variable resolution fails
+
+**Symptom.** A step references `{{something}}` that never gets a value.
+
+**Cause.** The variable wasn't captured by an earlier step's `outputs`, the
+producing step failed, or the names don't match exactly.
+
+**Fix.** Ensure the earlier step captures the value and that the names line up:
+
+```yaml
+- type: create_context
+  node: node-1
+  application_id: "{{app_id}}"
+  outputs:
+    context_id: contextId   # <-- captured here
+
+- type: call
+  node: node-1
+  context_id: "{{context_id}}"   # <-- referenced here
+  method: hello
+```
+
+Run with `--verbose` (or `MEROBOX_LOG_LEVEL=verbose`) to see resolution detail.
+
+---
+
+## Call steps fail
+
+**Symptom.** A `call` step returns a `ClientError` / connection error, or a
+JSON-RPC error response.
+
+**Cause.** The target node is unhealthy or unreachable, or the application /
+context doesn't exist on it.
+
+**Fix.**
+
+```bash
+merobox health --node calimero-node-1
+merobox logs calimero-node-1 --tail 100
+```
+
+Confirm the application is installed and the context exists on that node, and
+that the method name and args match the app's interface. For auth-protected
+nodes, verify the token is valid (see below).
+
+---
+
+## Remote authentication fails
+
+**Symptom.** `AuthenticationError` when talking to a remote node.
+
+**Cause.** Invalid credentials, an expired cached token whose refresh failed, or
+no credentials at all.
+
+**Fix.** Re-authenticate and run the built-in diagnostic:
+
+```bash
+merobox remote test prod                 # connectivity + auth check
+merobox remote login prod --username admin
+merobox remote status                    # inspect cached tokens
+merobox remote logout --all              # clear stale tokens, then re-login
+```
+
+Credentials can also come from `MEROBOX_USERNAME`, `MEROBOX_PASSWORD`, and
+`MEROBOX_API_KEY`. Registrations live in `~/.merobox/remote_nodes.json` and
+cached tokens in `~/.merobox/auth_cache/`. See [Remote Nodes](/guides/remote-nodes/).
+
+---
+
+## Auth service issues (Docker)
+
+**Symptom.** `*.nip.io` hostnames don't resolve, or `/auth/*` routes 404, when
+running with `--auth-service`.
+
+**Cause.** The auth service stack (a Traefik proxy plus the auth container) is
+Docker-only. A VPN or corporate DNS may block wildcard `nip.io` resolution, or
+the containers may not be healthy.
+
+**Fix.**
+
+```bash
+docker ps                # are the auth + proxy containers running?
+docker logs proxy        # Traefik routing errors
+nslookup 127.0.0.1.nip.io
+```
+
+If wildcard DNS is blocked, prefer binary mode with **embedded** auth, which
+needs no Traefik or `nip.io`:
+
+```bash
+merobox run --no-docker --binary-path ./merod --auth-mode embedded
+```
+
+<Aside type="note">
+  `merobox stop --auth-service` tears down just the Traefik + auth stack;
+  `merobox stop --all` and `merobox nuke` also remove it (and, for `nuke`, the
+  `calimero_auth_data` volume).
+</Aside>
+
+---
+
+## Image pull fails
+
+**Symptom.** A Docker node won't start because its image can't be pulled.
+
+**Cause.** The container registry is unreachable, or the image/tag is wrong. The
+default image is `ghcr.io/calimero-network/merod:prerelease`.
+
+**Fix.**
+
+```bash
+docker pull ghcr.io/calimero-network/merod:prerelease
+merobox run --image <your-image> --force-pull
+```
+
+`--force-pull` re-pulls even if the image exists locally.
+
+---
+
+## Slow runs and timeouts
+
+**Symptom.** Workflows take much longer than expected, or steps repeatedly time
+out.
+
+**Cause.** Transient failures against an unhealthy node trigger the retry system,
+which sleeps with exponential backoff (see [Error Handling](/reference/error-handling/)),
+adding delay to each attempt.
+
+**Fix.** Turn up logging to find the slow step, and check node health:
+
+```bash
+MEROBOX_LOG_LEVEL=verbose merobox bootstrap run workflow.yml
+merobox bootstrap run workflow.yml --verbose
+merobox health
+```
+
+For raw node (`merod`) output, raise `--log-level` (it maps to `RUST_LOG`) and
+read the node's logs with `merobox logs <node> --follow`.
+
+---
+
+## Unsupported Python version
+
+**Symptom.** `merobox` fails to install or import.
+
+**Cause.** merobox supports **Python 3.9–3.11**; 3.12+ is not supported (a
+dependency constraint). Docker mode additionally needs Docker 20.10+.
+
+**Fix.** Install under a supported interpreter (for example via `pipx` with a
+3.11 environment), then re-verify:
+
+```bash
+merobox --version
+```
+
+---
+
+## Debugging techniques
+
+- **merobox's own logging:** `MEROBOX_LOG_LEVEL=verbose` (or `--verbose` /
+  `--quiet` on `bootstrap run`).
+- **Node (`merod`) logging:** `--log-level` on `run` / `bootstrap run` sets
+  `RUST_LOG` (patterns like `info,module::path=debug` are supported).
+- **Node logs:** `merobox logs <node> --tail 200`, or `--follow` for live output.
+- **Node health:** `merobox health` (all nodes) or `merobox health --node <node> --verbose`.
+- **Container inspection:** `docker ps`, `docker logs <container>`,
+  `docker exec -it <container> /bin/sh`.
+- **Remote diagnostics:** `merobox remote test <name>`.
+
+<Aside type="tip">
+  For a clean slate between runs, `merobox nuke --dry-run` first to preview, then
+  `merobox nuke --force`. It removes node data under `./data/`, stops
+  containers, and clears the auth stack.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Error Handling" href="/reference/error-handling/" description="The error types behind these symptoms, and the retry model." />
+  <LinkCard title="CLI Reference" href="/reference/cli/" description="Exact flags for run, stop, health, logs, and nuke." />
+  <LinkCard title="Node Management" href="/guides/node-management/" description="Docker vs binary backends and the auth stack." />
+  <LinkCard title="Glossary" href="/understand/glossary/" description="Terms used across these pages." />
+</CardGrid>

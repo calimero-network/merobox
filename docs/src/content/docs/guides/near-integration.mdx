@@ -1,0 +1,87 @@
+---
+title: NEAR Integration
+description: What merobox does and does not do with NEAR — the built-in NEAR sandbox integration has been removed; protocol config is merod's concern, set generically through node config.
+sidebar:
+  order: 4
+---
+
+import { Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="There is no built-in NEAR integration in the current merobox">
+Earlier documentation described a NEAR sandbox stack inside merobox —
+`SandboxManager`, a `NearDevnetClient`, contract deployment, a `near-sandbox`
+process on port `3030`, and a "relayer mode". **None of that exists in the
+current codebase.** This page corrects the record and explains what remains.
+</Aside>
+
+## What was removed
+
+A search of the source (`rg -i near merobox/`) confirms there is no NEAR
+machinery in merobox today:
+
+- No `SandboxManager`, `NearDevnetClient`, or `near_devnet_config` helper.
+- No `near-sandbox` download/launch, no `:3030` RPC, no relayer mode.
+- No `contract_path` / `contract_url` workflow fields for on-chain deployment.
+- No NEAR-specific config generation. `merobox/commands/config_utils.py` states
+  plainly that "Protocol-specific config (Ethereum, ICP, etc.) should be handled
+  separately" — merobox does not inject a `[near]` section for you.
+
+The only remaining traces are inert:
+
+- `setup.py` still lists a `py-near` dependency, but nothing in the shipping
+  code imports it (`pyproject.toml`, the current build metadata, does not list
+  it). It appears only as a mocked module in the unit tests
+  (`merobox/tests/`), so tests can run without it installed.
+- The unit tests reference a `context.config.near.network` key purely to
+  exercise merobox's **generic** nested-config setter — not any NEAR-aware code
+  path.
+
+If you are following an older guide that tells you to run a NEAR sandbox through
+merobox, stop: those commands and fields will not work.
+
+## Where blockchain config actually lives
+
+Calimero contexts can be tied to a protocol (NEAR, Ethereum, ICP, Stellar,
+Starknet, …), but that binding is **`merod`'s** configuration, not merobox's.
+merobox's role is limited to running the node and, where you ask it to, editing
+the node's `config.toml`.
+
+Two honest paths:
+
+1. **Bring your own `config.toml`.** Point a workflow's node at a
+   `config_path` that already contains whatever protocol section your `merod`
+   build expects. merobox uses that file as-is and skips `merod init` for that
+   node. See [workflow YAML](/workflows/yaml/) and
+   [node management](/guides/node-management/#node-configuration).
+
+2. **Set individual keys generically.** merobox's config utilities can set
+   arbitrary nested keys in a node's config. That is a plain key-path setter — it
+   does not know about NEAR, validate NEAR values, or start any chain for you.
+
+<Aside type="note">
+For what a protocol binding means and which protocols a given `merod` supports,
+consult the Calimero core documentation for your node version — that is the
+authoritative source, and it can change between releases.
+</Aside>
+
+## If you need a chain in a test
+
+merobox will not stand one up for you. Run the chain (or connect to an existing
+network) yourself, then hand `merod` a `config.toml` that points at it via the
+`config_path` mechanism above. From merobox's perspective the node is just a
+node — it starts it, checks its health, and drives it with the usual steps.
+
+<CardGrid>
+  <LinkCard
+    title="Node configuration"
+    href="/guides/node-management/#node-configuration"
+    description="config_path and the config helpers merobox actually applies." />
+  <LinkCard
+    title="Workflow YAML"
+    href="/workflows/yaml/"
+    description="Per-node config_path and the full node schema." />
+  <LinkCard
+    title="System overview"
+    href="/understand/system-overview/"
+    description="How merobox relates to merod and the wider Calimero stack." />
+</CardGrid>
