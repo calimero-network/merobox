@@ -73,6 +73,7 @@ jobs:
     outputs:
       binary: ${{ steps.set.outputs.binary }}
       docker: ${{ steps.set.outputs.docker }}
+      tee: ${{ steps.set.outputs.tee }}
     steps:
       - uses: actions/checkout@v4
       - id: set
@@ -103,8 +104,11 @@ jobs:
           # mode) carries it — `merod run --mock-tee` hard-errors at boot and
           # every tee-*.yml goes red before any admission logic runs. Mock-TEE
           # testing is native/dev-only by design (build recipe documented in
-          # each tee-*.yml header); run these locally with a feature-enabled
-          # merod. Re-add here only behind a CI job that builds such a merod.
+          # each tee-*.yml header). They are NOT dropped from CI — they run in
+          # the dedicated `test-tee` job against a feature-enabled merod built by
+          # `build-merod-mock`; see the `tee` matrix output below. They stay out
+          # of the binary+docker matrices here because those use feature-less
+          # merod (release binary / merod:edge).
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
@@ -132,6 +136,15 @@ jobs:
             grep -v '/tee-' | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT
+
+          # TEE mode: the ten tee-*.yml mock-TEE admission/replication scenarios
+          # excluded from the binary+docker matrices above. They run NATIVELY
+          # against a merod built with --features mock-attestation (built by the
+          # build-merod-mock job); the release binary and merod:edge are both
+          # default-off (core#3269) and hard-error on `merod run --mock-tee`.
+          TEE=$(ls workflow-examples/tee-*.yml | \
+            jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";""))})')
+          echo "tee=$TEE" >> $GITHUB_OUTPUT
 
   # ── Build phase: download merod + build WASM apps ──
   build-binary:
@@ -183,6 +196,77 @@ jobs:
         with:
           name: wasm-apps
           path: workflow-examples/res/
+          retention-days: 1
+
+  # ── Build phase (TEE): merod WITH mock-attestation, from core source ──
+  # The release binary and merod:edge are built default-off (core#3269), so they
+  # cannot run `merod --mock-tee`. Build merod from the latest core release tag
+  # with the feature enabled so the tee-*.yml scenarios get real CI coverage on
+  # the native path. Self-contained: resolves its own tag and exposes it so the
+  # tee test job pins meroctl to the exact same release.
+  build-merod-mock:
+    name: Build (merod + mock-attestation)
+    runs-on: ubuntu-latest
+    outputs:
+      core_tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve latest core release tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building merod (mock-attestation) from core release: $TAG"
+
+      - name: Checkout core at the release tag
+        uses: actions/checkout@v4
+        with:
+          repository: calimero-network/core
+          ref: ${{ steps.resolve.outputs.tag }}
+          path: core
+
+      - name: Set up Rust toolchain
+        # core/rust-toolchain.toml pins 1.88.0; rustup auto-installs it on the
+        # first cargo invocation inside core/. (The mock-attestation feature
+        # exists only from core#3269 / 0.11.0-rc.17 onward — all newer releases
+        # carry it, so building the latest release tag is always valid.)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          key: merod-mock-${{ steps.resolve.outputs.tag }}
+
+      - name: Build merod with mock-attestation
+        working-directory: core
+        run: |
+          cargo build --release -p merod --features mock-attestation
+          ls -la target/release/merod
+          cp target/release/merod /tmp/merod-mock
+          chmod +x /tmp/merod-mock
+          /tmp/merod-mock --version
+
+      - name: Smoke-check the mock-attestation flag is accepted
+        run: |
+          # A merod WITHOUT the feature hard-errors on --mock-tee with
+          # "built without mock-attestation support". A feature-enabled binary
+          # instead only fails because no home is initialised — assert we never
+          # see the former (timeout guards against the daemon actually starting).
+          set +e
+          OUT=$(timeout 20 /tmp/merod-mock --home /tmp/nohome run --mock-tee 2>&1)
+          echo "$OUT"
+          if echo "$OUT" | grep -qi "without mock-attestation support"; then
+            echo "::error::merod-mock lacks the mock-attestation feature"; exit 1
+          fi
+          echo "✓ --mock-tee accepted (feature present)"
+
+      - name: Upload merod-mock binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: merod-mock-binary
+          path: /tmp/merod-mock
           retention-days: 1
 
   # ── Test phase (binary): run each workflow in parallel ──
@@ -249,6 +333,78 @@ jobs:
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}" --no-docker
+
+  # ── Test phase (TEE): mock-TEE scenarios, native, feature-enabled merod ──
+  # These are excluded from the binary+docker matrices and run only here, on the
+  # native path, against the merod built by build-merod-mock. Apps: all ten use
+  # the committed res/kv_store_v2.wasm (no WASM build needed).
+  test-tee:
+    name: TEE (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [build-merod-mock, list-workflows]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.list-workflows.outputs.tee) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Download merod-mock binary
+        uses: actions/download-artifact@v4
+        with:
+          name: merod-mock-binary
+          path: /tmp
+
+      - name: Install merod (mock-attestation build)
+        run: |
+          chmod +x /tmp/merod-mock
+          sudo cp /tmp/merod-mock /usr/local/bin/merod
+          merod --version
+
+      - name: Download and install meroctl (pinned to merod-mock's release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-merod-mock.outputs.core_tag }}
+        run: |
+          # tee-* replication asserts run `meroctl context ls` on the host
+          # (script step, target: local), so meroctl must be on the host PATH.
+          # Pin to the SAME release merod-mock was built from.
+          echo "Downloading meroctl from calimero-network/core release: $TAG"
+          gh release download "$TAG" --repo calimero-network/core \
+            --pattern "meroctl_x86_64-unknown-linux-gnu.tar.gz" \
+            --output /tmp/meroctl.tar.gz --clobber
+          tar -xzf /tmp/meroctl.tar.gz -C /tmp
+          chmod +x /tmp/meroctl
+          sudo cp /tmp/meroctl /usr/local/bin/
+          meroctl --version
+          echo "✓ meroctl $TAG installed"
+
+      - name: Run ${{ matrix.name }}
+        run: |
+          chmod +x workflow-examples/scripts/run_with_retry.sh
+          ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}" --no-docker
+
+      - name: Upload node logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # Native nodes write to data/<node>/logs/*.log (the docker
+          # capture-node-logs.sh helper is docker-only and finds nothing here).
+          name: node-logs-tee-${{ matrix.name }}-${{ github.run_id }}
+          path: data/*/logs/
+          retention-days: 14
+          if-no-files-found: ignore
 
   # ── Test phase (Docker): run each workflow in parallel ──
   test-merobox-docker:
