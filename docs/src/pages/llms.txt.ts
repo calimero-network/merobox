@@ -12,7 +12,7 @@ const BASE = '/merobox';
 const TRACKS: Record<string, string> = {
   understand: 'Understand — what merobox is, and the glossary',
   workflows: 'Workflows — the YAML scenario engine and step reference',
-  guides: 'Guides — node management, remote nodes, testing, NEAR integration',
+  guides: 'Guides — node management, remote nodes, testing',
   reference: 'Reference — CLI, troubleshooting, error handling',
 };
 
