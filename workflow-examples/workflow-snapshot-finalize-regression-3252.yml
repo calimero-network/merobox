@@ -1,0 +1,255 @@
+# =============================================================================
+# Regression guard — calimero-network/core issue #3252
+# "Snapshot sync reverts context to root=0 while state keys persist →
+#  permanent SnapshotOnInitializedNode deadlock"
+# =============================================================================
+#
+# The bug (fixed in core; this workflow is the e2e guard, not the fix):
+#   When a node joins a context and bootstrap-syncs via SNAPSHOT, a background
+#   config sync could clobber the joiner's ContextMeta back to
+#   root_hash=0 / dag_heads=[] while the already-applied ContextState entries
+#   persisted. That left the joiner in a contradictory state — real state keys
+#   present, but root=0 — which permanently tripped the snapshot safety gate
+#   (INVARIANT I5, SnapshotError::SnapshotOnInitializedNode: "snapshot is only
+#   for fresh nodes"). Because the node looked "initialized" (state present) it
+#   could never snapshot-resync, and because its root was 0 it could never
+#   converge — a permanent deadlock.
+#
+# What this guard exercises:
+#   1. node-1 creates an application + context.
+#   2. node-2 and node-3 JOIN and bootstrap-sync via snapshot (create_mesh runs
+#      the namespace/invite/join → snapshot-bootstrap path on each joiner).
+#   3. node-1 applies real state (several set() calls → ContextState entries).
+#   4. All three nodes are driven to converge on a single context state hash.
+#
+# The convergence assertion IS the regression gate:
+#   * wait_for_sync only succeeds when EVERY node reports the SAME
+#     contextStateHash — so a joiner stuck at root=0 (the bug) can never match
+#     node-1's real, non-zero hash and the step FAILS on timeout.
+#   * The follow-up assert then proves the converged hash is NON-ZERO (i.e. not
+#     the base58 all-zero root "11111111111111111111111111111111",
+#     Hash::default()). Convergence proves joiner == source; non-zero proves it
+#     converged on real state, not the root=0 + state-present contradiction.
+#   * A final round has a JOINER write and everyone re-converge, proving the
+#     joiner is not silently wedged behind the snapshot safety gate and can
+#     still participate/re-sync.
+#
+# The #3252 deadlock would surface here as either the wait_for_sync step timing
+# out (joiner never matches node-1) or the non-zero assertion failing (joiner
+# converged on the zero root).
+#
+# Run (docker):
+#   merobox bootstrap run workflow-examples/workflow-snapshot-finalize-regression-3252.yml
+# =============================================================================
+
+name: Snapshot Finalize Regression Guard (#3252)
+description: >-
+  E2E regression guard for core #3252 — a joiner that snapshot-bootstraps and
+  then applies state must converge to node-1's NON-ZERO context state hash,
+  never the root=0 + state-present contradiction that deadlocks the snapshot
+  safety gate.
+
+force_pull_image: true
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: snapshot-node
+
+steps:
+  # ---------------------------------------------------------------------------
+  # Setup: node-1 owns the app + context; node-2 and node-3 join & bootstrap.
+  # ---------------------------------------------------------------------------
+  - name: Install kv_store on node 1 (the source of truth)
+    type: install_application
+    node: snapshot-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # create_mesh creates the namespace + context on node-1, pre-installs the app
+  # on the joiners, then runs invite → join on each joiner. The join is exactly
+  # the multi-node snapshot-bootstrap path #3252 lives on.
+  - name: Create context on node 1 and snapshot-bootstrap node 2 & node 3
+    type: create_mesh
+    context_node: snapshot-node-1
+    application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
+    nodes:
+      - snapshot-node-2
+      - snapshot-node-3
+    capability: member
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # ---------------------------------------------------------------------------
+  # Apply real state on node-1 so the context has actual ContextState entries.
+  # This is the "state keys persist" half of the #3252 contradiction.
+  #
+  # We deliberately do NOT gate on an "empty context converges" checkpoint here:
+  # a joiner reports contextStateHash only once it has real state to sync, so a
+  # pre-write 3-way hash match is not a reliable signal on healthy nodes (it
+  # times out even without the bug — same write-then-sync ordering every other
+  # merobox multi-node workflow uses). The #3252 gate is convergence AFTER state
+  # exists, below.
+  # ---------------------------------------------------------------------------
+  - name: node 1 writes key alpha
+    type: call
+    node: snapshot-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: alpha
+      value: one
+    outputs:
+      set_alpha: result
+
+  - name: node 1 writes key beta
+    type: call
+    node: snapshot-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: beta
+      value: two
+    outputs:
+      set_beta: result
+
+  - name: node 1 writes key gamma
+    type: call
+    node: snapshot-node-1
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: gamma
+      value: three
+    outputs:
+      set_gamma: result
+
+  # ===========================================================================
+  # THE REGRESSION GATE: all three nodes must converge on ONE non-zero hash.
+  # ===========================================================================
+  - name: Wait for applied state to converge across all nodes
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - snapshot-node-1
+      - snapshot-node-2
+      - snapshot-node-3
+    timeout: 120
+    check_interval: 2
+    trigger_sync: true
+    outputs:
+      # Only populated when every node agrees, so this single value IS
+      # simultaneously node-1's hash AND each joiner's hash.
+      converged_root_hash: root_hash
+
+  # Convergence (above) proves joiner == source. This proves the converged
+  # value is real state, NOT the #3252 root=0 contradiction. The all-zero root
+  # is base58 "11111111111111111111111111111111" (Hash::default()); a healthy
+  # context that just took three writes must never equal it.
+  - name: Assert converged context root hash is set and NON-ZERO (#3252 gate)
+    type: assert
+    statements:
+      - "is_set({{converged_root_hash}})"
+      - "not_contains({{converged_root_hash}}, 11111111111111111111111111111111)"
+      - "{{converged_root_hash}} != 11111111111111111111111111111111"
+
+  # ---------------------------------------------------------------------------
+  # Prove the applied state is actually present & readable on the JOINERS —
+  # i.e. the joiners hold real ContextState AND a non-zero matching root,
+  # the exact opposite of the deadlock's state-present-but-root-0 corruption.
+  # ---------------------------------------------------------------------------
+  - name: Read key alpha back from joiner node 2
+    type: call
+    node: snapshot-node-2
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: alpha
+    outputs:
+      alpha_on_node2: result
+
+  - name: Read key gamma back from joiner node 3
+    type: call
+    node: snapshot-node-3
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: gamma
+    outputs:
+      gamma_on_node3: result
+
+  - name: Assert joiners hold the replicated state
+    type: json_assert
+    statements:
+      - 'json_subset({{alpha_on_node2}}, {"output": "one"})'
+      - 'json_subset({{gamma_on_node3}}, {"output": "three"})'
+
+  # ---------------------------------------------------------------------------
+  # Final round: a JOINER writes and everyone re-converges. If the joiner were
+  # silently wedged behind the snapshot safety gate (the #3252 end-state), it
+  # could neither apply nor re-sync and this convergence would fail.
+  # ---------------------------------------------------------------------------
+  - name: Joiner node 2 writes key delta
+    type: call
+    node: snapshot-node-2
+    context_id: "{{context_id}}"
+    method: set
+    args:
+      key: delta
+      value: four
+    outputs:
+      set_delta: result
+
+  - name: Wait for the joiner's write to converge back to node 1
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - snapshot-node-1
+      - snapshot-node-2
+      - snapshot-node-3
+    timeout: 120
+    check_interval: 2
+    trigger_sync: true
+    outputs:
+      post_rejoin_root_hash: root_hash
+
+  - name: Assert re-converged root hash is set and NON-ZERO
+    type: assert
+    statements:
+      - "is_set({{post_rejoin_root_hash}})"
+      - "not_contains({{post_rejoin_root_hash}}, 11111111111111111111111111111111)"
+
+  - name: Read the joiner's write back from node 1
+    type: call
+    node: snapshot-node-1
+    context_id: "{{context_id}}"
+    method: get
+    args:
+      key: delta
+    outputs:
+      delta_on_node1: result
+
+  - name: Assert node 1 received the joiner's write
+    type: json_assert
+    statements:
+      - 'json_subset({{delta_on_node1}}, {"output": "four"})'
+
+  # No node crashed while getting here (a hard, false-positive-free signature).
+  - name: Assert no panics on any node
+    type: assert_log_absent
+    nodes:
+      - snapshot-node-1
+      - snapshot-node-2
+      - snapshot-node-3
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+# Configuration
+stop_all_nodes: true
+wait_timeout: 120
