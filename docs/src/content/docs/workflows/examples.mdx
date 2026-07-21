@@ -1,0 +1,205 @@
+---
+title: Examples gallery
+description: An index of the runnable workflow-examples shipped with merobox — what each YAML scenario teaches and the key step types it demonstrates.
+sidebar:
+  order: 3
+---
+
+merobox ships ~54 runnable workflows under
+[`workflow-examples/`](https://github.com/calimero-network/merobox/tree/master/workflow-examples).
+Each one is a self-contained, CI-verified scenario: pick the behaviour you want
+to learn, run its file, and read the steps. This page groups them by topic and
+says, in one line, what each teaches.
+
+For the schema behind every step type, see the
+[workflow YAML reference](/workflows/yaml/); for the execution model (variables,
+retries, parallelism), the [workflow engine](/workflows/engine/).
+
+## Running any example
+
+Clone the repo and point `bootstrap run` at the file (paths are relative to the
+repo root):
+
+```bash
+merobox bootstrap run workflow-examples/workflow-example.yml
+```
+
+Validate first without booting nodes:
+
+```bash
+merobox bootstrap run workflow-examples/workflow-example.yml --dry-run
+```
+
+Some workflows document their own switches in a top-of-file comment — e.g. the
+open-invitation example expects `--e2e-mode`, and the binary/auth examples run
+in native (`--no-docker`) mode. Read the header before running.
+
+When you're done, stop the nodes the run left behind:
+
+```bash
+merobox stop --all
+```
+
+:::note[These run in CI]
+Every example here is wired into merobox CI. A discovery job fans the files into
+three matrices: **Binary** (native `merod` from the latest core release),
+**Docker** (`merod:edge`), and **TEE** (native `merod` built with
+`--features mock-attestation`). A few are deliberately excluded from one matrix
+where the environment can't support them — the fuzzy/load, auth, fault-injection
+and NAT-topology workflows are Docker-only; `workflow-example-binary.yml` is
+binary-only; and the `tee-*` scenarios run only in the dedicated TEE job. So a
+green CI run means these files actually pass, not just that they parse.
+:::
+
+## Basics
+
+The canonical shapes: a two-node workflow, binary vs Docker mode, and the
+run-hygiene flags.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-example.yml) | The canonical Docker two-node flow: install → namespace → context → invite/join → call → sync, with dynamic value capture via `outputs`. | `install_application`, `create_namespace`, `create_context`, `create_namespace_invitation`, `join_namespace`, `call`, `wait_for_sync` |
+| [`workflow-example-binary.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-example-binary.yml) | The same end-to-end flow run in native binary mode (`no_docker: true`) instead of containers. | same as above, `no_docker` |
+| [`workflow-mesh-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-mesh-example.yml) | The `create_mesh` convenience: create a context and wire multiple nodes into it in a single step. | `create_mesh`, `call`, `wait_for_sync`, `assert`, `json_assert` |
+| [`workflow-script-test.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-script-test.yml) | The `script` step at each `target`: `image` (pre-node setup), `nodes` (post-node health check). | `script` |
+| [`workflow-nuke-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-nuke-example.yml) | Full data isolation with `nuke_on_start` / `nuke_on_end` (fresh state before and after). | `nuke_on_start`, `nuke_on_end`, `call`, `wait_for_sync` |
+| [`workflow-restart-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-restart-example.yml) | The `restart: true` flag — stop then start nodes at the beginning instead of reusing running ones. | `restart`, `call`, `wait_for_sync` |
+| [`workflow-force-pull-test.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-force-pull-test.yml) | The `force_pull_image` flag — re-pull Docker images even when present locally. | `force_pull_image`, `wait` |
+
+## Control flow
+
+Loops and active sync waits.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-repeat-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-repeat-example.yml) | The `repeat` step and its auto-exported iteration counters used inside nested steps. | `repeat`, `call`, `wait_for_sync` |
+| [`workflow-context-loop.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-context-loop.yml) | A minimal loop: create a context 100 times to stress context creation. | `repeat`, `create_context` |
+| [`workflow-wait-for-sync-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-wait-for-sync-example.yml) | `wait_for_sync` — actively verify convergence by comparing root hashes instead of fixed sleeps. | `wait_for_sync`, `call`, `json_assert` |
+
+## Assertions & outputs
+
+Verifying results, capturing variables, and negative testing.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-assert-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-assert-example.yml) | The `assert` and `json_assert` steps (`is_set`, `contains`, `==`, JSON subset/equality). | `assert`, `json_assert` |
+| [`workflow-assert-log-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-assert-log-example.yml) | Log-scanning assertions: `assert_log_present` / `assert_log_absent`. | `assert_log_present`, `assert_log_absent` |
+| [`workflow-custom-outputs-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-custom-outputs-example.yml) | Custom `outputs` capture for dynamic variables reused across later steps. | `outputs`, `call`, `wait_for_sync`, `repeat` |
+| [`workflow-execute-variables-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-execute-variables-example.yml) | Exporting variables from a `call` (execute) step and reusing them in a `script`. | `call`, `script`, `outputs` |
+| [`workflow-nested-json-parsing-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-nested-json-parsing-example.yml) | Automatic parsing of deeply nested JSON responses, asserted with `json_assert`. | `call`, `json_assert` |
+| [`workflow-negative-testing-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-negative-testing-example.yml) | Negative testing on `call` with `expected_failure: true`. | `call` (`expected_failure`), `assert` |
+| [`workflow-expected-failure-steps-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-expected-failure-steps-example.yml) | `expected_failure: true` honoured on non-`call` step types too. | `join_namespace`, `join_context`, `create_group_in_namespace` (each with `expected_failure`) |
+
+## Groups & namespaces
+
+Namespaces, subgroups, and invitation-based joins.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-groups-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-groups-example.yml) | Context group management: invite node 2 to a namespace, share a context, join via group membership, verify state propagates. | `create_namespace_invitation`, `join_namespace`, `join_context`, `wait_for_sync` |
+| [`workflow-subgroups-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-subgroups-example.yml) | Subgroup management: create a subgroup, add a member, create a context in it, sync through the subgroup. | `create_group_in_namespace`, `add_group_members`, `join_context`, `wait_for_sync` |
+| [`workflow-open-invitation-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-open-invitation-example.yml) | The open-invitation flow following the e2e test pattern (run with `--e2e-mode`). | `create_namespace_invitation`, `join_namespace`, `call`, `json_assert` |
+
+## Membership & capabilities
+
+Roles, capability bitmasks, auto-follow, and metadata.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-group-admin-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-admin-example.yml) | The full group admin-API surface: default policy, roles, capabilities, context detach, member removal, explicit governance sync. | `set_default_capabilities`, `set_member_capabilities`, `update_member_role`, `detach_context_from_group`, `remove_group_members`, `sync_group` |
+| [`workflow-set-member-auto-follow-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-set-member-auto-follow-example.yml) | The `set_member_auto_follow` step (admin-or-self) toggling auto-follow of contexts and subgroups. | `set_member_auto_follow`, `add_group_members` |
+| [`workflow-group-metadata-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-metadata-example.yml) | The six metadata steps (group/member/context set+get) and the `CAN_MANAGE_METADATA` capability gate. | `set_group_metadata`, `get_group_metadata`, `set_member_metadata`, `set_context_metadata`, `set_member_capabilities` |
+
+## Upgrades & migration
+
+Per-group and namespace-wide application upgrades.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-group-upgrade-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-upgrade-example.yml) | The per-group upgrade lifecycle v1→v2: set policy, upgrade, poll status, retry (expected-fail after completion). | `update_group_settings`, `upgrade_group`, `get_group_upgrade_status`, `retry_group_upgrade` |
+| [`workflow-cascade-namespace-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-cascade-namespace-example.yml) | The namespace cascade: one signed op fans the target-application change out to every matching descendant subgroup. | `cascade_namespace_application`, `get_group_info`, `json_assert` |
+
+## Auth
+
+The two auth topologies — proxied `mero-auth` and embedded — plus frontend caching.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-auth-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-auth-example.yml) | Enabling the `auth_service` (a `mero-auth` container behind a Traefik proxy). | `auth_service`, `wait` |
+| [`workflow-auth-image-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-auth-image-example.yml) | Pointing the auth service at a custom `auth_image`. | `auth_service`, `auth_image` |
+| [`workflow-cached-frontends-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-cached-frontends-example.yml) | Cached auth + WebUI frontends via `auth_use_cached` / `webui_use_cached`. | `auth_use_cached`, `webui_use_cached`, `create_identity` |
+| [`workflow-embedded-auth-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-embedded-auth-example.yml) | End-to-end embedded auth (router mounted inside `merod`): login, authenticated calls, negative asserts, WebSocket, refresh. | `login`, `call`, `ws_connect`, `refresh` |
+| [`workflow-websocket-auth-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-websocket-auth-example.yml) | WebSocket auth via the `?token=` query param (JWT in the URL): valid token connects, missing token is rejected. | `login`, `ws_connect`, `ws_subscribe` |
+
+## Blobs
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-blob-upload-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-blob-upload-example.yml) | The blob API for file sharing: upload a file, reference it from a call, sync across nodes. | `upload_blob`, `call`, `wait_for_sync` |
+
+## Fault-injection & resilience
+
+Pausing, disconnecting, partitioning, degrading, and recovering nodes — and the
+regression guards that prove convergence still holds.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-fault-injection-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-fault-injection-example.yml) | The Docker-native fault primitives (pause/unpause, restart, disconnect/connect), each paired with a container-state assertion script. | `pause_container`, `unpause_container`, `restart_container`, `disconnect_node`, `connect_node`, `script` |
+| [`workflow-fault-injection-convergence-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-fault-injection-convergence-example.yml) | Behavioural proof that each primitive has its claimed effect: partition blocks propagation, heal + sync converges. | `create_mesh`, `disconnect_node`, `connect_node`, `wait_for_sync`, `assert` |
+| [`workflow-fault-injection-partition-peers-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-fault-injection-partition-peers-example.yml) | `partition_peers` / `heal_peers` — a surgical libp2p cut that keeps RPC reachable (unlike `disconnect_node`). | `partition_peers`, `heal_peers`, `create_mesh`, `wait_for_sync` |
+| [`workflow-fault-injection-tc-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-fault-injection-tc-example.yml) | `inject_network_fault` (tc netem packet loss / added latency). Requires a merod image with `iproute2`. | `inject_network_fault` |
+| [`workflow-stop-start-nodes.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-stop-start-nodes.yml) | Stopping and restarting nodes mid-workflow with `stop_node` / `start_node`. | `stop_node`, `start_node`, `call` |
+| [`workflow-snapshot-finalize-regression-3252.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-snapshot-finalize-regression-3252.yml) | Regression guard for core #3252: a snapshot-bootstrapping joiner must converge to a non-zero state hash. | `create_mesh`, `wait_for_sync`, `json_assert`, `assert_log_absent` |
+
+## NAT topology
+
+Multi-bridge NAT layouts with a relay boot-node — for exercising relay/hole-punching paths.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-nat-topology-cone-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-nat-topology-cone-example.yml) | Smoke test for `topology: { type: nat, nat_mode: cone }` (plain MASQUERADE gateway). | `topology` (nat/cone), `wait_for_sync`, `assert_log_present`, `assert_log_absent` |
+| [`workflow-nat-topology-symmetric-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-nat-topology-symmetric-example.yml) | Smoke test for `nat_mode: symmetric` (random-fully MASQUERADE — defeats STUN-style port prediction). | `topology` (nat/symmetric), `wait_for_sync`, `assert_log_present`, `assert_log_absent` |
+
+## Bootstrap edge-cases
+
+Controlling the default boot-node list under `--e2e-mode`.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-preserve-default-bootstrap.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-preserve-default-bootstrap.yml) | `preserve_default_bootstrap: true` opts out of e2e-mode's boot-list clearing (single node). | `preserve_default_bootstrap`, `assert_log_present`, `assert_log_absent` |
+| [`workflow-preserve-default-bootstrap-cluster.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-preserve-default-bootstrap-cluster.yml) | The preserved boot-node survives the multi-node cluster-wiring step. | `preserve_default_bootstrap`, `assert_log_present`, `assert_log_absent` |
+
+## Fuzzy & load
+
+Randomized load, throughput timing, and propagation monitoring.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`workflow-fuzzy-kv-store.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-fuzzy-kv-store.yml) | The `fuzzy_test` step: weighted randomized operations for a configurable duration with assertion validation. | `fuzzy_test`, `call`, `assert` |
+| [`kv-store-benchmark.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/kv-store-benchmark.yml) | Throughput testing with timing metrics, combining `repeat` and `parallel`. | `repeat`, `parallel`, `call`, `script`, `assert` |
+| [`workflow-propagation-monitoring.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-propagation-monitoring.yml) | Monitoring DAG propagation reliability over ~75 seconds on a mesh. | `create_mesh`, `repeat`, `call`, `json_assert` |
+
+## TEE
+
+Local mock-TEE admission and replication scenarios. All require a `merod` built
+with `--features mock-attestation` and nodes booted with `mock_tee: true` (see
+each file's header); in CI they run in the dedicated TEE matrix.
+
+| Example | Teaches | Key steps |
+| --- | --- | --- |
+| [`tee-g1-restricted-auto-admit.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-g1-restricted-auto-admit.yml) | Restricted subgroup auto-admit of an admitted root TEE. | `set_tee_admission_policy`, `tee_fleet_join`, `assert_tee_member` |
+| [`tee-g2-open-inheritance-replication.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-g2-open-inheritance-replication.yml) | An admitted root TEE *replicates* (not just authorizes) a context in an Open subgroup via inheritance. | `set_subgroup_visibility`, `tee_fleet_join`, `assert_tee_member`, `create_context` |
+| [`tee-g3-disable-cascade-purge.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-g3-disable-cascade-purge.yml) | Removing an admitted TEE at the root cascades a purge from every subgroup. | `remove_group_members`, `assert_not_member` |
+| [`tee-g4-inherited-role.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-g4-inherited-role.yml) | An inherited root TEE carries the `ReadOnlyTee` role into an Open subgroup (not a downgrade). | `set_subgroup_visibility`, `tee_fleet_join`, `assert_tee_member` |
+| [`tee-matrix-open-join-with-created.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-matrix-open-join-with-created.yml) | Timing×visibility matrix: Open, interleaved join-with-created (concurrent). | `set_subgroup_visibility`, `tee_fleet_join`, `create_context` |
+| [`tee-matrix-open-late-join.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-matrix-open-late-join.yml) | Timing×visibility matrix: Open, late-join (subgroup + context exist before the TEE joins). | `set_subgroup_visibility`, `create_context`, `tee_fleet_join` |
+| [`tee-matrix-restricted-join-with-created.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-matrix-restricted-join-with-created.yml) | Timing×visibility matrix: Restricted, interleaved join-with-created. | `tee_fleet_join`, `create_context`, `assert_tee_member` |
+| [`tee-matrix-restricted-late-join.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-matrix-restricted-late-join.yml) | Timing×visibility matrix: Restricted, late-join. | `create_context`, `tee_fleet_join`, `assert_tee_member` |
+| [`tee-r1-offline-backfill.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-r1-offline-backfill.yml) | Recovery (core #2848): a TEE that went offline during a context create backfills on rejoin. | `stop_node`, `create_context`, `start_node`, `assert_tee_member` |
+| [`tee-r2-open-no-direct-row.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/tee-r2-open-no-direct-row.yml) | Born-Open guard (core #2771): a born-Open subgroup has no direct `ReadOnlyTee` row. | `tee_fleet_join`, `assert_tee_member`, `assert_log_present` |
+
+## See also
+
+- [Workflow YAML reference](/workflows/yaml/) — every step type and field.
+- [Workflow engine](/workflows/engine/) — variables, retries, parallelism.
+- [Testing with merobox](/guides/testing/) — E2E scenarios and fuzzy load testing.

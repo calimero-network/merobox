@@ -34,7 +34,7 @@ description: What this workflow proves
 
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   prefix: calimero-node
 
 steps:
@@ -79,7 +79,7 @@ The quickest form: ask for N identical nodes and let merobox name and port them.
 nodes:
   count: 3
   prefix: calimero-node          # nodes become calimero-node-1, -2, -3
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:prerelease
   base_port: 2428                # first node's server port (increments per node)
   base_rpc_port: 2528            # first node's RPC port (increments per node)
 ```
