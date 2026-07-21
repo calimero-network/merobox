@@ -70,7 +70,6 @@ export default defineConfig({
             'guides/testing',
             'guides/pytest-tutorial',
             'guides/recipes',
-            'guides/near-integration',
           ],
         },
         {
