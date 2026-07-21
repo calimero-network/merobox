@@ -97,6 +97,14 @@ jobs:
           # nothing. Docker mode runs against merod:edge (master), which
           # has the fix, so cascade-namespace keeps full coverage there.
           # Re-add to binary once the pinned release carries #2507.
+          # tee-* require a merod built with `--features mock-attestation`
+          # (calimero-network/core#3269). That feature is default-OFF, so
+          # neither the release binary (binary mode) nor merod:edge (docker
+          # mode) carries it — `merod run --mock-tee` hard-errors at boot and
+          # every tee-*.yml goes red before any admission logic runs. Mock-TEE
+          # testing is native/dev-only by design (build recipe documented in
+          # each tee-*.yml header); run these locally with a feature-enabled
+          # merod. Re-add here only behind a CI job that builds such a merod.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
@@ -105,12 +113,15 @@ jobs:
             grep -v fault-injection | \
             grep -v nat-topology | \
             grep -v cascade-namespace | \
+            grep -v '/tee-' | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
 
           # Docker mode: same but also exclude binary-only workflow.
           # fault-injection-tc requires a custom merod image with iproute2
           # installed (the stock image lacks `tc`); skipped in CI.
+          # tee-* excluded here too — merod:edge lacks mock-attestation
+          # (see the binary-mode note above).
           DOCKER=$(ls workflow-examples/*.yml | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
@@ -118,6 +129,7 @@ jobs:
             grep -v cached-frontends | \
             grep -v example-binary | \
             grep -v fault-injection-tc | \
+            grep -v '/tee-' | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT
 
