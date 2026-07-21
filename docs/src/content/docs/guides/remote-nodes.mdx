@@ -1,0 +1,206 @@
+---
+title: Remote Nodes
+description: Register, authenticate against, and run workflows on pre-existing merod instances — the remote CLI, the three auth methods, token caching, and workflow integration.
+sidebar:
+  order: 2
+---
+
+import { Steps, Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Not every node in a run has to be one merobox started. The `merobox remote`
+command group lets you register an already-running `merod` instance — anywhere
+reachable over HTTP(S) — authenticate to it, and then reference it from
+workflows exactly like a local node. The registry lives in
+`~/.merobox/remote_nodes.json`; cached tokens live in `~/.merobox/auth_cache/`.
+
+<Aside type="note">
+Remote nodes are resolved by the `NodeResolver`
+(`merobox/commands/node_resolver.py`) ahead of Docker/binary nodes, so a
+workflow can mix locally-managed and remote nodes in one run.
+</Aside>
+
+## Quick start
+
+<Steps>
+
+1. **Register** the node under a friendly name (URL is a positional argument):
+
+   ```bash
+   merobox remote register prod https://node.example.com \
+     --auth-method user_password --username admin --description "Production node"
+   ```
+
+2. **Authenticate** and cache a token:
+
+   ```bash
+   merobox remote login prod --username admin --password secret
+   ```
+
+3. **Verify** connectivity and auth:
+
+   ```bash
+   merobox remote test prod
+   ```
+
+4. **Use it in a workflow** — reference the name under `remote_nodes:` (see
+   [below](#referencing-remote-nodes-in-workflows)), then run it:
+
+   ```bash
+   merobox bootstrap run workflow.yml
+   ```
+
+</Steps>
+
+## The remote CLI
+
+All subcommands accept either a registered **name** or a direct **URL** where a
+`url_or_name` argument is shown.
+
+| Command | Purpose |
+| --- | --- |
+| `merobox remote register <name> <url>` | Add a node to the registry. Options: `--auth-method/-m` (`user_password`, `api_key`, `none`; default `user_password`), `--username/-u`, `--description/-d`. |
+| `merobox remote login <url_or_name>` | Authenticate and cache a token. Options: `--username/-u`, `--password/-p`, `--api-key/-k`, `--method/-m` (`user_password` or `api_key`). |
+| `merobox remote logout [<url_or_name>]` | Delete a cached token; `--all` clears every cached token. |
+| `merobox remote status` | Table of registered nodes **and** cached tokens with expiry status. |
+| `merobox remote test <url_or_name>` | Diagnostic: connectivity, auth-requirement detection, authentication, admin-API access. Accepts inline `--username`/`--password`/`--api-key`. |
+| `merobox remote list` | List registered nodes only. |
+| `merobox remote unregister <name>` | Remove a node; `--remove-token` also clears its cached token. |
+
+<Aside type="caution" title="register takes URL positionally">
+The URL is a **positional argument**, not an option:
+`merobox remote register prod https://node.example.com`. There is no `--url`
+flag. `register` validates that the URL starts with `http://` or `https://`.
+</Aside>
+
+## Authentication methods
+
+Three methods are supported, mapped from CLI/YAML strings to the constants in
+`merobox/commands/auth.py`:
+
+| Method | How it works | Good for |
+| --- | --- | --- |
+| `user_password` | Credentials are POSTed to `/auth/token`; the returned JWT (and refresh token) are cached. | interactive / development |
+| `api_key` | A static key sent as `Authorization: Bearer <key>`. No token exchange; no expiry. | CI/CD, automation |
+| `none` | Unauthenticated requests. | local / trusted networks |
+
+### Credential resolution order (`user_password`)
+
+When credentials are needed, they are resolved in this order (from
+`NodeResolver._handle_node_auth`):
+
+<Steps>
+
+1. **Explicit parameters** — `--username` / `--password` (or step config).
+2. **Environment variables** — `MEROBOX_USERNAME`, `MEROBOX_PASSWORD`,
+   `MEROBOX_API_KEY`.
+3. **Registered node config** — a username/api-key stored at registration.
+4. **Interactive prompt** — asked only when the above yield nothing.
+
+</Steps>
+
+```bash
+# CI-friendly: no prompt, credentials from the environment
+export MEROBOX_USERNAME=admin
+export MEROBOX_PASSWORD=secret
+merobox remote login prod
+```
+
+## Token caching
+
+Tokens obtained via `user_password` are cached to disk and reused across
+commands. Each registered node gets one JSON file:
+
+```text
+~/.merobox/auth_cache/
+  prod.json        # access token, refresh token, expiry
+  staging.json
+```
+
+The access token carries an expiry parsed from the JWT; when it lapses, merobox
+transparently refreshes it via `POST /auth/refresh` using the cached refresh
+token. If both are gone you re-authenticate with `merobox remote login`. An
+`api_key` token has no expiry. Clear a cached token with `merobox remote
+logout <name>` (or `--all`).
+
+`merobox remote status` shows each cached token's validity window, so it is the
+quickest way to see whether a re-login is needed.
+
+## Referencing remote nodes in workflows
+
+Declare remote nodes under the top-level `remote_nodes:` key. Values support
+environment-variable expansion at parse time.
+
+```yaml
+remote_nodes:
+  production-node:
+    url: https://node.example.com
+    auth:
+      method: user_password
+      username: admin
+  staging-node:
+    url: https://staging.example.com
+    auth:
+      method: api_key
+      key: ${STAGING_API_KEY}
+  open-node:
+    url: https://open.example.com
+    auth:
+      method: none
+
+steps:
+  - type: call
+    node: production-node        # referenced like any local node
+    context_id: "{{context_id}}"
+    method: get
+```
+
+Local and remote nodes coexist in one workflow — declare local ones under
+`nodes:` and remote ones under `remote_nodes:`, then reference either by name in
+steps.
+
+### Registering remotes at run time
+
+You can also inject remote nodes from the command line, without editing the
+YAML. These merge with any `remote_nodes:` in the file, CLI taking precedence:
+
+```bash
+merobox bootstrap run workflow.yml \
+  --remote-node prod=https://node.example.com \
+  --remote-auth prod=admin:password123 \
+  --remote-node staging=https://staging.example.com \
+  --remote-auth staging=apikey:sk-xxx
+```
+
+- `--remote-node NAME=URL` — repeatable.
+- `--remote-auth NAME=user:pass` or `NAME=apikey:KEY` — repeatable; credentials
+  are inline in the value.
+- `--api-key KEY` — default API key for remotes without explicit auth.
+
+<Aside type="caution" title="Remote nodes are not lifecycle-managed">
+merobox connects to remote nodes; it does not start, stop, or nuke them. A
+`stop_node` step (or `merobox stop`) only affects locally-managed nodes.
+</Aside>
+
+## Troubleshooting
+
+| Symptom | Things to check |
+| --- | --- |
+| Connection refused / timeout | URL and port reachable (`curl <url>/admin-api/health`); firewall; the remote `merod` is actually running. Run `merobox remote test <name>` for a structured check. |
+| 401 / 403 | Auth method matches what the node expects; credentials correct; clear stale tokens with `merobox remote logout <name>` and re-login. |
+| Refresh failed | The refresh token also expired — re-authenticate with `merobox remote login <name>`. |
+| Env var not expanding | Export the variable in your shell; check the `${VAR}` spelling; expansion happens at YAML parse time. |
+
+<CardGrid>
+  <LinkCard
+    title="Node management"
+    href="/guides/node-management/"
+    description="The local Docker/binary backends remote nodes sit alongside." />
+  <LinkCard
+    title="Workflow YAML"
+    href="/workflows/yaml/"
+    description="The full schema, including remote_nodes and auth steps." />
+  <LinkCard
+    title="CLI reference"
+    href="/reference/cli/"
+    description="Every remote subcommand and flag." />
+</CardGrid>

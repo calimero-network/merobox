@@ -2,7 +2,7 @@
 
 A Python CLI for managing Calimero nodes (Docker or native) and orchestrating YAML workflows.
 
-> **Full documentation**: [Architecture Reference](https://calimero-network.github.io/merobox/)
+> **Full documentation**: <https://calimero-network.github.io/merobox/>
 
 ## Quick Start
 
@@ -112,20 +112,20 @@ steps:
 
 ## Documentation
 
-All detailed documentation lives in the **[Architecture Reference](https://calimero-network.github.io/merobox/)**:
+All detailed documentation lives in the **[Documentation](https://calimero-network.github.io/merobox/)**:
 
 | Topic | Page |
 |-------|------|
-| System architecture & data flow | [System Overview](https://calimero-network.github.io/merobox/system-overview.html) |
-| WorkflowExecutor, BaseStep, step factory | [Workflow Engine](https://calimero-network.github.io/merobox/workflow-engine.html) |
-| DockerManager, BinaryManager, Traefik | [Node Management](https://calimero-network.github.io/merobox/node-management.html) |
-| Remote node CLI & auth methods | [Remote Nodes](https://calimero-network.github.io/merobox/remote-nodes.html) |
-| Complete YAML schema & all step types | [Workflow YAML](https://calimero-network.github.io/merobox/workflow-yaml.html) |
-| All CLI commands with flags & options | [CLI Reference](https://calimero-network.github.io/merobox/cli-reference.html) |
-| MeroboxError hierarchy, retry patterns | [Error Handling](https://calimero-network.github.io/merobox/error-handling.html) |
-| cluster(), workflow(), pytest fixtures | [Testing Guide](https://calimero-network.github.io/merobox/testing.html) |
-| Common issues & debugging tips | [Troubleshooting](https://calimero-network.github.io/merobox/troubleshooting.html) |
-| Terms & definitions | [Glossary](https://calimero-network.github.io/merobox/glossary.html) |
+| System architecture & data flow | [System Overview](https://calimero-network.github.io/merobox/understand/system-overview/) |
+| WorkflowExecutor, BaseStep, step factory | [Workflow Engine](https://calimero-network.github.io/merobox/workflows/engine/) |
+| DockerManager, BinaryManager, Traefik | [Node Management](https://calimero-network.github.io/merobox/guides/node-management/) |
+| Remote node CLI & auth methods | [Remote Nodes](https://calimero-network.github.io/merobox/guides/remote-nodes/) |
+| Complete YAML schema & all step types | [Workflow YAML](https://calimero-network.github.io/merobox/workflows/yaml/) |
+| All CLI commands with flags & options | [CLI Reference](https://calimero-network.github.io/merobox/reference/cli/) |
+| MeroboxError hierarchy, retry patterns | [Error Handling](https://calimero-network.github.io/merobox/reference/error-handling/) |
+| cluster(), workflow(), pytest fixtures | [Testing Guide](https://calimero-network.github.io/merobox/guides/testing/) |
+| Common issues & debugging tips | [Troubleshooting](https://calimero-network.github.io/merobox/reference/troubleshooting/) |
+| Terms & definitions | [Glossary](https://calimero-network.github.io/merobox/understand/glossary/) |
 
 ## Release Process
 
@@ -146,7 +146,7 @@ git push origin master
 3. Make your changes
 4. Submit a pull request
 
-See the [Testing Guide](https://calimero-network.github.io/merobox/testing.html) for development setup and adding new commands/step types.
+See the [Testing Guide](https://calimero-network.github.io/merobox/guides/testing/) for development setup and adding new commands/step types.
 
 ## License
 
@@ -154,7 +154,7 @@ MIT — see [LICENSE](LICENSE) for details.
 
 ## Links
 
-- [Architecture Reference](https://calimero-network.github.io/merobox/)
+- [Documentation](https://calimero-network.github.io/merobox/)
 - [Example Workflows](workflow-examples/)
 - [GitHub Issues](https://github.com/calimero-network/merobox/issues)
 - [PyPI](https://pypi.org/project/merobox/)

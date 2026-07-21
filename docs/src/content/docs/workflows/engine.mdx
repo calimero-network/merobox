@@ -1,0 +1,219 @@
+---
+title: Workflow engine
+description: How merobox executes a workflow — the run lifecycle, per-step lifecycle, variable capture and substitution, failure handling, retries, parallelism, and teardown.
+sidebar:
+  order: 1
+---
+
+A merobox **workflow** is a YAML file that boots one or more Calimero nodes and
+drives them through an ordered list of typed **steps**. This page explains *how*
+a workflow runs — the execution model behind `merobox bootstrap run`. For the
+YAML schema and the full catalogue of step types, see the
+[workflow YAML reference](/workflows/yaml/).
+
+## Running a workflow
+
+```bash
+# Execute a workflow (boots nodes, runs every step in order)
+merobox bootstrap run workflow.yml
+
+# Validate schema only — no nodes started, no steps executed
+merobox bootstrap run workflow.yml --dry-run
+
+# Generate a starter workflow
+merobox bootstrap create-sample
+```
+
+`bootstrap run` loads the file, expands environment variables, validates the
+schema, then hands the parsed config to the `WorkflowExecutor`
+(`merobox/commands/bootstrap/run/executor.py`), which owns the whole run. The
+process exits non-zero the moment any step fails.
+
+:::note
+`--dry-run` runs the schema validator and node-reference checks and prints a
+summary, but never starts Docker or executes steps. Use it in CI as a fast
+lint of workflow YAML.
+:::
+
+## Run lifecycle
+
+`WorkflowExecutor.execute_workflow()` runs these phases in order. Any failure in
+a phase triggers the teardown path and returns failure.
+
+| Phase | Trigger | What happens |
+| --- | --- | --- |
+| Resolver setup | always | Builds the node resolver so steps can address local (Docker/binary) and remote nodes by name or URL. |
+| Nuke on start | `nuke_on_start: true` | Deletes all node data before anything boots. |
+| Force pull | `force_pull_image: true` | Re-pulls the workflow's Docker images (skipped in binary mode). |
+| Node management | local nodes present | Starts (or, with `restart: true`, first stops then starts) the nodes declared under `nodes:`. Remote-only workflows skip this. |
+| Readiness wait | local nodes present | Polls each node's `/admin-api/health` until ready before any step runs. |
+| Embedded-auth login | `--auth-username`/`--auth-password` supplied | Pre-authenticates every node up front. Omit these to drive auth declaratively with [`login`](/workflows/yaml/#login) steps instead. |
+| Step execution | always | Runs `steps:` sequentially (see below). |
+| Teardown | always | Runs on both success and failure — see [Teardown](#teardown). |
+
+:::note
+When a workflow does not stop its nodes (`stop_all_nodes` is `false`, the
+default), the executor calls `keep_resources_on_exit()` so the containers keep
+running after `bootstrap run` returns — otherwise the manager's exit handler
+would tear them down immediately. Set `stop_all_nodes: true` to shut everything
+down at the end.
+:::
+
+## Step lifecycle
+
+Every step is an instance of a `BaseStep` subclass
+(`merobox/commands/bootstrap/steps/`). The executor's `_create_step_executor`
+maps the step's `type` to its class, then each step goes through the same four
+stages:
+
+1. **Instantiate** — the step is constructed with the manager, node resolver,
+   and auth mode so it can reach any node.
+2. **Validate** — required fields (`_get_required_fields`) and field types
+   (`_validate_field_types`) are checked. A bad config fails the step before it
+   touches a node.
+3. **Resolve** — every `{{...}}` placeholder in the step's config is replaced
+   with a captured value (see [Variable substitution](#variable-substitution)).
+4. **Execute** — the step performs its work (usually an admin-API or JSON-RPC
+   call via the Calimero client) and returns success or failure. On success,
+   any `outputs:` are captured into the variable store.
+
+The executor iterates `steps:` in order; a step returning failure stops the
+whole workflow immediately (fail-fast — see [Failure handling](#failure-handling)).
+
+## Variables: capture and substitution
+
+merobox threads state between steps through a single **dynamic values** store.
+Steps write to it via `outputs:` and read from it via `{{placeholder}}`
+references.
+
+### Capturing outputs
+
+A step's `outputs:` block maps a **target variable name** to a **source path**
+in that step's response. The simplest form is `variable: source.path`:
+
+```yaml
+- type: install_application
+  node: calimero-node-1
+  path: ./app.wasm
+  outputs:
+    app_id: applicationId        # store response.applicationId as {{app_id}}
+
+- type: create_context
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+  group_id: '{{namespace_id}}'
+  outputs:
+    context_id: contextId        # dotted paths are traversed segment by segment
+    member_key: memberPublicKey
+```
+
+For values that need extraction from a nested or JSON-encoded field, use the
+expanded form with `field`, optional `path`, optional `json`, and optional
+`target`:
+
+```yaml
+outputs:
+  proposal_id:
+    field: result      # top-level field in the response
+    path: output        # nested path inside that field
+    json: true          # parse the field as JSON before applying path
+```
+
+The `{node_name}` token inside a target name is replaced with the step's node,
+which lets one step template distinct variables per node.
+
+### Variable substitution
+
+At resolve time, any string containing `{{...}}` is rewritten. Supported forms:
+
+| Reference | Resolves to |
+| --- | --- |
+| `{{name}}` | A value previously captured under `name` in the dynamic store. |
+| `{{env.VAR}}` | An environment variable, read at resolve time. |
+| `{{install.node}}` / `{{context.node}}` / `{{identity.node}}` | Convenience lookups of the application/context/identity produced for a named node. |
+| `${VAR}` / `${VAR:-default}` | Expanded at **load** time, before schema validation — use it for values that must be present in the raw YAML (image tags, paths). |
+
+`{{...}}` placeholders and `${...}` expansion differ in *when* they resolve:
+`${VAR}` is substituted while the file is parsed; `{{name}}` is resolved
+per-step against values captured by earlier steps.
+
+:::caution
+Never hardcode secrets (signing keys, passwords) in committed workflow YAML.
+Capture them from a prior step's `outputs:` or inject them with `${ENV_VAR}`
+expansion and reference them as `{{name}}`. A raw key in a committed file leaks
+into git history.
+:::
+
+### Loop and random variables
+
+Inside a [`repeat`](/workflows/yaml/#repeat) step, iteration counters
+(`iteration`, `iteration_index`, `total_iterations`, and aliases) are exported
+automatically for use in nested steps. Inside a
+[`fuzzy_test`](/workflows/yaml/#fuzzy_test) step, random generators
+(`{{random_int(min, max)}}`, `{{random_string(n)}}`, `{{random_float(min,
+max)}}`, `{{random_choice([...])}}`, `{{uuid}}`, `{{timestamp}}`,
+`{{random_node}}`, `{{random_executor}}`) and auto-captured call arguments
+(`{{fuzzy_key}}`, `{{fuzzy_value}}`, …) are available.
+
+## Failure handling
+
+The default policy is **fail-fast**: the first step that returns failure aborts
+the workflow and `bootstrap run` exits non-zero. Two mechanisms adjust this:
+
+- **`expected_failure: true`** (supported by `call`, `login`, `refresh`,
+  `ws_connect`, and others) inverts the verdict — the step *passes* only if the
+  operation is rejected, and *fails* if it unexpectedly succeeds. This is how
+  negative / authorization tests are written. Pair with `unauthenticated: true`
+  on `call`/`ws_connect` to force a no-token request and assert a 401.
+- **`non_blocking: true`** on an [`assert`](/workflows/yaml/#assert) step records
+  the failure but lets the workflow continue — used heavily inside `fuzzy_test`
+  where individual assertion misses are tracked rather than fatal.
+
+## Retries and readiness
+
+Node RPC/admin operations run through a retry helper
+(`merobox/commands/retry.py`) with configurable attempts, delay, and backoff, so
+transient connectivity blips don't fail an otherwise-good step. Beyond that:
+
+- [`wait_for_sync`](/workflows/yaml/#wait_for_sync) polls each node's
+  `contextStateHash` / `groupStateHash` with **adaptive backoff** (from
+  `initial_check_interval`, growing by `backoff_factor`, capped at
+  `check_interval`) until state converges or `timeout` elapses.
+- [`assert_cascade_complete`](/workflows/yaml/#assert_cascade_complete) and
+  [`assert_migration_complete`](/workflows/yaml/#assert_migration_complete) poll
+  a status endpoint until the condition holds or `timeout_seconds` elapses.
+
+Prefer these convergence-aware steps over a fixed [`wait`](/workflows/yaml/#wait)
+when asserting on replicated state.
+
+## Parallelism
+
+The [`parallel`](/workflows/yaml/#parallel) step runs several **groups** of
+steps concurrently (`asyncio`). Two knobs control it:
+
+- **`failure_mode`** — `fail-slow` (default: wait for all groups, fail if any
+  did), `fail-fast` (cancel the other groups the instant one fails), or
+  `continue-on-error` (succeed if at least one group succeeded).
+- **`mode`** — `burst` (default: all groups start at once), `sustained`, or
+  `mixed`.
+
+Steps within a single group still run sequentially; only the groups run in
+parallel.
+
+## Teardown
+
+The teardown phase always runs. Depending on flags it:
+
+- stops all workflow nodes when `stop_all_nodes: true` (otherwise leaves them
+  running for inspection or a follow-up workflow);
+- nukes all data when `nuke_on_end: true`;
+- tears down any NAT/relay topology infrastructure (boot-node, gateway) it
+  created;
+- on failure, exports node logs to aid debugging before exiting non-zero.
+
+## See also
+
+- [Workflow YAML reference](/workflows/yaml/) — the top-level schema and every step type.
+- [Testing with merobox](/guides/testing/) — writing E2E scenarios.
+- [CLI reference](/reference/cli/) — `bootstrap` and node commands.
+- [Error handling](/reference/error-handling/) — interpreting failures.

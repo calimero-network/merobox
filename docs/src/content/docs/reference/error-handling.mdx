@@ -1,0 +1,160 @@
+---
+title: Error Handling
+description: The MeroboxError hierarchy, the ok/fail result pattern, and the retry/backoff configuration merobox uses for transient network failures.
+sidebar:
+  label: Error handling
+  order: 2
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+merobox raises a small hierarchy of typed exceptions, returns structured
+`ok()` / `fail()` result dictionaries from commands and workflow steps, and
+retries transient network failures with exponential backoff. This page
+documents each, verified against `merobox/commands/errors.py`, `result.py`, and
+`retry.py`.
+
+## The MeroboxError hierarchy
+
+Every merobox error inherits from `MeroboxError`. The base class carries a
+human-readable `message`, an optional programmatic `code`, and an optional
+`details` dict, and provides `to_dict()` for serialization. Its string form is
+`[CODE] message` when a code is set.
+
+<Aside type="caution">
+  Error `details` may be logged or serialized into API responses. Never place
+  secrets (passwords, API keys, tokens) in a message, `details`, or a
+  `ValidationError` `value`.
+</Aside>
+
+```
+MeroboxError                     (base)
+├── NodeResolutionError          code: NODE_RESOLUTION_FAILED
+├── AuthenticationError          code: AUTHENTICATION_FAILED
+├── WorkflowError                code: (none by default)
+│   ├── StepValidationError      code: STEP_VALIDATION_FAILED
+│   └── StepExecutionError       code: STEP_EXECUTION_FAILED
+├── ValidationError              code: VALIDATION_FAILED
+├── ClientError                  code: (none by default)
+│   └── MeroboxTimeoutError      code: TIMEOUT
+└── ConfigurationError           code: CONFIGURATION_ERROR
+```
+
+| Error                  | Default code             | Raised when                                                                                       | Extra fields                     |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `MeroboxError`         | none                     | Base class; used directly for generic failures.                                                   | `message`, `code`, `details`     |
+| `NodeResolutionError`  | `NODE_RESOLUTION_FAILED` | A node reference can't be resolved to a remote node, URL, running container, or binary process.   | `node_ref`                       |
+| `AuthenticationError`  | `AUTHENTICATION_FAILED`  | Credentials are invalid, a token refresh fails, or required auth is missing.                      | `node_url`                       |
+| `WorkflowError`        | none                     | Parent for workflow-level failures (invalid config, missing dependency).                          | `step_name`, `step_type`         |
+| `StepValidationError`  | `STEP_VALIDATION_FAILED` | A step's configuration is invalid during the validation phase (missing/typed field).              | `step_name`, `step_type`, `field`|
+| `StepExecutionError`   | `STEP_EXECUTION_FAILED`  | A step fails during execution (RPC error, unexpected result, assertion failure).                  | `step_name`, `step_type`         |
+| `ValidationError`      | `VALIDATION_FAILED`      | Generic input validation fails (bad port, malformed URL, missing required value).                 | `field`, `value`                 |
+| `ClientError`          | none                     | An HTTP/JSON-RPC request fails or returns an unexpected response.                                 | `url`, `status_code`             |
+| `MeroboxTimeoutError`  | `TIMEOUT`                | An operation exceeds its timeout (health check, sync wait, HTTP request).                         | `url`, `timeout_seconds`         |
+| `ConfigurationError`   | `CONFIGURATION_ERROR`    | A config file is missing/malformed, or required config values are unset or conflicting.           | `config_file`                    |
+
+<Aside type="note">
+  A few backward-compatibility aliases exist: `NodeError` → `NodeResolutionError`,
+  `AuthError` → `AuthenticationError`, and `TimeoutError` → `MeroboxTimeoutError`.
+  `MeroboxTimeoutError` is deliberately named to avoid shadowing Python's
+  built-in `TimeoutError`.
+</Aside>
+
+## The ok() / fail() result pattern
+
+Commands and workflow steps return **plain dictionaries** with a `success` key
+rather than raising for expected failures. This keeps error handling uniform and
+serializable.
+
+```python
+ok(data=None, **extras)   -> {"success": True, "data": data, ...}
+fail(message, *, error=None, **extras)
+                          -> {"success": False, "error": message, ...}
+```
+
+- `ok(data)` returns `{"success": True}`, adding `"data"` when `data` is not
+  `None` and merging any `extras`.
+- `fail(message, error=exc)` returns `{"success": False, "error": message}`. When
+  an exception is supplied it is formatted into an `"exception"` field, and for
+  `MeroboxError` subclasses the top-level `"error_type"`, `"error_code"`, and
+  `"error_details"` are also populated for easy access.
+
+```python
+result = run_async_function(call_admin_api, rpc_url, "list_groups")
+if result["success"]:
+    data = result["data"]
+else:
+    print(result["error"])          # human-readable message
+    print(result.get("error_code")) # e.g. "NODE_RESOLUTION_FAILED"
+```
+
+`format_error(exc)` builds the `exception` field: `type`, `message`, and a
+`traceback` string, plus `code`/`details` for `MeroboxError` subclasses.
+
+<Aside type="caution">
+  Tracebacks in `format_error` expose internal file paths and code structure.
+  Filter or omit them before returning errors to external clients.
+</Aside>
+
+## Retry and backoff
+
+Transient network operations (admin API calls, health checks, sync waits) are
+wrapped with `@with_retry`, which retries **async** functions with exponential
+backoff. A `RetryConfig` describes the behaviour:
+
+| `RetryConfig` field   | Default (`DEFAULT`) | Purpose                                            |
+| --------------------- | ------------------- | -------------------------------------------------- |
+| `max_attempts`        | `3`                 | Total attempts before the last exception is raised.|
+| `delay`               | `1.0`               | Initial delay (seconds) before the first retry.    |
+| `backoff`             | `2.0`               | Multiplier applied to the delay after each retry.  |
+| `connection_timeout`  | `10.0`              | Connection timeout (seconds).                      |
+| `read_timeout`        | `30.0`              | Read timeout (seconds).                             |
+| `exceptions`          | `(Exception,)`      | Exception types that trigger a retry.              |
+
+The delay grows geometrically: with the defaults, a failing call sleeps `1.0s`
+then `2.0s` across its two retries (three attempts total). If every attempt
+fails, the **last** exception propagates.
+
+Three preset configurations are provided; their `exceptions` tuple is
+`(ConnectionError, TimeoutError, asyncio.TimeoutError)`:
+
+| Preset                    | `max_attempts` | `delay` | `backoff` | `connection_timeout` | `read_timeout` |
+| ------------------------- | -------------- | ------- | --------- | -------------------- | -------------- |
+| `NETWORK_RETRY_CONFIG`    | `3`            | `1.0`   | `2.0`     | `10.0`               | `30.0`         |
+| `QUICK_RETRY_CONFIG`      | `2`            | `0.5`   | `1.5`     | `5.0`                | `15.0`         |
+| `PERSISTENT_RETRY_CONFIG` | `5`            | `2.0`   | `1.5`     | `15.0`               | `60.0`         |
+
+```python
+from merobox.commands.retry import with_retry, NETWORK_RETRY_CONFIG
+
+@with_retry(config=NETWORK_RETRY_CONFIG)
+async def _call_admin_api_with_retry(rpc_url, method_name, *args):
+    ...
+```
+
+`with_retry` also accepts individual keyword arguments (`max_attempts`, `delay`,
+`backoff`, `exceptions`) when no `config` is given, and `retry_async_call(func,
+*args, config=...)` runs a single call with the same semantics.
+
+<Aside type="note">
+  The retry system has **no** jitter and **no** maximum-delay cap — the delay is
+  simply multiplied by `backoff` on each attempt. Timeout constants (including
+  the `QUICK_*` and `PERSISTENT_*` values above) are defined in
+  `merobox/commands/constants.py`.
+</Aside>
+
+## Input validation
+
+Argument and configuration validation raises `ValidationError` (or, inside a
+workflow step, `StepValidationError`). For example, port parsing rejects
+non-numeric or out-of-range values (`Port must be between 1 and 65535`) before a
+node is started, and `bootstrap validate` collects and reports every structural
+error in a workflow before execution.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Troubleshooting" href="/reference/troubleshooting/" description="Map these errors to symptoms and fixes." />
+  <LinkCard title="CLI Reference" href="/reference/cli/" description="The commands that surface these results and errors." />
+  <LinkCard title="Workflow YAML" href="/workflows/yaml/" description="Step configuration that StepValidationError guards." />
+</CardGrid>

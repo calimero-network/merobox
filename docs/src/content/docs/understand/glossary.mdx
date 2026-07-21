@@ -1,0 +1,62 @@
+---
+title: Glossary
+description: Definitions for the terms used across the merobox docs — workflow, step, node, bootstrap, DockerManager, BinaryManager, NodeResolver, Traefik, fixture, and the rest of the vocabulary that actually appears in the code.
+sidebar:
+  order: 2
+---
+
+Terms as they are used in merobox and throughout these docs. Only vocabulary that
+appears in the current codebase is listed; for the Calimero protocol concepts
+these build on (context, group, namespace, CRDT), see the
+[Calimero Core docs](https://calimero-network.github.io/core/).
+
+| Term | Definition |
+| --- | --- |
+| **`assert` / `assert_log` (step)** | Workflow steps that validate results. `assert` checks statements (e.g. `is_set(...)`, `contains(...)`, equality); `assert_log_present` / `assert_log_absent` check node log output. A failed assertion fails the workflow unless marked `non_blocking`. |
+| **AuthManager** | Component (`commands/auth.py`) that handles JWT authentication against `merod` endpoints — user/password or API key — used by `NodeResolver` when a node requires auth. |
+| **auth service** | Docker-mode feature that puts a [Traefik](#traefik) proxy and the Calimero auth stack in front of nodes, enabled with `--auth-service` or `auth_service: true`. Binary mode uses `merod`'s embedded auth instead (`--auth-mode embedded`). |
+| **BaseStep** | Abstract base class (`commands/bootstrap/steps/base.py`) for every workflow step. Defines the async `execute()` method and field-validation helpers; each step type subclasses it. |
+| **BinaryManager** | Node backend (`commands/binary_manager.py`) that runs `merod` as native processes instead of Docker containers. Tracks processes with PID files and stops them with signals. Selected with `--no-docker`. |
+| **bootstrap** | The CLI command group for workflows: `merobox bootstrap run <file>` executes a workflow and `merobox bootstrap validate <file>` checks it without running. (Also, in Calimero, the peer-discovery phase — see `apply_bootstrap_nodes`.) |
+| **`call` (step)** | Workflow step that invokes a method on an application within a context over JSON-RPC, with optional `args`, `executor_public_key`, and `outputs`. |
+| **calimero-client-py** | External Python library that provides the JSON-RPC client for `merod`. Steps use it to install apps, create contexts, call methods, and query state. |
+| **Click** | The Python CLI framework merobox is built on. `merobox/cli.py` defines the command group; each command lives under `commands/`. |
+| **`cluster()`** | Testing context manager (`merobox/testing.py`) that starts N nodes, yields their endpoints, and tears them down — used as a pytest fixture. Returns a `ClusterEnv`. |
+| **ClusterEnv** | `TypedDict` returned by `cluster()`: `nodes` (names), `endpoints` (name→URL map), and `manager` (the `DockerManager`). |
+| **config.toml** | The TOML configuration file for a `merod` node. merobox generates/edits it per node via `commands/config_utils.py` helpers (`apply_bootstrap_nodes`, `apply_e2e_defaults`, `apply_mdns_setting`). |
+| **context** | A Calimero context — a running instance of a WASM application with its own state. In a workflow the `create_context` step creates one; later steps reference it by `context_id`. |
+| **DockerManager** | The default node backend (`commands/manager.py`). Uses the Docker SDK to pull images and manage the container lifecycle, networking, and (with the auth service) the Traefik stack. |
+| **fixture** | A pytest fixture backed by merobox's testing helpers — `cluster()`, `workflow()`, `nodes()`, or `run_workflow()` — that provides running nodes to a test and cleans up afterward. |
+| **`fuzzy_test` (step)** | Long-duration randomized load test that runs weighted operation patterns across nodes for a set duration and reports pass rates. Supports random generators like `{{uuid}}` and `{{random_int(min, max)}}`. |
+| **group** | A Calimero governance boundary. merobox exposes group operations both as a CLI command (`merobox group`) and as workflow steps (create/invite/join/upgrade, membership and capability management). |
+| **`health`** | CLI command (`merobox health`) that reports node status. |
+| **JSON-RPC** | The protocol merobox uses to talk to `merod`. `calimero-client-py` sends JSON-RPC requests to node endpoints for method execution and state queries. |
+| **JWT** | JSON Web Token. Used by `AuthManager` to authenticate with nodes that run behind the auth service or in embedded-auth mode. |
+| **MeroboxError** | Root exception class (`commands/errors.py`). Subclasses include `NodeResolutionError`, `AuthenticationError`, `WorkflowError` (with `StepValidationError`, `StepExecutionError`), `ValidationError`, `ClientError` (with `MeroboxTimeoutError`), and `ConfigurationError`. |
+| **merod** | The Calimero node daemon binary. merobox runs `merod` instances as Docker containers (`DockerManager`) or native processes (`BinaryManager`). |
+| **namespace** | A Calimero root group. merobox exposes namespace operations as a CLI command (`merobox namespace`) and as workflow steps. |
+| **node** | A single `merod` instance a workflow acts on, referenced by name (e.g. `calimero-node-1`). Declared in a workflow's `nodes:` section or started ad hoc with `merobox run`. |
+| **NodeResolver** | Component (`commands/node_resolver.py`) that maps a node reference to a URL and handles auth. Resolution order: registered remote → direct URL → Docker container → binary process. |
+| **nuke** | Destroys merobox-managed state: stops/removes containers, kills binary processes, and clears data. Available as the `merobox nuke` command and as the `nuke_on_start` / `nuke_on_end` workflow options. |
+| **`ok()` / `fail()`** | Result helpers (`commands/result.py`) that return the standard success/error **dictionary** shape (`{"success": ...}`) used by steps and commands. There is no separate result class. |
+| **`parallel` (step)** | Control-flow step that runs several sub-step groups concurrently. |
+| **PID file** | File holding a process ID, written by `BinaryManager` when it spawns a `merod` process, used for tracking and cleanup. |
+| **placeholder** | A `{{...}}` template reference resolved at step time: `{{name}}` for a value captured in a prior step's `outputs:`, `{{env.VAR}}` for an environment variable, and random generators inside `fuzzy_test`. |
+| **remote node** | A pre-existing `merod` node (not started by merobox) that a workflow targets by registering it via `RemoteNodeManager` and the `merobox remote` command. |
+| **RemoteNodeManager** | Component (`commands/remote_nodes.py`) that maintains the registry of remote nodes and their auth, consulted first by `NodeResolver`. |
+| **`repeat` (step)** | Control-flow step that loops a sequence of sub-steps a set number of times, exposing an iteration variable to the child steps. |
+| **RetryConfig / `@with_retry`** | Retry primitives (`commands/retry.py`): `RetryConfig` holds retry settings (max attempts, delay, exponential backoff) and `@with_retry` wraps async network calls with them. `NETWORK_RETRY_CONFIG` is the shared preset. |
+| **scenario** | An informal name for a workflow YAML file — a declarative description of nodes and steps that merobox executes end to end. |
+| **`script` (step)** | Step that runs a shell command or script, optionally targeting the host image or the nodes. |
+| **step** | The atomic unit of work in a workflow. Each step has a `type`, an optional `name`, an optional `outputs:` map, and type-specific fields. There are more than eighty step types. |
+| **Traefik** | Reverse proxy that `DockerManager` deploys alongside the containers when the auth service is enabled, routing requests to nodes and applying the auth middleware. |
+| **`wait` / `wait_for_sync` (step)** | `wait` pauses for a fixed duration; `wait_for_sync` polls nodes until they report a synchronized state for a context. |
+| **workflow** | A YAML file declaring `nodes:` and an ordered list of `steps:`, executed by `WorkflowExecutor` from setup through teardown. |
+| **`workflow()`** | Testing context manager (`merobox/testing.py`) that runs a workflow YAML and yields a `WorkflowEnv` for use in a pytest test. |
+| **WorkflowEnv** | `TypedDict` returned by `workflow()`: node names, endpoints, the manager, the boolean `workflow_result`, and captured `dynamic_values`. |
+| **WorkflowExecutor** | The orchestration engine (`commands/bootstrap/run/executor.py`). Parses the YAML, manages node startup and cleanup, dispatches steps by `type`, and maintains `workflow_results`. |
+| **workflow_results** | The dictionary `WorkflowExecutor` maintains across a run, accumulating step outputs so later steps can resolve `{{...}}` placeholders against them. |
+
+See the [system overview](/understand/system-overview/) for how these fit
+together, the [YAML reference](/workflows/yaml/) for the full step catalog, and
+the [CLI reference](/reference/cli/) for every command.

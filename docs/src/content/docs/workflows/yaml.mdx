@@ -1,0 +1,1329 @@
+---
+title: Workflow YAML reference
+description: The complete merobox workflow schema — top-level keys, node configuration, and every step type with its fields and a minimal example.
+sidebar:
+  order: 2
+---
+
+This is the full reference for a merobox workflow file: the top-level schema,
+how to declare nodes, and the complete catalogue of step types. For *how* a
+workflow runs (lifecycle, variable capture, retries, parallelism), see the
+[workflow engine](/workflows/engine/).
+
+Every field documented here is grounded in the schema merobox actually
+validates (`merobox/commands/bootstrap/config.py`) and the step implementations
+(`merobox/commands/bootstrap/steps/`). Validate a file before running it:
+
+```bash
+merobox bootstrap run workflow.yml --dry-run
+```
+
+:::note
+Calimero and merobox are pre-1.0. Step types and fields can be added, renamed,
+or deprecated between releases. Deprecated aliases are called out below; prefer
+the current names in new workflows.
+:::
+
+## Top-level schema
+
+A workflow is a mapping with a name, a node declaration, and a list of steps.
+
+```yaml
+name: My Workflow
+description: What this workflow proves
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  - type: wait
+    seconds: 5
+```
+
+| Key | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `name` | yes | string | Workflow name (shown in output). |
+| `description` | no | string | Free-text description. |
+| `nodes` | one of `nodes`/`remote_nodes` | object | Local Docker/binary node config (see [Node configuration](#node-configuration)). |
+| `remote_nodes` | one of `nodes`/`remote_nodes` | map | Externally-running nodes addressed by URL (see [Remote nodes](#remote-nodes)). |
+| `steps` | no | list | Ordered list of steps to run. |
+| `nuke_on_start` | no | bool (`false`) | Delete all node data before the run. |
+| `nuke_on_end` | no | bool (`false`) | Delete all node data after the run. |
+| `stop_all_nodes` | no | bool (`false`) | Stop all nodes at the end (otherwise they keep running). |
+| `restart` | no | bool (`false`) | Stop then start nodes at the beginning instead of reusing running ones. |
+| `wait_timeout` | no | int (`60`) | Default timeout (seconds) for waiting operations. |
+| `force_pull_image` | no | bool (`false`) | Re-pull Docker images before the run (Docker mode only). |
+| `auth_service` | no | bool (`false`) | Run a mero-auth container behind a Traefik proxy (Docker mode only). |
+| `auth_image` | no | string | Custom auth-service image. |
+| `auth_use_cached` | no | bool (`false`) | Use a cached auth frontend. |
+| `webui_use_cached` | no | bool (`false`) | Use a cached WebUI frontend. |
+| `auth_mode` | no | string | Node auth mode, e.g. `embedded`, enabling [`login`](#login)/[`refresh`](#refresh)/[`ws_connect`](#ws_connect) steps. |
+| `log_level` | no | string (`debug`) | Log level applied to nodes. |
+| `rust_backtrace` | no | string (`0`) | `RUST_BACKTRACE` value for nodes. |
+| `no_docker` | no | bool (`false`) | Run nodes as native `merod` binaries instead of containers. |
+| `binary_path` | no | string | Path to the `merod` binary for `no_docker` mode. |
+| `e2e_mode` | no | bool (`false`) | Clear merod's default public bootstrap list and assign a private per-workflow rendezvous namespace. |
+| `preserve_default_bootstrap` | no | bool (`false`) | Under `e2e_mode`, keep merod's default boot-node list instead of clearing it. |
+| `bootstrap_nodes` | no | list | Explicit bootstrap peers to connect to. |
+| `topology` | no | object | NAT/relay topology selector (see [Topology](#topology)). |
+
+## Node configuration
+
+### Count-based mode
+
+The quickest form: ask for N identical nodes and let merobox name and port them.
+
+```yaml
+nodes:
+  count: 3
+  prefix: calimero-node          # nodes become calimero-node-1, -2, -3
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 2428                # first node's server port (increments per node)
+  base_rpc_port: 2528            # first node's RPC port (increments per node)
+```
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `count` | yes (this mode) | int ≥ 1 | Number of nodes to create. |
+| `prefix` | no | string (`calimero-node`) | Name prefix; nodes are `<prefix>-<n>`. |
+| `image` | no | string | Docker image for the nodes. |
+| `base_port` | no | int | Server port of the first node (increments). |
+| `base_rpc_port` | no | int | RPC port of the first node (increments). |
+| `config_path` | no | string | Shared `config.toml` for all nodes (skips init). |
+| `use_image_entrypoint` | no | bool (`false`) | Use the Docker image's entrypoint. |
+| `mdns` | no | bool | Force `discovery.mdns` on/off (set `false` to exercise the rendezvous/relay path). |
+| `network_admin` | no | bool (`true`) | Add `NET_ADMIN` capability so `inject_network_fault` works. |
+
+### Explicit mode
+
+Name each node and give it per-node settings. Use this when nodes need distinct
+ports, config, or a mock-TEE boot.
+
+```yaml
+nodes:
+  tee-owner:
+    port: 7080
+    rpc_port: 7180
+  tee-replica:
+    port: 7081
+    rpc_port: 7181
+    mock_tee: true               # boot as `merod run --mock-tee`
+```
+
+Per-node keys include `port`, `rpc_port`, `config_path` (per-node override), and
+`mock_tee`. Explicit mode is mutually exclusive with `count`.
+
+:::caution
+`config_path` (shared or per-node) skips node initialization and is not
+supported together with `count` mode.
+:::
+
+### Remote nodes
+
+Address already-running nodes by URL instead of managing containers. A workflow
+with only `remote_nodes` runs in remote-only mode (no local node lifecycle).
+
+```yaml
+remote_nodes:
+  prod-node-1:
+    url: https://node1.example.com
+    description: Production node 1
+    auth:
+      method: api_key            # none | api_key | password
+      api_key: ${NODE1_API_KEY}
+```
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `url` | yes | string | Node base URL. |
+| `auth.method` | no | `none`\|`api_key`\|`password` | Authentication method. |
+| `auth.username` / `auth.password` | no | string | Credentials for `password`. |
+| `auth.api_key` / `auth.key` | no | string | API key for `api_key`. |
+| `description` | no | string | Human label. |
+
+### Topology
+
+Setting `topology` switches startup from the default single-bridge cluster to a
+multi-bridge NAT layout with a relay boot-node and a NAT gateway — required to
+exercise relay-reservation recovery, where clients cannot dial each other
+directly.
+
+```yaml
+topology:
+  type: nat
+  nat_mode: cone                 # cone | symmetric
+  boot_node:
+    image: merobox/boot-node:local   # optional; auto-built when omitted
+    keypair: ./boot-node-key.json    # optional; fresh keypair when omitted
+```
+
+## Common step keys
+
+Every step is a mapping with a `type`. These keys are available on all steps:
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `type` | yes | string | The step type (one of the catalogue below). |
+| `name` | no | string | Human-readable label shown in output. |
+| `outputs` | no | map | Capture response values into workflow variables — see [capturing outputs](/workflows/engine/#capturing-outputs). |
+
+Fields specific to each step are documented per type. Placeholder references
+(`{{var}}`, `{{env.VAR}}`) and `${ENV}` expansion are described in the
+[engine reference](/workflows/engine/#variable-substitution).
+
+---
+
+## Application & context steps
+
+### install_application
+
+Install a WASM application on a node.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `path` | yes | string | Path to the `.wasm` file. |
+| `dev` | no | bool (`false`) | Install in dev mode. |
+
+```yaml
+- type: install_application
+  node: calimero-node-1
+  path: ./workflow-examples/res/kv_store.wasm
+  dev: true
+  outputs:
+    app_id: applicationId
+```
+
+### uninstall_application
+
+Remove an installed application. Fields: `node`, `application_id`.
+
+```yaml
+- type: uninstall_application
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+```
+
+### get_application
+
+Read an application record. Fields: `node`, `application_id`.
+
+```yaml
+- type: get_application
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+  outputs:
+    bytecode_blob: application.blob.bytecode
+```
+
+### list_application_versions
+
+List retained bytecode blob versions for an application. Fields: `node`,
+`application_id`.
+
+```yaml
+- type: list_application_versions
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+```
+
+### create_context
+
+Create a context bound to an application inside a namespace/group.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `application_id` | yes | string | Application to instantiate. |
+| `group_id` | yes | string | Namespace/group the context belongs to. |
+| `service_name` | no | string | Optional service name. |
+
+```yaml
+- type: create_context
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+  group_id: '{{namespace_id}}'
+  outputs:
+    context_id: contextId
+    member_key: memberPublicKey
+```
+
+### delete_context
+
+Delete a context. Fields: `node`, `context_id`, optional `requester` (admin
+public key, required for a group-registered context).
+
+```yaml
+- type: delete_context
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+```
+
+### create_identity
+
+Create a new identity (keypair) on a node.
+
+```yaml
+- type: create_identity
+  node: calimero-node-2
+  outputs:
+    private_key: privateKey
+    public_key: publicKey
+```
+
+### join_context
+
+Join an existing context via group membership (the node must already be a group
+member). Fields: `node`, `context_id`.
+
+```yaml
+- type: join_context
+  node: calimero-node-2
+  context_id: '{{context_id}}'
+  outputs:
+    member_identity: memberIdentity
+```
+
+### join_subgroup_inheritance
+
+Materialize a node's inherited Open-subgroup membership without an admin-signed
+invitation. Fields: `node`, `group_id` (the Open subgroup).
+
+```yaml
+- type: join_subgroup_inheritance
+  node: calimero-node-2
+  group_id: '{{subgroup_id}}'
+```
+
+---
+
+## Namespace & group steps
+
+A **namespace** is a root group. These steps manage namespaces, subgroups, and
+their membership.
+
+### create_namespace
+
+Create a namespace tied to an application. Deprecated alias: `create_group`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `application_id` | yes | string | Application for the namespace. |
+| `app_key` | no | string | Hex 32-byte bytecode blob id pinning a specific app version. |
+
+```yaml
+- type: create_namespace
+  node: calimero-node-1
+  application_id: '{{app_id}}'
+  outputs:
+    namespace_id: namespaceId
+```
+
+### create_namespace_invitation
+
+Create an invitation to a namespace. Deprecated alias:
+`create_group_invitation`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `namespace_id` | yes* | string | Namespace to invite to (`group_id` accepted as deprecated alias). |
+| `recursive` | no | bool (`false`) | Create a recursive invitation. |
+
+```yaml
+- type: create_namespace_invitation
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  outputs:
+    invitation: invitation
+```
+
+### join_namespace
+
+Join a namespace using an invitation. Deprecated alias: `join_group`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `namespace_id` | yes* | string | Namespace to join (`group_id` accepted as deprecated alias). |
+| `invitation` | yes | string | Invitation data. |
+
+```yaml
+- type: join_namespace
+  node: calimero-node-2
+  namespace_id: '{{namespace_id}}'
+  invitation: '{{invitation}}'
+  outputs:
+    member_identity: memberIdentity
+```
+
+### create_group_in_namespace
+
+Create a subgroup under a namespace.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `namespace_id` | yes | string | Parent namespace. |
+| `group_name` | no | string | Subgroup display name. |
+| `visibility` | no | `open`\|`restricted` | Birth visibility (default: server default `restricted`). |
+
+```yaml
+- type: create_group_in_namespace
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  group_name: engineering
+  visibility: open
+```
+
+### reparent_group
+
+Atomically move a subgroup to a new parent within the same namespace. Replaces
+the removed `nest_group`/`unnest_group` steps.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `child_group_id` | yes | string | Group to move. |
+| `new_parent_id` | yes | string | New parent group. |
+
+```yaml
+- type: reparent_group
+  node: calimero-node-1
+  child_group_id: '{{child_id}}'
+  new_parent_id: '{{parent_id}}'
+```
+
+### Namespace & group queries
+
+Read-only lookups. Each takes `node` plus the id shown.
+
+| Step | Extra fields | Reads |
+| --- | --- | --- |
+| `list_namespaces` | — | Namespaces on the node. |
+| `get_namespace_identity` | `namespace_id` | The namespace's identity. |
+| `list_namespace_groups` | `namespace_id` | Subgroups of a namespace. |
+| `list_subgroups` | `group_id` | Subgroups of a group. |
+| `get_group_info` | `group_id` | Full group record. |
+| `list_group_contexts` | `group_id` | Contexts registered in a group. |
+| `list_group_members` | `group_id` | Members of a group. |
+
+```yaml
+- type: list_group_members
+  node: calimero-node-1
+  group_id: '{{namespace_id}}'
+```
+
+---
+
+## Membership & capabilities steps
+
+### add_group_members
+
+Add members with roles to a group.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `group_id` | yes | string | Group to add to. |
+| `members` | yes | list of `{identity, role}` | Members and their roles. |
+
+```yaml
+- type: add_group_members
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  members:
+    - identity: '{{member_pub}}'
+      role: Member
+```
+
+### remove_group_members
+
+Remove members. Fields: `node`, `group_id`, `members` (list of public keys).
+
+```yaml
+- type: remove_group_members
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  members:
+    - '{{member_pub}}'
+```
+
+### update_member_role
+
+Change a member's role. Fields: `node`, `group_id`, `member_id`, `role`
+(`Admin`, `Member`, `ReadOnly` — case-insensitive variants accepted).
+
+```yaml
+- type: update_member_role
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  member_id: '{{member_pub}}'
+  role: Admin
+```
+
+### set_member_capabilities
+
+Set a member's capability bitmask. Fields: `node`, `group_id`, `member_id`,
+`capabilities` (u32 integer). Read it back with `get_member_capabilities`.
+
+```yaml
+- type: set_member_capabilities
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  member_id: '{{member_pub}}'
+  capabilities: 7
+```
+
+### set_default_capabilities
+
+Set the group's default capability bitmask for new members. Fields: `node`,
+`group_id`, `capabilities` (u32).
+
+```yaml
+- type: set_default_capabilities
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  capabilities: 3
+```
+
+### set_member_auto_follow
+
+Toggle a member's auto-follow flags for new contexts and nested subgroups.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `group_id` | yes | string | Group. |
+| `member_id` | yes | string | Target member public key. |
+| `auto_follow_contexts` | yes | bool | Auto-join new contexts in this group. |
+| `auto_follow_subgroups` | yes | bool | Self-admit into nested subgroups. |
+| `requester` | no | string | Admin or self public key to act as. |
+
+```yaml
+- type: set_member_auto_follow
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  member_id: '{{member_pub}}'
+  auto_follow_contexts: true
+  auto_follow_subgroups: false
+```
+
+### set_subgroup_visibility
+
+Set a subgroup's visibility. `open` inherits parent members that hold
+`CAN_JOIN_OPEN_SUBGROUPS`; `restricted` requires explicit membership.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `group_id` | yes | string | Subgroup. |
+| `visibility` | yes | `open`\|`restricted` | New visibility (case-insensitive). |
+
+```yaml
+- type: set_subgroup_visibility
+  node: calimero-node-1
+  group_id: '{{subgroup_id}}'
+  visibility: open
+```
+
+:::note
+`set_default_visibility` is a deprecated alias of `set_subgroup_visibility` with
+the same fields, kept so pre-existing workflows keep validating.
+:::
+
+### Leave steps
+
+`leave_context`, `leave_group`, and `leave_namespace` remove the calling node
+from a context, group, or namespace. Each takes `node` plus the relevant id.
+
+```yaml
+- type: leave_namespace
+  node: calimero-node-2
+  namespace_id: '{{namespace_id}}'
+```
+
+---
+
+## Metadata & group settings steps
+
+### Metadata setters and getters
+
+Metadata records are string→string maps with an optional record name. Setters
+accept an optional `requester` (admin key) for admin-guarded groups.
+
+| Step | Fields |
+| --- | --- |
+| `set_group_metadata` | `node`, `group_id`, `record_name?`, `data?`, `requester?` |
+| `get_group_metadata` | `node`, `group_id` |
+| `set_member_metadata` | `node`, `group_id`, `member_id`, `record_name?`, `data?`, `requester?` |
+| `get_member_metadata` | `node`, `group_id`, `member_id` |
+| `set_context_metadata` | `node`, `group_id`, `context_id`, `record_name?`, `data?`, `requester?` |
+| `get_context_metadata` | `node`, `group_id`, `context_id` |
+
+```yaml
+- type: set_group_metadata
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  record_name: team-info
+  data:
+    owner: alice
+    tier: gold
+```
+
+### update_group_settings
+
+Update a group's upgrade policy. Fields: `node`, `group_id`, `upgrade_policy`
+(`automatic` or `lazy-on-access`).
+
+```yaml
+- type: update_group_settings
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  upgrade_policy: automatic
+```
+
+### detach_context_from_group
+
+Detach a context from its group. Fields: `node`, `group_id`, `context_id`.
+
+```yaml
+- type: detach_context_from_group
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  context_id: '{{context_id}}'
+```
+
+### sync_group
+
+Diagnostic: trigger governance sync for a group. Fields: `node`, `group_id`.
+
+```yaml
+- type: sync_group
+  node: calimero-node-2
+  group_id: '{{group_id}}'
+```
+
+### register_group_signing_key
+
+Register a signing key for a group. Fields: `node`, `group_id`, `signing_key`
+(64 hex chars or a `{{placeholder}}`).
+
+```yaml
+- type: register_group_signing_key
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  signing_key: '{{admin_signing_key}}'
+```
+
+:::caution
+Prefer the `{{placeholder}}` form. A raw hex signing key committed in YAML leaks
+key material through git history.
+:::
+
+### Delete steps
+
+`delete_group` and `delete_namespace` delete a group / namespace. Each takes
+`node`, the id (`group_id` / `namespace_id`), and an optional `requester`
+(admin public key) for admin-guarded state.
+
+```yaml
+- type: delete_namespace
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+```
+
+---
+
+## Deprecated invitation aliases
+
+These older, context-centric step names still validate but map to namespace
+invitation flows. Prefer the namespace steps above and the open-invitation
+steps below in new workflows.
+
+| Step | Maps to | Fields |
+| --- | --- | --- |
+| `invite`, `invite_identity` | namespace invitation | `node`, `namespace_id` (or `group_id`), `recursive?` |
+| `join` | join namespace | `node`, `namespace_id` (or `group_id`), `invitation` |
+| `invite_open` | open invitation (see below) | `node`, `context_id`, `granter_id`, `valid_for_blocks?` |
+| `join_open` | join via open invitation | `node`, `namespace_id` (or `group_id`), `invitation` |
+| `create_group` | `create_namespace` | see [create_namespace](#create_namespace) |
+| `create_group_invitation` | `create_namespace_invitation` | see above |
+| `join_group` | `join_namespace` | see above |
+
+### invite_open
+
+Create an open invitation anyone can use to join a context.
+
+```yaml
+- type: invite_open
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  granter_id: '{{admin_pub}}'
+  valid_for_blocks: 2000
+  outputs:
+    invitation: invitation
+```
+
+### join_open
+
+Join a context via an open invitation.
+
+```yaml
+- type: join_open
+  node: calimero-node-2
+  invitee_id: '{{new_member_pub}}'
+  invitation: '{{invitation}}'
+```
+
+---
+
+## Call & auth steps
+
+### call
+
+Invoke a method on an application in a context (JSON-RPC).
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `context_id` | yes | string | Context to call in. |
+| `method` | yes | string | Method name. |
+| `args` | no | map | Method arguments (dynamic values resolved recursively). |
+| `executor_public_key` | no | string | Identity to execute as. |
+| `expected_failure` | no | bool (`false`) | Pass only if the call is rejected. |
+| `unauthenticated` | no | bool (`false`) | Force a no-token request (negative auth test). |
+
+```yaml
+- type: call
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  method: set
+  args:
+    key: hello
+    value: world
+  executor_public_key: '{{member_key}}'
+  outputs:
+    set_result: result
+```
+
+Negative test — assert an unauthenticated call is rejected with 401:
+
+```yaml
+- type: call
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  method: get
+  args: { key: hello }
+  unauthenticated: true
+  expected_failure: true
+```
+
+### login
+
+Authenticate against a node's embedded auth (`auth_mode: embedded`) and seed its
+token cache so later `call`/`ws_connect` steps on that node are authenticated.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Node to authenticate against. |
+| `username` | yes | string | Username (public key). |
+| `password` | yes | string | Password. |
+| `bootstrap_secret` | no | string | Out-of-band secret to mint the first root key (defaults from `MERO_AUTH_BOOTSTRAP_SECRET`). |
+| `expected_failure` | no | bool (`false`) | Pass only if authentication is rejected. |
+
+```yaml
+- type: login
+  node: calimero-node-1
+  username: alice
+  password: password123
+  outputs:
+    access_token: access_token
+    refresh_token: refresh_token
+```
+
+### refresh
+
+Refresh a node's cached access token (`POST /auth/refresh`). Fields: `node`,
+`expected_failure?`.
+
+```yaml
+- type: refresh
+  node: calimero-node-1
+  outputs:
+    access_token: access_token
+```
+
+### ws_connect
+
+Open a WebSocket subscription (`/ws`), attaching the cached JWT. Alias:
+`ws_subscribe`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Node to connect to. |
+| `unauthenticated` | no | bool (`false`) | Connect without a token (negative test). |
+| `expected_failure` | no | bool (`false`) | Pass only if the handshake is rejected. |
+| `token` | no | string | Explicit JWT (overrides the cached token). |
+| `message` | no | string | Text frame to send once connected. |
+| `timeout` | no | float | Handshake timeout (seconds). |
+
+```yaml
+- type: ws_connect        # uses the token seeded by `login`
+  node: calimero-node-1
+
+- type: ws_connect
+  node: calimero-node-1
+  unauthenticated: true
+  expected_failure: true  # no token -> handshake rejected
+```
+
+---
+
+## Application upgrade & migration steps
+
+### upgrade_group
+
+Upgrade a group to a target application version.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `group_id` | yes | string | Group to upgrade. |
+| `target_application_id` | yes | string | Application to upgrade to. |
+| `cascade` | no | bool (`false`) | Dispatch as a namespace cascade instead of a per-group upgrade. |
+
+```yaml
+- type: upgrade_group
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  target_application_id: '{{new_app_id}}'
+```
+
+### cascade_namespace_application
+
+Cascade an application to every descendant of a namespace. Fields: `node`,
+`namespace_id`, `target_application_id`.
+
+```yaml
+- type: cascade_namespace_application
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  target_application_id: '{{new_app_id}}'
+```
+
+### assert_cascade_complete
+
+Poll until a namespace cascade finishes, or fail.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `namespace_id` | yes | string | Namespace whose cascade must complete. |
+| `timeout_seconds` | no | number (`30`) | Max seconds to poll. |
+| `poll_interval` | no | number (`2.0`) | Seconds between polls. |
+
+```yaml
+- type: assert_cascade_complete
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  timeout_seconds: 60
+```
+
+### assert_migration_complete
+
+Poll until a namespace migration finishes, or fail. Same fields as
+`assert_cascade_complete` (`node`, `namespace_id`, `timeout_seconds?`,
+`poll_interval?`).
+
+```yaml
+- type: assert_migration_complete
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+```
+
+### Upgrade & migration queries
+
+| Step | Fields | Reads / does |
+| --- | --- | --- |
+| `get_group_upgrade_status` | `node`, `group_id` | Per-group upgrade status. |
+| `get_cascade_status` | `node`, `namespace_id` | Cascade subtree status. |
+| `get_migration_status` | `node`, `namespace_id` | Migration rollup. |
+| `abort_migration` | `node`, `namespace_id` | Abort an in-flight migration. |
+| `retry_group_upgrade` | `node`, `group_id` | Retry a failed group upgrade. |
+| `resync_context` | `node`, `context_id`, `force?` | Resync a context from a peer (`force: true` discards local heads). |
+
+```yaml
+- type: resync_context
+  node: calimero-node-2
+  context_id: '{{context_id}}'
+  force: true
+```
+
+---
+
+## Proposal steps
+
+Read proposals in a context. Each takes `node` and `context_id`;
+proposal-specific steps also take `proposal_id`.
+
+| Step | Fields |
+| --- | --- |
+| `list_proposals` | `node`, `context_id` |
+| `get_proposal` | `node`, `context_id`, `proposal_id` |
+| `get_proposal_approvers` | `node`, `context_id`, `proposal_id` |
+
+```yaml
+- type: get_proposal
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  proposal_id: '{{proposal_id}}'
+```
+
+:::note
+Proposals are *created and approved* via ordinary [`call`](#call) steps
+(`create_new_proposal`, `approve_proposal`). These steps are read/query helpers.
+:::
+
+---
+
+## Blob steps
+
+### upload_blob
+
+Upload a file to a node's blob store. Fields: `node`, `file_path`, optional
+`context_id`.
+
+```yaml
+- type: upload_blob
+  node: calimero-node-1
+  file_path: ./data/input.json
+  context_id: '{{context_id}}'
+  outputs:
+    blob_id: blobId
+```
+
+### delete_blob
+
+Delete a blob via the admin API (cascades chunked blobs).
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node. |
+| `blob_id` | yes | string | Base58 (parent) blob id. |
+| `missing_ok` | no | bool (`true`) | Treat an already-absent blob as success. |
+
+```yaml
+- type: delete_blob
+  node: calimero-node-1
+  blob_id: '{{blob_id}}'
+```
+
+### delete_blob_on_disk
+
+Delete a blob directly from a container's on-disk blob store (for corruption /
+backfill tests).
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Target node (container name). |
+| `blob_id` | yes | string | Base58 blob id. |
+| `data_dir` | no | string (`/app/data`) | `CALIMERO_HOME` in the container. |
+| `blobs_subdir` | no | string (`blobs`) | Blob-store subdir under `<data_dir>/<node>`. |
+| `missing_ok` | no | bool (`true`) | Treat a node that never held the blob as success. |
+
+```yaml
+- type: delete_blob_on_disk
+  node: calimero-node-1
+  blob_id: '{{blob_id}}'
+```
+
+---
+
+## Control-flow steps
+
+### wait
+
+Pause for a fixed duration. Fields: `seconds` (int ≥ 0), optional `message`.
+
+```yaml
+- type: wait
+  seconds: 5
+  message: Waiting for gossip to propagate
+```
+
+### wait_for_sync
+
+Poll until state converges across nodes. At least one of `context_id` /
+`group_id` is required.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `nodes` | yes | list | Nodes to wait for. |
+| `context_id` | one of `context_id`/`group_id` | string | Wait for `contextStateHash` to converge. |
+| `group_id` | one of `context_id`/`group_id` | string | Wait for `groupStateHash` to converge. |
+| `timeout` | no | int (`60`) | Timeout in seconds. |
+| `check_interval` | no | float (`2`) | Steady-state polling cap (backoff ceiling). |
+| `initial_check_interval` | no | float | Starting sleep for adaptive backoff (default ~0.05s). |
+| `backoff_factor` | no | float | Geometric growth per missed check (default 2.0). |
+| `trigger_sync` | no | bool (`false`) | Trigger a sync before waiting. |
+
+```yaml
+- type: wait_for_sync
+  context_id: '{{context_id}}'
+  nodes:
+    - calimero-node-1
+    - calimero-node-2
+  timeout: 60
+  trigger_sync: true
+```
+
+### repeat
+
+Run nested steps N times. Iteration counters (`iteration`, `iteration_index`,
+`total_iterations`, …) are exported automatically for use in nested steps and
+can be renamed via `outputs`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `count` | yes | int ≥ 1 | Number of iterations. |
+| `steps` | yes | list | Steps to repeat. |
+
+```yaml
+- type: repeat
+  count: 3
+  outputs:
+    current_iteration: iteration    # rename the auto-exported counter
+  steps:
+    - type: call
+      node: calimero-node-1
+      context_id: '{{context_id}}'
+      method: set
+      args:
+        key: 'key_{{current_iteration}}'
+        value: 'value_{{current_iteration}}'
+```
+
+### parallel
+
+Run several **groups** of steps concurrently. Steps within a group still run in
+order; the groups run in parallel.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `groups` | yes | list of `{name?, steps}` | Groups to run concurrently. |
+| `failure_mode` | no | `fail-slow`\|`fail-fast`\|`continue-on-error` (`fail-slow`) | How group failures are handled. |
+| `mode` | no | `burst`\|`sustained`\|`mixed` (`burst`) | Group start scheduling. |
+
+```yaml
+- type: parallel
+  failure_mode: fail-fast
+  groups:
+    - name: writer
+      steps:
+        - type: call
+          node: calimero-node-1
+          context_id: '{{context_id}}'
+          method: set
+          args: { key: a, value: '1' }
+    - name: reader
+      steps:
+        - type: call
+          node: calimero-node-2
+          context_id: '{{context_id}}'
+          method: get
+          args: { key: a }
+```
+
+### script
+
+Run a shell script.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `script` | yes | string | Path to the script. |
+| `target` | no | `image`\|`nodes`\|`local` (`image`) | Where to run: inside the image build, on running nodes, or on the host. |
+| `description` | no | string | Human label. |
+
+```yaml
+- type: script
+  description: Assert container state
+  script: ./workflow-examples/scripts/assert-container-state.sh
+  target: local
+```
+
+---
+
+## Node & network fault-injection steps
+
+### stop_node / start_node
+
+Stop or (re)start local nodes mid-workflow. `nodes` accepts a single name or a
+list. `start_node` uses the node's config from the workflow's `nodes:` section.
+
+| Step | Fields |
+| --- | --- |
+| `stop_node` | `nodes` |
+| `start_node` | `nodes`, `wait_for_ready?` (bool, `true`), `wait_timeout?` (int, `30`) |
+
+```yaml
+- type: stop_node
+  nodes: calimero-node-1
+
+- type: start_node
+  nodes:
+    - calimero-node-1
+  wait_for_ready: true
+  wait_timeout: 30
+```
+
+### pause_container / unpause_container / restart_container
+
+Docker-level container control. Each takes `container`. `restart_container` also
+accepts `wait_healthy` (bool, `true`) and `timeout` (int).
+
+```yaml
+- type: pause_container
+  container: calimero-node-1
+
+- type: restart_container
+  container: calimero-node-1
+  wait_healthy: true
+```
+
+### disconnect_node / connect_node
+
+Disconnect a node from (or reconnect it to) a Docker network. Fields: `node`,
+optional `network` (defaults to the container's attached network).
+
+```yaml
+- type: disconnect_node
+  node: calimero-node-1
+
+- type: connect_node
+  node: calimero-node-1
+```
+
+### partition_peers / heal_peers
+
+Cut (or restore) libp2p traffic between a node and specific peers while keeping
+RPC reachable. Linux + iptables + passwordless sudo only.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Container to isolate / reconnect. |
+| `peers` | yes | list (≥ 1) | Peer containers to cut / restore. |
+
+```yaml
+- type: partition_peers
+  node: calimero-node-1
+  peers:
+    - calimero-node-2
+
+- type: heal_peers
+  node: calimero-node-1
+  peers:
+    - calimero-node-2
+```
+
+### inject_network_fault
+
+Apply a `tc`-based network fault to a container for a duration.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `container` | yes | string | Target container. |
+| `fault` | yes | `loss`\|`delay` | Fault type. |
+| `duration` | yes | int ≥ 1 | How long to hold the fault (seconds). |
+| `percent` | required for `loss` | float (0, 100] | Packet-loss percent. |
+| `ms` | required for `delay` | int ≥ 1 | Added delay in ms. |
+| `interface` | no | string (`eth0`) | Container network interface. |
+
+```yaml
+- type: inject_network_fault
+  container: calimero-node-1
+  fault: loss
+  percent: 20
+  duration: 10
+```
+
+---
+
+## Assertion steps
+
+### assert
+
+Evaluate boolean statements. Helpers include `is_set(...)`, `contains(a, b)`,
+and equality (`==`). Statements may be strings or `{statement, message}`
+mappings.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `statements` | yes | list | Assertion statements. |
+| `non_blocking` | no | bool | Continue the workflow on failure instead of aborting. |
+
+```yaml
+- type: assert
+  statements:
+    - 'is_set({{set_result}})'
+    - "contains({{get_result}}, 'world')"
+```
+
+### json_assert
+
+Assert on JSON structure with `json_equal(...)` and `json_subset(...)`. Field:
+`statements`.
+
+```yaml
+- type: json_assert
+  statements:
+    - 'json_subset({{user_data}}, {"email": "user@example.com"})'
+```
+
+### assert_log_present / assert_log_absent
+
+Scan node logs for patterns. `assert_log_present` requires each pattern to hit
+at least `min_matches` times; `assert_log_absent` fails if any pattern appears.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `nodes` | yes | list | Nodes to scan (`[]` = all running nodes). |
+| `patterns` | yes | list | Patterns to match. |
+| `regex` | no | bool (`false`) | Treat patterns as Python regex. |
+| `tail_lines` | no | int | Only scan the last N lines per node. |
+| `case_sensitive` | no | bool (`true`) | Case-sensitive matching. |
+| `min_matches` | present only | int (`1`) | Required hits per pattern (`assert_log_present` only). |
+
+```yaml
+- type: assert_log_present
+  nodes: [calimero-node-1]
+  patterns:
+    - 'context synced'
+
+- type: assert_log_absent
+  nodes: []                 # all running nodes
+  patterns:
+    - 'panicked'
+```
+
+---
+
+## Mesh & fuzzy steps
+
+### create_mesh
+
+Create a context and wire multiple nodes into it via group membership in one
+step.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `context_node` | yes | string | Node to create the context on. |
+| `application_id` | yes | string | Application to instantiate. |
+| `nodes` | yes | list | Nodes to join into the mesh (must include one ≠ `context_node`). |
+| `params` | no | string | Init params as a JSON string. |
+| `path` | no | string | WASM path to pre-install on joining nodes. |
+
+```yaml
+- type: create_mesh
+  context_node: calimero-node-1
+  application_id: '{{app_id}}'
+  nodes:
+    - calimero-node-2
+    - calimero-node-3
+  outputs:
+    context_id: contextId
+    member_public_key: memberPublicKey
+```
+
+### fuzzy_test
+
+Run long randomized load tests with weighted operation patterns. See
+[fuzzy load testing](/guides/testing/) for the full model.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `duration_minutes` | yes | number > 0 | How long to run. |
+| `context_id` | yes | string | Context to hammer. |
+| `nodes` | yes | list of `{name, executor_key}` | Nodes and their executor keys. |
+| `operations` | yes | list of `{name, weight, steps}` | Weighted operation patterns. |
+
+Random generators (`{{random_int(min, max)}}`, `{{uuid}}`, `{{timestamp}}`,
+`{{random_node}}`, …) and auto-captured args (`{{fuzzy_key}}`, `{{fuzzy_value}}`)
+are available inside operation steps.
+
+```yaml
+- type: fuzzy_test
+  duration_minutes: 30
+  context_id: '{{context_id}}'
+  nodes:
+    - name: calimero-node-1
+      executor_key: '{{key1}}'
+  operations:
+    - name: write_and_read
+      weight: 70
+      steps:
+        - type: call
+          node: '{{random_node}}'
+          method: set
+          context_id: '{{context_id}}'
+          args:
+            key: 'k_{{random_int(1, 1000)}}'
+            value: 'v_{{uuid}}'
+        - type: assert
+          non_blocking: true
+          statements:
+            - 'is_set({{result}})'
+```
+
+---
+
+## TEE steps
+
+These drive a local mock-TEE fleet against a node's admin API. They require a
+`merod` built with the `mock-attestation` feature and nodes booted with
+`mock_tee: true`.
+
+### set_tee_admission_policy
+
+Set a namespace-root TEE admission policy. Fields: `node`, `group_id`, optional
+`accept_mock` (bool, `true`).
+
+```yaml
+- type: set_tee_admission_policy
+  node: tee-owner
+  group_id: '{{namespace_id}}'
+  accept_mock: true
+```
+
+### tee_fleet_join
+
+Run a mock-TEE fleet join against a namespace root. Fields: `node`, `group_id`.
+Blocks server-side for one admission window.
+
+```yaml
+- type: tee_fleet_join
+  node: tee-replica
+  group_id: '{{namespace_id}}'
+```
+
+### assert_tee_member / assert_not_member
+
+Assert presence / absence of an identity in a group's member list. Fields:
+`node`, `group_id`, `identity`.
+
+```yaml
+- type: assert_tee_member
+  node: tee-owner
+  group_id: '{{namespace_id}}'
+  identity: '{{replica_identity}}'
+```
+
+## See also
+
+- [Workflow engine](/workflows/engine/) — execution model, variables, retries.
+- [Testing with merobox](/guides/testing/) — E2E scenarios and fuzzy load testing.
+- [CLI reference](/reference/cli/) — `merobox bootstrap` commands.
+- [System overview](/understand/system-overview/) and [glossary](/understand/glossary/).

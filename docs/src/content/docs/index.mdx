@@ -1,0 +1,43 @@
+---
+title: merobox
+description: Run real Calimero nodes in Docker and drive them through declarative YAML scenarios — the end-to-end test harness for Calimero.
+template: splash
+hero:
+  tagline: A Python CLI that boots real Calimero nodes as Docker containers and drives them through declarative YAML workflows — bootstrap nodes, create contexts, invite members, call methods, and assert on the result. The way Calimero's end-to-end flows are tested.
+  actions:
+    - text: Read the System Overview
+      link: /understand/system-overview/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/calimero-network/merobox
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+{/* Audience-routed landing — pick your track. */}
+
+<CardGrid>
+  <Card title="Understand" icon="open-book">
+    What merobox is and how the pieces fit — the Docker node manager, the
+    workflow engine, and the testing harness. [Start here →](/understand/system-overview/)
+  </Card>
+  <Card title="Workflows" icon="rocket">
+    The declarative YAML scenario system: how workflows execute and the full
+    reference for every step type. [Write a workflow →](/workflows/yaml/)
+  </Card>
+  <Card title="Guides" icon="setting">
+    Task guides: managing nodes, driving remote nodes, the pytest testing
+    harness, and NEAR integration. [Browse the guides →](/guides/node-management/)
+  </Card>
+  <Card title="Reference" icon="list-format">
+    Every CLI command and flag, the error hierarchy, and troubleshooting.
+    [Open the reference →](/reference/cli/)
+  </Card>
+</CardGrid>
+
+merobox drives [Calimero Core](https://calimero-network.github.io/core/) nodes.
+For the protocol those nodes implement, see the
+[Calimero Core docs](https://calimero-network.github.io/core/).

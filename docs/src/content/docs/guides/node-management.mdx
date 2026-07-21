@@ -1,0 +1,270 @@
+---
+title: Node Management
+description: How merobox runs merod nodes — Docker containers (default) or native binaries, their lifecycle commands, ports and data layout, auth stacks, and logging.
+sidebar:
+  order: 1
+---
+
+import { Steps, Aside, Tabs, TabItem, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+merobox runs Calimero (`merod`) nodes for you and gives every node the same set
+of lifecycle commands regardless of how it is running. There are two backends:
+
+| Backend | Selected by | Implementation | Best for |
+| --- | --- | --- | --- |
+| **Docker** (default) | no flag | `DockerManager` (`merobox/commands/manager.py`) | isolated, reproducible multi-node runs; the auth/Traefik stack |
+| **Binary** | `--no-docker` | `BinaryManager` (`merobox/commands/binary_manager.py`) | running a locally-built `merod`, embedded auth, lower overhead |
+
+Almost every command (`run`, `stop`, `list`, `logs`) takes `--no-docker` to
+target the binary backend; without it they operate on Docker containers.
+
+<Aside type="note">
+This page documents the node lifecycle. For the full flag-by-flag CLI, see the
+[CLI reference](/reference/cli/); for driving nodes through declarative
+scenarios, see [workflow YAML](/workflows/yaml/).
+</Aside>
+
+## Start nodes
+
+```bash
+# One Docker node (name defaults to calimero-node-1)
+merobox run
+
+# A cluster of three
+merobox run --count 3
+
+# Custom base ports and name prefix
+merobox run --count 2 --base-port 2428 --base-rpc-port 2528 --prefix my-node
+
+# A specific image
+merobox run --image ghcr.io/calimero-network/merod:edge
+```
+
+Each node opens two listeners, matching `merod`'s own defaults:
+
+| Listener | Purpose | Base port |
+| --- | --- | --- |
+| libp2p **swarm** | peer-to-peer networking | `2428` (`--base-port`) |
+| HTTP **server / RPC** | admin API, JSON-RPC, WebSocket, SSE | `2528` (`--base-rpc-port`) |
+
+When you start more than one node, ports are allocated per node starting from
+the base (or auto-detected free ports if you omit the base flags).
+
+:::note
+`merobox run` **starts nodes**. It does not run workflow YAML — that is
+`merobox bootstrap run <file>.yml` (see [workflow engine](/workflows/engine/)).
+:::
+
+### Useful run flags
+
+| Flag | Effect |
+| --- | --- |
+| `--count`, `-c` | Number of nodes to start (default `1`). |
+| `--base-port`, `-p` / `--base-rpc-port`, `-r` | Base swarm / RPC port (auto-detected if unset). |
+| `--prefix` | Node name prefix (default `calimero-node`). |
+| `--image` | Custom Docker image (Docker mode). |
+| `--force-pull` | Force-pull the image even if present locally (Docker mode). |
+| `--log-level` | `RUST_LOG` value; default `debug`. Supports patterns like `info,module::path=debug`. |
+| `--rust-backtrace` | `RUST_BACKTRACE` value (default `0`). |
+| `--no-docker` | Run `merod` as a native process (binary mode). |
+| `--binary-path` | Path to the `merod` binary (binary mode); otherwise `PATH` and common locations are searched. |
+| `--foreground` | Attach to `merod`'s interactive UI (binary mode, single node only). |
+| `--auth-service` | Enable the Traefik + auth stack (Docker mode). |
+| `--auth-mode` | `embedded` or `proxy` (default `proxy`). |
+
+## Node lifecycle
+
+Once nodes are up, the same commands inspect and tear them down. Add
+`--no-docker` to any of these to target binary-mode nodes.
+
+<Tabs>
+  <TabItem label="List">
+
+```bash
+merobox list            # running Docker nodes
+merobox list --no-docker
+```
+
+  </TabItem>
+  <TabItem label="Health">
+
+`merobox health` polls each node's admin API — `/admin-api/health`,
+`/admin-api/is-authed`, and `/admin-api/peers` — and prints a table of
+health, auth state, and connected-peer count.
+
+```bash
+merobox health                 # all running nodes
+merobox health --node my-node  # one node
+merobox health --verbose       # include raw responses
+```
+
+  </TabItem>
+  <TabItem label="Logs">
+
+```bash
+merobox logs my-node             # last 100 lines
+merobox logs my-node --tail 500
+merobox logs my-node --follow    # stream live
+```
+
+  </TabItem>
+  <TabItem label="Stop">
+
+```bash
+merobox stop my-node       # one node
+merobox stop --all         # every node (and the auth stack, if running)
+merobox stop --auth-service  # just the Traefik + auth stack
+```
+
+`--timeout` / `--drain-timeout` tune how long the daemon waits before
+escalating `SIGTERM` to `SIGKILL` (defaults `10s` / `5s`, also settable via
+`MEROBOX_STOP_TIMEOUT` / `MEROBOX_DRAIN_TIMEOUT`).
+
+  </TabItem>
+</Tabs>
+
+### Data layout
+
+In Docker mode each node's home directory is bind-mounted from the host at
+`./data/<node-name>` to `/app/data` inside the container (the container sets
+`CALIMERO_HOME=/app/data`). That directory holds the node's identity, datastore,
+and blob store, so it survives container replacement.
+
+<Aside type="caution" title="nuke is destructive">
+`merobox nuke` deletes node **data directories** under `./data/`, removes the
+node/auth/proxy containers, and drops the `auth_data` volume. It filters by
+name prefix, not by a single node argument:
+
+```bash
+merobox nuke --dry-run              # show what would be deleted
+merobox nuke --prefix my-node       # only dirs starting with "my-node"
+merobox nuke --force                # skip the confirmation prompt
+```
+
+There is no undo — a nuked node loses its identity and replicated state.
+</Aside>
+
+## Binary mode
+
+With `--no-docker`, merobox spawns `merod` as a native subprocess instead of a
+container. It writes each node's files under `./data/<node-name>/`, captures
+stdout/stderr to `./data/<node-name>/logs/<node-name>.log`, and tracks the
+process so `stop`/`list`/`logs` work the same way.
+
+```bash
+# Single binary node using a locally built merod
+merobox run --no-docker --binary-path ./target/release/merod
+
+# Attach to merod's interactive UI (single node only)
+merobox run --no-docker --binary-path ./merod --foreground
+```
+
+:::tip
+Binary mode is the only way to pass extra `merod run` arguments through a
+workflow — use `merobox bootstrap run … --no-docker --binary-path ./merod
+--merod-args="--sync-strategy delta"`. The auth/Traefik stack (below) is
+Docker-only; binary mode uses embedded auth instead.
+:::
+
+## Authentication
+
+Two independent auth models, one per backend.
+
+### Docker: Traefik + mero-auth stack (`--auth-service`)
+
+Passing `--auth-service` (CLI) or `auth_service: true` (workflow YAML) brings up
+a reverse-proxy stack alongside the node containers:
+
+- A **Traefik** proxy (`proxy` container) and a **mero-auth** service (`auth`
+  container, default image `ghcr.io/calimero-network/mero-auth:edge`, override
+  with `--auth-image`).
+- Two Docker networks: `calimero_web` (external-facing, connects Traefik to the
+  nodes) and `calimero_internal` (an `internal` bridge that isolates the auth
+  service).
+- Traefik routes on a single **HTTP** entrypoint (`web`, port `80`) using
+  per-node [nip.io](https://nip.io) hostnames of the form
+  `http://<node>.127.0.0.1.nip.io`.
+
+Route protection applied by the proxy:
+
+| Routes | Protection |
+| --- | --- |
+| `/jsonrpc`, `/admin-api/`, `/ws`, `/sse` | require auth (auth middleware) |
+| `/admin-dashboard` | public |
+
+```bash
+merobox run --auth-service
+merobox run --count 2 --auth-service --auth-image ghcr.io/calimero-network/mero-auth:edge
+merobox stop --auth-service     # tear the stack down
+```
+
+By default the auth and WebUI frontends are fetched fresh
+(`CALIMERO_AUTH_FRONTEND_FETCH` / `CALIMERO_WEBUI_FETCH`); pass
+`--auth-use-cached` / `--webui-use-cached` to use the cached bundles.
+
+<Aside type="note" title="TLS not built in">
+merobox's Traefik integration exposes only the plain-HTTP `web` entrypoint. It
+does not terminate TLS for you — put your own proxy in front if you need HTTPS.
+</Aside>
+
+### Binary: embedded auth (`--auth-mode embedded`)
+
+In binary mode, `--auth-mode embedded` runs `merod`'s own built-in JWT auth on
+`/jsonrpc`, `/admin-api/`, `/ws`, with the auth service served under `/auth/*`
+and credentials persisted in the node home. Workflows can drive this path
+declaratively with `login` / `refresh` / `ws_connect` steps (see
+[workflow YAML](/workflows/yaml/)).
+
+```bash
+merobox run --no-docker --binary-path ./merod --auth-mode embedded
+```
+
+`--auth-mode` also accepts `proxy` (the default — no embedded auth). The
+embedded auth stack is not available with the Docker backend.
+
+## Node configuration
+
+merobox does not hand-write a `config.toml` from scratch. In Docker/binary mode
+it runs `merod init` for each node and then applies E2E-oriented adjustments via
+the helpers in `merobox/commands/config_utils.py`:
+
+- `apply_bootstrap_nodes` — inject bootstrap peer multiaddrs so nodes discover
+  each other.
+- `apply_mdns_setting` — toggle mDNS local discovery.
+- `apply_e2e_defaults` — clear inherited public bootstrap nodes and bind for
+  isolated, deterministic test runs.
+
+To reuse an existing configuration instead, point a workflow at a `config.toml`
+with a `config_path` (shared across nodes, or per-node). Supplying a custom
+config skips `merod init` for that node. This is not supported with `count`
+mode — see [workflow YAML](/workflows/yaml/).
+
+### Log verbosity
+
+`--log-level` sets each node's `RUST_LOG` (default `debug`). It accepts the full
+`tracing` filter syntax, so you can scope verbosity to a subsystem:
+
+```bash
+merobox run --log-level "info,calimero_node::sync=trace"
+```
+
+In a workflow, set `log_level:` at the top level instead.
+
+<CardGrid>
+  <LinkCard
+    title="Remote nodes"
+    href="/guides/remote-nodes/"
+    description="Register and authenticate against pre-existing merod instances." />
+  <LinkCard
+    title="Testing harness"
+    href="/guides/testing/"
+    description="Spin these nodes up from pytest with cluster() and workflow()." />
+  <LinkCard
+    title="CLI reference"
+    href="/reference/cli/"
+    description="Every command and flag in full." />
+  <LinkCard
+    title="Troubleshooting"
+    href="/reference/troubleshooting/"
+    description="Ports in use, image pulls, and node startup failures." />
+</CardGrid>

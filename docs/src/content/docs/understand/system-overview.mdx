@@ -1,0 +1,173 @@
+---
+title: System Overview
+description: What merobox is and how its parts fit together — the CLI, the Docker and binary node managers, node resolution, the workflow engine, and the pytest testing harness — each mapped to where it lives in the package.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+merobox is a Python CLI that runs [Calimero Core](https://calimero-network.github.io/core/)
+nodes and drives them through declarative YAML scenarios. It is the end-to-end
+test harness for Calimero: it boots real `merod` nodes — as Docker containers or
+native processes — then bootstraps contexts, installs applications, invites
+members, calls methods, and asserts on the results.
+
+This page is the entry point. It names the moving parts, says what each one does,
+and points at where it lives in the `merobox/` package so you can jump from the
+concept to the code.
+
+## The shape of a run
+
+Everything funnels through one CLI. The most common entry point is a workflow:
+
+```bash
+merobox bootstrap run workflow.yml
+```
+
+That single command walks through the whole lifecycle:
+
+```
+merobox bootstrap run workflow.yml
+        │
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│ WorkflowExecutor  (commands/bootstrap/run/executor.py)    │
+│  parse & validate YAML                                    │
+│  nuke_on_start (optional)  →  force_pull_image (optional) │
+│  start local nodes  →  resolve/connect remote nodes       │
+│  run steps sequentially  →  cleanup / nuke_on_end         │
+└─────────────────────────────────────────────────────────┘
+        │                         │                    │
+        ▼                         ▼                    ▼
+  DockerManager /           NodeResolver          each step calls
+  BinaryManager             + AuthManager          merod over
+  (start merod)             + RemoteNodeManager     JSON-RPC
+        │                                          (calimero-client-py)
+        ▼
+   merod nodes (Docker containers or native processes)
+```
+
+## The moving parts
+
+### CLI (Click)
+
+The command surface lives in [`merobox/cli.py`](https://github.com/calimero-network/merobox),
+a [Click](https://click.palletsprojects.com/) group. The entry point is
+`merobox.cli:main` (declared in `pyproject.toml` under `[project.scripts]`). It
+registers these top-level commands: `bootstrap`, `run`, `health`, `logs`,
+`stop`, `nuke`, `remote`, `group`, and `namespace`. Each command module lives
+under `merobox/commands/`. The full command and flag reference is in the
+[CLI reference](/reference/cli/).
+
+`run` starts nodes directly; `bootstrap` runs (and validates) YAML workflows.
+
+### Docker node manager — `DockerManager`
+
+`DockerManager` (`merobox/commands/manager.py`) is the default backend. Using
+the Docker SDK (`docker-py`), it manages the full container lifecycle: pulling
+the `merod` image, creating the network, starting/stopping/removing containers,
+and mapping ports. When a workflow enables the auth service it also stands up a
+[Traefik](/understand/glossary/#traefik) reverse proxy and the auth stack in
+front of the nodes. See [node management](/guides/node-management/).
+
+### Binary node manager — `BinaryManager`
+
+`BinaryManager` (`merobox/commands/binary_manager.py`) is the alternative
+backend, selected with `--no-docker`. Instead of containers it spawns native
+`merod` processes, tracks them with PID files, and tears them down with signals
+(`SIGTERM`/`SIGKILL`). Binary mode is what supports passing extra flags straight
+to `merod run` (`--merod-args=...`) and the embedded JWT auth path
+(`--auth-mode embedded`).
+
+<Aside type="note">
+  The Traefik-based auth service is a Docker-mode feature. Binary mode uses
+  `merod`'s embedded auth instead.
+</Aside>
+
+### Node resolution — `NodeResolver`, `AuthManager`, `RemoteNodeManager`
+
+Steps refer to nodes by name; `NodeResolver` (`merobox/commands/node_resolver.py`)
+turns a reference into a concrete URL and handles authentication. Its resolution
+order is: **registered remote node → direct URL → Docker container → binary
+process**. Along the way it uses `AuthManager` (`merobox/commands/auth.py`) for
+JWT authentication (user/password or API key) and `RemoteNodeManager`
+(`merobox/commands/remote_nodes.py`) for the registry of pre-existing remote
+nodes. This is what lets a workflow target locally-started nodes and remote ones
+uniformly — see [remote nodes](/guides/remote-nodes/).
+
+### Workflow engine — `WorkflowExecutor` and the steps
+
+The workflow engine is the heart of merobox. `WorkflowExecutor`
+(`merobox/commands/bootstrap/run/executor.py`) orchestrates the whole run:
+parse and validate the YAML, optionally nuke prior state, start local nodes,
+connect remote ones, execute the steps in order, and clean up. It maintains a
+`workflow_results` dictionary that accumulates each step's output so later steps
+can reference earlier values.
+
+- **Steps** live in `merobox/commands/bootstrap/steps/`. Every step subclasses
+  `BaseStep` (`steps/base.py`), which defines an async `execute()` plus field
+  validation helpers. There are more than eighty step types — application
+  install, context create, identity create, invite/join, `call`, `assert`,
+  `wait`, `repeat`, `parallel`, `script`, blob upload, group/namespace
+  governance, fault injection, `fuzzy_test`, and more.
+- **Dispatch** is a direct `type → step class` mapping in the executor's
+  `_create_step_executor` (a `type` string selects the handler); there is no
+  separate factory registry.
+- **Config parsing** is in `bootstrap/config.py`; **validation** (for
+  `bootstrap validate`) is in `bootstrap/validate/validator.py`.
+- **Placeholders** use `{{...}}` syntax: `{{step_output}}` values captured from a
+  step's `outputs:` map, `{{env.VAR}}` for environment variables, and random
+  generators (e.g. `{{uuid}}`, `{{random_int(1, 100)}}`) inside `fuzzy_test`.
+
+See the [workflow engine](/workflows/engine/) for internals and the
+[YAML reference](/workflows/yaml/) for the full schema and step catalog.
+
+<Aside type="caution">
+  Placeholders are `{{name}}`, not `${...}`. Values come from each step's
+  `outputs:` map and accumulate in `workflow_results`.
+</Aside>
+
+### Testing harness
+
+`merobox/testing.py` exposes merobox to pytest. It provides two context
+managers — `cluster()` (start N nodes, yield endpoints, tear down) and
+`workflow()` (run a YAML workflow, yield the environment) — plus the `nodes()`
+and `run_workflow()` fixture factories and a `using()` helper. Their return
+shapes are the `ClusterEnv` and `WorkflowEnv` `TypedDict`s. This is how a Python
+test suite spins up real nodes as fixtures. See the
+[testing guide](/guides/testing/).
+
+### Cross-cutting utilities
+
+| Concern | Where it lives | What it provides |
+| --- | --- | --- |
+| Result shapes | `commands/result.py` | `ok()` / `fail()` helpers that return standard success/error **dictionaries** (not a result class) |
+| Retries | `commands/retry.py` | `RetryConfig` and the `@with_retry` decorator (exponential backoff); applied to network calls via `NETWORK_RETRY_CONFIG` |
+| Errors | `commands/errors.py` | `MeroboxError` and its subclasses — `NodeResolutionError`, `AuthenticationError`, `WorkflowError` (`StepValidationError`, `StepExecutionError`), `ValidationError`, `ClientError` (`MeroboxTimeoutError`), `ConfigurationError` |
+| Node config | `commands/config_utils.py` | `merod` `config.toml` helpers: `apply_bootstrap_nodes`, `apply_e2e_defaults`, `apply_mdns_setting`, and peer/bootstrap readers |
+
+The error hierarchy is documented in [error handling](/reference/error-handling/).
+
+## External dependencies
+
+merobox is glue over a handful of libraries (see `pyproject.toml`):
+
+| Dependency | Role |
+| --- | --- |
+| `calimero-client-py` | JSON-RPC client for talking to `merod` nodes; steps use it to install apps, create contexts, call methods, and query state |
+| `docker` (docker-py) | Docker Engine API used by `DockerManager` for container lifecycle |
+| `aiohttp` | Async HTTP used for health checks and node communication |
+| `click` | The CLI framework |
+| `PyYAML` | Parses workflow definition files |
+| `rich` | Console output and progress rendering |
+| `pydantic` | Workflow schema modelling |
+| `toml` | Reads and writes `merod` `config.toml` |
+
+## Where to go next
+
+- [Workflow engine](/workflows/engine/) — how `WorkflowExecutor` and steps work.
+- [YAML reference](/workflows/yaml/) — the schema and every step type.
+- [Node management](/guides/node-management/) and [remote nodes](/guides/remote-nodes/).
+- [Testing guide](/guides/testing/) — the pytest harness.
+- [Glossary](/understand/glossary/) — the terms used across these docs.
