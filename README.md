@@ -8,18 +8,7 @@ A Python CLI for managing Calimero nodes (Docker or native) and orchestrating YA
 
 ### Installation
 
-**APT (Ubuntu/Debian):**
-
-```bash
-curl -fsSL https://calimero-network.github.io/merobox/gpg.key \
-  | sudo tee /usr/share/keyrings/merobox.gpg > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/merobox.gpg] https://calimero-network.github.io/merobox stable main" \
-  | sudo tee /etc/apt/sources.list.d/merobox.list
-sudo apt update
-sudo apt install merobox
-```
-
-**PyPI:**
+**PyPI (recommended):**
 
 ```bash
 pipx install merobox
