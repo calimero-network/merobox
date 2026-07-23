@@ -12,7 +12,7 @@ Merobox is a Python CLI tool for managing Calimero nodes in Docker containers. I
 
 ## Installation
 
-**Option 1: Using pipx (PyPI - Recommended)**
+**Using pipx (PyPI - Recommended)**
 
 First, ensure you have pipx installed:
 
@@ -34,16 +34,6 @@ Then install merobox:
 ```bash
 # Install from PyPI using pipx
 pipx install merobox
-
-# Verify installation
-merobox --version
-```
-
-**Option 2: Using Homebrew (macOS)**
-
-```bash
-# Install via Homebrew
-brew install merobox
 
 # Verify installation
 merobox --version

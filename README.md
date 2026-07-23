@@ -14,12 +14,6 @@ A Python CLI for managing Calimero nodes (Docker or native) and orchestrating YA
 pipx install merobox
 ```
 
-**Homebrew:**
-
-```bash
-brew install merobox
-```
-
 **From source:**
 
 ```bash
