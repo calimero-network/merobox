@@ -38,6 +38,7 @@ from merobox.commands.bootstrap.steps import (
     DeleteGroupStep,
     DeleteNamespaceStep,
     DetachContextFromGroupStep,
+    DownloadBlobStep,
     ExecuteStep,
     GetApplicationStep,
     GetCascadeStatusStep,
@@ -2184,6 +2185,8 @@ class WorkflowExecutor:
             return GetProposalApproversStep(step_config, **common_kwargs)
         elif step_type == "upload_blob":
             return UploadBlobStep(step_config, **common_kwargs)
+        elif step_type == "download_blob":
+            return DownloadBlobStep(step_config, **common_kwargs)
         elif step_type == "delete_blob_on_disk":
             return DeleteBlobOnDiskStep(step_config, **common_kwargs)
         elif step_type == "delete_blob":

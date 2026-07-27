@@ -110,6 +110,7 @@ VALID_STEP_TYPES = frozenset(
         "list_proposals",
         "get_proposal_approvers",
         "upload_blob",
+        "download_blob",
         "delete_blob_on_disk",
         "delete_blob",
         "get_application",
@@ -717,6 +718,31 @@ class UploadBlobStep(BaseStepConfig):
     node: str = Field(..., description="Target node")
     file_path: str = Field(..., description="Path to the blob file")
     context_id: Optional[str] = Field(None, description="Context ID (optional)")
+
+
+class DownloadBlobStep(BaseStepConfig):
+    """Configuration for download_blob step."""
+
+    type: Literal["download_blob"] = "download_blob"
+    node: str = Field(..., description="Target node")
+    blob_id: str = Field(..., description="Base58 blob id to download")
+    context_id: Optional[str] = Field(
+        None,
+        description=(
+            "Context ID (optional). Set it to exercise network discovery — the "
+            "node then fetches from a peer that announced the blob instead of "
+            "only reading local storage."
+        ),
+    )
+    output_path: Optional[str] = Field(
+        None, description="Write the downloaded bytes here (optional)"
+    )
+    expected_size: Optional[int] = Field(
+        None, description="Fail the step unless exactly this many bytes arrive"
+    )
+    expected_sha256: Optional[str] = Field(
+        None, description="Fail the step unless the bytes hash to this hex sha256"
+    )
 
 
 class DeleteBlobOnDiskStepConfig(BaseStepConfig):
@@ -1553,6 +1579,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "list_proposals": ListProposalsStep,
     "get_proposal_approvers": GetProposalApproversStep,
     "upload_blob": UploadBlobStep,
+    "download_blob": DownloadBlobStep,
     "delete_blob_on_disk": DeleteBlobOnDiskStepConfig,
     "delete_blob": DeleteBlobStepConfig,
     "get_application": GetApplicationStepConfig,

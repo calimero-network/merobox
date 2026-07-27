@@ -598,6 +598,31 @@ Upload files to blob storage in workflows.
     blob_size: "size"
 ```
 
+#### 11b. Blob Download Step
+
+Download a blob and assert what actually arrived. Pass `context_id` to exercise
+**network discovery** — the node then fetches from a peer that announced the
+blob instead of only reading local storage, which is the only way a workflow
+covers the cross-node blob path (announce -> DHT provider lookup -> signed
+member request -> chunked transfer).
+
+```yaml
+- type: download_blob
+  node: node-2 # a DIFFERENT node than the uploader
+  blob_id: "{{blob_id}}"
+  context_id: "{{context_id}}" # Optional; set it to force peer discovery
+  expected_size: "{{blob_size}}" # Optional; fails the step on a short read
+  expected_sha256: "abc123..." # Optional; fails the step on corrupt bytes
+  output_path: ./out/blob.bin # Optional
+  outputs:
+    got_size: "size"
+    got_hash: "sha256"
+```
+
+Reading metadata on the second node (e.g. `list_files`) does **not** prove the
+bytes replicated — it only reads CRDT state. Use this step with `expected_size`
+or `expected_sha256` to assert delivery.
+
 #### 12. Invite Open Step
 
 Create open invitations for contexts (allows anyone to join without prior approval).
@@ -1255,8 +1280,8 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
 install_application, create_context, create_identity, join_context, call, wait,
-repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test,
-stop_node, start_node
+repeat, script, assert, json_assert, upload_blob, download_blob, invite_open, join_open,
+fuzzy_test, stop_node, start_node
 
 # Workflow configuration options
 auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image,
