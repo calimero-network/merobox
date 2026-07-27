@@ -7,8 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.44] - 2026-07-27
+
 ### Added
 
+- **New `download_blob` workflow step.** `upload_blob` had no counterpart, so a
+  workflow could put a blob on one node and read its *metadata* elsewhere but
+  never assert that the blob's **bytes** reached another node — the whole
+  cross-node path (announce → DHT provider lookup → signed member request →
+  chunked transfer) went unexercised. That gap is how blob authorization broke in
+  core for every namespace-backed context without a single workflow turning red
+  (calimero-network/core#3317). The step wraps the `download_blob` the client
+  already exposed via `merobox blob download`:
+
+  ```yaml
+  - type: download_blob
+    node: node-2 # a DIFFERENT node than the uploader
+    blob_id: "{{blob_id}}"
+    context_id: "{{context_id}}" # set it to force peer discovery
+    expected_size: "{{blob_size}}" # fails the step on a short read
+    expected_sha256: "abc123..." # fails the step on corrupt bytes
+    output_path: ./out/blob.bin
+    outputs:
+      got_size: "size"
+      got_hash: "sha256"
+  ```
+
+  `expected_size`/`expected_sha256` are checked **before** variables are
+  exported, so a truncated or corrupt download cannot be laundered into a
+  passing later `assert`.
 - **`download_blob` negative control**: the step now honours
   `expected_failure: true`. This is what makes a cross-node assertion mean
   anything — blobs are content-addressed, so a node already holding identical
@@ -77,6 +104,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in docker mode (`merod:edge` = master) while still passing in binary mode (the
   released merod predates the change). Both sides now declare the same
   `state_version`, which core resolves as a code-only hop.
+
+### Removed
+
+- **APT / `.deb` packaging is gone — install from PyPI.** The apt repo was served
+  from this repo's GitHub Pages deploy, which the Starlight docs site now
+  occupies, so `gpg.key` and `dists/**` started 404ing and every
+  `apt install merobox` consumer broke (notably core's e2e, failing repo-wide at
+  its setup step on curl exit 22). Use `pipx install merobox` or the release
+  binaries. (#303)
+- **Homebrew install path dropped.** The tap formula was pinned to 0.1.23 against
+  a current 0.6.4x, its asset naming no longer matched what `release.yml`
+  produces, and nothing bumped it on release — it could not install a working
+  merobox. `pipx` (PyPI) is the single documented path. (#305)
+
+### Changed
+
+- Documentation site migrated to Starlight, with a Get Started track, an examples
+  gallery, recipes, a pytest tutorial and animated sequence diagrams on the flow
+  pages. (#298, #299, #300, #301, #302)
+
+### Internal
+
+- TEE coverage restored in CI via a mock-attestation merod build — the ten
+  `tee-*.yml` scenarios run natively against a merod built with
+  `--features mock-attestation`, since neither the release binary nor
+  `merod:edge` carries that default-off feature. (#295, #297)
+- New `snapshot-finalize-regression-3252.yml` convergence regression guard. (#293)
 
 ## [0.6.41] - 2026-07-05
 
