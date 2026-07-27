@@ -10,11 +10,13 @@ from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogPresentStep,
 )
 from merobox.commands.bootstrap.steps.assertion import AssertStep
+from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.delete_blob import (
     DeleteBlobOnDiskStep,
     DeleteBlobStep,
 )
+from merobox.commands.bootstrap.steps.download_blob import DownloadBlobStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
@@ -33,6 +35,9 @@ from merobox.commands.bootstrap.steps.group_management import (
     DeleteNamespaceStep,
     GetGroupInfoStep,
     GetMemberCapabilitiesStep,
+    LeaveContextStep,
+    LeaveGroupStep,
+    LeaveNamespaceStep,
     ListGroupContextsStep,
     ListGroupMembersStep,
     RemoveGroupMembersStep,
@@ -371,6 +376,16 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = HealPeersStep
         elif step_type == "inject_network_fault":
             step_class = InjectNetworkFaultStep
+        elif step_type == "leave_context":
+            step_class = LeaveContextStep
+        elif step_type == "leave_group":
+            step_class = LeaveGroupStep
+        elif step_type == "leave_namespace":
+            step_class = LeaveNamespaceStep
+        elif step_type == "upload_blob":
+            step_class = UploadBlobStep
+        elif step_type == "download_blob":
+            step_class = DownloadBlobStep
         elif step_type == "delete_blob_on_disk":
             step_class = DeleteBlobOnDiskStep
         elif step_type == "delete_blob":

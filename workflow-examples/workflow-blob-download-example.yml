@@ -1,0 +1,128 @@
+name: Blob Download Example Workflow
+description: >
+  Exercises the `download_blob` step's contract on one node: bytes come back,
+  size and sha256 assertions bite, `output_path` writes the file, and a
+  nonexistent blob id fails as expected. Single-node on purpose — the cross-node
+  path lives in workflow-blob-cross-node-download-example.yml, which needs a
+  merod carrying calimero-network/core#3317.
+
+force_pull_image: true
+
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  - name: Install Blobs Application
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/blobs.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace
+    type: create_namespace
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Context
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
+    outputs:
+      context_id: contextId
+
+  - name: Assert context created
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+
+  # ── The blob whose bytes we round-trip ──────────────────────────────────
+  - name: Upload PDF to Blob Storage
+    type: upload_blob
+    node: calimero-node-1
+    file_path: workflow-examples/blob-test-files/sample.pdf
+    context_id: "{{context_id}}"
+    outputs:
+      pdf_blob_id: blob_id
+      pdf_blob_size: size
+
+  # `expected_size` is checked before any variable is exported, so a truncated
+  # read cannot be laundered into a passing `assert` further down.
+  - name: Download PDF and assert its size
+    type: download_blob
+    node: calimero-node-1
+    blob_id: "{{pdf_blob_id}}"
+    expected_size: "{{pdf_blob_size}}"
+    outputs:
+      pdf_downloaded_size: size
+      pdf_downloaded_sha256: sha256
+
+  - name: Assert the round-trip reported real bytes
+    type: assert
+    statements:
+      - "equal({{pdf_downloaded_size}}, {{pdf_blob_size}})"
+      - "is_set({{pdf_downloaded_sha256}})"
+
+  # Re-downloading with the hash from the first read pins content integrity:
+  # same blob id must always yield the same bytes.
+  - name: Re-download PDF and assert the hash is stable
+    type: download_blob
+    node: calimero-node-1
+    blob_id: "{{pdf_blob_id}}"
+    expected_size: "{{pdf_blob_size}}"
+    expected_sha256: "{{pdf_downloaded_sha256}}"
+
+  # ── A second, differently-sized blob ───────────────────────────────────
+  # Two sizes through the same code path catch a step that hardcodes or
+  # caches a length; the sha256 assertions catch bytes crossing over.
+  - name: Upload PNG to Blob Storage
+    type: upload_blob
+    node: calimero-node-1
+    file_path: workflow-examples/blob-test-files/screenshot.png
+    context_id: "{{context_id}}"
+    outputs:
+      png_blob_id: blob_id
+      png_blob_size: size
+
+  - name: Download PNG to a file
+    type: download_blob
+    node: calimero-node-1
+    blob_id: "{{png_blob_id}}"
+    expected_size: "{{png_blob_size}}"
+    output_path: ./data/blob-download-example/screenshot.png
+    outputs:
+      png_downloaded_sha256: sha256
+
+  - name: Assert the two blobs are distinct
+    type: assert
+    statements:
+      - "not_equal({{png_blob_id}}, {{pdf_blob_id}})"
+      - "not_equal({{png_downloaded_sha256}}, {{pdf_downloaded_sha256}})"
+
+  # ── Negative controls ──────────────────────────────────────────────────
+  # A blob id that was never uploaded must fail. Without this, a step that
+  # silently returned empty bytes would look like a pass everywhere above.
+  - name: Downloading an unknown blob id fails
+    type: download_blob
+    node: calimero-node-1
+    blob_id: "2Bp3xKmVn9QsRtUvWxYzAbCdEfGhJkLmNpQrStUvWxYz"
+    expected_failure: true
+
+  # A wrong expected_size must fail too — proving the assertion is live and not
+  # quietly skipped when the download itself succeeds.
+  - name: A wrong expected_size fails the step
+    type: download_blob
+    node: calimero-node-1
+    blob_id: "{{pdf_blob_id}}"
+    expected_size: 999999999
+    expected_failure: true
+
+stop_all_nodes: false
+restart: false
+wait_timeout: 60

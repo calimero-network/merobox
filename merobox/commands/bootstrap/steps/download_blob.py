@@ -10,6 +10,12 @@ without a single workflow turning red.
 
 Pass `context_id` to exercise network discovery: the node fetches from a peer
 that announced the blob instead of only reading local storage.
+
+Pass `expected_failure: true` for the negative control that makes a cross-node
+assertion meaningful: run it on the fetching node *without* `context_id` first,
+so the workflow proves the bytes were not already in local storage. Blobs are
+content-addressed — a node holding identical bytes serves them locally and the
+network path is never exercised.
 """
 
 import hashlib
@@ -69,6 +75,22 @@ class DownloadBlobStep(BaseStep):
             ),
         ]
 
+    def _failed(self, reason: str) -> bool:
+        """Report a retrieval failure, honouring `expected_failure`.
+
+        A negative control — "these bytes must NOT be retrievable here" — is how
+        a workflow proves the node did not already hold the blob before the
+        cross-node fetch under test. Without it, a passing fetch says nothing:
+        blobs are content-addressed, so a node that happens to hold identical
+        bytes serves them from local storage and the network path is never
+        touched.
+        """
+        if self._is_expected_failure():
+            self._report_expected_failure(reason)
+            return True
+        console.print(f"[red]✗ {reason}[/red]")
+        return False
+
     @with_retry(config=NETWORK_RETRY_CONFIG)
     async def _download_blob_from_node(
         self,
@@ -86,10 +108,19 @@ class DownloadBlobStep(BaseStep):
         try:
             client = get_client_for_rpc_url(rpc_url, node_name=node_name)
             blob_data = client.download_blob(blob_id, context_id)
-            return ok(blob_data)
+        except NETWORK_RETRY_CONFIG.exceptions:
+            # Re-raise the transient faults so `with_retry` can actually see
+            # them. Converting these to a `fail()` dict here would make the
+            # decorator dead code: it only retries what escapes the call, so a
+            # single connection blip on the very cross-node fetch this step
+            # exists to exercise would fail the step outright. Matching on the
+            # config's own tuple keeps the two from drifting apart. After the
+            # last attempt `with_retry` re-raises, and `execute` converts it.
+            raise
         except Exception as e:
             console.print(f"[red]✗ Blob download failed: {type(e).__name__}: {e}[/red]")
             return fail("download_blob failed", error=e)
+        return ok(blob_data)
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -135,19 +166,26 @@ class DownloadBlobStep(BaseStep):
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
-        result = await self._download_blob_from_node(
-            rpc_url, blob_id, context_id, node_name=client_node_name
-        )
+        try:
+            result = await self._download_blob_from_node(
+                rpc_url, blob_id, context_id, node_name=client_node_name
+            )
+        except Exception as e:
+            # `with_retry` re-raises the last transient fault once every attempt
+            # is spent. Land it as a normal step failure instead of a traceback
+            # that aborts the whole run.
+            console.print(
+                f"[red]✗ Blob download failed after retries: "
+                f"{type(e).__name__}: {e}[/red]"
+            )
+            result = fail("download_blob failed", error=e)
 
         if not result["success"]:
-            return False
+            return self._failed(str(result.get("error", "Unknown error")))
 
         blob_data = result["data"]
         if not isinstance(blob_data, (bytes, bytearray)):
-            console.print(
-                f"[red]✗ Expected blob bytes, got {type(blob_data).__name__}[/red]"
-            )
-            return False
+            return self._failed(f"Expected blob bytes, got {type(blob_data).__name__}")
 
         blob_data = bytes(blob_data)
         size = len(blob_data)
@@ -164,24 +202,24 @@ class DownloadBlobStep(BaseStep):
             try:
                 expected_size = int(expected_size)
             except (TypeError, ValueError):
+                # A placeholder that never resolved is a workflow bug, not an
+                # expected failure — fail it even under `expected_failure`, or a
+                # typo'd `{{blob_size}}` would read as a passing negative test.
                 console.print(
                     f"[red]✗ 'expected_size' did not resolve to an integer: "
                     f"{expected_size!r}[/red]"
                 )
                 return False
             if size != expected_size:
-                console.print(
-                    f"[red]✗ Size mismatch: expected {expected_size} bytes, "
-                    f"got {size}[/red]"
+                return self._failed(
+                    f"Size mismatch: expected {expected_size} bytes, got {size}"
                 )
-                return False
             console.print(f"[green]✓ Size matches expected {expected_size}[/green]")
 
         if expected_sha256 and digest.lower() != expected_sha256.lower():
-            console.print(
-                f"[red]✗ sha256 mismatch: expected {expected_sha256}, got {digest}[/red]"
+            return self._failed(
+                f"sha256 mismatch: expected {expected_sha256}, got {digest}"
             )
-            return False
         if expected_sha256:
             console.print("[green]✓ sha256 matches expected[/green]")
 
@@ -200,5 +238,16 @@ class DownloadBlobStep(BaseStep):
         blob_info = {"blob_id": blob_id, "size": size, "sha256": digest}
         workflow_results[f"downloaded_blob_{node_name}"] = blob_info
         self._export_variables(blob_info, node_name, dynamic_values)
+
+        if self._is_expected_failure():
+            # Warn rather than hard-fail, matching every other step's contract.
+            # Worth spelling out for this one: a negative control that succeeds
+            # means the node already had the bytes, so any cross-node assertion
+            # after it is proving nothing.
+            console.print(
+                f"[yellow]⚠️  {blob_id} WAS retrievable on {node_name} — a "
+                f"following cross-node fetch cannot prove the network path[/yellow]"
+            )
+            self._report_unexpected_success()
 
         return True

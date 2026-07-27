@@ -7,8 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`download_blob` negative control**: the step now honours
+  `expected_failure: true`. This is what makes a cross-node assertion mean
+  anything — blobs are content-addressed, so a node already holding identical
+  bytes serves them locally and the network path is never touched. Run a
+  local-only read (no `context_id`) with `expected_failure: true` first, and only
+  then the real fetch. Unexpected success warns rather than fails, matching every
+  other step's contract, but says explicitly that the following fetch proves
+  nothing.
+- Two worked blob-transfer workflows:
+  `workflow-blob-download-example.yml` (single-node: the step's contract — size
+  and sha256 assertions bite, `output_path` writes, unknown blob id and wrong
+  `expected_size` both fail) and
+  `workflow-blob-cross-node-download-example.yml` (the full announce → provider
+  lookup → signed member request → chunked transfer path, two blob sizes, with
+  the negative control before each fetch). The cross-node one is **excluded from
+  both CI matrices** until merod carries calimero-network/core#3317 — that path
+  is broken for every namespace-backed context today, in both the released
+  binary and `merod:edge`.
+
 ### Fixed
 
+- **`bootstrap validate` rejected valid workflows**: five step types were
+  registered in `config.VALID_STEP_TYPES` but had no branch in
+  `validate/validator.py`, so `merobox bootstrap validate` failed them with "has
+  unknown type" — `upload_blob`, `download_blob`, `leave_context`, `leave_group`
+  and `leave_namespace`. Any workflow using `upload_blob` (including core's
+  `apps/blobs/workflows/blobs.yml`) could not be validated at all. A
+  parametrised drift guard now asserts every registered type dispatches, so this
+  cannot recur — it is the third time (`login`/`refresh`/`ws_*` in 0.6.33 were
+  the first).
+- **`download_blob` retry was dead code**: `_download_blob_from_node` is wrapped
+  in `@with_retry(NETWORK_RETRY_CONFIG)`, which only retries what escapes the
+  call, but its own `except Exception` converted connection and timeout errors
+  into a `fail()` dict. So a single transient blip on the very cross-node fetch
+  the step exists to exercise failed the step outright. Retryable faults now
+  propagate to the decorator; an exhausted retry lands as a normal red step
+  rather than a traceback that aborts the run.
 - **Upgrade workflows against merod master**: `build_res_wasm.sh` now embeds each
   app's state schema into its wasm as the `calimero_abi_v1` section (via
   `mero-abi embed`, after `build.sh` so wasm-opt cannot strip it), and the

@@ -614,6 +614,7 @@ member request -> chunked transfer).
   expected_size: "{{blob_size}}" # Optional; fails the step on a short read
   expected_sha256: "abc123..." # Optional; fails the step on corrupt bytes
   output_path: ./out/blob.bin # Optional
+  expected_failure: false # Optional; see the negative control below
   outputs:
     got_size: "size"
     got_hash: "sha256"
@@ -622,6 +623,33 @@ member request -> chunked transfer).
 Reading metadata on the second node (e.g. `list_files`) does **not** prove the
 bytes replicated — it only reads CRDT state. Use this step with `expected_size`
 or `expected_sha256` to assert delivery.
+
+**Always pair a cross-node fetch with a negative control.** Blobs are
+content-addressed, so a node that already holds identical bytes serves them from
+local storage and the network path is never touched — the positive assertion
+then proves nothing. Run a local-only read first (no `context_id`) with
+`expected_failure: true`, and only then the real fetch:
+
+```yaml
+# 1. Prove node-2 does not already have the bytes.
+- type: download_blob
+  node: node-2
+  blob_id: "{{blob_id}}"
+  expected_failure: true
+
+# 2. Now a success can only have come over the wire.
+- type: download_blob
+  node: node-2
+  blob_id: "{{blob_id}}"
+  context_id: "{{context_id}}"
+  expected_size: "{{blob_size}}"
+  expected_sha256: "{{source_sha256}}"
+```
+
+Worked examples: `workflow-examples/workflow-blob-download-example.yml`
+(single-node, the step's contract) and
+`workflow-examples/workflow-blob-cross-node-download-example.yml` (the full
+announce → provider lookup → signed request → transfer path).
 
 #### 12. Invite Open Step
 
