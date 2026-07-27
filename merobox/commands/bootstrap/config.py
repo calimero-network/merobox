@@ -737,8 +737,15 @@ class DownloadBlobStep(BaseStepConfig):
     output_path: Optional[str] = Field(
         None, description="Write the downloaded bytes here (optional)"
     )
-    expected_size: Optional[int] = Field(
-        None, description="Fail the step unless exactly this many bytes arrive"
+    expected_size: Optional[Union[int, str]] = Field(
+        None,
+        description=(
+            "Fail the step unless exactly this many bytes arrive. A placeholder "
+            "string is the normal form — `{{blob_size}}` threads the uploader's "
+            "reported size through — and is resolved at execute time, so this "
+            "must accept `str` as well as `int` or the schema gate rejects every "
+            "workflow that uses it."
+        ),
     )
     expected_sha256: Optional[str] = Field(
         None, description="Fail the step unless the bytes hash to this hex sha256"

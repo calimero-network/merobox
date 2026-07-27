@@ -28,6 +28,16 @@ from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
 from merobox.commands.utils import console
 
+# The only two shapes that legitimately mean "these bytes are not retrievable".
+# calimero-client-py's `download_blob` (src/client.rs) raises PyRuntimeError
+# ("Client error: ...") for anything the node refuses or cannot find, and
+# PyValueError for a malformed blob id. Everything else — TypeError,
+# AttributeError, a bad client signature — is a bug in the plumbing, and must
+# NOT be catchable here: converting it to a `fail()` would report a real defect
+# as an ordinary download failure and, worse, let `expected_failure: true`
+# swallow it as a passing negative control.
+_RETRIEVAL_ERRORS = (RuntimeError, ValueError)
+
 
 class DownloadBlobStep(BaseStep):
     """Download a blob and optionally assert its size / sha256 / saved copy."""
@@ -117,7 +127,9 @@ class DownloadBlobStep(BaseStep):
             # config's own tuple keeps the two from drifting apart. After the
             # last attempt `with_retry` re-raises, and `execute` converts it.
             raise
-        except Exception as e:
+        except _RETRIEVAL_ERRORS as e:
+            # A genuine "cannot retrieve" verdict. Anything outside this tuple is
+            # deliberately left to propagate — see _RETRIEVAL_ERRORS.
             console.print(f"[red]✗ Blob download failed: {type(e).__name__}: {e}[/red]")
             return fail("download_blob failed", error=e)
         return ok(blob_data)
@@ -170,10 +182,12 @@ class DownloadBlobStep(BaseStep):
             result = await self._download_blob_from_node(
                 rpc_url, blob_id, context_id, node_name=client_node_name
             )
-        except Exception as e:
+        except NETWORK_RETRY_CONFIG.exceptions as e:
             # `with_retry` re-raises the last transient fault once every attempt
-            # is spent. Land it as a normal step failure instead of a traceback
-            # that aborts the whole run.
+            # is spent, and that is the ONLY thing it can re-raise. Land it as a
+            # normal step failure instead of a traceback that aborts the whole
+            # run. Deliberately not `except Exception`: a programming error has
+            # to keep travelling so it surfaces as the bug it is.
             console.print(
                 f"[red]✗ Blob download failed after retries: "
                 f"{type(e).__name__}: {e}[/red]"

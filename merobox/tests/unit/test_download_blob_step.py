@@ -336,3 +336,71 @@ class TestDownloadBlobExpectedFailure:
         p1, p2, p3 = self._patched(step, client)
         with p1, p2, p3, pytest.raises(ValueError, match="must be a boolean"):
             _run(step.execute({}, {}))
+
+    def test_a_programming_error_is_not_swallowed_as_expected(self):
+        # The dangerous case: a TypeError from a bad client call must NOT read as
+        # "the blob wasn't retrievable". Silently passing here would hide a real
+        # defect behind a green negative control — the exact opposite of what
+        # this step is for.
+        step = DownloadBlobStep(self.config)
+        client = MagicMock()
+        client.download_blob.side_effect = TypeError("download_blob() got 3 args")
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3, pytest.raises(TypeError):
+            _run(step.execute({}, {}))
+
+
+class TestDownloadBlobErrorNarrowing:
+    """Only a real "cannot retrieve" verdict becomes a step failure.
+
+    calimero-client-py raises PyRuntimeError ("Client error: ...") for anything
+    the node refuses or cannot find and PyValueError for a malformed blob id
+    (src/client.rs). Catching wider than that turns plumbing bugs — TypeError,
+    AttributeError — into plausible-looking download failures.
+    """
+
+    def setup_method(self):
+        self.config = {"type": "download_blob", "node": "node-1", "blob_id": _BLOB}
+
+    def _patched(self, step, client):
+        return (
+            patch.object(
+                step,
+                "_resolve_node_for_client",
+                return_value=("http://localhost:1234", "node-1"),
+            ),
+            patch(f"{_MODULE}.get_client_for_rpc_url", return_value=client),
+            patch.object(step, "_resolve_dynamic_value", side_effect=lambda v, *_: v),
+        )
+
+    def _with(self, exc):
+        step = DownloadBlobStep(self.config)
+        client = MagicMock()
+        client.download_blob.side_effect = exc
+        return step, self._patched(step, client)
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            RuntimeError("Client error: Blob not found locally or in network"),
+            ValueError("Invalid blob ID 'xxx': bad base58"),
+        ],
+        ids=["runtime-client-error", "invalid-blob-id"],
+    )
+    def test_retrieval_errors_become_a_red_step(self, exc):
+        step, (p1, p2, p3) = self._with(exc)
+        with p1, p2, p3:
+            assert _run(step.execute({}, {})) is False
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TypeError("unexpected keyword argument"),
+            AttributeError("'NoneType' object has no attribute 'download_blob'"),
+        ],
+        ids=["type-error", "attribute-error"],
+    )
+    def test_programming_errors_propagate(self, exc):
+        step, (p1, p2, p3) = self._with(exc)
+        with p1, p2, p3, pytest.raises(type(exc)):
+            _run(step.execute({}, {}))

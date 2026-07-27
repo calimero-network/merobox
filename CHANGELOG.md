@@ -30,6 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`expected_size` placeholders were rejected before the step ever ran**:
+  `DownloadBlobStepConfig.expected_size` was typed `Optional[int]`, but the
+  documented form is `expected_size: "{{blob_size}}"` — resolved at execute time,
+  which is the whole point of threading the uploader's reported size through.
+  Pydantic runs as a gate in `bootstrap run`, so every workflow using the
+  documented pattern died with "Input should be a valid integer" before a single
+  step executed. Now `Optional[Union[int, str]]`, matching the executor. A new
+  test validates **every** shipped workflow against that same gate, so a
+  model/executor mismatch is caught in half a second instead of four minutes into
+  a CI job.
+- **`download_blob` caught too much**: the fallback `except Exception` turned any
+  error into a download failure — including plumbing bugs like `TypeError` or
+  `AttributeError`, which with `expected_failure: true` would have been swallowed
+  as a *passing* negative control, hiding a real defect behind green. It now
+  catches only what genuinely means "not retrievable": `RuntimeError` (what
+  calimero-client-py raises as `Client error: ...` for anything refused or not
+  found) and `ValueError` (malformed blob id). Everything else propagates.
 - **`bootstrap validate` rejected valid workflows**: five step types were
   registered in `config.VALID_STEP_TYPES` but had no branch in
   `validate/validator.py`, so `merobox bootstrap validate` failed them with "has
