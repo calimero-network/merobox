@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Upgrade workflows against merod master**: `build_res_wasm.sh` now embeds each
+  app's state schema into its wasm as the `calimero_abi_v1` section (via
+  `mero-abi embed`, after `build.sh` so wasm-opt cannot strip it), and the
+  checked-in `kv_store_v2.wasm` fixture carries kv-store's schema. core#3286 made
+  an upgrade whose target build has no embedded ABI a hard refusal ("refusing to
+  swap bytecode without migration evidence"), and core's decision table needs
+  *both* sides — so `group-upgrade-example` and `cascade-namespace-example` failed
+  in docker mode (`merod:edge` = master) while still passing in binary mode (the
+  released merod predates the change). Both sides now declare the same
+  `state_version`, which core resolves as a code-only hop.
+
 ## [0.6.41] - 2026-07-05
 
 ### Added
