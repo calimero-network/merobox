@@ -16,7 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   local-only read (no `context_id`) with `expected_failure: true` first, and only
   then the real fetch. Unexpected success warns rather than fails, matching every
   other step's contract, but says explicitly that the following fetch proves
-  nothing.
+  nothing. The flag covers exactly one outcome — *could not retrieve*. A size,
+  sha256 or response-type mismatch fails **unconditionally**: bytes did arrive,
+  so the control's premise is already false, and excusing it would launder a
+  truncated transfer, a corrupt transfer, or a client that stopped returning
+  bytes into a green step.
 - Two worked blob-transfer workflows:
   `workflow-blob-download-example.yml` (single-node: the step's contract — size
   and sha256 assertions bite, `output_path` writes, unknown blob id and wrong

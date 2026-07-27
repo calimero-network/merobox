@@ -630,8 +630,15 @@ local storage and the network path is never touched — the positive assertion
 then proves nothing. Run a local-only read first (no `context_id`) with
 `expected_failure: true`, and only then the real fetch:
 
+`expected_failure` covers exactly one outcome: **the blob could not be
+retrieved**. It does not excuse a `expected_size` / `expected_sha256` /
+response-type mismatch — if a body came back at all, the control's premise is
+already false, so those fail unconditionally. Without that split, a truncated or
+corrupt transfer would read as a passing negative test.
+
 ```yaml
-# 1. Prove node-2 does not already have the bytes.
+# 1. Prove node-2 does not already have the bytes. No size/sha here: this step
+#    asserts that nothing arrives, not that something wrong arrives.
 - type: download_blob
   node: node-2
   blob_id: "{{blob_id}}"

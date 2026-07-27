@@ -299,13 +299,33 @@ class TestDownloadBlobExpectedFailure:
         with p1, p2, p3:
             assert _run(step.execute({}, {})) is True
 
-    def test_truncated_transfer_passes_as_the_expected_failure(self):
+    def test_truncated_transfer_is_NOT_excused_by_expected_failure(self):
+        # The bytes arrived, so the control's premise ("node has nothing") is
+        # already false. Passing this would launder a truncated transfer.
         step = DownloadBlobStep({**self.config, "expected_size": len(_PAYLOAD) + 99})
         client = MagicMock()
         client.download_blob.return_value = _PAYLOAD
         p1, p2, p3 = self._patched(step, client)
         with p1, p2, p3:
-            assert _run(step.execute({}, {})) is True
+            assert _run(step.execute({}, {})) is False
+
+    def test_corrupt_transfer_is_NOT_excused_by_expected_failure(self):
+        step = DownloadBlobStep({**self.config, "expected_sha256": "ab" * 32})
+        client = MagicMock()
+        client.download_blob.return_value = _PAYLOAD
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            assert _run(step.execute({}, {})) is False
+
+    def test_wrong_response_type_is_NOT_excused_by_expected_failure(self):
+        # A client that stops returning bytes is a plumbing regression. The
+        # module docstring promises it is never swallowed; this holds it to that.
+        step = DownloadBlobStep(self.config)
+        client = MagicMock()
+        client.download_blob.return_value = {"not": "bytes"}
+        p1, p2, p3 = self._patched(step, client)
+        with p1, p2, p3:
+            assert _run(step.execute({}, {})) is False
 
     def test_unexpected_success_still_returns_true_and_exports(self):
         # Warn-only, matching every other step's `expected_failure` contract —

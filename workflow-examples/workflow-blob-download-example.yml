@@ -114,14 +114,11 @@ steps:
     blob_id: "2Bp3xKmVn9QsRtUvWxYzAbCdEfGhJkLmNpQrStUvWxYz"
     expected_failure: true
 
-  # A wrong expected_size must fail too — proving the assertion is live and not
-  # quietly skipped when the download itself succeeds.
-  - name: A wrong expected_size fails the step
-    type: download_blob
-    node: calimero-node-1
-    blob_id: "{{pdf_blob_id}}"
-    expected_size: 999999999
-    expected_failure: true
+  # NB: there is deliberately no "wrong expected_size + expected_failure" step
+  # here. `expected_failure` covers only "could not retrieve"; a size or sha
+  # mismatch means bytes DID arrive, so it fails unconditionally by design —
+  # otherwise a truncated transfer would read as a passing negative test. The
+  # size/sha assertions are covered in merobox/tests/unit/test_download_blob_step.py.
 
 stop_all_nodes: false
 restart: false

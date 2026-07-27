@@ -16,6 +16,12 @@ assertion meaningful: run it on the fetching node *without* `context_id` first,
 so the workflow proves the bytes were not already in local storage. Blobs are
 content-addressed — a node holding identical bytes serves them locally and the
 network path is never exercised.
+
+`expected_failure` covers exactly one outcome: the blob could not be retrieved.
+It does NOT excuse a size, sha256 or response-type mismatch — if a body came
+back at all, the control's premise is already false and the step fails loudly.
+Otherwise a truncated transfer, a corrupt transfer, or a client that stopped
+returning bytes would each read as a passing negative test.
 """
 
 import hashlib
@@ -85,8 +91,8 @@ class DownloadBlobStep(BaseStep):
             ),
         ]
 
-    def _failed(self, reason: str) -> bool:
-        """Report a retrieval failure, honouring `expected_failure`.
+    def _retrieval_failed(self, reason: str) -> bool:
+        """The blob could not be retrieved — the ONE outcome `expected_failure` covers.
 
         A negative control — "these bytes must NOT be retrievable here" — is how
         a workflow proves the node did not already hold the blob before the
@@ -99,6 +105,25 @@ class DownloadBlobStep(BaseStep):
             self._report_expected_failure(reason)
             return True
         console.print(f"[red]✗ {reason}[/red]")
+        return False
+
+    def _assertion_failed(self, reason: str) -> bool:
+        """Bytes arrived but were wrong. Never an "expected failure".
+
+        A negative control asserts that NOTHING comes back. If a body did arrive
+        and merely failed a size/sha/type check, the control's premise is already
+        false — the fetch worked. Reporting that as the expected failure would
+        launder three separate real defects into a green step: a truncated
+        transfer, a corrupt transfer, and a client that stopped returning bytes.
+        So these fail unconditionally, the same way `_is_connectivity_error`
+        keeps the auth steps' negative tests honest.
+        """
+        console.print(f"[red]✗ {reason}[/red]")
+        if self._is_expected_failure():
+            console.print(
+                "[red]  ...and `expected_failure` does not excuse it: the bytes DID "
+                "arrive, so this is not the failure a negative control asserts[/red]"
+            )
         return False
 
     @with_retry(config=NETWORK_RETRY_CONFIG)
@@ -195,11 +220,13 @@ class DownloadBlobStep(BaseStep):
             result = fail("download_blob failed", error=e)
 
         if not result["success"]:
-            return self._failed(str(result.get("error", "Unknown error")))
+            return self._retrieval_failed(str(result.get("error", "Unknown error")))
 
         blob_data = result["data"]
         if not isinstance(blob_data, (bytes, bytearray)):
-            return self._failed(f"Expected blob bytes, got {type(blob_data).__name__}")
+            return self._assertion_failed(
+                f"Expected blob bytes, got {type(blob_data).__name__}"
+            )
 
         blob_data = bytes(blob_data)
         size = len(blob_data)
@@ -225,13 +252,13 @@ class DownloadBlobStep(BaseStep):
                 )
                 return False
             if size != expected_size:
-                return self._failed(
+                return self._assertion_failed(
                     f"Size mismatch: expected {expected_size} bytes, got {size}"
                 )
             console.print(f"[green]✓ Size matches expected {expected_size}[/green]")
 
         if expected_sha256 and digest.lower() != expected_sha256.lower():
-            return self._failed(
+            return self._assertion_failed(
                 f"sha256 mismatch: expected {expected_sha256}, got {digest}"
             )
         if expected_sha256:
