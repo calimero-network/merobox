@@ -1,0 +1,202 @@
+name: Blob Cross-Node Download Example Workflow
+description: >
+  Asserts that a blob's BYTES reach a second node: announce -> DHT provider
+  lookup -> signed member request -> chunked transfer. This is the path that
+  broke for every namespace-backed context (calimero-network/core#3317) while
+  every workflow stayed green, because the only second-node assertion anyone
+  could write was `list_files`, which reads CRDT metadata and replicates
+  independently of the blob.
+
+  NOT IN CI YET. Needs a merod carrying core#3317: `find_owned_identity` only
+  accepted a ContextIdentity row with its own private_key, but under the group
+  model a member's row is a keyless marker and the signing key lives with the
+  node's namespace identity. So the announce was skipped and every outgoing blob
+  request went unsigned -> the serving node answered `found: false`. Both CI
+  modes would fail today: binary mode pulls the latest core release (rc.18,
+  predates the fix) and docker mode runs merod:edge (master, not merged yet).
+  Re-add to both matrices in .github/workflows/ci.yml once merod:edge carries it.
+
+  Run locally against a patched merod:
+    merobox bootstrap run workflow-examples/workflow-blob-cross-node-download-example.yml \
+      --image merod:local
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+
+steps:
+  - name: Install Blobs Application on Node 1
+    type: install_application
+    node: calimero-node-1
+    path: workflow-examples/res/blobs.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  # A namespace-backed context is the shape that was broken — and the only shape
+  # `context create` accepts, since it requires --group-id.
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Context on Node 1
+    type: create_context
+    node: calimero-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  - name: Create Identity on Node 2
+    type: create_identity
+    node: calimero-node-2
+    outputs:
+      node2_public_key: publicKey
+
+  - name: Invite Node 2
+    type: create_namespace_invitation
+    node: calimero-node-1
+    namespace_id: "{{namespace_id}}"
+    outputs:
+      invitation: invitation
+
+  - name: Node 2 joins the namespace
+    type: join_namespace
+    node: calimero-node-2
+    namespace_id: "{{namespace_id}}"
+    invitation: "{{invitation}}"
+    outputs:
+      node2_member_identity: memberIdentity
+
+  - name: Assert both members exist
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+      - "is_set({{node2_member_identity}})"
+
+  # ── Upload + announce on node 1 ────────────────────────────────────────
+  # `context_id` is what makes the node publish a provider record for the blob.
+  - name: Upload PDF on Node 1
+    type: upload_blob
+    node: calimero-node-1
+    file_path: workflow-examples/blob-test-files/sample.pdf
+    context_id: "{{context_id}}"
+    outputs:
+      blob_id: blob_id
+      blob_size: size
+
+  # Read it back locally to get the authoritative hash of what node 1 holds.
+  # Comparing node 2's bytes against THIS (rather than a hardcoded digest) keeps
+  # the workflow honest if the fixture ever changes.
+  - name: Read the blob locally on Node 1
+    type: download_blob
+    node: calimero-node-1
+    blob_id: "{{blob_id}}"
+    expected_size: "{{blob_size}}"
+    outputs:
+      source_sha256: sha256
+
+  # ── The negative control, before anything can populate node 2 ──────────
+  # Blobs are content-addressed: a node already holding identical bytes serves
+  # them from local storage and never touches the network. Without this step, a
+  # passing cross-node fetch below would prove nothing at all.
+  - name: Node 2 does not have the bytes yet (local-only read must fail)
+    type: download_blob
+    node: calimero-node-2
+    blob_id: "{{blob_id}}"
+    expected_failure: true
+
+  - name: Wait for the announce to propagate
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
+
+  # ── The assertion that was impossible before this step existed ─────────
+  # With `context_id` set, node 2 may discover a peer that announced the blob
+  # and request it. Size and sha256 are both checked before any variable is
+  # exported, so a truncated or corrupt transfer cannot pass.
+  - name: Node 2 fetches the blob over the network
+    type: download_blob
+    node: calimero-node-2
+    blob_id: "{{blob_id}}"
+    context_id: "{{context_id}}"
+    expected_size: "{{blob_size}}"
+    expected_sha256: "{{source_sha256}}"
+    output_path: ./data/blob-cross-node/received.pdf
+    outputs:
+      received_size: size
+      received_sha256: sha256
+
+  - name: Assert node 2's bytes are byte-identical to node 1's
+    type: assert
+    statements:
+      - "equal({{received_size}}, {{blob_size}})"
+      - "equal({{received_sha256}}, {{source_sha256}})"
+
+  # ── A second blob, different size, same path ───────────────────────────
+  # One size passing can be luck in a chunked transfer; two sizes through the
+  # same announce -> request -> transfer path is a much narrower coincidence.
+  - name: Upload PNG on Node 1
+    type: upload_blob
+    node: calimero-node-1
+    file_path: workflow-examples/blob-test-files/screenshot.png
+    context_id: "{{context_id}}"
+    outputs:
+      png_blob_id: blob_id
+      png_blob_size: size
+
+  - name: Read the PNG locally on Node 1
+    type: download_blob
+    node: calimero-node-1
+    blob_id: "{{png_blob_id}}"
+    expected_size: "{{png_blob_size}}"
+    outputs:
+      png_source_sha256: sha256
+
+  - name: Node 2 does not have the PNG yet
+    type: download_blob
+    node: calimero-node-2
+    blob_id: "{{png_blob_id}}"
+    expected_failure: true
+
+  - name: Wait for the PNG announce
+    type: wait_for_sync
+    context_id: "{{context_id}}"
+    nodes:
+      - calimero-node-1
+      - calimero-node-2
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
+
+  - name: Node 2 fetches the PNG over the network
+    type: download_blob
+    node: calimero-node-2
+    blob_id: "{{png_blob_id}}"
+    context_id: "{{context_id}}"
+    expected_size: "{{png_blob_size}}"
+    expected_sha256: "{{png_source_sha256}}"
+    outputs:
+      png_received_sha256: sha256
+
+  - name: Assert the two transfers delivered different, correct bytes
+    type: assert
+    statements:
+      - "equal({{png_received_sha256}}, {{png_source_sha256}})"
+      - "not_equal({{png_received_sha256}}, {{received_sha256}})"
+
+stop_all_nodes: false
+restart: false
+wait_timeout: 120

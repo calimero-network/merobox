@@ -598,6 +598,66 @@ Upload files to blob storage in workflows.
     blob_size: "size"
 ```
 
+#### 11b. Blob Download Step
+
+Download a blob and assert what actually arrived. Pass `context_id` to exercise
+**network discovery** — the node then fetches from a peer that announced the
+blob instead of only reading local storage, which is the only way a workflow
+covers the cross-node blob path (announce -> DHT provider lookup -> signed
+member request -> chunked transfer).
+
+```yaml
+- type: download_blob
+  node: node-2 # a DIFFERENT node than the uploader
+  blob_id: "{{blob_id}}"
+  context_id: "{{context_id}}" # Optional; set it to force peer discovery
+  expected_size: "{{blob_size}}" # Optional; fails the step on a short read
+  expected_sha256: "abc123..." # Optional; fails the step on corrupt bytes
+  output_path: ./out/blob.bin # Optional
+  expected_failure: false # Optional; see the negative control below
+  outputs:
+    got_size: "size"
+    got_hash: "sha256"
+```
+
+Reading metadata on the second node (e.g. `list_files`) does **not** prove the
+bytes replicated — it only reads CRDT state. Use this step with `expected_size`
+or `expected_sha256` to assert delivery.
+
+**Always pair a cross-node fetch with a negative control.** Blobs are
+content-addressed, so a node that already holds identical bytes serves them from
+local storage and the network path is never touched — the positive assertion
+then proves nothing. Run a local-only read first (no `context_id`) with
+`expected_failure: true`, and only then the real fetch:
+
+`expected_failure` covers exactly one outcome: **the blob could not be
+retrieved**. It does not excuse a `expected_size` / `expected_sha256` /
+response-type mismatch — if a body came back at all, the control's premise is
+already false, so those fail unconditionally. Without that split, a truncated or
+corrupt transfer would read as a passing negative test.
+
+```yaml
+# 1. Prove node-2 does not already have the bytes. No size/sha here: this step
+#    asserts that nothing arrives, not that something wrong arrives.
+- type: download_blob
+  node: node-2
+  blob_id: "{{blob_id}}"
+  expected_failure: true
+
+# 2. Now a success can only have come over the wire.
+- type: download_blob
+  node: node-2
+  blob_id: "{{blob_id}}"
+  context_id: "{{context_id}}"
+  expected_size: "{{blob_size}}"
+  expected_sha256: "{{source_sha256}}"
+```
+
+Worked examples: `workflow-examples/workflow-blob-download-example.yml`
+(single-node, the step's contract) and
+`workflow-examples/workflow-blob-cross-node-download-example.yml` (the full
+announce → provider lookup → signed request → transfer path).
+
 #### 12. Invite Open Step
 
 Create open invitations for contexts (allows anyone to join without prior approval).
@@ -1255,8 +1315,8 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
 install_application, create_context, create_identity, join_context, call, wait,
-repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test,
-stop_node, start_node
+repeat, script, assert, json_assert, upload_blob, download_blob, invite_open, join_open,
+fuzzy_test, stop_node, start_node
 
 # Workflow configuration options
 auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image,

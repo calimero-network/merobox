@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`download_blob` negative control**: the step now honours
+  `expected_failure: true`. This is what makes a cross-node assertion mean
+  anything — blobs are content-addressed, so a node already holding identical
+  bytes serves them locally and the network path is never touched. Run a
+  local-only read (no `context_id`) with `expected_failure: true` first, and only
+  then the real fetch. Unexpected success warns rather than fails, matching every
+  other step's contract, but says explicitly that the following fetch proves
+  nothing. The flag covers exactly one outcome — *could not retrieve*. A size,
+  sha256 or response-type mismatch fails **unconditionally**: bytes did arrive,
+  so the control's premise is already false, and excusing it would launder a
+  truncated transfer, a corrupt transfer, or a client that stopped returning
+  bytes into a green step.
+- Two worked blob-transfer workflows:
+  `workflow-blob-download-example.yml` (single-node: the step's contract — size
+  and sha256 assertions bite, `output_path` writes, unknown blob id and wrong
+  `expected_size` both fail) and
+  `workflow-blob-cross-node-download-example.yml` (the full announce → provider
+  lookup → signed member request → chunked transfer path, two blob sizes, with
+  the negative control before each fetch). The cross-node one is **excluded from
+  both CI matrices** until merod carries calimero-network/core#3317 — that path
+  is broken for every namespace-backed context today, in both the released
+  binary and `merod:edge`.
+
+### Fixed
+
+- **`expected_size` placeholders were rejected before the step ever ran**:
+  `DownloadBlobStepConfig.expected_size` was typed `Optional[int]`, but the
+  documented form is `expected_size: "{{blob_size}}"` — resolved at execute time,
+  which is the whole point of threading the uploader's reported size through.
+  Pydantic runs as a gate in `bootstrap run`, so every workflow using the
+  documented pattern died with "Input should be a valid integer" before a single
+  step executed. Now `Optional[Union[int, str]]`, matching the executor. A new
+  test validates **every** shipped workflow against that same gate, so a
+  model/executor mismatch is caught in half a second instead of four minutes into
+  a CI job.
+- **`download_blob` caught too much**: the fallback `except Exception` turned any
+  error into a download failure — including plumbing bugs like `TypeError` or
+  `AttributeError`, which with `expected_failure: true` would have been swallowed
+  as a *passing* negative control, hiding a real defect behind green. It now
+  catches only what genuinely means "not retrievable": `RuntimeError` (what
+  calimero-client-py raises as `Client error: ...` for anything refused or not
+  found) and `ValueError` (malformed blob id). Everything else propagates.
+- **`bootstrap validate` rejected valid workflows**: five step types were
+  registered in `config.VALID_STEP_TYPES` but had no branch in
+  `validate/validator.py`, so `merobox bootstrap validate` failed them with "has
+  unknown type" — `upload_blob`, `download_blob`, `leave_context`, `leave_group`
+  and `leave_namespace`. Any workflow using `upload_blob` (including core's
+  `apps/blobs/workflows/blobs.yml`) could not be validated at all. A
+  parametrised drift guard now asserts every registered type dispatches, so this
+  cannot recur — it is the third time (`login`/`refresh`/`ws_*` in 0.6.33 were
+  the first).
+- **`download_blob` retry was dead code**: `_download_blob_from_node` is wrapped
+  in `@with_retry(NETWORK_RETRY_CONFIG)`, which only retries what escapes the
+  call, but its own `except Exception` converted connection and timeout errors
+  into a `fail()` dict. So a single transient blip on the very cross-node fetch
+  the step exists to exercise failed the step outright. Retryable faults now
+  propagate to the decorator; an exhausted retry lands as a normal red step
+  rather than a traceback that aborts the run.
+- **Upgrade workflows against merod master**: `build_res_wasm.sh` now embeds each
+  app's state schema into its wasm as the `calimero_abi_v1` section (via
+  `mero-abi embed`, after `build.sh` so wasm-opt cannot strip it), and the
+  checked-in `kv_store_v2.wasm` fixture carries kv-store's schema. core#3286 made
+  an upgrade whose target build has no embedded ABI a hard refusal ("refusing to
+  swap bytecode without migration evidence"), and core's decision table needs
+  *both* sides — so `group-upgrade-example` and `cascade-namespace-example` failed
+  in docker mode (`merod:edge` = master) while still passing in binary mode (the
+  released merod predates the change). Both sides now declare the same
+  `state_version`, which core resolves as a code-only hop.
+
 ## [0.6.41] - 2026-07-05
 
 ### Added

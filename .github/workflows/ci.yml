@@ -98,6 +98,14 @@ jobs:
           # nothing. Docker mode runs against merod:edge (master), which
           # has the fix, so cascade-namespace keeps full coverage there.
           # Re-add to binary once the pinned release carries #2507.
+          # blob-cross-node-download asserts a blob's BYTES reach a second node.
+          # That path is broken for every namespace-backed context until
+          # calimero-network/core#3317 ships: the announce is skipped and the
+          # outgoing blob request goes unsigned, so the serving node answers
+          # `found: false`. Neither mode can pass it yet — binary pulls the
+          # latest core release (rc.18, predates the fix), docker runs
+          # merod:edge (master, not merged). Re-add to BOTH matrices once
+          # merod:edge carries it; the workflow itself is ready.
           # tee-* require a merod built with `--features mock-attestation`
           # (calimero-network/core#3269). That feature is default-OFF, so
           # neither the release binary (binary mode) nor merod:edge (docker
@@ -117,6 +125,7 @@ jobs:
             grep -v fault-injection | \
             grep -v nat-topology | \
             grep -v cascade-namespace | \
+            grep -v blob-cross-node-download | \
             grep -v '/tee-' | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
@@ -133,6 +142,7 @@ jobs:
             grep -v cached-frontends | \
             grep -v example-binary | \
             grep -v fault-injection-tc | \
+            grep -v blob-cross-node-download | \
             grep -v '/tee-' | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT

@@ -14,6 +14,7 @@ from merobox.commands.bootstrap.steps.delete_blob import (
     DeleteBlobOnDiskStep,
     DeleteBlobStep,
 )
+from merobox.commands.bootstrap.steps.download_blob import DownloadBlobStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.fuzzy_test import FuzzyTestStep
@@ -173,6 +174,7 @@ __all__ = [
     "AssertLogPresentStep",
     "JsonAssertStep",
     "UploadBlobStep",
+    "DownloadBlobStep",
     "DeleteBlobOnDiskStep",
     "DeleteBlobStep",
     "GetApplicationStep",
