@@ -232,3 +232,30 @@ class TestNodeExecExpectedFailure:
             manager.client.containers, "create", return_value=_stub_container()
         ):
             assert _run(step.execute({}, {})) is False
+
+
+def test_node_exec_exports_its_outputs(tmp_path):
+    """`outputs: { phrase: stdout_first_line }` must reach dynamic_values.
+
+    Same hole as the account steps had: recording the result is not exporting it,
+    and a scenario that captures a recovery phrase this way would otherwise carry
+    the literal `{{phrase}}` into the next command.
+    """
+    manager = _manager(tmp_path)
+    step = NodeExecStep(
+        {
+            "type": "node_exec",
+            "name": "Export",
+            "node": "calimero-node-2",
+            "args": ["account", "export"],
+            "outputs": {"phrase": "stdout_first_line", "code": "exit_code"},
+        },
+        manager=manager,
+    )
+    stub = _stub_container(stdout="word word word\nAccount root public key: X\n")
+    with patch.object(manager.client.containers, "create", return_value=stub):
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+
+    assert dynamic_values["phrase"] == "word word word"
+    assert dynamic_values["code"] == 0

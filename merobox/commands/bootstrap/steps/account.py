@@ -64,10 +64,17 @@ class _AccountStepBase(BaseStep):
         result_key: str,
         data: dict[str, Any],
         workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
     ) -> bool:
         if self._check_jsonrpc_error(data):
             return False
         workflow_results[f"{result_key}_{node_name}"] = data
+        # Recording the result is NOT the same as exporting it: `outputs:` only
+        # does anything if the step calls this. Without it the placeholders a
+        # scenario writes stay literal, and the failure surfaces wherever they are
+        # consumed — a `{{root_key}}` reaching an api as a 12-character string —
+        # rather than here.
+        self._export_variables(data, node_name, dynamic_values)
         return True
 
 
@@ -132,7 +139,9 @@ class AccountCreateStep(_AccountStepBase):
             f"[green]✓[/green] {node_name} enrolled account {data['accountId']} "
             f"with device {data.get('deviceId')}"
         )
-        return self._finish(node_name, "account", data, workflow_results)
+        return self._finish(
+            node_name, "account", data, workflow_results, dynamic_values
+        )
 
 
 class AccountPairStep(_AccountStepBase):
@@ -239,7 +248,9 @@ class AccountPairStep(_AccountStepBase):
             f"{data.get('accountId')} as device {data.get('deviceId')} "
             f"(key delivered: {data.get('keyDelivered')})"
         )
-        return self._finish(node_name, "paired_account", data, workflow_results)
+        return self._finish(
+            node_name, "paired_account", data, workflow_results, dynamic_values
+        )
 
 
 class AccountRevokeStep(_AccountStepBase):
@@ -290,7 +301,7 @@ class AccountRevokeStep(_AccountStepBase):
             f"[green]✓[/green] {node_name} revoked device {device_id} "
             f"(key rotated: {data.get('keyRotated')})"
         )
-        return self._finish(node_name, "revoke", data, workflow_results)
+        return self._finish(node_name, "revoke", data, workflow_results, dynamic_values)
 
 
 class AccountShowStep(_AccountStepBase):
@@ -342,4 +353,6 @@ class AccountShowStep(_AccountStepBase):
             f"[green]✓[/green] {node_name} owns account {data.get('accountId')} "
             f"(device: {data.get('deviceId')})"
         )
-        return self._finish(node_name, "shown_account", data, workflow_results)
+        return self._finish(
+            node_name, "shown_account", data, workflow_results, dynamic_values
+        )

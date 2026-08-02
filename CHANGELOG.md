@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.46] - 2026-08-02
+
+### Fixed
+
+- **`outputs:` on the account steps and `node_exec` exported nothing.** A step has
+  to call `_export_variables` for `outputs:` to do anything; recording the result
+  in `workflow_results` is a different thing, and nothing in the framework
+  enforces the second. So every `outputs:` on the steps added in 0.6.45 was inert,
+  and a scenario capturing e.g. `root_key: accountRootKey` carried the literal
+  `{{root_key}}` into whatever consumed it — surfacing far away as
+  `Field 'accountRootKey' must be exactly 64 characters (got 12)`.
+
+  Every step that declares outputs now has a test asserting the *exported
+  variables* by name, not just the recorded result. The original tests asserted
+  `workflow_results` and passed throughout.
+
 ## [0.6.45] - 2026-08-02
 
 ### Added

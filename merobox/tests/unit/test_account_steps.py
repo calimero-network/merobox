@@ -321,3 +321,128 @@ class TestAccountShowStep:
 
         client.get_namespace_account.assert_called_once_with(NAMESPACE)
         assert results["shown_account_calimero-node-2"]["deviceId"] is None
+
+
+class TestOutputsAreActuallyExported:
+    """`outputs:` is inert unless a step calls `_export_variables`.
+
+    Recording a result in `workflow_results` is NOT the same as exporting it, and
+    nothing in the framework enforces the second. These steps shipped without it:
+    every `outputs:` on them exported nothing, so `{{root_key}}` stayed literal and
+    surfaced as a 12-character string hitting an api that wanted 64. The earlier
+    tests asserted `workflow_results` and passed throughout.
+
+    So: assert the exported variables, by name, for every step that declares any.
+    """
+
+    def test_account_create_exports_its_outputs(self):
+        client = MagicMock()
+        client.create_account.return_value = _envelope(
+            {
+                "accountId": "aa" * 32,
+                "deviceId": "bb" * 32,
+                "accountRootKey": "cc" * 32,
+                "accountNonce": "dd" * 16,
+            }
+        )
+        step = _step(
+            AccountCreateStep,
+            {
+                "type": "account_create",
+                "name": "Enrol",
+                "node": "calimero-node-2",
+                "namespace_id": NAMESPACE,
+                "outputs": {
+                    "account": "accountId",
+                    "root_key": "accountRootKey",
+                    "nonce": "accountNonce",
+                },
+            },
+            client,
+        )
+
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values["account"] == "aa" * 32
+        assert dynamic_values["root_key"] == "cc" * 32
+        assert dynamic_values["nonce"] == "dd" * 16
+
+    def test_account_pair_exports_the_paired_device(self):
+        new_device = MagicMock()
+        init = {
+            "deviceId": "ee" * 32,
+            "kemPublicKey": "11" * 32,
+            "signPublicKey": "22" * 32,
+            "statement": "33" * 64,
+            "confirmationCode": "0011223344556677",
+        }
+        new_device.pair_device_init.return_value = _envelope(init)
+        holder = MagicMock()
+        holder.pair_device_complete.return_value = _envelope(
+            {
+                "accountId": "aa" * 32,
+                "keyDelivered": True,
+                "confirmationCode": init["confirmationCode"],
+            }
+        )
+        step = AccountPairStep(
+            {
+                "type": "account_pair",
+                "name": "Pair",
+                "node": "calimero-node-3",
+                "holder": "calimero-node-2",
+                "namespace_id": NAMESPACE,
+                "root_key": "cc" * 32,
+                "nonce": "dd" * 16,
+                "outputs": {"paired_device": "deviceId", "delivered": "keyDelivered"},
+            }
+        )
+        step._client = MagicMock(  # noqa: SLF001
+            side_effect=lambda name: (
+                new_device if name == "calimero-node-3" else holder
+            )
+        )
+
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values["paired_device"] == "ee" * 32
+        assert dynamic_values["delivered"] is True
+
+    def test_account_revoke_exports_key_rotated(self):
+        client = MagicMock()
+        client.revoke_device.return_value = _envelope({"keyRotated": True})
+        step = _step(
+            AccountRevokeStep,
+            {
+                "type": "account_revoke",
+                "name": "Revoke",
+                "node": "calimero-node-1",
+                "namespace_id": NAMESPACE,
+                "device_id": "ee" * 32,
+                "outputs": {"rotated": "keyRotated"},
+            },
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values["rotated"] is True
+
+    def test_account_show_exports_the_account(self):
+        client = MagicMock()
+        client.get_namespace_account.return_value = _envelope(
+            {"accountId": "aa" * 32, "deviceId": None}
+        )
+        step = _step(
+            AccountShowStep,
+            {
+                "type": "account_show",
+                "name": "Show",
+                "node": "calimero-node-2",
+                "namespace_id": NAMESPACE,
+                "outputs": {"shown": "accountId"},
+            },
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values["shown"] == "aa" * 32
