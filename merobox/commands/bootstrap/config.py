@@ -51,6 +51,7 @@ VALID_STEP_TYPES = frozenset(
         "account_pair",
         "account_revoke",
         "account_show",
+        "node_exec",
         "create_group_in_namespace",
         "list_namespace_groups",
         "reparent_group",
@@ -886,6 +887,31 @@ class GetNamespaceIdentityStepConfig(BaseStepConfig):
     namespace_id: str = Field(..., description="Namespace ID")
 
 
+class NodeExecStepConfig(BaseStepConfig):
+    """Configuration for node_exec step."""
+
+    type: Literal["node_exec"] = "node_exec"
+    node: str = Field(..., description="Node whose data directory to run against")
+    args: list[str] = Field(
+        ..., description="merod subcommand and flags, e.g. ['account', 'export']"
+    )
+    files: Optional[dict[str, str]] = Field(
+        None,
+        description="Files to write under /app/data before running, "
+        "as container path -> contents",
+    )
+    allow_running: Optional[bool] = Field(
+        None,
+        description="Run even if the node is up. Unsafe for anything that opens "
+        "the datastore; RocksDB's lock is exclusive",
+    )
+    expected_failure: Optional[bool] = Field(
+        False,
+        description="Assert the command is refused rather than succeeding — e.g. "
+        "an import that would replace an existing account root",
+    )
+
+
 class AccountCreateStepConfig(BaseStepConfig):
     """Configuration for account_create step."""
 
@@ -1569,6 +1595,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "account_pair": AccountPairStepConfig,
     "account_revoke": AccountRevokeStepConfig,
     "account_show": AccountShowStepConfig,
+    "node_exec": NodeExecStepConfig,
     "create_group_in_namespace": CreateGroupInNamespaceStepConfig,
     "list_namespace_groups": ListNamespaceGroupsStepConfig,
     "reparent_group": ReparentGroupStepConfig,

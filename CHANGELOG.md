@@ -282,6 +282,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stopgap in core's app-migration scenario 31. Carries the same client-version
   pre-flight guard as the cascade-status steps.
 
+- **Example workflow**: `example-project/workflows/account-identity.yml` walks
+  the whole plane — enrol, pair a second device, show that one account holds two
+  distinct devices, revoke one, then export and restore the account root.
+
 ## [0.6.35] - 2026-06-04
 
 ### Added

@@ -2123,6 +2123,10 @@ class WorkflowExecutor:
                 "account_revoke": AccountRevokeStep,
                 "account_show": AccountShowStep,
             }[step_type](step_config, **common_kwargs)
+        if step_type == "node_exec":
+            from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
+
+            return NodeExecStep(step_config, **common_kwargs)
         if step_type == "stop_node":
             from merobox.commands.bootstrap.steps.stop_node import StopNodeStep
 
