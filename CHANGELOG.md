@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Account-identity workflow steps: `account_create`, `account_pair`,
+  `account_revoke`, `account_show`.** Core's e2e suite drove these through
+  `type: script` shell wrappers, which works but cannot export custom
+  `outputs:` — a script step only sets `script_output_local`, and the next one
+  overwrites it. So every value one script minted for the next (device ids, the
+  account genesis halves) went through a namespace-keyed temp file, which made
+  the scenarios read as a sequence of side effects instead of a data flow, and
+  put the interesting assertions inside shell rather than in `json_assert`.
+
+  `account_pair` runs both halves of the pairing exchange, because the ordering
+  between them is forced rather than stylistic: the new device cannot mint its
+  `DeviceId` without the account (the id is `H(account ‖ nonce)`), and the
+  holder cannot certify that device without the id and both of its keys. It also
+  **compares the confirmation code** the two sides derive instead of merely
+  passing it along — that comparison is the whole security promise of pairing,
+  and a step that forwarded the code without checking it would be exactly the
+  "pasted alongside the keys it describes" channel the code exists to defeat.
+
+  `account_show` reports what a node speaks for without minting anything, and
+  keeps `deviceId: null` as a real answer ("no device here"), which is what
+  makes it usable for asserting that a revocation stuck.
+
 - **New `download_blob` workflow step.** `upload_blob` had no counterpart, so a
   workflow could put a blob on one node and read its *metadata* elsewhere but
   never assert that the blob's **bytes** reached another node — the whole
