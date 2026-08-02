@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.44] - 2026-07-27
+## [0.6.45] - 2026-08-02
 
 ### Added
 
@@ -32,6 +32,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `account_show` reports what a node speaks for without minting anything, and
   keeps `deviceId: null` as a real answer ("no device here"), which is what
   makes it usable for asserting that a revocation stuck.
+
+- **`node_exec`: run an offline `merod` subcommand against a stopped node.** Some
+  node operations are CLI-only and deliberately unavailable on a live node —
+  `merod account export|import` opens the datastore directly and RocksDB's lock is
+  exclusive. That rules out both obvious routes: `docker exec` needs a *running*
+  container, and the admin api does not expose the recovery key (serving a secret
+  whose whole point is to live offline over HTTP would be the wrong shape). What
+  works is that a node's data directory is a host bind mount and the image's
+  entrypoint is `merod`, so a one-shot container over the same directory can run
+  any subcommand while the node is down.
+
+  One general step rather than an `account_export`/`account_import` pair: the hard
+  part is "invoke the binary offline", which a config edit or a future migration
+  tool needs just as much, and a step per subcommand would ship in lockstep with
+  core's CLI surface. Image and bind mount are read off the existing container so
+  the step cannot disagree with how the node was started; a running node is
+  refused unless `allow_running: true`; `files:` writes command input into the
+  mount (no stdin plumbing, and paths outside it are refused); the one-shot
+  container is removed in a `finally`; and `expected_failure` lets a scenario
+  assert that a guard refuses.
+
+- **Example workflow**: `workflow-examples/account-identity.yml` walks the whole
+  plane — enrol, pair a second device, assert one account holds two *distinct*
+  devices, revoke one, then stop the node and export/restore its account root.
+
+## [0.6.44] - 2026-07-27
+
+### Added
 
 - **New `download_blob` workflow step.** `upload_blob` had no counterpart, so a
   workflow could put a blob on one node and read its *metadata* elsewhere but
