@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.45] - 2026-08-02
+
+### Added
+
+- **Account-identity workflow steps: `account_create`, `account_pair`,
+  `account_revoke`, `account_show`.** Core's e2e suite drove these through
+  `type: script` shell wrappers, which works but cannot export custom
+  `outputs:` — a script step only sets `script_output_local`, and the next one
+  overwrites it. So every value one script minted for the next (device ids, the
+  account genesis halves) went through a namespace-keyed temp file, which made
+  the scenarios read as a sequence of side effects instead of a data flow, and
+  put the interesting assertions inside shell rather than in `json_assert`.
+
+  `account_pair` runs both halves of the pairing exchange, because the ordering
+  between them is forced rather than stylistic: the new device cannot mint its
+  `DeviceId` without the account (the id is `H(account ‖ nonce)`), and the
+  holder cannot certify that device without the id and both of its keys. It also
+  **compares the confirmation code** the two sides derive instead of merely
+  passing it along — that comparison is the whole security promise of pairing,
+  and a step that forwarded the code without checking it would be exactly the
+  "pasted alongside the keys it describes" channel the code exists to defeat.
+
+  `account_show` reports what a node speaks for without minting anything, and
+  keeps `deviceId: null` as a real answer ("no device here"), which is what
+  makes it usable for asserting that a revocation stuck.
+
+  They go through `calimero-client-py` (>= 0.6.20) like every other step. An
+  earlier draft called `admin-api/` directly with `requests` on the grounds that
+  the client had no account methods — backwards twice over: the fix for a missing
+  binding is to add it, and core's Rust client already wrapped all five endpoints
+  (meroctl's `account` subcommands drive them), so only the Python bindings were
+  missing. They landed in calimero-client-py#72.
+
+- **`node_exec`: run an offline `merod` subcommand against a stopped node.** Some
+  node operations are CLI-only and deliberately unavailable on a live node —
+  `merod account export|import` opens the datastore directly and RocksDB's lock is
+  exclusive. That rules out both obvious routes: `docker exec` needs a *running*
+  container, and the admin api does not expose the recovery key (serving a secret
+  whose whole point is to live offline over HTTP would be the wrong shape). What
+  works is that a node's data directory is a host bind mount and the image's
+  entrypoint is `merod`, so a one-shot container over the same directory can run
+  any subcommand while the node is down.
+
+  One general step rather than an `account_export`/`account_import` pair: the hard
+  part is "invoke the binary offline", which a config edit or a future migration
+  tool needs just as much, and a step per subcommand would ship in lockstep with
+  core's CLI surface. Image and bind mount are read off the existing container so
+  the step cannot disagree with how the node was started; a running node is
+  refused unless `allow_running: true`; `files:` writes command input into the
+  mount (no stdin plumbing, and paths outside it are refused); the one-shot
+  container is removed in a `finally`; and `expected_failure` lets a scenario
+  assert that a guard refuses.
+
+- **Example workflow**: `workflow-examples/account-identity.yml` walks the whole
+  plane — enrol, pair a second device, assert one account holds two *distinct*
+  devices, revoke one, then stop the node and export/restore its account root.
+
 ## [0.6.44] - 2026-07-27
 
 ### Added
@@ -259,6 +316,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aborted}` under `abort_migration_{node}`. Replaces the raw `script`+curl
   stopgap in core's app-migration scenario 31. Carries the same client-version
   pre-flight guard as the cascade-status steps.
+
+- **Example workflow**: `example-project/workflows/account-identity.yml` walks
+  the whole plane — enrol, pair a second device, show that one account holds two
+  distinct devices, revoke one, then export and restore the account root.
 
 ## [0.6.35] - 2026-06-04
 

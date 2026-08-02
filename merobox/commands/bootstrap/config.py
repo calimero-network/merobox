@@ -47,6 +47,11 @@ VALID_STEP_TYPES = frozenset(
         "leave_namespace",
         "list_namespaces",
         "get_namespace_identity",
+        "account_create",
+        "account_pair",
+        "account_revoke",
+        "account_show",
+        "node_exec",
         "create_group_in_namespace",
         "list_namespace_groups",
         "reparent_group",
@@ -882,6 +887,73 @@ class GetNamespaceIdentityStepConfig(BaseStepConfig):
     namespace_id: str = Field(..., description="Namespace ID")
 
 
+class NodeExecStepConfig(BaseStepConfig):
+    """Configuration for node_exec step."""
+
+    type: Literal["node_exec"] = "node_exec"
+    node: str = Field(..., description="Node whose data directory to run against")
+    args: list[str] = Field(
+        ..., description="merod subcommand and flags, e.g. ['account', 'export']"
+    )
+    files: Optional[dict[str, str]] = Field(
+        None,
+        description="Files to write under /app/data before running, "
+        "as container path -> contents",
+    )
+    allow_running: Optional[bool] = Field(
+        None,
+        description="Run even if the node is up. Unsafe for anything that opens "
+        "the datastore; RocksDB's lock is exclusive",
+    )
+    expected_failure: Optional[bool] = Field(
+        False,
+        description="Assert the command is refused rather than succeeding — e.g. "
+        "an import that would replace an existing account root",
+    )
+
+
+class AccountCreateStepConfig(BaseStepConfig):
+    """Configuration for account_create step."""
+
+    type: Literal["account_create"] = "account_create"
+    node: str = Field(..., description="Node that enrols the account")
+    namespace_id: str = Field(..., description="Namespace to enrol in")
+
+
+class AccountPairStepConfig(BaseStepConfig):
+    """Configuration for account_pair step."""
+
+    type: Literal["account_pair"] = "account_pair"
+    node: str = Field(..., description="The NEW device's node")
+    holder: str = Field(..., description="Node that already holds the account root")
+    namespace_id: str = Field(..., description="Namespace the account lives in")
+    root_key: str = Field(
+        ..., description="Account genesis root key, from account_create's output"
+    )
+    nonce: str = Field(
+        ..., description="Account genesis nonce, from account_create's output"
+    )
+
+
+class AccountRevokeStepConfig(BaseStepConfig):
+    """Configuration for account_revoke step."""
+
+    type: Literal["account_revoke"] = "account_revoke"
+    node: str = Field(
+        ..., description="Node with authority to revoke (admin or account)"
+    )
+    namespace_id: str = Field(..., description="Namespace the device is bound in")
+    device_id: str = Field(..., description="Device to withdraw")
+
+
+class AccountShowStepConfig(BaseStepConfig):
+    """Configuration for account_show step."""
+
+    type: Literal["account_show"] = "account_show"
+    node: str = Field(..., description="Node to ask")
+    namespace_id: str = Field(..., description="Namespace to report on")
+
+
 class CreateGroupInNamespaceStepConfig(BaseStepConfig):
     """Configuration for create_group_in_namespace step."""
 
@@ -1519,6 +1591,11 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "join_open": JoinStep,
     "list_namespaces": ListNamespacesStepConfig,
     "get_namespace_identity": GetNamespaceIdentityStepConfig,
+    "account_create": AccountCreateStepConfig,
+    "account_pair": AccountPairStepConfig,
+    "account_revoke": AccountRevokeStepConfig,
+    "account_show": AccountShowStepConfig,
+    "node_exec": NodeExecStepConfig,
     "create_group_in_namespace": CreateGroupInNamespaceStepConfig,
     "list_namespace_groups": ListNamespaceGroupsStepConfig,
     "reparent_group": ReparentGroupStepConfig,

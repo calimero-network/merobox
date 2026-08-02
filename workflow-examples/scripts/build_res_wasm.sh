@@ -7,6 +7,14 @@
 #   Or:                     CORE_REPO_DIR=/path/to/core ./workflow-examples/scripts/build_res_wasm.sh
 #
 # Set CORE_REPO_DIR to use an existing core clone; otherwise we clone into workflow-examples/.core-repo.
+#
+# CORE_BRANCH should match the merod you intend to run these wasms against. It
+# defaults to master, which is right for merod:edge — but an app built from master
+# can import a host function a RELEASED merod does not have (`account_id` since
+# calimero-network/core#3320), and that fails at instantiation with
+# Link(Import("env", "account_id", UnknownImport)) rather than anything that names
+# a version skew. CI pins CORE_BRANCH to the release tag it downloaded merod from
+# for exactly this reason; do the same locally if you are testing a release.
 
 set -e
 
@@ -33,24 +41,36 @@ fi
 echo "Building WASM apps from $CORE_DIR ..."
 rustup target add wasm32-unknown-unknown 2>/dev/null || true
 
-# Build kv-store (output: apps/kv-store/res/kv_store.wasm)
-(cd "$CORE_DIR/apps/kv-store" && ./build.sh)
-# Build blobs (output: apps/blobs/res/blobs.wasm)
-(cd "$CORE_DIR/apps/blobs" && ./build.sh)
+# `cargo mero build`, not the per-app `build.sh` scripts: core removed those in
+# calimero-network/core#3308 ("build all apps through cargo mero"), which broke
+# this script for every merobox PR from the moment it landed, since we always
+# clone core's CURRENT master. A bare `cargo build` is not a substitute — it
+# compiles the same code but emits no ABI and embeds nothing, so the node cannot
+# introspect the result.
+PATH="$(cd "$CORE_DIR" && ./scripts/setup-cargo-mero.sh):$PATH"
+export PATH
+
+# Outputs: apps/<app>/res/<app_name>.wasm, with res/abi.json and
+# res/state-schema.json alongside.
+(cd "$CORE_DIR" && cargo mero build --manifest-path apps/kv-store/Cargo.toml)
+(cd "$CORE_DIR" && cargo mero build --manifest-path apps/blobs/Cargo.toml)
 
 mkdir -p "$RES_DIR"
 cp "$CORE_DIR/apps/kv-store/res/kv_store.wasm" "$RES_DIR/"
 cp "$CORE_DIR/apps/blobs/res/blobs.wasm" "$RES_DIR/"
 
-# Embed each app's state schema as the wasm's `calimero_abi_v1` section. This has
-# to happen AFTER build.sh, because its wasm-opt pass strips custom sections.
+# `cargo mero build` already embeds each app's ABI as the `calimero_abi_v1`
+# section — that is the whole reason core moved to it — so the two apps built
+# above need no embed pass here any more. What still does is `kv_store_v2.wasm`
+# below: a checked-in blob with no source in either repo, so nothing builds it and
+# nothing embeds its schema.
 #
-# calimero-network/core#3286 made an upgrade whose TARGET build carries no
-# embedded ABI a hard refusal ("refusing to swap bytecode without migration
-# evidence"), and core's decision table needs BOTH sides: plan_upgrade() bails
-# with AbiUnavailable{Current} when the running app has no ABI either. merod:edge
-# (master) enforces it, the released binary does not — which is why
-# group-upgrade-example passed in binary mode and failed in docker mode.
+# Why any of this matters: calimero-network/core#3286 made an upgrade whose TARGET
+# build carries no embedded ABI a hard refusal ("refusing to swap bytecode without
+# migration evidence"), and core's decision table needs BOTH sides —
+# plan_upgrade() bails with AbiUnavailable{Current} when the running app has no
+# ABI either. merod:edge (master) enforces it, the released binary does not, which
+# is why group-upgrade-example passed in binary mode and failed in docker mode.
 echo "Building mero-abi (embed tool) from $CORE_DIR ..."
 (cd "$CORE_DIR" && cargo build -p mero-abi --release)
 if [ -n "${CARGO_TARGET_DIR:-}" ]; then
@@ -63,12 +83,11 @@ fi
 KV_SCHEMA="$CORE_DIR/apps/kv-store/res/state-schema.json"
 BLOBS_SCHEMA="$CORE_DIR/apps/blobs/res/state-schema.json"
 for f in "$KV_SCHEMA" "$BLOBS_SCHEMA"; do
-  [ -f "$f" ] || { echo "ERROR: state schema missing: $f (build.rs should emit it)" >&2; exit 1; }
+  # `cargo mero build` emits these; a missing one means the build did not do its
+  # job, which is worth failing on even though only KV's is embedded below.
+  [ -f "$f" ] || { echo "ERROR: state schema missing: $f (cargo mero build should emit it)" >&2; exit 1; }
 done
 
-echo "Embedding state schemas ..."
-"$ABI_TOOL" embed "$RES_DIR/kv_store.wasm" "$KV_SCHEMA"
-"$ABI_TOOL" embed "$RES_DIR/blobs.wasm" "$BLOBS_SCHEMA"
 
 # kv_store_v2.wasm is a checked-in, purpose-built second binary for the SAME
 # kv-store state: the upgrade workflows need two distinct blobs to swap between,
@@ -80,4 +99,4 @@ if [ -f "$RES_DIR/kv_store_v2.wasm" ]; then
   "$ABI_TOOL" embed "$RES_DIR/kv_store_v2.wasm" "$KV_SCHEMA"
 fi
 
-echo "Done. Copied + ABI-embedded kv_store.wasm and blobs.wasm in $RES_DIR"
+echo "Done. kv_store.wasm and blobs.wasm (ABI embedded by cargo mero) in $RES_DIR"

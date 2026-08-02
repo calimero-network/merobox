@@ -681,6 +681,193 @@ Join a context via an open invitation.
 
 ---
 
+## Account identity steps
+
+One person, many devices. An **account** is the principal a grant names; a
+**device** is a key that signs for it. So one account grant covers every device
+its holder enrols, and revoking a device withdraws that one key without touching
+the account.
+
+An ordering constraint worth knowing before writing a scenario: a device link
+travels as an *encrypted* group operation, so `account_create` must run **after**
+the node has joined the context and holds the scope key. Placed before the join it
+deadlocks.
+
+A worked scenario across all of these lives in
+[`workflow-examples/account-identity.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/account-identity.yml).
+
+### account_create
+
+Enrol a device for a fresh account in a namespace, publishing the device link.
+Exports the genesis halves a second device needs — pass them to `account_pair`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Node that enrols the account. |
+| `namespace_id` | yes | string | Namespace to enrol in. |
+
+Outputs: `accountId`, `deviceId`, `accountRootKey`, `accountNonce`.
+
+```yaml
+- type: account_create
+  node: calimero-node-2
+  namespace_id: '{{namespace_id}}'
+  outputs:
+    account: accountId
+    root_key: accountRootKey
+    nonce: accountNonce
+```
+
+### account_pair
+
+Pair a second node onto an account that already exists elsewhere, running **both
+halves** of the exchange. One step rather than two because the ordering is forced:
+the new device cannot mint its `DeviceId` until it knows the account (the id is
+`H(account ‖ nonce)`), and the holder cannot certify that device until it knows the
+id and both of its keys.
+
+The step also **compares the confirmation code** both sides derive and fails on a
+mismatch — that comparison is the security promise of pairing, and forwarding the
+code unchecked would make this step the very "pasted alongside the keys it
+describes" channel the code exists to defeat.
+
+The paired node needs no membership of its own: being a device of a member's
+account is its whole route in.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | The **new** device's node. |
+| `holder` | yes | string | Node that already holds the account root. |
+| `namespace_id` | yes | string | Namespace the account lives in. |
+| `root_key` | yes | string | Genesis root key, from `account_create`. |
+| `nonce` | yes | string | Genesis nonce, from `account_create`. |
+
+Outputs: `accountId`, `deviceId`, `keyDelivered`.
+
+```yaml
+- type: account_pair
+  node: calimero-node-3        # the new device
+  holder: calimero-node-2      # holds the account root
+  namespace_id: '{{namespace_id}}'
+  root_key: '{{root_key}}'
+  nonce: '{{nonce}}'
+  outputs:
+    paired_device: deviceId
+```
+
+### account_revoke
+
+Withdraw a device from its account and rotate the scope key, so the revoked device
+can neither write nor read past the rotation. Run on a node with the authority —
+an admin, or the account itself. A device cannot revoke itself.
+
+`keyRotated` is exported so a scenario asserts the rotation happened rather than
+inferring it from a later read that might pass for other reasons.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Admin, or the account itself. |
+| `namespace_id` | yes | string | Namespace the device is bound in. |
+| `device_id` | yes | string | Device to withdraw. |
+
+Outputs: `keyRotated`.
+
+```yaml
+- type: account_revoke
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  device_id: '{{paired_device}}'
+  outputs:
+    rotated: keyRotated
+```
+
+### account_show
+
+Report which account a node speaks for in a namespace, and the device it holds
+there. A read: it mints nothing, and the account id exists whether or not a device
+was ever enrolled, because it is derived from the node's root and the namespace.
+
+`deviceId` comes back `null` when the node holds no device there. That is a real
+answer rather than missing data, and it is what makes this step usable for
+asserting a revocation stuck.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Node to ask. |
+| `namespace_id` | yes | string | Namespace to report on. |
+
+Outputs: `accountId`, `deviceId`.
+
+```yaml
+# One account, two devices — the whole point of the account plane.
+- type: account_show
+  node: calimero-node-2
+  namespace_id: '{{namespace_id}}'
+  outputs:
+    laptop: accountId
+- type: account_show
+  node: calimero-node-3
+  namespace_id: '{{namespace_id}}'
+  outputs:
+    phone: accountId
+- type: json_assert
+  statements:
+    - 'json_equal({{laptop}}, {{phone}})'
+```
+
+### node_exec
+
+Run an offline `merod` subcommand against a **stopped** node's data directory, in
+a one-shot container from the node's own image.
+
+Some operations are CLI-only and cannot run against a live node: `merod account
+export|import` opens the datastore directly and RocksDB's lock is exclusive. That
+rules out both obvious routes — `docker exec` needs a *running* container, and the
+admin api does not expose the recovery key (serving a secret whose point is to live
+offline over HTTP would be the wrong shape). What works is that the data directory
+is a host bind mount and the image's entrypoint is `merod` itself.
+
+The image and mount are read off the existing container rather than reconstructed
+from workflow config, so the step cannot disagree with how the node was actually
+started. A running node is **refused** unless `allow_running` says otherwise —
+attempting it yields an opaque lock error several layers down, which reads like a
+node fault.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Node whose data directory to run against. |
+| `args` | yes | list[string] | Subcommand and flags, e.g. `['account', 'export']`. |
+| `files` | no | map | Container path → contents, written into the mount before running. Paths outside `/app/data` are refused. |
+| `allow_running` | no | bool | Run even if the node is up. Unsafe for anything that opens the datastore. |
+| `expected_failure` | no | bool | Assert the command is refused rather than succeeding. |
+
+Outputs: `stdout`, `stdout_first_line` (the value a single-value command emits,
+ahead of its advisory output), `stderr`, `exit_code`.
+
+```yaml
+- type: stop_node
+  node: calimero-node-2
+
+- type: node_exec
+  node: calimero-node-2
+  args: ['account', 'export']
+  outputs:
+    phrase: stdout_first_line
+
+# `files:` is how a command that reads a file gets its input — no stdin plumbing.
+# Importing over an existing root is refused, and that refusal is the guard worth
+# asserting: a root that already certified devices has no second copy.
+- type: node_exec
+  node: calimero-node-2
+  files:
+    /app/data/recovery.txt: '{{phrase}}'
+  args: ['account', 'import', '--from', '/app/data/recovery.txt']
+  expected_failure: true
+
+- type: start_node
+  node: calimero-node-2
+```
+
 ## Call & auth steps
 
 ### call

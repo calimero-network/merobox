@@ -5,6 +5,12 @@ This module provides comprehensive validation for workflow configurations
 without requiring full workflow execution.
 """
 
+from merobox.commands.bootstrap.steps.account import (
+    AccountCreateStep,
+    AccountPairStep,
+    AccountRevokeStep,
+    AccountShowStep,
+)
 from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogAbsentStep,
     AssertLogPresentStep,
@@ -96,6 +102,7 @@ from merobox.commands.bootstrap.steps.network import (
     HealPeersStep,
     PartitionPeersStep,
 )
+from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
 from merobox.commands.bootstrap.steps.parallel import ParallelStep
 from merobox.commands.bootstrap.steps.pause import (
     PauseContainerStep,
@@ -272,6 +279,16 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = ListNamespacesStep
         elif step_type == "get_namespace_identity":
             step_class = GetNamespaceIdentityStep
+        elif step_type == "account_create":
+            step_class = AccountCreateStep
+        elif step_type == "account_pair":
+            step_class = AccountPairStep
+        elif step_type == "account_revoke":
+            step_class = AccountRevokeStep
+        elif step_type == "account_show":
+            step_class = AccountShowStep
+        elif step_type == "node_exec":
+            step_class = NodeExecStep
         elif step_type == "create_group_in_namespace":
             step_class = CreateGroupInNamespaceStep
         elif step_type == "list_namespace_groups":

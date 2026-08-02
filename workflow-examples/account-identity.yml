@@ -1,0 +1,273 @@
+name: Account identity — one account, two devices, revoke, back up, restore
+description: >
+  A worked example of the account-identity steps. An account is the principal a
+  grant names; a device is a key that signs for it. So one grant covers every
+  device its holder enrols, revoking a device withdraws that one key without
+  touching the account, and the account root — the thing that can certify a
+  replacement device after total loss — is backed up separately from any of them.
+
+  Phases, and what each is for:
+
+    1. Namespace + context with node-1 as admin and node-2 as a member. Node-3 is
+       DELIBERATELY never invited: its only route in is being a device of node-2's
+       account, which is the feature.
+
+    2. node-2 enrols an account (`account_create`). This must come AFTER the
+       context join — a device link travels as an *encrypted* group op, so a node
+       that holds no scope key cannot publish one. Moved earlier, it deadlocks.
+
+    3. node-3 pairs onto the same account (`account_pair`). One step for both
+       halves of the exchange, because the ordering is forced: node-3 cannot mint
+       its DeviceId without the account, and node-2 cannot certify that device
+       without the id and both keys. The step also compares the confirmation code
+       both sides derive, which is the check a human is meant to make.
+
+    4. `account_show` on both nodes proves the payoff: same account, different
+       devices. One person, two replicas.
+
+    5. node-1 revokes node-3's device (`account_revoke`) and the scope key
+       rotates.
+
+    6. Back up and restore the root with `node_exec`. Offline by necessity:
+       `merod account export` opens the datastore directly and RocksDB's lock is
+       exclusive, so the node is stopped first and a one-shot container runs the
+       command over the same data directory. Restoring into the same node is a
+       no-op it refuses (there is already a root) — which is exactly the guard
+       worth demonstrating, since replacing a root that has certified devices is
+       unrecoverable.
+
+  NOT RUN IN CI YET, and excluded from both matrices on purpose: `node_exec` is
+  Docker-only (it runs a one-shot container over the node's data directory, so
+  binary mode has nothing to run it against), and the export/import steps need a
+  merod carrying `merod account export|import` — calimero-network/core#3362, still
+  unmerged. Re-add it to the docker matrix once merod:edge has those commands. Until
+  then this file documents the shape and has been validated against the schema
+  loader, but has never been executed end to end.
+
+nodes:
+  count: 3
+  prefix: account-demo
+
+steps:
+  # ── Phase 1: namespace, membership, context ────────────────────────
+
+  - name: Install the app on node-1
+    type: install_application
+    node: account-demo-1
+    path: ./res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Install the app on node-2
+    type: install_application
+    node: account-demo-2
+    path: ./res/kv_store.wasm
+    dev: true
+
+  - name: Install the app on node-3
+    type: install_application
+    node: account-demo-3
+    path: ./res/kv_store.wasm
+    dev: true
+
+  - name: Node-1 creates the namespace
+    type: create_namespace
+    node: account-demo-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Invite node-2
+    type: create_namespace_invitation
+    node: account-demo-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - name: Node-2 joins the namespace
+    type: join_namespace
+    node: account-demo-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - name: Node-1 creates the context
+    type: create_context
+    node: account-demo-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+
+  - name: Node-2 joins the context
+    type: join_context
+    node: account-demo-2
+    context_id: '{{context_id}}'
+
+  - name: Settle
+    type: wait_for_sync
+    nodes:
+      - account-demo-1
+      - account-demo-2
+    context_id: '{{context_id}}'
+
+  # ── Phase 2: node-2 enrols an account ─────────────────────────────
+  #
+  # After the join, never before: the link op is encrypted under the scope key.
+
+  - name: Node-2 enrols an account
+    type: account_create
+    node: account-demo-2
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      account: accountId
+      laptop_device: deviceId
+      root_key: accountRootKey
+      nonce: accountNonce
+
+  - name: Settle after the link op
+    type: wait_for_sync
+    nodes:
+      - account-demo-1
+      - account-demo-2
+    context_id: '{{context_id}}'
+
+  # ── Phase 3: pair a second device onto the SAME account ───────────
+  #
+  # node-3 was never invited and is a member of nothing.
+
+  - name: Node-3 follows the context as a device of that account
+    type: join_context
+    node: account-demo-3
+    context_id: '{{context_id}}'
+
+  - name: Pair node-3 onto node-2's account
+    type: account_pair
+    node: account-demo-3
+    holder: account-demo-2
+    namespace_id: '{{namespace_id}}'
+    root_key: '{{root_key}}'
+    nonce: '{{nonce}}'
+    outputs:
+      phone_device: deviceId
+      key_delivered: keyDelivered
+
+  - name: Settle after pairing
+    type: wait_for_sync
+    nodes:
+      - account-demo-1
+      - account-demo-2
+      - account-demo-3
+    context_id: '{{context_id}}'
+    timeout: 60
+    trigger_sync: true
+
+  - name: The paired device was handed the current scope key
+    type: json_assert
+    statements:
+      - 'json_equal({{key_delivered}}, true)'
+
+  # ── Phase 4: one account, two devices ─────────────────────────────
+
+  - name: What the laptop speaks for
+    type: account_show
+    node: account-demo-2
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      laptop_account: accountId
+
+  - name: What the phone speaks for
+    type: account_show
+    node: account-demo-3
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      phone_account: accountId
+
+  # The feature in two assertions. Same account means the second device needed no
+  # membership of its own. Different devices means they stay distinct CRDT
+  # replicas — sharing a device id would have them share counter slots and an HLC
+  # seed and silently lose each other's writes.
+  - name: One account, two distinct devices
+    type: json_assert
+    statements:
+      - 'json_equal({{laptop_account}}, {{phone_account}})'
+      - 'json_equal({{laptop_account}}, {{account}})'
+
+  # ── Phase 5: revoke the paired device ─────────────────────────────
+
+  - name: Node-1 revokes the phone
+    type: account_revoke
+    node: account-demo-1
+    namespace_id: '{{namespace_id}}'
+    device_id: '{{phone_device}}'
+    outputs:
+      rotated: keyRotated
+
+  - name: Revoking rotated the scope key
+    type: json_assert
+    statements:
+      - 'json_equal({{rotated}}, true)'
+
+  # ── Phase 6: back up and restore the account root ─────────────────
+  #
+  # Offline by necessity. `merod account export` opens the datastore directly and
+  # RocksDB's lock is exclusive, so `node_exec` refuses to run against a live
+  # node — stop it first.
+
+  - name: Stop node-2 so its datastore can be opened
+    type: stop_node
+    node: account-demo-2
+
+  - name: Export node-2's account root
+    type: node_exec
+    node: account-demo-2
+    args: ['account', 'export', '--namespace', '{{namespace_id}}']
+    outputs:
+      phrase: stdout_first_line
+
+  # Importing into a node that already has a root is refused, and that refusal is
+  # the guard worth showing: a root that has already certified devices has no
+  # second copy, so replacing it strands every account it owned. `expected_failure`
+  # asserts the refusal rather than working around it.
+  - name: Re-importing without --force is refused
+    type: node_exec
+    node: account-demo-2
+    files:
+      /app/data/recovery.txt: '{{phrase}}'
+    args: ['account', 'import', '--from', '/app/data/recovery.txt']
+    expected_failure: true
+
+  - name: Forcing the same root back in is a no-op that succeeds
+    type: node_exec
+    node: account-demo-2
+    files:
+      /app/data/recovery.txt: '{{phrase}}'
+    args: ['account', 'import', '--from', '/app/data/recovery.txt', '--force']
+
+  - name: Start node-2 again
+    type: start_node
+    node: account-demo-2
+
+  - name: Settle after the restart
+    type: wait_for_sync
+    nodes:
+      - account-demo-1
+      - account-demo-2
+    context_id: '{{context_id}}'
+    timeout: 60
+    trigger_sync: true
+
+  # The root round-tripped: the account it presents is the one it had before.
+  - name: The restored root still owns the same account
+    type: account_show
+    node: account-demo-2
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      recovered_account: accountId
+
+  - name: Same account after export and import
+    type: json_assert
+    statements:
+      - 'json_equal({{recovered_account}}, {{account}})'
+
+stop_all_nodes: true

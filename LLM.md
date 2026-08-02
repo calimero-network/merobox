@@ -1316,7 +1316,8 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 # Workflow step types
 install_application, create_context, create_identity, join_context, call, wait,
 repeat, script, assert, json_assert, upload_blob, download_blob, invite_open, join_open,
-fuzzy_test, stop_node, start_node
+fuzzy_test, stop_node, start_node, account_create, account_pair, account_revoke,
+account_show, node_exec
 
 # Workflow configuration options
 auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image,
