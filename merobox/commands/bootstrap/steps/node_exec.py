@@ -230,4 +230,7 @@ class NodeExecStep(BaseStep):
 
         console.print(f"[green]✓[/green] node_exec on {node_name} succeeded")
         workflow_results[f"exec_{node_name}"] = result["data"]
+        # As above: recording is not exporting. `outputs: { phrase:
+        # stdout_first_line }` is inert unless this runs.
+        self._export_variables(result["data"], node_name, dynamic_values)
         return True
