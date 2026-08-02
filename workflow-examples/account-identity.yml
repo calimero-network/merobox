@@ -36,7 +36,13 @@ description: >
        worth demonstrating, since replacing a root that has certified devices is
        unrecoverable.
 
-  Requires a merod image carrying `merod account export|import`.
+  NOT RUN IN CI YET, and excluded from both matrices on purpose: `node_exec` is
+  Docker-only (it runs a one-shot container over the node's data directory, so
+  binary mode has nothing to run it against), and the export/import steps need a
+  merod carrying `merod account export|import` — calimero-network/core#3362, still
+  unmerged. Re-add it to the docker matrix once merod:edge has those commands. Until
+  then this file documents the shape and has been validated against the schema
+  loader, but has never been executed end to end.
 
 nodes:
   count: 3

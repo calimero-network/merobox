@@ -117,7 +117,14 @@ jobs:
           # `build-merod-mock`; see the `tee` matrix output below. They stay out
           # of the binary+docker matrices here because those use feature-less
           # merod (release binary / merod:edge).
+          # account-identity needs two things nothing in CI has yet: `node_exec`
+          # is Docker-only (a one-shot container over the node's data dir, so
+          # binary mode has nothing to run it against), and its export/import
+          # steps need a merod carrying `merod account export|import`
+          # (calimero-network/core#3362, unmerged). Re-add to the docker matrix
+          # once merod:edge carries those commands; binary mode can never run it.
           BINARY=$(ls workflow-examples/*.yml | \
+            grep -v account-identity | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
@@ -136,6 +143,7 @@ jobs:
           # tee-* excluded here too — merod:edge lacks mock-attestation
           # (see the binary-mode note above).
           DOCKER=$(ls workflow-examples/*.yml | \
+            grep -v account-identity | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
@@ -190,6 +198,17 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Build workflow WASM apps
+        env:
+          # Build the apps from the SAME core revision the merod above came from.
+          # Core master's apps import host functions a released merod does not
+          # have — `account_id` since calimero-network/core#3320 — and a wasm that
+          # imports a missing host function dies at instantiation:
+          #   Link(Import("env", "account_id", UnknownImport))
+          # which surfaces as "create_context failed: Internal server error" in
+          # every binary-mode workflow. The reverse skew is harmless (host
+          # functions only get added), so one build from the release tag serves
+          # both the binary and docker matrices.
+          CORE_BRANCH: ${{ steps.download-merod.outputs.tag }}
         run: |
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh

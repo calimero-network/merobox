@@ -7,6 +7,14 @@
 #   Or:                     CORE_REPO_DIR=/path/to/core ./workflow-examples/scripts/build_res_wasm.sh
 #
 # Set CORE_REPO_DIR to use an existing core clone; otherwise we clone into workflow-examples/.core-repo.
+#
+# CORE_BRANCH should match the merod you intend to run these wasms against. It
+# defaults to master, which is right for merod:edge — but an app built from master
+# can import a host function a RELEASED merod does not have (`account_id` since
+# calimero-network/core#3320), and that fails at instantiation with
+# Link(Import("env", "account_id", UnknownImport)) rather than anything that names
+# a version skew. CI pins CORE_BRANCH to the release tag it downloaded merod from
+# for exactly this reason; do the same locally if you are testing a release.
 
 set -e
 
