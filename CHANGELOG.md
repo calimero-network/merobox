@@ -33,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeps `deviceId: null` as a real answer ("no device here"), which is what
   makes it usable for asserting that a revocation stuck.
 
+  They go through `calimero-client-py` (>= 0.6.20) like every other step. An
+  earlier draft called `admin-api/` directly with `requests` on the grounds that
+  the client had no account methods — backwards twice over: the fix for a missing
+  binding is to add it, and core's Rust client already wrapped all five endpoints
+  (meroctl's `account` subcommands drive them), so only the Python bindings were
+  missing. They landed in calimero-client-py#72.
+
 - **`node_exec`: run an offline `merod` subcommand against a stopped node.** Some
   node operations are CLI-only and deliberately unavailable on a live node —
   `merod account export|import` opens the datastore directly and RocksDB's lock is

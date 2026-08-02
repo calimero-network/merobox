@@ -10,83 +10,41 @@ That made the scenarios read as a sequence of side effects rather than a data
 flow, and it put the interesting assertions inside shell rather than in
 `json_assert` where a reader can see them.
 
-The endpoints are the same ones `meroctl account …` wraps, called directly for
-the reason the scripts did: the merod image does not ship the CLI, and
-merobox's client library has no account methods, so a raw admin-api call is
-what is actually available. The commands under test are thin wrappers over
-these endpoints, so exercising the endpoints exercises the same code paths.
+These go through `calimero-client-py` like every other step, not raw HTTP. An
+earlier draft called `admin-api/` directly on the grounds that the client had no
+account methods — backwards twice over: the fix for a missing binding is to add
+it, and core's Rust client already wrapped all five endpoints (meroctl's `account`
+subcommands drive them), so only the Python bindings were missing. They landed in
+calimero-client-py 0.6.20. Going through the client keeps the token cache, the
+error mapping and the connection handling this layer exists to provide.
 """
 
 from typing import Any
 
-import requests
-
-from merobox.commands.auth import AuthManager
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
-#: Admin-api calls are quick local HTTP; a generous ceiling that still fails
-#: rather than hanging a whole scenario on one unresponsive node.
-ACCOUNT_API_TIMEOUT = 30
-
 
 class _AccountStepBase(BaseStep):
-    """Shared admin-api plumbing for the account steps."""
+    """Shared client plumbing for the account steps."""
 
-    async def _post(
-        self, node_name: str, path: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
-        """POST to `admin-api/<path>` on `node_name`, returning the parsed body.
+    def _client(self, node_name: str):
+        """A client bound to `node_name`, with its cached token attached."""
+        rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+        return get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-        Attaches the cached bearer token when there is one. A node running with
-        auth disabled has none, and the call is made unauthenticated rather than
-        failing — the `unauthenticated` toggle exists precisely so a scenario can
-        run that way.
+    @staticmethod
+    def _data(response: Any) -> dict[str, Any]:
+        """The payload, whether or not the response wraps it in `data`.
+
+        The api types are `{ data: { … } }`; unwrapping here keeps the exported
+        variable names matching the field names an operator sees in the docs.
         """
-        rpc_url, cache_node_name = self._resolve_node_for_client(node_name)
-        headers = {"Content-Type": "application/json"}
-        token = AuthManager().get_cached_token(cache_node_name or node_name)
-        if token is not None:
-            headers["Authorization"] = f"Bearer {token.access_token}"
-
-        response = requests.post(
-            f"{rpc_url}/admin-api/{path}",
-            json=body,
-            headers=headers,
-            timeout=ACCOUNT_API_TIMEOUT,
-        )
-        # Include the body on failure: the admin api reports *why* a pairing or a
-        # revocation was refused in it, and a bare status code turns a designed
-        # refusal into an unexplained 4xx.
-        if not response.ok:
-            raise RuntimeError(
-                f"POST admin-api/{path} on {node_name} returned "
-                f"{response.status_code}: {response.text}"
-            )
-        payload = response.json()
-        return payload.get("data", payload)
-
-    async def _get(self, node_name: str, path: str) -> dict[str, Any]:
-        """GET `admin-api/<path>` on `node_name`, returning the parsed body."""
-        rpc_url, cache_node_name = self._resolve_node_for_client(node_name)
-        headers = {}
-        token = AuthManager().get_cached_token(cache_node_name or node_name)
-        if token is not None:
-            headers["Authorization"] = f"Bearer {token.access_token}"
-
-        response = requests.get(
-            f"{rpc_url}/admin-api/{path}",
-            headers=headers,
-            timeout=ACCOUNT_API_TIMEOUT,
-        )
-        if not response.ok:
-            raise RuntimeError(
-                f"GET admin-api/{path} on {node_name} returned "
-                f"{response.status_code}: {response.text}"
-            )
-        payload = response.json()
-        return payload.get("data", payload)
+        if isinstance(response, dict) and "data" in response:
+            return response["data"]
+        return response if isinstance(response, dict) else {}
 
     def _require_strings(self, fields: tuple[str, ...]) -> None:
         step_name = self.config.get(
@@ -154,8 +112,8 @@ class AccountCreateStep(_AccountStepBase):
         node_name = self._resolved("node", dynamic_values)
         namespace_id = self._resolved("namespace_id", dynamic_values)
         try:
-            data = await self._post(node_name, f"namespaces/{namespace_id}/account", {})
-            result = ok(data)
+            client = self._client(node_name)
+            result = ok(self._data(client.create_account(namespace_id)))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail("account create failed", error=e)
 
@@ -227,10 +185,8 @@ class AccountPairStep(_AccountStepBase):
         nonce = self._resolved("nonce", dynamic_values)
 
         try:
-            init = await self._post(
-                node_name,
-                f"namespaces/{namespace_id}/account/pair-init",
-                {"accountRootKey": root_key, "accountNonce": nonce},
+            init = self._data(
+                self._client(node_name).pair_device_init(namespace_id, root_key, nonce)
             )
             missing = [
                 field
@@ -246,16 +202,15 @@ class AccountPairStep(_AccountStepBase):
             if missing:
                 raise RuntimeError(f"pair-init omitted {', '.join(missing)}: {init}")
 
-            complete = await self._post(
-                holder,
-                f"namespaces/{namespace_id}/account/pair-complete",
-                {
-                    "deviceId": init["deviceId"],
-                    "kemPublicKey": init["kemPublicKey"],
-                    "signPublicKey": init["signPublicKey"],
-                    "statement": init["statement"],
-                    "confirmationCode": init["confirmationCode"],
-                },
+            complete = self._data(
+                self._client(holder).pair_device_complete(
+                    namespace_id,
+                    init["deviceId"],
+                    init["kemPublicKey"],
+                    init["signPublicKey"],
+                    init["statement"],
+                    init["confirmationCode"],
+                )
             )
             # The check a human is supposed to make. Both sides derive it over
             # exactly what gets certified, so a mismatch means the payload was
@@ -318,12 +273,8 @@ class AccountRevokeStep(_AccountStepBase):
         device_id = self._resolved("device_id", dynamic_values)
 
         try:
-            data = await self._post(
-                node_name,
-                f"namespaces/{namespace_id}/account/revoke",
-                {"deviceId": device_id},
-            )
-            result = ok(data)
+            client = self._client(node_name)
+            result = ok(self._data(client.revoke_device(namespace_id, device_id)))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail("account revoke failed", error=e)
 
@@ -374,8 +325,8 @@ class AccountShowStep(_AccountStepBase):
         namespace_id = self._resolved("namespace_id", dynamic_values)
 
         try:
-            data = await self._get(node_name, f"namespaces/{namespace_id}/account")
-            result = ok(data)
+            client = self._client(node_name)
+            result = ok(self._data(client.get_namespace_account(namespace_id)))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail("account show failed", error=e)
 
