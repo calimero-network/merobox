@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.47] - 2026-08-02
+
+### Fixed
+
+- **`node_exec` could not run after `stop_node`, which is the only thing it is
+  for.** It read the image and bind mount off the node's container — but stopping
+  a node **removes** it (`_graceful_stop_containers_batch` stops *and* removes),
+  so by the time an offline command runs there is nothing left to inspect. It now
+  falls back to what merobox still knows: the image the manager recorded when it
+  started the node (new `DockerManager.node_images`, kept across a stop and
+  cleared only on teardown) and the `./data/<node>` bind-mount convention, with
+  optional `image:` / `data_dir:` overrides for anything conventions cannot cover.
+
+- **`node_exec` hid the reason it failed.** A failure printed
+  `node_exec failed: node_exec failed`, so the bug above had to be diagnosed by
+  inference rather than by reading the log. The underlying error — a missing
+  container, a non-zero exit with its stderr — is now in the message.
+
 ## [0.6.46] - 2026-08-02
 
 ### Fixed

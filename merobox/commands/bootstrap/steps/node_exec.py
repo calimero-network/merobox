@@ -75,6 +75,10 @@ class NodeExecStep(BaseStep):
                 f"Step '{step_name}': 'files' must be a mapping of "
                 "container path -> contents"
             )
+        for field in ("image", "data_dir"):
+            value = self.config.get(field)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
         for flag in ("allow_running", "expected_failure"):
             value = self.config.get(flag)
             if value is not None and not isinstance(value, bool):
@@ -95,23 +99,56 @@ class NodeExecStep(BaseStep):
     def _container_spec(self, node_name: str) -> tuple[str, str]:
         """The node's image and the HOST path backing its `/app/data` mount.
 
-        Read from the container itself so this cannot drift from how the node was
-        started. Works while stopped, which is the only state this step runs in.
-        """
-        container = self.manager.client.containers.get(node_name)
-        image = container.attrs.get("Config", {}).get("Image")
-        if not image:
-            raise RuntimeError(f"could not determine the image for {node_name}")
+        Reading both off the container is the most accurate source and the first
+        thing tried — but it cannot be the only one: `stop_node` **removes** the
+        container (`_graceful_stop_containers_batch` stops *and* removes), so by
+        the time an offline command runs there is usually nothing left to inspect.
+        That is not an edge case, it is the main path: the whole reason this step
+        exists is to run against a node that has been stopped.
 
+        So, in order:
+
+        1. the container, if it still exists (a running node under
+           `allow_running`, or a flow that stopped it another way);
+        2. the step's explicit `image:` / `data_dir:`, for anything the
+           conventions cannot cover;
+        3. what merobox itself knows — the image the manager recorded when it
+           started the node, and its `./data/<node>` bind-mount convention.
+        """
+        image: Optional[str] = None
         source: Optional[str] = None
-        for mount in container.attrs.get("Mounts", []):
-            if mount.get("Destination") == CONTAINER_HOME:
-                source = mount.get("Source")
-                break
-        if not source:
+
+        try:
+            container = self.manager.client.containers.get(node_name)
+            image = container.attrs.get("Config", {}).get("Image")
+            for mount in container.attrs.get("Mounts", []):
+                if mount.get("Destination") == CONTAINER_HOME:
+                    source = mount.get("Source")
+                    break
+        except Exception:  # noqa: BLE001 - absence is expected, not exceptional
+            pass
+
+        image = (
+            image
+            or self.config.get("image")
+            or getattr(self.manager, "node_images", {}).get(node_name)
+        )
+        if not image:
             raise RuntimeError(
-                f"{node_name} has no bind mount at {CONTAINER_HOME}, so there is "
-                "no data directory to run against"
+                f"could not determine which image to run for {node_name}: its "
+                "container is gone and merobox has no record of starting it. Pass "
+                "`image:` on the step."
+            )
+
+        source = (
+            source
+            or self.config.get("data_dir")
+            or os.path.abspath(os.path.join("data", node_name))
+        )
+        if not os.path.isdir(source):
+            raise RuntimeError(
+                f"no data directory for {node_name} at '{source}'. Pass `data_dir:` "
+                "if the node's home is somewhere else."
             )
         return image, source
 
@@ -205,20 +242,24 @@ class NodeExecStep(BaseStep):
                 }
             )
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("node_exec failed", error=e)
+            result = fail(f"node_exec failed: {e}", error=e)
 
         expected_failure = bool(self.config.get("expected_failure", False))
 
         if not result["success"]:
+            # `result["error"]` is the summary; the exception carries the reason
+            # (a missing container, a non-zero exit with its stderr). Printing only
+            # the summary made a CI failure read "node_exec failed: node_exec
+            # failed", which is how this step's first real bug had to be diagnosed
+            # by inference instead of by reading the log.
+            detail = result.get("details") or result.get("error")
             if expected_failure:
                 console.print(
                     f"[green]✓[/green] node_exec on {node_name} failed as expected: "
-                    f"{result.get('error')}"
+                    f"{detail}"
                 )
                 return True
-            console.print(
-                f"[red]node_exec on {node_name} failed: {result.get('error')}[/red]"
-            )
+            console.print(f"[red]node_exec on {node_name} failed: {detail}[/red]")
             return False
 
         if expected_failure:
