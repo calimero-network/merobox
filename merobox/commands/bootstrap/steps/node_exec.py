@@ -232,6 +232,14 @@ class NodeExecStep(BaseStep):
 
             container = self.manager.client.containers.create(
                 image=image,
+                # `root`, for the same reason `run_node` overrides it on node
+                # containers: the merod images set `USER user`, while the bind
+                # mount is owned by the host user that created it and merobox
+                # chmods the node's home to 0700. A non-root container user cannot
+                # traverse that, so merod finds no config and reports the node as
+                # uninitialised — the same directory the running node reads fine,
+                # because that one is root.
+                user="root",
                 entrypoint="",
                 command=command,
                 volumes={host_home: {"bind": CONTAINER_HOME, "mode": "rw"}},

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.50] - 2026-08-03
+
+### Fixed
+
+- **`node_exec` ran as the image's user and could not read the node's data.** The
+  merod images set `USER user`; the bind-mounted data directory is owned by the
+  host user that created it, and merobox chmods the node's home to `0700`. A
+  non-root container user cannot traverse that, so merod found no config and
+  reported the node as uninitialised — the very directory the running node reads
+  without trouble, because `run_node` overrides the user to `root` for exactly this
+  reason. `node_exec` now does the same.
+
 ## [0.6.49] - 2026-08-03
 
 ### Fixed
