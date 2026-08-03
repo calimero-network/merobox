@@ -259,3 +259,99 @@ def test_node_exec_exports_its_outputs(tmp_path):
 
     assert dynamic_values["phrase"] == "word word word"
     assert dynamic_values["code"] == 0
+
+
+class TestNodeExecAfterTheContainerIsGone:
+    """`stop_node` REMOVES the container, so this is the main path, not an edge.
+
+    The first version read the image and bind mount off the container and failed
+    the moment it was used for what it exists for: running an offline command
+    against a stopped node. `_graceful_stop_containers_batch` stops *and* removes.
+    """
+
+    def _step(self, config, manager):
+        return NodeExecStep(config, manager=manager)
+
+    def _gone(self, tmp_path, node_images=None):
+        """A manager whose container lookup raises, as docker-py does for a
+        removed container."""
+        manager = MagicMock()
+        manager.is_node_running.return_value = False
+        manager.client.containers.get.side_effect = RuntimeError("No such container")
+        manager.node_images = node_images if node_images is not None else {}
+        return manager
+
+    def test_falls_back_to_the_manager_record_and_the_data_convention(self, tmp_path):
+        manager = self._gone(tmp_path, {"calimero-node-2": "merod:local"})
+        data = tmp_path / "data" / "calimero-node-2"
+        data.mkdir(parents=True)
+        step = self._step(
+            {
+                "type": "node_exec",
+                "name": "Export",
+                "node": "calimero-node-2",
+                "args": ["account", "export"],
+                "data_dir": str(data),
+            },
+            manager,
+        )
+        with patch.object(
+            manager.client.containers, "create", return_value=_stub_container()
+        ) as create:
+            assert _run(step.execute({}, {})) is True
+        assert create.call_args.kwargs["image"] == "merod:local"
+        assert create.call_args.kwargs["volumes"] == {
+            str(data): {"bind": CONTAINER_HOME, "mode": "rw"}
+        }
+
+    def test_explicit_image_wins_when_merobox_has_no_record(self, tmp_path):
+        manager = self._gone(tmp_path)
+        data = tmp_path / "home"
+        data.mkdir()
+        step = self._step(
+            {
+                "type": "node_exec",
+                "name": "Export",
+                "node": "calimero-node-2",
+                "args": ["account", "export"],
+                "image": "merod:pinned",
+                "data_dir": str(data),
+            },
+            manager,
+        )
+        with patch.object(
+            manager.client.containers, "create", return_value=_stub_container()
+        ) as create:
+            assert _run(step.execute({}, {})) is True
+        assert create.call_args.kwargs["image"] == "merod:pinned"
+
+    def test_says_what_is_missing_when_the_image_cannot_be_resolved(self, tmp_path):
+        """The original failure printed 'node_exec failed: node_exec failed'."""
+        manager = self._gone(tmp_path)
+        data = tmp_path / "home"
+        data.mkdir()
+        step = self._step(
+            {
+                "type": "node_exec",
+                "name": "Export",
+                "node": "calimero-node-2",
+                "args": ["account", "export"],
+                "data_dir": str(data),
+            },
+            manager,
+        )
+        assert _run(step.execute({}, {})) is False
+
+    def test_a_missing_data_directory_is_reported(self, tmp_path):
+        manager = self._gone(tmp_path, {"calimero-node-2": "merod:local"})
+        step = self._step(
+            {
+                "type": "node_exec",
+                "name": "Export",
+                "node": "calimero-node-2",
+                "args": ["account", "export"],
+                "data_dir": str(tmp_path / "nope"),
+            },
+            manager,
+        )
+        assert _run(step.execute({}, {})) is False

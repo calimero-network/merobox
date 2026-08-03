@@ -155,6 +155,11 @@ class DockerManager(CleanupMixin):
             sys.exit(1)
         self.nodes = {}
         self.node_rpc_ports: dict[str, int] = {}
+        #: Image each node was started from, by node name. Survives the container
+        #: itself: stopping a node REMOVES it (see `_graceful_stop_containers_batch`),
+        #: so anything needing to run a one-shot container over a stopped node's data
+        #: — `node_exec` — has nothing left to inspect.
+        self.node_images: dict[str, str] = {}
         # Absolute path to each node's config.toml, recorded by run_node so the
         # cluster-bootstrap wiring doesn't have to reconstruct it from a
         # relative path (which would break if the CWD changed, or if a custom
@@ -221,6 +226,7 @@ class DockerManager(CleanupMixin):
             )
             self.nodes.clear()
             self.node_rpc_ports.clear()
+            self.node_images.clear()
             self.node_config_files.clear()
 
     def _is_remote_image(self, image: str) -> bool:
@@ -900,6 +906,7 @@ class DockerManager(CleanupMixin):
                     host_rpc_port = None
             if host_rpc_port is not None:
                 self.node_rpc_ports[node_name] = host_rpc_port
+                self.node_images[node_name] = image
 
             display_rpc_port = host_rpc_port if host_rpc_port is not None else rpc_port
             console.print(

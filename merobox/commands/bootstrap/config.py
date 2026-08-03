@@ -910,6 +910,16 @@ class NodeExecStepConfig(BaseStepConfig):
         description="Assert the command is refused rather than succeeding — e.g. "
         "an import that would replace an existing account root",
     )
+    image: Optional[str] = Field(
+        None,
+        description="Image to run. Defaults to the one merobox started the node "
+        "from; needed only when the container is gone and merobox has no record",
+    )
+    data_dir: Optional[str] = Field(
+        None,
+        description="Host path holding the node's home. Defaults to the container's "
+        "bind mount, else merobox's ./data/<node> convention",
+    )
 
 
 class AccountCreateStepConfig(BaseStepConfig):
