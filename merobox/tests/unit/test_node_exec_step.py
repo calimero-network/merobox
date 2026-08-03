@@ -125,6 +125,9 @@ class TestNodeExecExecution:
         # `merod` as argv[0] with the entrypoint cleared — the same shape
         # `run_node` uses, rather than trusting every image's ENTRYPOINT.
         assert kwargs["entrypoint"] == ""
+        # root, or the image's `USER user` cannot traverse the 0700 host-owned
+        # data directory and merod reports the node as uninitialised.
+        assert kwargs["user"] == "root"
         assert kwargs["command"] == [
             "merod",
             "--home",
