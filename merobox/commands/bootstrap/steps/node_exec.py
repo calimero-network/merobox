@@ -140,15 +140,30 @@ class NodeExecStep(BaseStep):
                 "`image:` on the step."
             )
 
-        source = (
-            source
-            or self.config.get("data_dir")
-            or os.path.abspath(os.path.join("data", node_name))
-        )
-        if not os.path.isdir(source):
+        if not source:
+            source = self.config.get("data_dir")
+        if not source:
+            # `<data_dir>/<node>/config.toml`, so the directory bound to
+            # /app/data is that path's grandparent. Exact, unlike rebuilding a
+            # relative path — the manager keeps this record precisely because
+            # reconstruction "would break if the CWD changed, or if a custom
+            # data_dir was used".
+            config_file = getattr(self.manager, "node_config_files", {}).get(node_name)
+            if config_file:
+                source = os.path.dirname(os.path.dirname(config_file))
+        if not source:
+            source = os.path.abspath(os.path.join("data", node_name))
+
+        # Check for the node's HOME, not just the directory: `--home /app/data
+        # --node <name>` reads `<source>/<name>/config.toml`, so an existing but
+        # wrong `source` passed an isdir() check and failed later inside merod
+        # with "Node is not initialized" — naming a path the log never showed.
+        node_home = os.path.join(source, node_name)
+        if not os.path.isdir(node_home):
             raise RuntimeError(
-                f"no data directory for {node_name} at '{source}'. Pass `data_dir:` "
-                "if the node's home is somewhere else."
+                f"'{source}' does not hold {node_name}'s home (expected "
+                f"'{node_home}'), so `--home {CONTAINER_HOME} --node {node_name}` "
+                "would find nothing. Pass `data_dir:` if it lives elsewhere."
             )
         return image, source
 

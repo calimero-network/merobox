@@ -25,7 +25,16 @@ def _run(coro):
         loop.close()
 
 
-def _manager(tmp_path, running=False, image="merod:local", mounted=True):
+def _manager(
+    tmp_path, running=False, image="merod:local", mounted=True, node="calimero-node-2"
+):
+    """A manager whose container mounts `tmp_path` at /app/data.
+
+    The node's home is created inside it, because that is what `--home /app/data
+    --node <name>` actually reads — a mount with no home in it is the shape that
+    used to pass validation and fail inside merod.
+    """
+    (tmp_path / node).mkdir(parents=True, exist_ok=True)
     manager = MagicMock()
     manager.is_node_running.return_value = running
 
@@ -284,7 +293,7 @@ class TestNodeExecAfterTheContainerIsGone:
     def test_falls_back_to_the_manager_record_and_the_data_convention(self, tmp_path):
         manager = self._gone(tmp_path, {"calimero-node-2": "merod:local"})
         data = tmp_path / "data" / "calimero-node-2"
-        data.mkdir(parents=True)
+        (data / "calimero-node-2").mkdir(parents=True)
         step = self._step(
             {
                 "type": "node_exec",
@@ -307,7 +316,7 @@ class TestNodeExecAfterTheContainerIsGone:
     def test_explicit_image_wins_when_merobox_has_no_record(self, tmp_path):
         manager = self._gone(tmp_path)
         data = tmp_path / "home"
-        data.mkdir()
+        (data / "calimero-node-2").mkdir(parents=True)
         step = self._step(
             {
                 "type": "node_exec",
@@ -329,7 +338,7 @@ class TestNodeExecAfterTheContainerIsGone:
         """The original failure printed 'node_exec failed: node_exec failed'."""
         manager = self._gone(tmp_path)
         data = tmp_path / "home"
-        data.mkdir()
+        (data / "calimero-node-2").mkdir(parents=True)
         step = self._step(
             {
                 "type": "node_exec",
@@ -355,3 +364,68 @@ class TestNodeExecAfterTheContainerIsGone:
             manager,
         )
         assert _run(step.execute({}, {})) is False
+
+
+class TestNodeExecUsesTheRecordedDataDir:
+    """The manager records each node's absolute config path; trust it over conventions.
+
+    Rebuilding `./data/<node>` assumes the CWD has not moved and no custom data
+    dir was used — the manager keeps `node_config_files` precisely because that
+    assumption breaks. Reconstructing it is what sent an export at a directory
+    that existed and held nothing, failing inside merod with "Node is not
+    initialized" and a path the log never printed.
+    """
+
+    def test_prefers_the_recorded_config_path_over_the_convention(self, tmp_path):
+        elsewhere = tmp_path / "somewhere-else" / "calimero-node-2"
+        (elsewhere / "calimero-node-2").mkdir(parents=True)
+
+        manager = MagicMock()
+        manager.is_node_running.return_value = False
+        manager.client.containers.get.side_effect = RuntimeError("No such container")
+        manager.node_images = {"calimero-node-2": "merod:local"}
+        manager.node_config_files = {
+            "calimero-node-2": str(elsewhere / "calimero-node-2" / "config.toml")
+        }
+
+        step = NodeExecStep(
+            {
+                "type": "node_exec",
+                "name": "Export",
+                "node": "calimero-node-2",
+                "args": ["account", "export"],
+            },
+            manager=manager,
+        )
+        with patch.object(
+            manager.client.containers, "create", return_value=_stub_container()
+        ) as create:
+            assert _run(step.execute({}, {})) is True
+
+        assert create.call_args.kwargs["volumes"] == {
+            str(elsewhere): {"bind": CONTAINER_HOME, "mode": "rw"}
+        }
+
+    def test_a_directory_without_the_node_home_is_rejected_up_front(self, tmp_path):
+        """Not merely `isdir(source)`: the home inside it is what merod reads."""
+        empty = tmp_path / "data" / "calimero-node-2"
+        empty.mkdir(parents=True)
+
+        manager = MagicMock()
+        manager.is_node_running.return_value = False
+        manager.client.containers.get.side_effect = RuntimeError("No such container")
+        manager.node_images = {"calimero-node-2": "merod:local"}
+        manager.node_config_files = {}
+
+        step = NodeExecStep(
+            {
+                "type": "node_exec",
+                "name": "Export",
+                "node": "calimero-node-2",
+                "args": ["account", "export"],
+                "data_dir": str(empty),
+            },
+            manager=manager,
+        )
+        assert _run(step.execute({}, {})) is False
+        manager.client.containers.create.assert_not_called()
