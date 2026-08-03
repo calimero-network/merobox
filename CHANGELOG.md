@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.48] - 2026-08-03
+
+### Fixed
+
+- **`node_exec` resolved the data directory by convention and pointed at the
+  wrong one.** With the container removed by `stop_node` it rebuilt
+  `./data/<node>` from the CWD, which the manager's own comment already warns
+  against ("would break if the CWD changed, or if a custom data_dir was used") —
+  which is why it records `node_config_files` per node. `node_exec` now derives
+  the mount from that recorded absolute path (`<data_dir>/<node>/config.toml` →
+  its grandparent) and keeps the convention only as a last resort.
+
+  It also now checks for the node's **home** inside the resolved directory rather
+  than merely that the directory exists. An existing-but-wrong path passed the old
+  check and failed inside merod with `Node is not initialized in
+  "/app/data/<node>"`, naming a path the log never showed; the error now names the
+  directory it resolved and what it expected to find there.
+
 ## [0.6.47] - 2026-08-02
 
 ### Fixed
