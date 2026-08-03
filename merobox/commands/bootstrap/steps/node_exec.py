@@ -217,11 +217,22 @@ class NodeExecStep(BaseStep):
                 with open(host_path, "w", encoding="utf-8") as handle:
                     handle.write(content if content.endswith("\n") else content + "\n")
 
-            command = ["--home", CONTAINER_HOME, "--node", node_name, *args]
-            console.print(f"[cyan]node_exec[/cyan] {node_name}: merod {' '.join(args)}")
+            # `merod` explicitly with the entrypoint cleared, which is how merobox
+            # starts node containers itself (`run_node` sets `entrypoint = ""` and
+            # passes "merod" as argv[0]). Relying on the image's ENTRYPOINT works
+            # for the images that have one and silently does the wrong thing for
+            # any that wrap it — matching the pattern that already works here is
+            # cheaper than depending on every image agreeing with us.
+            command = ["merod", "--home", CONTAINER_HOME, "--node", node_name, *args]
+            console.print(
+                f"[cyan]node_exec[/cyan] {node_name}: merod {' '.join(args)}\n"
+                f"  image: {image}\n"
+                f"  mount: {host_home} -> {CONTAINER_HOME}"
+            )
 
             container = self.manager.client.containers.create(
                 image=image,
+                entrypoint="",
                 command=command,
                 volumes={host_home: {"bind": CONTAINER_HOME, "mode": "rw"}},
                 environment={"CALIMERO_HOME": CONTAINER_HOME},

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.49] - 2026-08-03
+
+### Fixed
+
+- **`node_exec` now invokes `merod` the way merobox itself does** — entrypoint
+  cleared, `merod` passed as argv[0] — instead of relying on the image's
+  `ENTRYPOINT`. `run_node` has always done it this way; depending on every image
+  agreeing is a needless assumption, and one that fails silently (an entrypoint
+  that wraps or ignores its arguments produces a merod that never sees `--home`,
+  which looks exactly like an uninitialised node).
+
+### Changed
+
+- **`node_exec` logs the image and mount it resolved.** Three consecutive bugs in
+  this step were diagnosed by reading merobox's source rather than the CI log,
+  because the step never reported the two values that decide whether it can work.
+  It prints them now.
+
 ## [0.6.48] - 2026-08-03
 
 ### Fixed

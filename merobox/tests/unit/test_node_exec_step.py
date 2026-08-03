@@ -122,7 +122,11 @@ class TestNodeExecExecution:
 
         kwargs = create.call_args.kwargs
         assert kwargs["image"] == "merod:local"
+        # `merod` as argv[0] with the entrypoint cleared — the same shape
+        # `run_node` uses, rather than trusting every image's ENTRYPOINT.
+        assert kwargs["entrypoint"] == ""
         assert kwargs["command"] == [
+            "merod",
             "--home",
             CONTAINER_HOME,
             "--node",
