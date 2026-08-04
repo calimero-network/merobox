@@ -954,6 +954,12 @@ class AccountRevokeStepConfig(BaseStepConfig):
     )
     namespace_id: str = Field(..., description="Namespace the device is bound in")
     device_id: str = Field(..., description="Device to withdraw")
+    proof: Optional[str] = Field(
+        None,
+        description="Hex revocation proof signed elsewhere (`merod account "
+        "revoke-proof`). With it the node needs no authority of its own and only "
+        "publishes; without it the node must be an admin or hold the account",
+    )
 
 
 class AccountShowStepConfig(BaseStepConfig):

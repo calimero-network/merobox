@@ -271,7 +271,7 @@ class TestAccountRevokeStep:
         results = {}
         assert _run(step.execute(results, {})) is True
 
-        client.revoke_device.assert_called_once_with(NAMESPACE, "ee" * 32)
+        client.revoke_device.assert_called_once_with(NAMESPACE, "ee" * 32, None)
         # Exported so a scenario asserts the rotation happened rather than
         # inferring it from a later read that could pass for other reasons.
         assert results["revoke_calimero-node-1"]["keyRotated"] is True
@@ -284,7 +284,59 @@ class TestAccountRevokeStep:
             AccountRevokeStep, {**self.config, "device_id": "{{paired_device}}"}, client
         )
         assert _run(step.execute({}, {"paired_device": "ee" * 32})) is True
-        client.revoke_device.assert_called_once_with(NAMESPACE, "ee" * 32)
+        client.revoke_device.assert_called_once_with(NAMESPACE, "ee" * 32, None)
+
+    def test_passes_a_supplied_proof_through(self):
+        """The lost-device path: the node publishes a proof it did not mint.
+
+        Signed wherever the account root lives (`merod account revoke-proof`), so
+        the node running this step needs no authority of its own.
+        """
+        client = MagicMock()
+        client.revoke_device.return_value = _envelope({"keyRotated": False})
+        step = _step(AccountRevokeStep, {**self.config, "proof": "ab" * 40}, client)
+
+        assert _run(step.execute({}, {})) is True
+        client.revoke_device.assert_called_once_with(NAMESPACE, "ee" * 32, "ab" * 40)
+
+    def test_resolves_a_placeholder_proof(self):
+        """The proof normally arrives from a `node_exec` capture, not inline."""
+        client = MagicMock()
+        client.revoke_device.return_value = _envelope({"keyRotated": False})
+        step = _step(
+            AccountRevokeStep, {**self.config, "proof": "{{proof_hex}}"}, client
+        )
+
+        assert _run(step.execute({}, {"proof_hex": "cd" * 40})) is True
+        client.revoke_device.assert_called_once_with(NAMESPACE, "ee" * 32, "cd" * 40)
+
+    def test_omitting_the_proof_sends_none_rather_than_an_empty_string(self):
+        """`None` means "revoke on this node's own authority"; "" would be a lie.
+
+        An empty string reaches the node as a present-but-unusable proof, so the
+        distinction has to survive all the way to the client call.
+        """
+        client = MagicMock()
+        client.revoke_device.return_value = _envelope({"keyRotated": True})
+        step = _step(AccountRevokeStep, self.config, client)
+
+        assert _run(step.execute({}, {})) is True
+        assert client.revoke_device.call_args.args[2] is None
+
+    @pytest.mark.parametrize("bad", ["", "   "])
+    def test_an_empty_proof_is_refused_rather_than_silently_ignored(self, bad):
+        """Passing a blank proof is always a scenario bug.
+
+        Forwarded as-is it would read to the node as "no proof" and the step would
+        revoke on the node's own authority instead — succeeding for a reason the
+        author did not intend, which is worse than failing.
+        """
+        with pytest.raises(ValueError, match="proof"):
+            AccountRevokeStep({**self.config, "proof": bad})
+
+    def test_a_non_string_proof_is_refused(self):
+        with pytest.raises(ValueError, match="proof"):
+            AccountRevokeStep({**self.config, "proof": 1234})
 
 
 # =============================================================================
