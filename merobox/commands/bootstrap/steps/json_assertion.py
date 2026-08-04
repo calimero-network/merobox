@@ -49,6 +49,11 @@ class JsonAssertStep(BaseStep):
       left: "{{some_json}}"
       right: {"nested": {"key": "value"}}
       mode: subset
+
+    The `statements:` form additionally supports inequality, which `mode:` does
+    not: `json_not_equal(A, B)`. Use it for properties only expressible as a
+    difference — a re-enrolled device must not reuse a revoked id, and the new id
+    is unpredictable, so there is no literal to compare against.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -134,8 +139,20 @@ class JsonAssertStep(BaseStep):
 
         Supported forms:
         - json_equal(A, B) / equal(A, B)
+        - json_not_equal(A, B) / not_equal(A, B)
         - json_subset(A, B) / subset(A, B)
         Arguments can be placeholders or JSON strings.
+
+        `json_not_equal` exists because some properties are only expressible as a
+        difference. A revocation is terminal, so a re-enrolled device must get a
+        NEW id — and the new value is unpredictable, so there is no literal to
+        compare it against. Without this, scenarios either shelled out to a script
+        or asserted equality against a stand-in, which tests the stand-in.
+
+        Order in the table below does not affect matching — `_call_like` is a
+        `startswith` test anchored at position 0, so `equal(` cannot match
+        `json_not_equal(...)` or `not_equal(...)`. The negatives are listed first
+        only so the pairs read together.
         """
         expr = statement.strip()
 
@@ -143,9 +160,43 @@ class JsonAssertStep(BaseStep):
             return expr.lower().startswith(name + "(") and expr.endswith(")")
 
         def _args(body: str) -> list[str]:
-            return [p.strip() for p in body.split(",", 1)] if "," in body else [body]
+            """Split on the comma separating the two operands, not the first one.
+
+            `body.split(",", 1)` happens to work whenever the LEFT operand has no
+            comma of its own — which is the common shape, a captured placeholder
+            against a JSON literal. It silently mis-parses the moment the left side
+            is itself a multi-key object or an array: `{"a": 1, "b": 2}, {"a": 1}`
+            splits into `{"a": 1` and `"b": 2}, {"a": 1}`, neither of which is JSON,
+            and the assertion then fails for a reason that has nothing to do with
+            the values.
+
+            So: split at the first comma that is at depth zero and outside a string.
+            """
+            depth = 0
+            in_string = False
+            escaped = False
+            for index, char in enumerate(body):
+                if escaped:
+                    escaped = False
+                    continue
+                if char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = not in_string
+                elif in_string:
+                    continue
+                elif char in "{[":
+                    depth += 1
+                elif char in "}]":
+                    depth -= 1
+                elif char == "," and depth == 0:
+                    return [body[:index].strip(), body[index + 1 :].strip()]
+            return [body.strip()]
 
         for func, desc, mode in (
+            # Grouped with their positive counterparts; order is not significant.
+            ("json_not_equal", "JSON inequality", "not_equal"),
+            ("not_equal", "JSON inequality", "not_equal"),
             ("json_equal", "JSON equality", "equal"),
             ("equal", "JSON equality", "equal"),
             ("json_subset", "JSON subset", "subset"),
@@ -173,11 +224,12 @@ class JsonAssertStep(BaseStep):
                 )
                 left_norm = _normalize_json(left_val)
                 right_norm = _normalize_json(right_val)
-                passed = (
-                    (left_norm == right_norm)
-                    if mode == "equal"
-                    else self._is_subset(left_norm, right_norm)
-                )
+                if mode == "equal":
+                    passed = left_norm == right_norm
+                elif mode == "not_equal":
+                    passed = left_norm != right_norm
+                else:
+                    passed = self._is_subset(left_norm, right_norm)
                 return passed, desc, left_val, right_val
 
         # Fallback: try simple equality if pattern not matched

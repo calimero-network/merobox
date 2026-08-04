@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.52] - 2026-08-04
+
+### Added
+
+- **`json_not_equal(A, B)` / `not_equal(A, B)` in `json_assert` statements.** Some
+  properties are only expressible as a difference, and there was no way to say so:
+  a revocation is terminal, so a device re-enrolling after being revoked must get a
+  NEW id — and the new id is unpredictable, so there is no literal to compare it
+  against. Scenarios were shelling out to a script or asserting equality against a
+  stand-in, which tests the stand-in.
+
+### Fixed
+
+- **`json_assert` mis-parsed a statement whose LEFT operand contained a comma.**
+  The argument splitter took the first comma, which is the operand separator only
+  when the left side has none of its own — true for the usual
+  placeholder-against-literal shape, and false the moment the left side is a
+  multi-key object or an array. `json_equal({"a": 1, "b": 2}, {"a": 1, "b": 2})`
+  split into `{"a": 1` and `"b": 2}, {"a": 1, "b": 2}` and failed on unparseable
+  halves rather than on the values. Now splits at the first comma at bracket depth
+  zero and outside a string, so a comma inside `"a,b"` is not a separator either.
+  Verified against the existing right-hand-literal shapes: no behaviour change.
+
 ## [0.6.51] - 2026-08-04
 
 ### Added
