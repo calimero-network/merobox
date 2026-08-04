@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.51] - 2026-08-04
+
+### Added
+
+- **`account_revoke` accepts a `proof:`.** A revocation signed wherever the account
+  root lives (core's `merod account revoke-proof`) can now be published by any
+  member node, which is the lost-device case: the machine that held the device is
+  gone, so the node that would have minted the proof is gone with it. The node
+  running the step needs no authority of its own — it only publishes. Omitting the
+  field keeps the previous behaviour, where the node must be an admin or hold the
+  account itself.
+
+  A blank `proof:` is refused rather than forwarded. Sent as-is it reads to the node
+  as "no proof", so the step would quietly revoke on the node's own authority
+  instead — succeeding for a reason the scenario author did not intend.
+
+  Requires `calimero-client-py >= 0.6.21`, where `revoke_device` grew the argument.
+  Below that the call is a `TypeError` at run time rather than an install-time
+  resolution failure, so the floor is raised in `pyproject.toml`. (`setup.py`'s copy
+  of the pin was stale at `>=0.6.11` and has been brought in line.)
+
 ## [0.6.50] - 2026-08-03
 
 ### Fixed

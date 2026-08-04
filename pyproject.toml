@@ -26,7 +26,10 @@ dependencies = [
     "docker>=6.0.0",
     "rich>=13.0.0,<14.3.4",
     "PyYAML>=6.0.0",
-    "calimero-client-py>=0.6.20",
+    # 0.6.21 is where `revoke_device` grew its `proof` argument. Below it the
+    # account_revoke step's three-argument call is a TypeError at run time, not a
+    # resolution failure at install time, so the floor has to say so.
+    "calimero-client-py>=0.6.21",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",

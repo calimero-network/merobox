@@ -256,9 +256,18 @@ class AccountPairStep(_AccountStepBase):
 class AccountRevokeStep(_AccountStepBase):
     """Withdraw a device from an account, rotating the scope key.
 
-    Run on a node with the authority to do it (an admin, or the account itself).
+    Run on a node with the authority to do it — an admin, or the account itself.
     Exports `keyRotated` so a scenario can assert the rotation happened rather
     than inferring it from a later read.
+
+    `proof:` supplies a revocation signed **elsewhere** (`merod account
+    revoke-proof`), which is the lost-device case: the account root never reaches a
+    node, and the node running this step needs no authority of its own — it only
+    publishes. Without it, the node must be an admin or hold the account itself.
+
+    Only an admin can rotate the scope key, so a proof-published revocation stops
+    the device writing immediately and leaves it able to read until an admin
+    rotates. `keyRotated` reports which happened rather than hiding the difference.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -266,6 +275,21 @@ class AccountRevokeStep(_AccountStepBase):
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node", "namespace_id", "device_id"))
+        # Optional, so absence is fine — but a present non-string is a scenario
+        # bug, and an empty string is one too: it would reach the node as "no
+        # proof" while the author clearly meant to pass one.
+        proof = self.config.get("proof")
+        if proof is not None:
+            step_name = self.config.get(
+                "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+            )
+            if not isinstance(proof, str):
+                raise ValueError(f"Step '{step_name}': 'proof' must be a string")
+            if not proof.strip():
+                raise ValueError(
+                    f"Step '{step_name}': 'proof' is empty — omit the field entirely "
+                    "if this node revokes on its own authority"
+                )
 
     def _get_exportable_variables(self):
         return [
@@ -282,10 +306,19 @@ class AccountRevokeStep(_AccountStepBase):
         node_name = self._resolved("node", dynamic_values)
         namespace_id = self._resolved("namespace_id", dynamic_values)
         device_id = self._resolved("device_id", dynamic_values)
+        # Resolved through the same path as every other field, so `{{proof}}` from
+        # a `node_exec` capture works without the scenario copying the hex inline.
+        proof = (
+            self._resolved("proof", dynamic_values)
+            if self.config.get("proof") is not None
+            else None
+        )
 
         try:
             client = self._client(node_name)
-            result = ok(self._data(client.revoke_device(namespace_id, device_id)))
+            result = ok(
+                self._data(client.revoke_device(namespace_id, device_id, proof))
+            )
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail("account revoke failed", error=e)
 
@@ -299,7 +332,8 @@ class AccountRevokeStep(_AccountStepBase):
         data = result["data"]
         console.print(
             f"[green]✓[/green] {node_name} revoked device {device_id} "
-            f"(key rotated: {data.get('keyRotated')})"
+            f"(key rotated: {data.get('keyRotated')}"
+            f"{', via supplied proof' if proof else ''})"
         )
         return self._finish(node_name, "revoke", data, workflow_results, dynamic_values)
 
