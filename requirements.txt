@@ -2,16 +2,16 @@ click>=8.0.0
 docker>=6.0.0
 rich>=13.0.0,<14.3.4
 PyYAML>=6.0.0
-# TEMPORARY — revert to `calimero-client-py>=0.6.20` once core#3391 (governance
-# principals named by account) merges and a client-py release carries it.
+# TEMPORARY — revert to `calimero-client-py>=0.6.22` once client-py#78 merges
+# and is released.
 #
-# That change names members by AccountId, which renders as 64 hex where a signing
-# key renders as bs58. A client built from core master therefore cannot decode a
-# member listing from a node running the branch, and silently drops the new
-# `account` / `memberAccount` fields the e2e fixtures capture to address members.
-# Only pyproject.toml's `>=0.6.21` floor is published; this git ref is what the
-# binary build and the e2e suite actually install, so PyPI metadata stays clean.
-calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@feat/3346b-account-principals
+# #78 makes four member-id bindings decode whatever the node writes instead of
+# parsing them as bs58 keys. Without it, a client built against a server that
+# names members by account cannot deserialize a member listing at all, and
+# silently drops the new `account` / `memberAccount` fields. With it, one build
+# talks to nodes on either side of that change — which is what lets core#3391
+# land without a prerelease.
+calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@fix/decode-member-ids-encoding-agnostically
 aiohttp>=3.9.0
 toml>=0.10.2
 pydantic>=2.0.0
