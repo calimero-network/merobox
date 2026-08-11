@@ -2,7 +2,7 @@ click>=8.0.0
 docker>=6.0.0
 rich>=13.0.0,<14.3.4
 PyYAML>=6.0.0
-# TEMPORARY — revert to `calimero-client-py>=0.6.22` once client-py#78 merges
+# TEMPORARY — revert to `calimero-client-py>=0.6.23` once client-py#78 merges
 # and is released.
 #
 # #78 makes four member-id bindings decode whatever the node writes instead of
