@@ -1,8 +1,8 @@
 name: Group Upgrade Lifecycle Example
 description: >
   Demonstrates the group-application upgrade lifecycle: install two distinct
-  application binaries, set upgrade policy, initiate upgrade from v1 to v2,
-  poll upgrade status, and attempt retry (which is expected to fail once the
+  application binaries, initiate upgrade from v1 to v2, poll upgrade
+  status, and attempt retry (which is expected to fail once the
   upgrade has completed — exercising the expected_failure flag).
 
   Requires kv_store_v2.wasm in workflow-examples/res/, which is a purpose-
@@ -76,13 +76,7 @@ steps:
     type: wait
     seconds: 5
 
-  # Phase 3 used to set an upgrade policy here. The concept is gone
-  # (calimero-network/core#3393): 'coordinated' went first, then the setting
-  # itself, and the route with it — lazy-on-access is now the only behaviour, so
-  # there is nothing left to choose. The upgrade below is unaffected; it simply
-  # applies on next access rather than immediately.
-
-  # Phase 4: Initiate upgrade v1 -> v2
+  # Phase 3: Initiate upgrade v1 -> v2
   - name: Upgrade Subgroup Application to v2
     type: upgrade_group
     node: calimero-node-1
@@ -98,7 +92,7 @@ steps:
     node: calimero-node-1
     group_id: '{{group_id}}'
 
-  # Phase 5: Retry is expected to fail once the upgrade completed
+  # Phase 4: Retry is expected to fail once the upgrade completed
   # (the server rejects retry when there is no active in-progress upgrade).
   - name: Attempt Retry on Completed Upgrade
     type: retry_group_upgrade
@@ -106,7 +100,7 @@ steps:
     group_id: '{{group_id}}'
     expected_failure: true
 
-  # Phase 6: Teardown
+  # Phase 5: Teardown
   # Unlocked by calimero-client-py 0.6.2+ (requester field on
   # delete_context/delete_group/delete_namespace).
   - name: Delete Context

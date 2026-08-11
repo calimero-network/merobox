@@ -78,7 +78,6 @@ VALID_STEP_TYPES = frozenset(
         "get_member_metadata",
         "set_context_metadata",
         "get_context_metadata",
-        "update_group_settings",
         "detach_context_from_group",
         "sync_group",
         "register_group_signing_key",
@@ -1359,23 +1358,6 @@ class GetContextMetadataStepConfig(BaseStepConfig):
     context_id: str = Field(..., description="Group-registered context ID")
 
 
-class UpdateGroupSettingsStepConfig(BaseStepConfig):
-    """Configuration for update_group_settings step (currently exposes upgrade_policy)."""
-
-    type: Literal["update_group_settings"] = "update_group_settings"
-    node: str = Field(..., description="Target node")
-    group_id: str = Field(..., description="Group ID")
-    # The server accepts only 'automatic' or 'lazy-on-access'; the former
-    # 'coordinated' policy was removed and is now rejected on deserialize.
-    upgrade_policy: Literal[
-        "automatic",
-        "lazy",
-        "lazy-on-access",
-        "lazy_on_access",
-        "lazyonaccess",
-    ] = Field(..., description="Group upgrade policy")
-
-
 class DetachContextFromGroupStepConfig(BaseStepConfig):
     """Configuration for detach_context_from_group step."""
 
@@ -1689,7 +1671,6 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "get_member_metadata": GetMemberMetadataStepConfig,
     "set_context_metadata": SetContextMetadataStepConfig,
     "get_context_metadata": GetContextMetadataStepConfig,
-    "update_group_settings": UpdateGroupSettingsStepConfig,
     "detach_context_from_group": DetachContextFromGroupStepConfig,
     "sync_group": SyncGroupStepConfig,
     "register_group_signing_key": RegisterGroupSigningKeyStepConfig,
