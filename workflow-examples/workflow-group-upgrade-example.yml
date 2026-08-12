@@ -76,14 +76,11 @@ steps:
     type: wait
     seconds: 5
 
-  # Phase 3: Set upgrade policy to automatic (upgrade all contexts immediately
-  # when the group target changes). The former 'coordinated' policy was removed
-  # from the server, which now accepts only 'automatic' or 'lazy-on-access'.
-  - name: Set Upgrade Policy to Automatic
-    type: update_group_settings
-    node: calimero-node-1
-    group_id: '{{group_id}}'
-    upgrade_policy: automatic
+  # Phase 3 used to set an upgrade policy here. The concept is gone
+  # (calimero-network/core#3393): 'coordinated' went first, then the setting
+  # itself, and the route with it — lazy-on-access is now the only behaviour, so
+  # there is nothing left to choose. The upgrade below is unaffected; it simply
+  # applies on next access rather than immediately.
 
   # Phase 4: Initiate upgrade v1 -> v2
   - name: Upgrade Subgroup Application to v2
