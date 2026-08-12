@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.53] - 2026-08-12
+
+### Changed
+
+- **Requires `calimero-client-py>=0.6.24`.** That release decodes member ids as the node writes them rather than parsing them as bs58 keys, which is what lets one client talk to a node that names governance principals by account (calimero-network/core#3391) as well as one that does not. The floor also excludes 0.6.22 and 0.6.23, which omit `upgradePolicy` from `create_namespace` and so cannot create a namespace on any released node.
+
+### Removed
+
+- **The upgrade-policy step in `workflow-group-upgrade-example.yml`.** The setting no longer exists (calimero-network/core#3393) — lazy-on-access is the only behaviour, and the route is gone. The example still exercises the upgrade itself, which now applies on next access.
+
 ## [0.6.52] - 2026-08-04
 
 ### Added
