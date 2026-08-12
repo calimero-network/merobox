@@ -2,16 +2,11 @@ click>=8.0.0
 docker>=6.0.0
 rich>=13.0.0,<14.3.4
 PyYAML>=6.0.0
-# TEMPORARY — revert to `calimero-client-py>=0.6.23` once client-py#78 merges
-# and is released.
-#
-# #78 makes four member-id bindings decode whatever the node writes instead of
-# parsing them as bs58 keys. Without it, a client built against a server that
-# names members by account cannot deserialize a member listing at all, and
-# silently drops the new `account` / `memberAccount` fields. With it, one build
-# talks to nodes on either side of that change — which is what lets core#3391
-# land without a prerelease.
-calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@fix/decode-member-ids-encoding-agnostically
+# 0.6.23 is the first release whose member-id bindings decode whatever the node
+# writes rather than parsing it as a bs58 key — required against a node that
+# names members by account (calimero-network/core#3391), and backwards
+# compatible with one that does not.
+calimero-client-py>=0.6.23
 aiohttp>=3.9.0
 toml>=0.10.2
 pydantic>=2.0.0
