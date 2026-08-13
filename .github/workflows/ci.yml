@@ -385,9 +385,11 @@ jobs:
           path: workflow-examples/res/
 
       - name: Run ${{ matrix.name }}
+        env:
+          WORKFLOW_FILE: ${{ matrix.file }}
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
-          ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}" --no-docker
+          ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE" --no-docker
 
   # ── Test phase (TEE): mock-TEE scenarios, native, feature-enabled merod ──
   # These are excluded from the binary+docker matrices and run only here, on the
@@ -446,9 +448,11 @@ jobs:
           echo "✓ meroctl $TAG installed"
 
       - name: Run ${{ matrix.name }}
+        env:
+          WORKFLOW_FILE: ${{ matrix.file }}
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
-          ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}" --no-docker
+          ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE" --no-docker
 
       - name: Upload node logs
         if: always()
@@ -533,17 +537,23 @@ jobs:
           .github/scripts/capture-node-logs.sh start "$GITHUB_WORKSPACE/node-logs" /tmp/node-log-capture.state
 
       - name: Run ${{ matrix.name }}
+        env:
+          WORKFLOW_FILE: ${{ matrix.file }}
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
-          ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}"
+          ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE"
 
       # The PR run is green whatever happens here, so say what failed and how to
       # tell drift from a defect where the reader will actually see it.
       - name: Report canary failure
         if: failure()
+        # Through the environment, not interpolated into the script: an
+        # expression expanded into `run:` is executed as shell.
+        env:
+          WORKFLOW_NAME: ${{ matrix.name }}
         run: |
           {
-            echo "### Docker canary failed: ${{ matrix.name }}"
+            echo "### Docker canary failed: $WORKFLOW_NAME"
             echo
             echo "This lane runs against the rolling \`ghcr.io/calimero-network/merod:edge\` image, so the failure is either a merobox defect or an upstream core change."
             echo "Check the same workflow on master: still failing there means core moved, and fixing it is not this PR's job."
