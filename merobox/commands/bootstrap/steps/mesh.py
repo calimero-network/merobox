@@ -180,7 +180,8 @@ class CreateMeshStep(BaseStep):
             return True
         except Exception as e:
             console.print(
-                f"  [yellow]\u26a0\ufe0f Failed to pre-install app on {node_name}: {e}[/yellow]"
+                f"  [yellow]\u26a0\ufe0f Failed to pre-install app on {node_name}: "
+                f"{escape(str(e))}[/yellow]"
             )
             return False
 

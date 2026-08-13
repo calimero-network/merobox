@@ -852,7 +852,8 @@ class AssertCascadeCompleteStep(BaseStep):
                 self._report_expected_failure(str(e))
                 return True
             console.print(
-                f"[red]assert_cascade_complete: failed to reach {node_name}: {e}[/red]"
+                f"[red]assert_cascade_complete: failed to reach {node_name}: "
+                f"{escape(str(e))}[/red]"
             )
             return False
 
@@ -1233,7 +1234,8 @@ class AssertMigrationCompleteStep(BaseStep):
                 self._report_expected_failure(str(e))
                 return True
             console.print(
-                f"[red]assert_migration_complete: failed to reach {node_name}: {e}[/red]"
+                f"[red]assert_migration_complete: failed to reach {node_name}: "
+                f"{escape(str(e))}[/red]"
             )
             return False
 

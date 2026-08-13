@@ -712,8 +712,8 @@ class BaseStep:
                     raise Exception(f"Failed to resolve URL '{node_name}': {e}") from e
                 # Log the resolver error but try fallback for local nodes
                 console.print(
-                    f"[yellow]Warning: Resolver failed for {node_name}: {e}. "
-                    f"Trying legacy resolution...[/yellow]"
+                    f"[yellow]Warning: Resolver failed for {node_name}: "
+                    f"{escape(str(e))}. Trying legacy resolution...[/yellow]"
                 )
 
         # Fallback to legacy get_node_rpc_url (only for local nodes)

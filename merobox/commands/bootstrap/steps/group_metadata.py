@@ -137,7 +137,9 @@ class _SetMetadataBase(BaseStep):
             if expected_failure:
                 self._report_expected_failure(f"node resolution failed: {e}")
                 return True
-            console.print(f"[red]Failed to resolve node {node_name}: {e}[/red]")
+            console.print(
+                f"[red]Failed to resolve node {node_name}: {escape(str(e))}[/red]"
+            )
             return False
 
         try:
@@ -249,7 +251,9 @@ class _GetMetadataBase(BaseStep):
             if expected_failure:
                 self._report_expected_failure(f"node resolution failed: {e}")
                 return True
-            console.print(f"[red]Failed to resolve node {node_name}: {e}[/red]")
+            console.print(
+                f"[red]Failed to resolve node {node_name}: {escape(str(e))}[/red]"
+            )
             return False
 
         try:

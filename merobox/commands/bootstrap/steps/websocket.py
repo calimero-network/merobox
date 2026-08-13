@@ -18,6 +18,7 @@ import asyncio
 from typing import Any, Optional
 
 import aiohttp
+from rich.markup import escape
 
 from merobox.commands.auth import AuthManager
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -122,12 +123,16 @@ class WebSocketConnectStep(BaseStep):
                     f"{node_name} handshake returned HTTP {e.status}[/red]"
                 )
                 return False
-            console.print(f"[red]❌ WebSocket connect to {node_name} failed: {e}[/red]")
+            console.print(
+                f"[red]❌ WebSocket connect to {node_name} failed: {escape(str(e))}[/red]"
+            )
             return False
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             # Connection refused / reset / timeout doesn't prove an auth
             # rejection, so it never satisfies expected_failure.
-            console.print(f"[red]❌ WebSocket connect to {node_name} error: {e}[/red]")
+            console.print(
+                f"[red]❌ WebSocket connect to {node_name} error: {escape(str(e))}[/red]"
+            )
             return False
 
         if expected_failure:

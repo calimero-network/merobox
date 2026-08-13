@@ -157,7 +157,9 @@ class DownloadBlobStep(BaseStep):
         except _RETRIEVAL_ERRORS as e:
             # A genuine "cannot retrieve" verdict. Anything outside this tuple is
             # deliberately left to propagate — see _RETRIEVAL_ERRORS.
-            console.print(f"[red]✗ Blob download failed: {type(e).__name__}: {e}[/red]")
+            console.print(
+                f"[red]✗ Blob download failed: {type(e).__name__}: {escape(str(e))}[/red]"
+            )
             return fail("download_blob failed", error=e)
         return ok(blob_data)
 
@@ -217,7 +219,7 @@ class DownloadBlobStep(BaseStep):
             # to keep travelling so it surfaces as the bug it is.
             console.print(
                 f"[red]✗ Blob download failed after retries: "
-                f"{type(e).__name__}: {e}[/red]"
+                f"{type(e).__name__}: {escape(str(e))}[/red]"
             )
             result = fail(f"download_blob failed: {e}", error=e)
 

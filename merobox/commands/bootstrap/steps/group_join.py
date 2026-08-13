@@ -7,6 +7,8 @@ import os
 import shutil
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
@@ -76,7 +78,7 @@ class JoinNamespaceStep(BaseStep):
             dynamic_values[f"app_path_{node_name}"] = app_path
         except Exception as e:
             console.print(
-                f"[yellow]⚠️  Auto-install on {node_name} failed: {e}[/yellow]"
+                f"[yellow]⚠️  Auto-install on {node_name} failed: {escape(str(e))}[/yellow]"
             )
 
     def _prepare_container_path(
@@ -142,7 +144,7 @@ class JoinNamespaceStep(BaseStep):
             except json_lib.JSONDecodeError as e:
                 console.print(
                     f"[red]Step 'join_namespace' on {node_name}: "
-                    f"'invitation' is not valid JSON: {e}[/red]"
+                    f"'invitation' is not valid JSON: {escape(str(e))}[/red]"
                 )
                 return False
         else:
