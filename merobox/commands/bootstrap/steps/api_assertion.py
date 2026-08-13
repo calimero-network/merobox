@@ -130,7 +130,10 @@ class AssertApiResponseStep(BaseStep):
                 headers=headers,
                 timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT),
             )
-            if response.status_code != 200:
+            # The whole 2xx range, not just 200: a route answering 201/204 has
+            # served the request, and rejecting it would report a working
+            # endpoint as an HTTP failure.
+            if not 200 <= response.status_code < 300:
                 result = fail(
                     f"GET {path} on {node_name} returned HTTP "
                     f"{response.status_code}: {response.text}"

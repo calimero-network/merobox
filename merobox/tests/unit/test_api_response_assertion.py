@@ -265,12 +265,23 @@ class TestNullIsNotAbsent:
 
 
 class TestTransportFailures:
-    def test_a_non_200_fails_and_prints_the_status_and_body(self, capsys):
+    def test_a_non_2xx_fails_and_prints_the_status_and_body(self, capsys):
         result, _, _ = _execute(_step(present=["data"]), "nope", status=404)
         assert result is False
         out = capsys.readouterr().out
         assert "returned HTTP 404" in out
         assert "nope" in out
+
+    def test_another_2xx_status_is_a_served_request(self):
+        # The contract is "a non-2xx status fails", so a route answering 201
+        # has served the request and its body is what gets asserted on.
+        result, _, _ = _execute(_step(present=["data"]), _body(), status=201)
+        assert result is True
+
+    def test_a_3xx_status_still_fails(self, capsys):
+        result, _, _ = _execute(_step(present=["data"]), _body(), status=302)
+        assert result is False
+        assert "returned HTTP 302" in capsys.readouterr().out
 
     def test_a_non_json_body_fails(self, capsys):
         result, _, _ = _execute(_step(present=["data"]), "<html>502</html>")
