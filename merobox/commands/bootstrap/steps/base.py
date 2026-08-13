@@ -10,14 +10,34 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from rich.markup import escape
 
 from merobox.commands.auth import AuthManager
+from merobox.commands.errors import OutputCaptureError, UnresolvedPlaceholderError
 from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, get_node_rpc_url, vprint
 
 if TYPE_CHECKING:
     from merobox.commands.node_resolver import NodeResolver
 
+# Tells an absent key apart from one present with a null value, which a capture
+# is entitled to export.
+_MISSING = object()
+
+
+def _describe_keys(data: Any) -> str:
+    """The keys a failed capture could have named, for the error message."""
+    if not isinstance(data, dict):
+        return f"the response is {type(data).__name__}, not an object"
+    if not data:
+        return "the response is empty"
+    keys = sorted(data)
+    shown = ", ".join(keys[:10])
+    return shown + ("..." if len(keys) > 10 else "")
+
 
 class BaseStep:
     """Base class for all workflow steps."""
+
+    # Assertion steps set this: a `{{placeholder}}` that never resolved is a
+    # broken workflow, not a string to compare against.
+    strict_placeholders = False
 
     def __init__(
         self,
@@ -890,7 +910,7 @@ class BaseStep:
                         return text[pos : i + 1]
         return None
 
-    def _get_value(self, obj: Any, path: str) -> Any:
+    def _get_value(self, obj: Any, path: str, default: Any = None) -> Any:
         """Unified value extraction with automatic JSON parsing.
 
         This is the primary method for extracting values from nested structures.
@@ -910,17 +930,19 @@ class BaseStep:
         Args:
             obj: The object to extract from (dict, list, or JSON string)
             path: Key or dot-separated path to the desired field
+            default: Returned when the path cannot be resolved. Pass a sentinel
+                to tell an unresolvable path apart from a resolved null.
 
         Returns:
             The value at the specified path (with JSON parsing applied),
-            or None if the path cannot be resolved.
+            or `default` if the path cannot be resolved.
 
         Note:
             Use this method instead of dict.get() + _parse_json() for
             consistent JSON-aware value extraction.
         """
         if not isinstance(path, str) or not path:
-            return None
+            return default
 
         current = obj
         segments = path.split(".")
@@ -934,14 +956,14 @@ class BaseStep:
                 if 0 <= idx < len(current):
                     current = current[idx]
                     continue
-                return None
+                return default
 
             # Handle dict key
             if isinstance(current, dict) and segment in current:
                 current = current[segment]
                 continue
 
-            return None
+            return default
 
         return self._parse_json(current) if isinstance(current, str) else current
 
@@ -1037,6 +1059,10 @@ class BaseStep:
         """
         Export variables based on custom outputs configuration specified by the user.
 
+        A capture the response cannot satisfy raises OutputCaptureError: the
+        placeholder would otherwise stay unbound, and an unbound placeholder
+        reads as the literal string "{{name}}", which satisfies most assertions.
+
         Args:
             response_data: The API response data
             node_name: The name of the node
@@ -1064,7 +1090,16 @@ class BaseStep:
                 else response_data.get("data", response_data)
             )
         else:
+            is_error_info = False
             actual_data = response_data
+
+        # An error report carries the error fields, never the ones the call would
+        # have returned, so which half of an `expected_failure` step's captures
+        # can bind depends on the outcome. Failing on the other half would make
+        # that step type impossible to write. The step is already failing loudly
+        # here unless the workflow declared the failure expected, and a capture
+        # that stays unbound is caught where it is used, by the assertion steps.
+        lenient = is_error_info
 
         vprint(
             f"[cyan]📝 Exporting variables from {node_name} response:[/cyan]",
@@ -1073,104 +1108,75 @@ class BaseStep:
 
         for exported_variable, assigned_var in outputs_config.items():
             if isinstance(assigned_var, str):
-                # Use unified _get_value for both simple keys and dotted paths
-                # This handles JSON parsing automatically at each path segment
-                value = self._get_value(actual_data, assigned_var)
+                # Unified _get_value for both simple keys and dotted paths; it
+                # parses JSON at each path segment.
+                source = assigned_var
+                target_key = exported_variable
+                value = self._get_value(actual_data, source, default=_MISSING)
 
-                # Check if field is missing (for error reporting)
-                field_missing = False
-                if value is None and isinstance(actual_data, dict):
-                    # For dotted paths, we can't easily check if root exists
-                    # For simple keys, check if it exists in actual_data
-                    if "." not in assigned_var:
-                        field_missing = assigned_var not in actual_data
-
-                if field_missing:
-                    console.print(
-                        f"[yellow]⚠️  Export failed: '{assigned_var}' not found[/yellow]"
-                    )
-                    console.print(
-                        f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
-                    )
-                else:
-                    target_key = exported_variable
-                    # Skip exporting if this key is protected (e.g., error field export)
-                    if target_key in protected_keys:
-                        console.print(
-                            f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
-                        )
-                        continue
-                    dynamic_values[target_key] = value
-
-                    display_value = str(value)
-                    if len(display_value) > 100:
-                        display_value = display_value[:97] + "..."
-
-                    vprint(
-                        f"[green]   ✓[/green] [bold cyan]{exported_variable}[/bold cyan] [dim]=[/dim] {display_value}",
-                        level=LOG_LEVEL_VERBOSE,
-                    )
-
-            elif isinstance(assigned_var, dict):
-                # Complex assignment with node name replacement
-                if "field" in assigned_var:
-                    field_name = assigned_var["field"]
-                    # Literal key lookup (not path traversal) for backward compatibility
-                    base_value = (
-                        actual_data.get(field_name)
-                        if isinstance(actual_data, dict)
-                        else None
-                    )
-                    # Optional JSON parse - only when explicitly requested
+            elif isinstance(assigned_var, dict) and "field" in assigned_var:
+                source = assigned_var["field"]
+                target_key = assigned_var.get("target", exported_variable).replace(
+                    "{node_name}", node_name
+                )
+                # Literal key lookup (not path traversal) for backward compatibility
+                value = (
+                    actual_data.get(source, _MISSING)
+                    if isinstance(actual_data, dict)
+                    else _MISSING
+                )
+                if value is not _MISSING:
+                    # JSON parse only when explicitly requested
                     if assigned_var.get("json"):
-                        base_value = self._parse_json(base_value)
-                    # Optional nested path within the base value
-                    if isinstance(assigned_var.get("path"), str):
-                        base_value = self._get_value(base_value, assigned_var["path"])
-
-                    field_missing = False
-                    if base_value is None and isinstance(actual_data, dict):
-                        if isinstance(assigned_var.get("path"), str):
-                            field_missing = False
-                        else:
-                            field_missing = field_name not in actual_data
-
-                    if field_missing:
-                        console.print(
-                            f"[yellow]⚠️  Export failed: '{field_name}' not found or path unresolved[/yellow]"
-                        )
-                        console.print(
-                            f"[dim]   Available: {', '.join(list(actual_data.keys())[:5])}{'...' if len(actual_data.keys()) > 5 else ''}[/dim]"
-                        )
-                    else:
-                        target_key = assigned_var.get("target", exported_variable)
-                        target_key = target_key.replace("{node_name}", node_name)
-                        # Skip exporting if this key is protected (e.g., error field export)
-                        if target_key in protected_keys:
-                            console.print(
-                                f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
-                            )
-                            continue
-                        dynamic_values[target_key] = base_value
-
-                        # Format the value for display (truncate if too long)
-                        display_value = str(base_value)
-                        if len(display_value) > 100:
-                            display_value = display_value[:97] + "..."
-
-                        vprint(
-                            f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}",
-                            level=LOG_LEVEL_VERBOSE,
-                        )
-                else:
-                    console.print(
-                        f"[yellow]⚠️  Invalid custom export config: missing 'field' in {assigned_var}[/yellow]"
-                    )
+                        value = self._parse_json(value)
+                    # Optional nested path within the field's value
+                    path = assigned_var.get("path")
+                    if isinstance(path, str):
+                        source = f"{source}.{path}"
+                        value = self._get_value(value, path, default=_MISSING)
 
             else:
-                console.print(
-                    f"[yellow]⚠️  Invalid custom export config: {assigned_var} is not a string or dict[/yellow]"
+                raise OutputCaptureError(
+                    f"Step '{self._get_step_name()}': output '{exported_variable}' "
+                    f"is configured as {assigned_var!r}, which is neither a source "
+                    f"field name nor a mapping with a 'field' key",
+                    step_name=self._get_step_name(),
+                    step_type=self.config.get("type"),
                 )
+
+            if value is _MISSING:
+                if lenient:
+                    vprint(
+                        f"[yellow]   ⚠️  {exported_variable}: '{source}' not in the "
+                        f"response, left unset[/yellow]",
+                        level=LOG_LEVEL_VERBOSE,
+                    )
+                    continue
+                raise OutputCaptureError(
+                    f"Step '{self._get_step_name()}': output '{exported_variable}' "
+                    f"captures '{source}', which the response does not have. "
+                    f"Available: {_describe_keys(actual_data)}",
+                    step_name=self._get_step_name(),
+                    step_type=self.config.get("type"),
+                )
+
+            # Skip exporting if this key is protected (e.g., error field export)
+            if target_key in protected_keys:
+                console.print(
+                    f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                )
+                continue
+
+            dynamic_values[target_key] = value
+
+            display_value = str(value)
+            if len(display_value) > 100:
+                display_value = display_value[:97] + "..."
+
+            vprint(
+                f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}",
+                level=LOG_LEVEL_VERBOSE,
+            )
 
     def _export_variables(
         self,
@@ -1500,7 +1506,38 @@ class BaseStep:
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
     ) -> str:
-        """Resolve dynamic values using placeholders and captured results."""
+        """Resolve dynamic values using placeholders and captured results.
+
+        Under `strict_placeholders` a placeholder that resolved to nothing raises
+        instead of surviving as its own text. Every unresolved branch below hands
+        the input straight back, so identity is the reliable signal that nothing
+        bound - there is no single return to hang the check on.
+        """
+        resolved = self._resolve_dynamic_value_impl(
+            value, workflow_results, dynamic_values
+        )
+        if (
+            self.strict_placeholders
+            and resolved is value
+            and isinstance(value, str)
+            and "{{" in value
+            and "}}" in value
+        ):
+            raise UnresolvedPlaceholderError(
+                f"Step '{self._get_step_name()}': {value!r} contains a placeholder "
+                f"that never resolved; comparing against it compares against its "
+                f"own text",
+                step_name=self._get_step_name(),
+                step_type=self.config.get("type"),
+            )
+        return resolved
+
+    def _resolve_dynamic_value_impl(
+        self,
+        value: str,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> str:
         if not isinstance(value, str):
             return value
 
@@ -1741,7 +1778,30 @@ class BaseStep:
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
     ) -> str:
-        """Resolve a single placeholder without the {{}} wrapper."""
+        """Resolve a single placeholder without the {{}} wrapper.
+
+        An embedded placeholder that resolves to nothing is replaced by its own
+        NAME, braces and all gone, so a later scan for `{{` cannot see it. That is
+        why strictness lives here rather than on the resolved string.
+        """
+        resolved = self._resolve_single_placeholder_impl(
+            placeholder, workflow_results, dynamic_values
+        )
+        if self.strict_placeholders and resolved is placeholder:
+            raise UnresolvedPlaceholderError(
+                f"Step '{self._get_step_name()}': placeholder '{{{{{placeholder}}}}}' "
+                f"never resolved; comparing against it compares against its own text",
+                step_name=self._get_step_name(),
+                step_type=self.config.get("type"),
+            )
+        return resolved
+
+    def _resolve_single_placeholder_impl(
+        self,
+        placeholder: str,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> str:
         # First, check if this is a simple custom output variable name
         if placeholder in dynamic_values:
             return dynamic_values[placeholder]

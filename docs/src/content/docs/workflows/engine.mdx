@@ -149,6 +149,13 @@ outputs:
 The `{node_name}` token inside a target name is replaced with the step's node,
 which lets one step template distinct variables per node.
 
+A source the response does not carry **fails the step**.
+A capture that silently produced nothing would leave its placeholder unbound, and an unbound placeholder reaches later steps as the literal text `{{name}}`, which satisfies most assertions.
+Capturing a field that is present and `null` is fine — absent and null are different answers.
+
+The one exception is a step whose call failed: an error report carries the error fields and never the ones the call itself would have returned, so on that path a capture that cannot bind is skipped rather than fatal.
+That only matters for [`expected_failure`](#failure-handling) steps, since any other failing call has already stopped the workflow.
+
 ### Variable substitution
 
 At resolve time, any string containing `{{...}}` is rewritten. Supported forms:
@@ -156,13 +163,18 @@ At resolve time, any string containing `{{...}}` is rewritten. Supported forms:
 | Reference | Resolves to |
 | --- | --- |
 | `{{name}}` | A value previously captured under `name` in the dynamic store. |
-| `{{env.VAR}}` | An environment variable, read at resolve time. |
 | `{{install.node}}` / `{{context.node}}` / `{{identity.node}}` | Convenience lookups of the application/context/identity produced for a named node. |
 | `${VAR}` / `${VAR:-default}` | Expanded at **load** time, before schema validation — use it for values that must be present in the raw YAML (image tags, paths). |
 
 `{{...}}` placeholders and `${...}` expansion differ in *when* they resolve:
 `${VAR}` is substituted while the file is parsed; `{{name}}` is resolved
 per-step against values captured by earlier steps.
+
+In an [assertion](#failure-handling) step — `assert`, `json_assert`,
+`assert_api_response`, `assert_ws_event` — a placeholder that resolves to
+nothing **fails the assertion**.
+Everywhere else an unresolved placeholder is passed through unchanged with a warning, because most steps resolve optional and cosmetic config through the same machinery.
+An assertion is where the difference is dangerous: comparing against an unresolved `{{name}}` compares against its own text, so `not_equal({{name}}, null)` is satisfied by the typo rather than by the value.
 
 :::caution
 Never hardcode secrets (signing keys, passwords) in committed workflow YAML.

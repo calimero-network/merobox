@@ -55,6 +55,8 @@ class AssertApiResponseStep(BaseStep):
     green negative test.
     """
 
+    strict_placeholders = True
+
     def _get_required_fields(self) -> list[str]:
         return ["node", "path"]
 

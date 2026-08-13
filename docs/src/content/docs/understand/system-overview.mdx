@@ -117,8 +117,9 @@ can reference earlier values.
 - **Config parsing** is in `bootstrap/config.py`; **validation** (for
   `bootstrap validate`) is in `bootstrap/validate/validator.py`.
 - **Placeholders** use `{{...}}` syntax: `{{step_output}}` values captured from a
-  step's `outputs:` map, `{{env.VAR}}` for environment variables, and random
-  generators (e.g. `{{uuid}}`, `{{random_int(1, 100)}}`) inside `fuzzy_test`.
+  step's `outputs:` map, and random generators (e.g. `{{uuid}}`,
+  `{{random_int(1, 100)}}`) inside `fuzzy_test`. Environment variables are
+  `${VAR}`, expanded at load time.
 
 See the [workflow engine](/workflows/engine/) for internals and the
 [YAML reference](/workflows/yaml/) for the full schema and step catalog.

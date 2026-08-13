@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.errors import UnresolvedPlaceholderError
 from merobox.commands.utils import console
 
 
@@ -55,6 +56,8 @@ class JsonAssertStep(BaseStep):
     difference — a re-enrolled device must not reuse a revoked id, and the new id
     is unpredictable, so there is no literal to compare against.
     """
+
+    strict_placeholders = True
 
     def _get_required_fields(self) -> list[str]:
         # Statement syntax only
@@ -98,9 +101,12 @@ class JsonAssertStep(BaseStep):
                 console.print(f"[red]✗ Invalid JSON assertion at #{idx}[/red]")
                 all_ok = False
                 continue
-            passed, desc, left_val, right_val = self._eval_statement(
-                stmt, workflow_results, dynamic_values
-            )
+            try:
+                passed, desc, left_val, right_val = self._eval_statement(
+                    stmt, workflow_results, dynamic_values
+                )
+            except UnresolvedPlaceholderError as e:
+                passed, desc, left_val, right_val = False, e.message, None, None
             description = message or desc
             if passed:
                 console.print(f"[green]✓ {description} passed[/green]")

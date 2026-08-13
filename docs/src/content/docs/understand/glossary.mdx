@@ -41,7 +41,7 @@ these build on (context, group, namespace, CRDT), see the
 | **`ok()` / `fail()`** | Result helpers (`commands/result.py`) that return the standard success/error **dictionary** shape (`{"success": ...}`) used by steps and commands. There is no separate result class. |
 | **`parallel` (step)** | Control-flow step that runs several sub-step groups concurrently. |
 | **PID file** | File holding a process ID, written by `BinaryManager` when it spawns a `merod` process, used for tracking and cleanup. |
-| **placeholder** | A `{{...}}` template reference resolved at step time: `{{name}}` for a value captured in a prior step's `outputs:`, `{{env.VAR}}` for an environment variable, and random generators inside `fuzzy_test`. |
+| **placeholder** | A `{{...}}` template reference resolved at step time: `{{name}}` for a value captured in a prior step's `outputs:`, and random generators inside `fuzzy_test`. Environment variables use `${VAR}`, expanded at load time. |
 | **remote node** | A pre-existing `merod` node (not started by merobox) that a workflow targets by registering it via `RemoteNodeManager` and the `merobox remote` command. |
 | **RemoteNodeManager** | Component (`commands/remote_nodes.py`) that maintains the registry of remote nodes and their auth, consulted first by `NodeResolver`. |
 | **`repeat` (step)** | Control-flow step that loops a sequence of sub-steps a set number of times, exposing an iteration variable to the child steps. |

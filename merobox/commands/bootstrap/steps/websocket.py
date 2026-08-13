@@ -219,6 +219,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
     """
 
     _DEFAULT_TIMEOUT_SECONDS = 30.0
+    strict_placeholders = True
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "group_id", "event"]
