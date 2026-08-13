@@ -663,6 +663,11 @@ cached for the node is attached as a bearer token, or an explicit `token:`
 overrides it; a node running without auth needs neither. A non-2xx status fails
 the step and composes with `expected_failure` / `expected_error`.
 
+Those two govern the request outcome only, never the assertion verdicts. An
+assertion that misses always fails the step: letting a miss satisfy
+`expected_failure` would turn a typo in a path into a green negative test,
+which is the failure the flag exists to prevent, not one it should manufacture.
+
 #### 10. Proposals
 
 Create and vote on proposals in a context.

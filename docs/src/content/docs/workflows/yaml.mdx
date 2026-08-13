@@ -1524,6 +1524,10 @@ status fails the step and works with `expected_failure` / `expected_error`:
   expected_error: 'HTTP 404'
 ```
 
+Both govern the request outcome only, never the assertion verdicts. An
+assertion that misses always fails the step: letting a miss satisfy
+`expected_failure` would turn a typo in a path into a green negative test.
+
 ---
 
 ## Mesh & fuzzy steps

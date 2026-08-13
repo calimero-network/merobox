@@ -299,6 +299,14 @@ class TestTransportFailures:
         assert result is False
         assert "HTTP 403" in capsys.readouterr().out
 
+    def test_a_missed_assertion_is_not_an_expected_failure(self, capsys):
+        # `expected_failure` pins the request outcome, never the verdicts: a
+        # miss satisfying it would make a typo'd path a green negative test.
+        step = _step(expected_failure=True, match={"data.targetVersion": 9})
+        result, _, _ = _execute(step, _body())
+        assert result is False
+        assert "missed 1 of 1 assertion(s)" in capsys.readouterr().out
+
     def test_expected_failure_fails_when_the_request_succeeds(self, capsys):
         result, _, _ = _execute(_step(expected_failure=True), _body())
         assert result is False

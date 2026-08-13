@@ -73,6 +73,11 @@ class AssertApiResponseStep(BaseStep):
     One request, no polling - the other assertion steps do not poll either.
     Compose with ``repeat`` or ``wait_for_sync`` when the assertion has to wait
     for state to settle.
+
+    ``expected_failure`` / ``expected_error`` govern the request outcome only.
+    An assertion that misses always fails the step: a miss satisfying
+    ``expected_failure`` would turn a typo in a path into a green negative
+    test, which is the failure the flag exists to prevent.
     """
 
     def _get_required_fields(self) -> list[str]:
