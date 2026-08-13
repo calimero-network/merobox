@@ -203,6 +203,77 @@ class TestSummarizeMigrationStatus:
         assert s["failed"] == 1
         assert s["all_migrated"] is False
 
+    def test_all_migrated_false_when_a_member_is_unknown(self):
+        # `unknown` is the state a member that never reported sits in, and it
+        # is the shape the three-node cohort test asserts on. Trusting core's
+        # flag here would report a cohort with a silent member as converged.
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(migrated=1, unknown=1, total=2, allMigrated=True),
+                "members": [
+                    {"peer": "a", "state": "migrated"},
+                    {"peer": "b", "state": "unknown"},
+                ],
+            }
+        )
+        assert s["unknown"] == 1
+        assert s["all_migrated"] is False
+
+    def test_all_migrated_false_when_a_member_is_in_progress(self):
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(migrated=1, inProgress=1, total=2, allMigrated=True),
+                "members": [
+                    {"peer": "a", "state": "migrated"},
+                    {"peer": "b", "state": "in_progress"},
+                ],
+            }
+        )
+        assert s["in_progress"] == 1
+        assert s["all_migrated"] is False
+
+    def test_unknown_and_in_progress_reconciled_from_members(self):
+        # The rollup zeroes both counters while the member rows contradict it,
+        # the same shape the `failed` reconciliation was written for.
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(migrated=2, total=2, allMigrated=True),
+                "members": [
+                    {"peer": "a", "state": "unknown"},
+                    {"peer": "b", "state": "in_progress"},
+                ],
+            }
+        )
+        assert s["unknown"] == 1
+        assert s["in_progress"] == 1
+        assert s["all_migrated"] is False
+
+    def test_all_migrated_false_on_a_state_no_counter_names(self):
+        # A state core adds or spells differently is still not `migrated`, so
+        # it must not be waved through as converged.
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(migrated=2, total=2, allMigrated=True),
+                "members": [
+                    {"peer": "a", "state": "migrated"},
+                    {"peer": "b", "state": "quarantined"},
+                ],
+            }
+        )
+        assert s["all_migrated"] is False
+
+    def test_all_migrated_survives_a_fully_converged_cohort(self):
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(migrated=2, total=2, allMigrated=True),
+                "members": [
+                    {"peer": "a", "state": "migrated"},
+                    {"peer": "b", "state": "migrated"},
+                ],
+            }
+        )
+        assert s["all_migrated"] is True
+
 
 # =============================================================================
 # _summarize_migration_status - the per-member report and the aggregates

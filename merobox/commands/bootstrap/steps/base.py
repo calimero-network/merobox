@@ -40,6 +40,9 @@ class BaseStep:
         # Validated here rather than in _validate_field_types() so a subclass
         # override cannot drop it.
         self._validate_expected_error()
+        # The raw value stands in until an executor binds it, so a config
+        # carrying no placeholder needs no binding at all.
+        self._expected_error = self.config.get("expected_error")
 
     def _get_exportable_variables(self) -> list[tuple[str, str, str]]:
         """
@@ -1269,6 +1272,21 @@ class BaseStep:
                 f"'expected_failure: true' - on its own it never asserts anything"
             )
 
+    def bind_expected_error(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> None:
+        """Resolve `expected_error`'s placeholders before the step can fail.
+
+        `_report_expected_failure` is reached from a hundred call sites that
+        hold no resolution context, so the executors that own both dicts bind
+        the value here instead of threading them through all of them.
+        """
+        expected = self.config.get("expected_error")
+        if isinstance(expected, str):
+            self._expected_error = self._resolve_dynamic_value(
+                expected, workflow_results, dynamic_values
+            )
+
     def _failure_detail(self, result: dict[str, Any]) -> str:
         """The most specific error text a `fail()` result carries.
 
@@ -1306,7 +1324,7 @@ class BaseStep:
         `expected_failure: true` would green-light a refusal that never
         happened, e.g. an unreachable node standing in for a rejected upgrade.
         """
-        expected = self.config.get("expected_error")
+        expected = self._expected_error
         if expected is not None and expected not in error_message:
             # markup=False so an error body containing brackets survives Rich.
             console.print(

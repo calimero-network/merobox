@@ -408,6 +408,9 @@ class FuzzyTestStep(BaseStep):
                 continue
 
             try:
+                step_executor.bind_expected_error(
+                    workflow_results, pattern_dynamic_values
+                )
                 success = await step_executor.execute(
                     workflow_results, pattern_dynamic_values
                 )

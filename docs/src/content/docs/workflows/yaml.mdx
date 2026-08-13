@@ -169,7 +169,7 @@ Every step is a mapping with a `type`. These keys are available on all steps:
 | `name` | no | string | Human-readable label shown in output. |
 | `outputs` | no | map | Capture response values into workflow variables — see [capturing outputs](/workflows/engine/#capturing-outputs). |
 | `expected_failure` | no | bool (`false`) | Pass only if the operation is refused. A step that unexpectedly **succeeds** fails. |
-| `expected_error` | no | string | Pass only if the recorded error contains this substring (case-sensitive). Requires `expected_failure: true`. |
+| `expected_error` | no | string | Pass only if the recorded error contains this substring (case-sensitive), `{{placeholders}}` resolved first. Requires `expected_failure: true`. |
 
 Without `expected_error`, `expected_failure: true` accepts any error at all,
 including the node being unreachable standing in for the refusal under test.

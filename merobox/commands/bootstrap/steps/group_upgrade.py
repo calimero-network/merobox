@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from collections import Counter
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import Any
@@ -150,13 +151,23 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     missing/partial rollup degrades to an all-zero (never-complete) summary
     rather than raising.
 
-    `failed` is reconciled against the per-member states (`max` of the rollup
-    counter and the count of members in `state:"failed"`) so the
-    `assert_migration_complete` fast-exit still honours a failed member even
-    when the rollup is missing or carries a non-int counter — without it the
-    documented fail-fast would silently degrade to a poll-to-timeout. `total`
-    falls back to the member count only when the rollup omits it entirely (an
-    explicit `0` cohort is preserved).
+    `failed`, `in_progress` and `unknown` are each reconciled against the
+    per-member states (`max` of the rollup counter and the count of members in
+    that state) so the `assert_migration_complete` fast-exit still honours a
+    failed member even when the rollup is missing or carries a non-int counter
+    — without it the documented fail-fast would silently degrade to a
+    poll-to-timeout.
+
+    `all_migrated` is then gated on all three being zero AND on no member row
+    holding a state other than `migrated`. `rollup.allMigrated` is core's own
+    answer to "did everyone converge", so trusting it is the one thing this
+    summary must not do: a response claiming it while a member sits `unknown`
+    or `in_progress` would otherwise be reported as converged, and the poll
+    loop checks `all_migrated` before anything else. The unconverged count is
+    taken over every state that is not `migrated` rather than over the three
+    named ones, so a state core spells differently or adds later still blocks
+    a green verdict. `total` falls back to the member count only when the
+    rollup omits it entirely (an explicit `0` cohort is preserved).
 
     `fleet_completed_at` and `cohort_pinned_at_hlc` are the two top-level
     optionals, passed through as `None` when the response omits them.
@@ -200,7 +211,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     raw_members = raw_members if isinstance(raw_members, list) else []
 
     members: list[dict[str, Any]] = []
-    members_failed = 0
+    member_states: Counter = Counter()
     reported_versions: list[int] = []
     residue_total = 0
     failure_reasons: list[str] = []
@@ -210,8 +221,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         report = entry.get("report")
         report = report if isinstance(report, dict) else {}
         state = str(entry.get("state", "")).lower()
-        if state == "failed":
-            members_failed += 1
+        member_states[state] += 1
         schema_version = _opt_int(report.get("schemaVersion"))
         if schema_version is not None:
             reported_versions.append(schema_version)
@@ -242,9 +252,16 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     total_raw = rollup.get("total")
     total = _as_int(total_raw) if total_raw is not None else len(members)
 
-    # Reconcile with member states so a failed member is never missed when the
-    # rollup counter is absent/malformed (see docstring).
-    failed = max(_as_int(rollup.get("failed")), members_failed)
+    # Reconcile every non-converged counter with the member states, so a member
+    # the rollup misses is never dropped (see docstring).
+    failed = max(_as_int(rollup.get("failed")), member_states["failed"])
+    in_progress = max(_as_int(rollup.get("inProgress")), member_states["in_progress"])
+    unknown = max(_as_int(rollup.get("unknown")), member_states["unknown"])
+    # Catches a state core spells differently or adds later, which no named
+    # counter above would see.
+    members_unconverged = sum(
+        count for state, count in member_states.items() if state != "migrated"
+    )
 
     target_version = _opt_int(source.get("targetVersion"))
     below_target = (
@@ -265,16 +282,20 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         "cohort_pinned_at_hlc": source.get("cohortPinnedAtHlc"),
         "total": total,
         "migrated": _as_int(rollup.get("migrated")),
-        "in_progress": _as_int(rollup.get("inProgress")),
-        "unknown": _as_int(rollup.get("unknown")),
+        "in_progress": in_progress,
+        "unknown": unknown,
         "failed": failed,
-        # core computes `allMigrated` directly (true iff every member converged
-        # with zero residue), but the assert poll loop checks all_migrated
-        # BEFORE failed — so gate it on `failed == 0` too, otherwise a response
-        # that (malformed) claims allMigrated while a member is failed would
-        # wrongly satisfy the assertion. An empty/no-record response yields
-        # false either way.
-        "all_migrated": bool(rollup.get("allMigrated", False)) and failed == 0,
+        # `rollup.allMigrated` is core's own answer to "did everyone converge",
+        # so it is reconciled against every non-converged signal rather than
+        # trusted (see docstring). An empty/no-record response yields false
+        # either way.
+        "all_migrated": (
+            bool(rollup.get("allMigrated", False))
+            and failed == 0
+            and in_progress == 0
+            and unknown == 0
+            and members_unconverged == 0
+        ),
         "members_pending_signature": _as_int(rollup.get("membersPendingSignature")),
         # Recomputed from the member rows, never from `rollup`. See docstring.
         "reported_at_target": (

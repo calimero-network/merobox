@@ -10,7 +10,7 @@ add_group_members.
 """
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -125,6 +125,44 @@ class TestExpectedErrorHelper:
         # An empty substring matches everything, so it asserts nothing.
         with pytest.raises(ValueError, match="expected_error.*empty"):
             self._step(expected_failure=True, expected_error="  ")
+
+    def test_a_placeholder_is_resolved_before_matching(self):
+        # An unresolved template can never occur in a runtime error, so an
+        # unbound `expected_error` fails every gate that parameterizes it.
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.bind_expected_error({}, {"reason": "identity downgrade"})
+        assert step._report_expected_failure("identity downgrade forbidden") is True
+
+    def test_a_resolved_placeholder_still_rejects_the_wrong_reason(self):
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.bind_expected_error({}, {"reason": "identity downgrade"})
+        assert step._report_expected_failure("connection refused") is False
+
+    def test_an_embedded_placeholder_is_resolved(self):
+        step = self._step(
+            expected_failure=True, expected_error="downgrade to {{version}}"
+        )
+        step.bind_expected_error({}, {"version": "1.2.3"})
+        assert step._report_expected_failure("refused: downgrade to 1.2.3") is True
+
+    @pytest.mark.asyncio
+    async def test_the_workflow_executor_binds_before_running_a_step(self):
+        # The binding is what makes a dynamic `expected_error` work at all, so
+        # the executor forgetting it must not be a silent regression.
+        from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.execute = AsyncMock(return_value=True)
+        executor = WorkflowExecutor(
+            {"name": "wf", "steps": [{"type": "join_context", "name": "s"}]},
+            MagicMock(),
+        )
+        executor.dynamic_values["reason"] = "identity downgrade"
+
+        with patch.object(executor, "_create_step_executor", return_value=step):
+            assert await executor._execute_workflow_steps() is True
+
+        assert step._report_expected_failure("identity downgrade forbidden") is True
 
 
 # =============================================================================

@@ -195,8 +195,7 @@ class WebSocketConnectStep(_WebSocketStepBase):
             return False
 
         if expected_failure:
-            self._report_unexpected_success()
-            return False
+            return self._report_unexpected_success()
 
         console.print(f"[green]✓ WebSocket connected to {node_name}[/green]")
         return True
