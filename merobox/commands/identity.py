@@ -84,9 +84,9 @@ async def generate_identity_via_admin_api(rpc_url: str, node_name: str = None) -
         import traceback
 
         console.print(
-            f"[red]Exception in generate_identity: {type(e).__name__}: {e}[/red]"
+            f"[red]Exception in generate_identity: {type(e).__name__}: {escape(str(e))}[/red]"
         )
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        console.print(f"[dim]{escape(traceback.format_exc())}[/dim]")
         return fail(f"generate_context_identity failed: {e}", error=e)
 
 
