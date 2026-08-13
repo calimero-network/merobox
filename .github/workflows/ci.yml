@@ -462,10 +462,15 @@ jobs:
           if-no-files-found: ignore
 
   # ── Test phase (Docker): run each workflow in parallel ──
+  # Canary lane: `merod:edge` + force_pull_image means an upstream core change
+  # reddens it with no merobox commit involved, and ghcr keeps no immutable edge
+  # build to pin to (untagged versions are deleted after 2 days). So it reports
+  # on PRs instead of gating them, and stays a hard failure on master pushes.
   test-merobox-docker:
-    name: Docker (${{ matrix.name }})
+    name: Docker canary (${{ matrix.name }})
     runs-on: ubuntu-latest
     needs: [list-workflows]
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -531,6 +536,18 @@ jobs:
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "${{ matrix.file }}"
+
+      # The PR run is green whatever happens here, so say what failed and how to
+      # tell drift from a defect where the reader will actually see it.
+      - name: Report canary failure
+        if: failure()
+        run: |
+          {
+            echo "### Docker canary failed: ${{ matrix.name }}"
+            echo
+            echo "This lane runs against the rolling \`ghcr.io/calimero-network/merod:edge\` image, so the failure is either a merobox defect or an upstream core change."
+            echo "Check the same workflow on master: still failing there means core moved, and fixing it is not this PR's job."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stop node log capture
         if: always()
