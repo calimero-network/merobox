@@ -1,0 +1,320 @@
+"""
+Unit tests for the assert_ws_event workflow step.
+
+The aiohttp layer is mocked with a socket that replays a scripted frame
+sequence and then blocks, so the watch window really ends on the step's own
+deadline rather than on the fixture running out. Frame shapes are the wire form
+of calimero's GroupMigration events: a PascalCase `type` tag beside the hex
+`groupId`, with camelCase fields under `data`.
+"""
+
+import asyncio
+import json
+from unittest.mock import MagicMock, patch
+
+import aiohttp
+import pytest
+
+from merobox.commands.bootstrap.steps.websocket import WebSocketEventAssertStep
+
+# Long enough to let the scripted frames land, short enough that the tests
+# exercising the timeout path stay fast.
+_WINDOW = 0.3
+
+_GROUP = "21" * 32
+_SUBGROUP = "31" * 32
+
+
+@pytest.fixture(autouse=True)
+def _wide_console():
+    """Rich soft-wraps at terminal width, splitting the strings asserted on."""
+    from merobox.commands.utils import console
+
+    original = console.width
+    console.width = 400
+    yield
+    console.width = original
+
+
+def _run(coro):
+    """Run a coroutine on a dedicated loop, leaving a fresh current loop behind."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+def _manager():
+    manager = MagicMock()
+    manager.get_node_rpc_port.return_value = 2528
+    return manager
+
+
+class _FakeMsg:
+    def __init__(self, data, type_=aiohttp.WSMsgType.TEXT):
+        self.type = type_
+        self.data = data
+
+
+class _ScriptedWS:
+    """Replays scripted frames, then blocks so the step's deadline ends the window."""
+
+    def __init__(self, frames):
+        self._frames = list(frames)
+        self.sent = []
+        self.closed = False
+
+    async def send_str(self, message):
+        self.sent.append(message)
+
+    async def receive(self):
+        if self._frames:
+            return self._frames.pop(0)
+        await asyncio.sleep(3600)
+
+    async def close(self):
+        self.closed = True
+
+
+class _FakeSession:
+    def __init__(self, ws):
+        self._ws = ws
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def ws_connect(self, url):
+        return self._ws
+
+
+def _ack(group_ids=(_GROUP,)):
+    """The subscribe acknowledgement: the ids the node actually subscribed."""
+    return _FakeMsg(
+        json.dumps({"id": 1, "result": {"contextIds": [], "groupIds": list(group_ids)}})
+    )
+
+
+def _event(event_type, data, group=_GROUP):
+    return _FakeMsg(
+        json.dumps(
+            {"id": None, "result": {"groupId": group, "type": event_type, "data": data}}
+        )
+    )
+
+
+def _migration_started(from_version="1.0.0", to_version="2.0.0", to_state_version=2):
+    return _event(
+        "MigrationStarted",
+        {
+            "fromVersion": from_version,
+            "toVersion": to_version,
+            "toStateVersion": to_state_version,
+            "localContextsTotal": 7,
+        },
+    )
+
+
+def _migration_completed(to_version="2.0.0"):
+    return _event(
+        "MigrationCompleted", {"toVersion": to_version, "completedAt": 1_700_000_000}
+    )
+
+
+def _migration_progress():
+    return _event(
+        "MigrationProgress",
+        {"migrated": 1, "inProgress": 1, "unknown": 0, "failed": 0, "total": 2},
+    )
+
+
+def _step(**extra):
+    config = {
+        "type": "assert_ws_event",
+        "name": "ws-event",
+        "node": "calimero-node-2",
+        "group_id": _GROUP,
+        "event": "MigrationStarted",
+        "timeout_seconds": _WINDOW,
+        **extra,
+    }
+    return WebSocketEventAssertStep(config, manager=_manager())
+
+
+def _execute(step, frames, workflow_results=None):
+    """Run the step against a socket replaying `frames`, returning (result, ws)."""
+    ws = _ScriptedWS(frames)
+    no_token = MagicMock()
+    no_token.get_cached_token.return_value = None
+    with (
+        patch(
+            "merobox.commands.bootstrap.steps.websocket.AuthManager",
+            return_value=no_token,
+        ),
+        patch(
+            "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
+            return_value=_FakeSession(ws),
+        ),
+    ):
+        return (
+            _run(
+                step.execute(
+                    workflow_results if workflow_results is not None else {}, {}
+                )
+            ),
+            ws,
+        )
+
+
+class TestPositiveAssertion:
+    def test_matching_event_satisfies_the_step(self):
+        result, ws = _execute(_step(), [_ack(), _migration_started()])
+        assert result is True
+        # The subscription rides groupIds, hex-encoded like the admin API.
+        assert json.loads(ws.sent[0]) == {
+            "id": 1,
+            "method": "subscribe",
+            "params": {"groupIds": [_GROUP]},
+        }
+
+    def test_event_of_another_type_does_not_satisfy_it(self, capsys):
+        result, _ = _execute(
+            _step(), [_ack(), _migration_progress(), _migration_completed()]
+        )
+        assert result is False
+        combined = capsys.readouterr().out
+        # The two events that did arrive have to be in the report.
+        assert "MigrationProgress" in combined
+        assert "MigrationCompleted" in combined
+
+    def test_nested_payload_field_is_matched(self):
+        step = _step(event="MigrationCompleted", match={"data.toVersion": "2.0.0"})
+        result, _ = _execute(step, [_ack(), _migration_completed(to_version="2.0.0")])
+        assert result is True
+
+    def test_a_wrong_nested_field_value_does_not_match(self, capsys):
+        step = _step(event="MigrationCompleted", match={"data.toVersion": "2.0.0"})
+        result, _ = _execute(step, [_ack(), _migration_completed(to_version="1.9.0")])
+        assert result is False
+        combined = capsys.readouterr().out
+        # The near miss must name the path, what was wanted, and what came.
+        assert "data.toVersion" in combined
+        assert "'2.0.0'" in combined
+        assert "'1.9.0'" in combined
+
+    def test_matching_is_a_subset_so_unlisted_fields_are_ignored(self):
+        # Only toStateVersion is asserted; the frame carries three more fields.
+        step = _step(match={"data.toStateVersion": 2})
+        result, _ = _execute(step, [_ack(), _migration_started(to_state_version=2)])
+        assert result is True
+
+    def test_the_matched_event_is_stored_for_later_steps(self):
+        results = {}
+        _execute(_step(), [_ack(), _migration_started()], workflow_results=results)
+        assert results["ws_event_calimero-node-2"]["type"] == "MigrationStarted"
+
+
+class TestTimeoutReporting:
+    def test_timeout_names_what_actually_arrived(self, capsys):
+        result, _ = _execute(_step(), [_ack(), _migration_progress()])
+        assert result is False
+        combined = capsys.readouterr().out
+        assert "MigrationStarted" in combined, "the expectation should be named"
+        assert "1 event(s) arrived" in combined
+        # The whole frame is replayed, not just the type, so a mismatch is
+        # diagnosable from CI output alone.
+        assert "inProgress" in combined
+
+    def test_timeout_with_an_empty_stream_says_so(self, capsys):
+        result, _ = _execute(_step(), [_ack()])
+        assert result is False
+        assert "no events arrived on the subscription" in capsys.readouterr().out
+
+
+class TestNegativeAssertion:
+    def test_absent_passes_when_the_event_never_arrives(self):
+        step = _step(event="CascadeProgress", absent=True)
+        result, _ = _execute(step, [_ack(), _migration_progress()])
+        assert result is True
+
+    def test_absent_fails_when_the_event_does_arrive(self, capsys):
+        step = _step(event="CascadeProgress", absent=True)
+        cascade = _event(
+            "CascadeProgress",
+            {
+                "subgroupId": _SUBGROUP,
+                "localContextsSwapped": 1,
+                "localContextsTotal": 2,
+            },
+        )
+        result, _ = _execute(step, [_ack(), cascade])
+        assert result is False
+        combined = capsys.readouterr().out
+        assert "asserted absent but arrived" in combined
+        assert _SUBGROUP in combined, "the offending frame must be printed"
+
+    def test_absent_respects_match_so_a_different_payload_is_not_a_violation(self):
+        # "no MigrationCompleted to 3.0.0" must not trip on a completion to 2.0.0.
+        step = _step(
+            event="MigrationCompleted", match={"data.toVersion": "3.0.0"}, absent=True
+        )
+        result, _ = _execute(step, [_ack(), _migration_completed(to_version="2.0.0")])
+        assert result is True
+
+
+class TestUnobservedWindow:
+    """A window that was never watched must fail both directions, not pass one."""
+
+    def test_denied_subscription_fails_the_positive_assertion(self, capsys):
+        # The node drops ids the caller may not observe, so the ack comes back
+        # with no groupIds at all.
+        result, _ = _execute(_step(), [_ack(group_ids=())])
+        assert result is False
+        assert "refused a subscription" in capsys.readouterr().out
+
+    def test_denied_subscription_fails_the_negative_assertion_too(self, capsys):
+        step = _step(event="CascadeProgress", absent=True)
+        result, _ = _execute(step, [_ack(group_ids=())])
+        assert result is False
+        combined = capsys.readouterr().out
+        assert "refused a subscription" in combined
+
+    def test_an_unacknowledged_subscription_fails(self, capsys):
+        step = _step(absent=True)
+        result, _ = _execute(step, [])
+        assert result is False
+        assert "never acknowledged" in capsys.readouterr().out
+
+    def test_an_early_close_fails_the_negative_assertion(self, capsys):
+        step = _step(event="CascadeProgress", absent=True)
+        closed = _FakeMsg(None, type_=aiohttp.WSMsgType.CLOSED)
+        result, _ = _execute(step, [_ack(), closed])
+        assert result is False
+        assert "the connection ended" in capsys.readouterr().out
+
+
+class TestValidation:
+    def test_group_id_and_event_are_required(self):
+        with pytest.raises(ValueError):
+            WebSocketEventAssertStep(
+                {"type": "assert_ws_event", "node": "calimero-node-1"},
+                manager=_manager(),
+            )
+
+    def test_a_non_finite_timeout_is_rejected(self):
+        # inf survives the positive check but leaves the deadline unreachable.
+        with pytest.raises(ValueError):
+            _step(timeout_seconds=float("inf"))
+
+    def test_match_must_be_a_dict_of_paths(self):
+        with pytest.raises(ValueError):
+            _step(match={"": "x"})
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

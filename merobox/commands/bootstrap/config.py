@@ -131,6 +131,7 @@ VALID_STEP_TYPES = frozenset(
         "refresh",
         "ws_connect",
         "ws_subscribe",
+        "assert_ws_event",
     }
 )
 
@@ -399,6 +400,30 @@ class WebSocketConnectStepConfig(BaseStepConfig):
     )
     timeout: Optional[float] = Field(
         None, gt=0, description="Handshake timeout in seconds"
+    )
+
+
+class WebSocketEventAssertStepConfig(BaseStepConfig):
+    """Configuration for assert_ws_event step (WebSocket event assertion)."""
+
+    type: Literal["assert_ws_event"] = "assert_ws_event"
+    node: str = Field(..., description="Node whose event stream is watched")
+    group_id: str = Field(..., description="Hex group or namespace id to subscribe to")
+    event: str = Field(
+        ..., description="Event type tag to wait for, e.g. MigrationStarted"
+    )
+    match: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths into the event frame mapped to expected values",
+    )
+    absent: Optional[bool] = Field(
+        False, description="Assert the event must NOT arrive within the window"
+    )
+    timeout_seconds: Optional[float] = Field(
+        None, gt=0, description="Length of the watch window in seconds"
+    )
+    token: Optional[str] = Field(
+        None, description="Explicit JWT to attach (overrides the cached token)"
     )
 
 
@@ -1658,6 +1683,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "refresh": RefreshStepConfig,
     "ws_connect": WebSocketConnectStepConfig,
     "ws_subscribe": WebSocketConnectStepConfig,
+    "assert_ws_event": WebSocketEventAssertStepConfig,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
     "repeat": RepeatStep,

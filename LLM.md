@@ -550,6 +550,58 @@ Validate execution results.
     - 'json_subset({{result}}, {"key": "value"})'
 ```
 
+#### 9a. WebSocket Event Assertion Step (`assert_ws_event`)
+
+Subscribe to a group or namespace over `/ws` and gate on what the node pushes,
+rather than grepping logs for a line that a wrong answer never writes.
+
+The step watches for `timeout_seconds` and passes as soon as an event of type
+`event` satisfying `match` arrives.
+
+```yaml
+- type: assert_ws_event
+  node: calimero-node-2
+  group_id: "{{namespace_id}}"
+  event: MigrationStarted
+  timeout_seconds: 60
+```
+
+`match` is a subset test: unlisted fields are ignored, and each key is a dotted
+path into the delivered frame. The wire form is camelCase where the Rust is
+snake_case, so paths read `data.toVersion`, not `data.to_version`.
+
+```yaml
+- type: assert_ws_event
+  node: calimero-node-2
+  group_id: "{{namespace_id}}"
+  event: MigrationCompleted
+  match:
+    data.toVersion: "2.0.0"
+```
+
+`absent: true` inverts the verdict, for the guarantees that are about an event
+firing at most once or never:
+
+```yaml
+- type: assert_ws_event
+  node: calimero-node-2
+  group_id: "{{namespace_id}}"
+  event: MigrationCompleted
+  absent: true
+  timeout_seconds: 15
+```
+
+A failure prints every event that did arrive, plus the per-path mismatch for
+any event of the right type that missed on a `match` value, so CI output alone
+is enough to tell "nothing happened" from "the wrong thing happened".
+
+Two properties of the transport to plan around. A subscription observes only
+events emitted after it lands and the stream has no replay, so point the step
+at a node that learns of the change through sync rather than the one whose own
+step triggered it. And `CascadeProgress` is admin-gated at subscribe time while
+the other migration events are member-visible, so a non-admin subscriber never
+receives it and `absent: true` on it would pass for the wrong reason.
+
 #### 10. Proposals
 
 Create and vote on proposals in a context.
