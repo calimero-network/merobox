@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -72,7 +74,8 @@ class GetApplicationStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_application failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_application failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

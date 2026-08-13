@@ -4,6 +4,8 @@ Create namespace step executor.
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -119,7 +121,7 @@ class CreateNamespaceStep(BaseStep):
                 return True
             console.print(
                 f"[red]Namespace creation failed on {node_name}: "
-                f"{result.get('error', 'Unknown error')}[/red]"
+                f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
             )
             self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False

@@ -24,6 +24,7 @@ import json
 from typing import Any
 
 import requests
+from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import (
@@ -162,7 +163,7 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                 return True
             console.print(
                 f"[red]set_tee_admission_policy failed on {node_name}: "
-                f"{result.get('error')}[/red]"
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -245,7 +246,8 @@ class TeeFleetJoinStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]tee_fleet_join failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]tee_fleet_join failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

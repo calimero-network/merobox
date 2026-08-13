@@ -7,6 +7,8 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from rich.markup import escape
+
 from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, get_node_rpc_url, vprint
 
 if TYPE_CHECKING:
@@ -1249,8 +1251,15 @@ class BaseStep:
         return value
 
     def _report_expected_failure(self, error_message: str) -> None:
-        """Log the standard yellow message when an expected failure occurred."""
-        console.print(f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]")
+        """Log the standard yellow message when an expected failure occurred.
+
+        error_message may carry a raw exception's text, which can itself
+        contain square brackets (e.g. a multiaddr) that Rich would otherwise
+        try to parse as markup - escape it, keep the surrounding tag.
+        """
+        console.print(
+            f"[yellow]✓ Expected failure occurred: {escape(error_message)}[/yellow]"
+        )
 
     def _report_unexpected_success(self) -> None:
         """Log a warning when `expected_failure: true` was set but the step succeeded.

@@ -7,6 +7,8 @@ Steps for managing group membership, roles, capabilities, and lifecycle.
 import json
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -64,7 +66,8 @@ class RemoveGroupMembersStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]Failed to remove group members on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to remove group members on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -120,7 +123,8 @@ class ListGroupMembersStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]list_group_members failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]list_group_members failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -182,7 +186,8 @@ class UpdateMemberRoleStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]update_member_role failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]update_member_role failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -244,7 +249,8 @@ class SetMemberCapabilitiesStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_member_capabilities failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_member_capabilities failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -352,7 +358,8 @@ class SetMemberAutoFollowStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_member_auto_follow failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_member_auto_follow failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -415,7 +422,8 @@ class GetMemberCapabilitiesStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_member_capabilities failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_member_capabilities failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -476,7 +484,8 @@ class SetDefaultCapabilitiesStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_default_capabilities failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_default_capabilities failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -544,7 +553,8 @@ class SetSubgroupVisibilityStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_subgroup_visibility failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_subgroup_visibility failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -605,7 +615,8 @@ class GetGroupInfoStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_group_info failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_group_info failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -660,7 +671,8 @@ class ListGroupContextsStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]list_group_contexts failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]list_group_contexts failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -1101,11 +1113,12 @@ class UninstallApplicationStep(BaseStep):
             api_result = client.uninstall_application(app_id=application_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("uninstall_application failed", error=e)
+            result = fail(f"uninstall_application failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
-                f"[red]uninstall_application failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]uninstall_application failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):

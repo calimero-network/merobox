@@ -5,6 +5,7 @@ Namespace-related workflow step executors.
 from typing import Any
 
 import requests
+from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
@@ -47,7 +48,8 @@ class ListNamespacesStep(BaseStep):
 
         if not result["success"]:
             console.print(
-                f"[red]Failed to list namespaces on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to list namespaces on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -108,7 +110,8 @@ class GetNamespaceIdentityStep(BaseStep):
 
         if not result["success"]:
             console.print(
-                f"[red]Failed to get namespace identity on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to get namespace identity on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -236,7 +239,8 @@ class CreateGroupInNamespaceStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]Failed to create group in namespace on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to create group in namespace on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -288,7 +292,8 @@ class ListNamespaceGroupsStep(BaseStep):
 
         if not result["success"]:
             console.print(
-                f"[red]Failed to list namespace groups on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to list namespace groups on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

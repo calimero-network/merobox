@@ -19,6 +19,8 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -369,7 +371,8 @@ class UpgradeGroupStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]upgrade_group failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]upgrade_group failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -497,7 +500,8 @@ class CascadeNamespaceApplicationStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]cascade_namespace_application failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]cascade_namespace_application failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -568,7 +572,8 @@ class GetGroupUpgradeStatusStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_group_upgrade_status failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_group_upgrade_status failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -628,7 +633,8 @@ class RetryGroupUpgradeStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]retry_group_upgrade failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]retry_group_upgrade failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -715,7 +721,8 @@ class GetCascadeStatusStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_cascade_status failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_cascade_status failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -1004,7 +1011,8 @@ class AbortMigrationStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]abort_migration failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]abort_migration failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -1099,7 +1107,8 @@ class GetMigrationStatusStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_migration_status failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_migration_status failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -1405,7 +1414,8 @@ class ResyncContextStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]resync_context failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]resync_context failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -1507,7 +1517,8 @@ class ListApplicationVersionsStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]list_application_versions failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]list_application_versions failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

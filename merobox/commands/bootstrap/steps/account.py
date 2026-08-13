@@ -21,6 +21,8 @@ error mapping and the connection handling this layer exists to provide.
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -127,7 +129,7 @@ class AccountCreateStep(_AccountStepBase):
         if not result["success"]:
             console.print(
                 f"[red]Failed to enrol an account on {node_name}: "
-                f"{result.get('error')}[/red]"
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -238,7 +240,7 @@ class AccountPairStep(_AccountStepBase):
         if not result["success"]:
             console.print(
                 f"[red]Failed to pair {node_name} onto the account held by "
-                f"{holder}: {result.get('error')}[/red]"
+                f"{holder}: {escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -325,7 +327,7 @@ class AccountRevokeStep(_AccountStepBase):
         if not result["success"]:
             console.print(
                 f"[red]Failed to revoke {device_id} via {node_name}: "
-                f"{result.get('error')}[/red]"
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -378,7 +380,7 @@ class AccountShowStep(_AccountStepBase):
         if not result["success"]:
             console.print(
                 f"[red]Failed to read {node_name}'s account: "
-                f"{result.get('error')}[/red]"
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

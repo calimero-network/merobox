@@ -23,6 +23,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
     resolve_container,
@@ -323,7 +325,8 @@ class DeleteBlobStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]delete_blob failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]delete_blob failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

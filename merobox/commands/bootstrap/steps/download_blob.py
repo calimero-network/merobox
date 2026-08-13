@@ -28,6 +28,8 @@ import hashlib
 import os
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -104,7 +106,7 @@ class DownloadBlobStep(BaseStep):
         if self._is_expected_failure():
             self._report_expected_failure(reason)
             return True
-        console.print(f"[red]✗ {reason}[/red]")
+        console.print(f"[red]✗ {escape(reason)}[/red]")
         return False
 
     def _assertion_failed(self, reason: str) -> bool:

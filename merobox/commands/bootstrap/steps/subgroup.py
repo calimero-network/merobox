@@ -5,6 +5,8 @@ Subgroup workflow step executors.
 import json
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -58,7 +60,8 @@ class ReparentGroupStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]reparent_group failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+                f"[red]reparent_group failed on {node_name}: "
+                f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
             )
             return False
 
@@ -118,7 +121,8 @@ class ListSubgroupsStep(BaseStep):
             )
             return True
         console.print(
-            f"[red]list_subgroups failed on {node_name}: {result.get('error', 'Unknown error')}[/red]"
+            f"[red]list_subgroups failed on {node_name}: "
+            f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
         )
         return False
 
@@ -182,7 +186,8 @@ class AddGroupMembersStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]Failed to add group members on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to add group members on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
