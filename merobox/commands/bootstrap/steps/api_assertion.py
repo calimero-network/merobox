@@ -11,6 +11,7 @@ what the node actually sent.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -130,7 +131,11 @@ class AssertApiResponseStep(BaseStep):
         headers = {"Authorization": f"Bearer {token}"} if token else {}
 
         try:
-            response = requests.get(
+            # Off the loop: this is the one step that issues its own HTTP
+            # rather than delegating to the compiled client, so it is the one
+            # that can yield while a `parallel:` sibling runs.
+            response = await asyncio.to_thread(
+                requests.get,
                 f"{rpc_url.rstrip('/')}/{path.lstrip('/')}",
                 headers=headers,
                 timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT),

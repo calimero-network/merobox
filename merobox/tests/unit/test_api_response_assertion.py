@@ -10,6 +10,7 @@ envelope: a camelCase payload under `data`, with the optional fields core marks
 
 import asyncio
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -88,6 +89,51 @@ def _execute(step, payload, status=200, token=None, workflow_results=None):
         ) as get,
     ):
         return _run(step.execute(results, {})), get, results
+
+
+class TestConcurrency:
+    def test_the_request_does_not_block_the_event_loop(self):
+        # `requests` is synchronous, so without the thread hand-off a
+        # `parallel:` sibling - including assert_ws_event, whose verdict is a
+        # deadline - makes no progress for the length of the request.
+        step = _step(present=["data"])
+        auth = MagicMock()
+        auth.get_cached_token.return_value = None
+        response = MagicMock()
+        response.status_code = 200
+        response.text = json.dumps(_body())
+
+        def slow_get(*args, **kwargs):
+            time.sleep(0.3)
+            return response
+
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        async def both():
+            beat = asyncio.ensure_future(ticker())
+            try:
+                return await step.execute({}, {})
+            finally:
+                beat.cancel()
+
+        with (
+            patch(
+                "merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.api_assertion.requests.get",
+                new=slow_get,
+            ),
+        ):
+            assert _run(both()) is True
+        # A blocked loop yields no ticks at all; a free one manages ~30.
+        assert ticks > 10
 
 
 class TestRequest:
