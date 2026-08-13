@@ -72,7 +72,11 @@ class _ScriptedWS:
 
     async def receive(self):
         if self._frames:
-            return self._frames.pop(0)
+            frame = self._frames.pop(0)
+            if isinstance(frame, _Delayed):
+                await asyncio.sleep(frame.after)
+                return frame.frame
+            return frame
         await asyncio.sleep(3600)
 
     async def close(self):
@@ -98,6 +102,18 @@ def _ack(group_ids=(_GROUP,)):
     return _FakeMsg(
         json.dumps({"id": 1, "result": {"contextIds": [], "groupIds": list(group_ids)}})
     )
+
+
+class _Delayed:
+    """A scripted frame that only arrives after `after` seconds."""
+
+    def __init__(self, after, frame):
+        self.after = after
+        self.frame = frame
+
+
+def _delayed(after, frame):
+    return _Delayed(after, frame)
 
 
 def _event(event_type, data, group=_GROUP):
@@ -409,6 +425,34 @@ class TestTokenRedaction:
         )
         assert result is True
         assert "acc.jwt.tok" not in out
+
+
+class TestWatchWindow:
+    def test_the_window_is_measured_from_the_acknowledgement(self):
+        # A slow handshake must not eat the window: `absent` would then call
+        # the shortfall evidence of absence, and a positive assertion would
+        # time out for a reason that has nothing to do with the stream.
+        step = _step(timeout_seconds=1.0)
+        ws = _ScriptedWS([_ack(), _delayed(0.6, _migration_started())])
+        no_token = MagicMock()
+        no_token.get_cached_token.return_value = None
+
+        class _SlowHandshake(_FakeSession):
+            async def ws_connect(self, url):
+                await asyncio.sleep(0.6)
+                return self._ws
+
+        with (
+            patch(
+                "merobox.commands.bootstrap.steps.websocket.AuthManager",
+                return_value=no_token,
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
+                return_value=_SlowHandshake(ws),
+            ),
+        ):
+            assert _run(step.execute({}, {})) is True
 
 
 class TestValidation:

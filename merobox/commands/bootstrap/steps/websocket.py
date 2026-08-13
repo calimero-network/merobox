@@ -404,10 +404,19 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         "at least one" that is the success, and for an exact ``required`` it is
         a failure no further watching can undo. An exact count that is still
         reachable has to watch the whole window.
+
+        The window starts when the subscription is acknowledged, not when the
+        step does: the stream delivers nothing before that, so counting the
+        handshake against ``timeout_seconds`` would hand `absent` a shorter
+        window than it asked for and call the shortfall evidence of absence.
+        The handshake is bounded separately by the same number, so the step
+        still terminates.
         """
         received: list[dict[str, Any]] = []
         matches: list[dict[str, Any]] = []
         stop_after = required if required is not None else 0
+        # Bounds the wait for the acknowledgement; reset to the full window
+        # once it lands (see docstring).
         deadline = time.monotonic() + timeout_seconds
 
         try:
@@ -484,6 +493,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                                     f"is wrong): {msg.data}",
                                 )
                             subscribed = True
+                            deadline = time.monotonic() + timeout_seconds
                             continue
 
                         result = frame.get("result")
