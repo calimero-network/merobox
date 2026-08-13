@@ -258,6 +258,29 @@ class TestPositiveAssertion:
         )
         assert result is True
 
+    def test_a_string_that_looks_like_a_literal_is_compared_as_a_string(self):
+        # The frame is compared verbatim: a field whose value is the string
+        # "null" must not be coerced into the null that `match: {p: null}`
+        # asserts, which would undo the absent-versus-null distinction above.
+        frame = _event("MigrationCompleted", {"toVersion": "2.0.0", "hlc": "null"})
+        result, _ = _execute(
+            _step(event="MigrationCompleted", match={"data.hlc": None}),
+            [_ack(), frame],
+        )
+        assert result is False
+        result, _ = _execute(
+            _step(event="MigrationCompleted", match={"data.hlc": "null"}),
+            [_ack(), _event("MigrationCompleted", {"hlc": "null"})],
+        )
+        assert result is True
+
+    def test_a_numeric_string_is_not_coerced_to_a_number(self):
+        result, _ = _execute(
+            _step(event="MigrationCompleted", match={"data.hlc": 42}),
+            [_ack(), _event("MigrationCompleted", {"hlc": "42"})],
+        )
+        assert result is False
+
     def test_matching_is_a_subset_so_unlisted_fields_are_ignored(self):
         # Only toStateVersion is asserted; the frame carries three more fields.
         step = _step(match={"data.toStateVersion": 2})

@@ -21,6 +21,27 @@ if TYPE_CHECKING:
 _MISSING = object()
 
 
+def lookup(payload: Any, path: str) -> Any:
+    """Value at a dotted path, or ``_MISSING`` if the path does not exist.
+
+    Unlike ``BaseStep._get_value`` this re-parses nothing on the way down: a
+    string stays a string, so an assertion sees what the node sent. Capture
+    wants the opposite, which is why the two are separate.
+    """
+    current = payload
+    for segment in path.split("."):
+        if isinstance(current, list) and segment.isdigit():
+            index = int(segment)
+            if index >= len(current):
+                return _MISSING
+            current = current[index]
+        elif isinstance(current, dict) and segment in current:
+            current = current[segment]
+        else:
+            return _MISSING
+    return current
+
+
 def _describe_keys(data: Any) -> str:
     """The keys a failed capture could have named, for the error message."""
     if not isinstance(data, dict):
