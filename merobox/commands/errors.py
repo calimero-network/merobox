@@ -352,6 +352,8 @@ __all__ = [
     "WorkflowError",
     "StepValidationError",
     "StepExecutionError",
+    "OutputCaptureError",
+    "UnresolvedPlaceholderError",
     "ValidationError",
     "ClientError",
     "MeroboxTimeoutError",

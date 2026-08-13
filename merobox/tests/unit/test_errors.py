@@ -329,3 +329,24 @@ class TestErrorHierarchy:
         # TimeoutError is MeroboxTimeoutError
         timeout_err = TimeoutError("test")
         assert type(timeout_err).__name__ == "MeroboxTimeoutError"
+
+
+def test_all_lists_every_error_class_the_module_defines():
+    """`__all__` is this module's documented API surface, so it cannot drift.
+
+    Naming the two that were missed would only catch those two; enumerating
+    what the module defines catches the next one added as well.
+    """
+    import inspect
+
+    from merobox.commands import errors
+
+    defined = {
+        name
+        for name, obj in vars(errors).items()
+        if inspect.isclass(obj)
+        and issubclass(obj, Exception)
+        and obj.__module__ == errors.__name__
+        and not name.startswith("_")
+    }
+    assert defined - set(errors.__all__) == set()

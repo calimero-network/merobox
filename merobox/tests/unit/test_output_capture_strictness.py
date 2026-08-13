@@ -191,6 +191,75 @@ class TestMissingCaptureFailsTheStep:
         assert self._execute(step, {"result": {"output": "v"}}) is True
 
 
+class TestExpectedFailureThatSucceeds:
+    """A protected key is already bound, so nothing may demand it bind twice.
+
+    `call` keeps its lenient unexpected-success path: it exports the four error
+    fields as None, marks them protected, then exports the success payload over
+    the top. The error captures cannot bind from that second payload - it is
+    the call's own result and never carries them - and requiring them to is
+    what failed `negative-testing-example` and `propagation-monitoring`, both
+    of which capture `error_type` beside `result` on a read that usually
+    succeeds.
+    """
+
+    def _execute(self, outputs: dict, response: dict) -> tuple[bool, dict]:
+        step = ExecuteStep(
+            {
+                "type": "call",
+                "name": "read",
+                "node": "node-1",
+                "context_id": "ctx",
+                "method": "get",
+                "expected_failure": True,
+                "outputs": outputs,
+            }
+        )
+        dynamic: dict = {}
+        with (
+            patch.object(
+                step,
+                "_resolve_node_for_client",
+                return_value=("http://localhost:1234", "node-1"),
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.execute.call_function",
+                new=AsyncMock(return_value={"success": True, "data": response}),
+            ),
+        ):
+            return _run(step.execute({}, dynamic)), dynamic
+
+    def test_error_captures_stay_bound_when_the_call_succeeds(self):
+        ok, dynamic = self._execute(
+            {"check_error": "error_type", "check_result": "result"},
+            {"result": {"output": "v"}},
+        )
+        assert ok is True
+        # Bound, not absent: the placeholder resolves, so no assertion holding
+        # it compares against its own text.
+        assert "check_error" in dynamic
+        assert dynamic["check_error"] is None
+        assert dynamic["check_result"] == {"output": "v"}
+
+    def test_the_dict_form_with_a_custom_target_is_protected_too(self):
+        ok, dynamic = self._execute(
+            {
+                "code": {"field": "error_code", "target": "err_{node_name}"},
+                "check_result": "result",
+            },
+            {"result": {"output": "v"}},
+        )
+        assert ok is True
+        assert dynamic["err_node-1"] is None
+
+    def test_a_capture_of_a_field_nobody_sent_still_fails(self):
+        # The strictness is unchanged for captures no pass ever bound.
+        ok, _ = self._execute(
+            {"fleet_completed_at": "fleet_completed_at"}, {"result": {"output": "v"}}
+        )
+        assert ok is False
+
+
 class TestUnresolvedPlaceholderInAssertions:
     """An assertion may not compare a placeholder against its own text."""
 

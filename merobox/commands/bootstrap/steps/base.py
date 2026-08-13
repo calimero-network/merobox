@@ -1144,6 +1144,16 @@ class BaseStep:
                     step_type=self.config.get("type"),
                 )
 
+            # Checked before the capture is required to bind: a protected key
+            # already holds the value the error pass exported, so its
+            # placeholder is bound and the second pass has nothing to demand
+            # from a payload that was never going to carry that field.
+            if target_key in protected_keys:
+                console.print(
+                    f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
+                )
+                continue
+
             if value is _MISSING:
                 if lenient:
                     vprint(
@@ -1159,13 +1169,6 @@ class BaseStep:
                     step_name=self._get_step_name(),
                     step_type=self.config.get("type"),
                 )
-
-            # Skip exporting if this key is protected (e.g., error field export)
-            if target_key in protected_keys:
-                console.print(
-                    f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
-                )
-                continue
 
             dynamic_values[target_key] = value
 
