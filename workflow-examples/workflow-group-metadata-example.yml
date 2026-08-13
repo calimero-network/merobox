@@ -102,6 +102,9 @@ steps:
     type: wait
     seconds: 5
 
+  # `memberIdentity` is the bs58 key node 2 signs with, `memberAccount` the
+  # 64-hex account governance rows are keyed by. add_group_members names the
+  # key; every member-addressing endpoint below names the account.
   - name: Node 2 Joins Namespace
     type: join_namespace
     node: calimero-node-2
@@ -109,6 +112,7 @@ steps:
     invitation: '{{invitation}}'
     outputs:
       node2_id: memberIdentity
+      node2_account: memberAccount
 
   - name: Assert Node 2 Joined
     type: assert
@@ -216,7 +220,7 @@ steps:
     type: set_member_capabilities
     node: calimero-node-1
     group_id: '{{sub}}'
-    member_id: '{{node2_id}}'
+    member_id: '{{node2_account}}'
     # CAN_MANAGE_METADATA = 1 << 8 = 256
     # (calimero-network/core: crates/context/config/src/lib.rs,
     #  MemberCapabilities::CAN_MANAGE_METADATA)
@@ -274,7 +278,7 @@ steps:
     type: set_member_metadata
     node: calimero-node-2
     group_id: '{{ns}}'
-    member_id: '{{node2_id}}'
+    member_id: '{{node2_account}}'
     record_name: 'node-two'
     data:
       status: online
@@ -297,7 +301,7 @@ steps:
     type: get_member_metadata
     node: calimero-node-1
     group_id: '{{ns}}'
-    member_id: '{{node2_id}}'
+    member_id: '{{node2_account}}'
     outputs:
       m2_name: name
       m2_status: data.status

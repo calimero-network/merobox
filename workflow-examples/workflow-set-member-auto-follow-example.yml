@@ -38,12 +38,16 @@ steps:
     outputs:
       namespace_id: namespaceId
 
+  # Both halves of node 1's identity: `account` names the member being changed,
+  # `publicKey` signs for the change. `requester` stayed a key when the member
+  # path moved to accounts, so the self-set step below needs one of each.
   - name: Get Node 1 Namespace Identity
     type: get_namespace_identity
     node: calimero-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
       p1_admin_key: publicKey
+      p1_admin_account: account
 
   - name: Create Namespace Invitation
     type: create_namespace_invitation
@@ -63,6 +67,7 @@ steps:
     invitation: '{{invitation}}'
     outputs:
       p2_identity: memberIdentity
+      p2_account: memberAccount
 
   - name: Create Subgroup
     type: create_group_in_namespace
@@ -92,7 +97,7 @@ steps:
     type: set_member_auto_follow
     node: calimero-node-1
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
     auto_follow_contexts: true
     auto_follow_subgroups: false
 
@@ -105,7 +110,7 @@ steps:
     type: set_member_auto_follow
     node: calimero-node-1
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
     auto_follow_contexts: false
     auto_follow_subgroups: true
 
@@ -118,7 +123,7 @@ steps:
     type: set_member_auto_follow
     node: calimero-node-1
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
     auto_follow_contexts: true
     auto_follow_subgroups: true
 
@@ -134,7 +139,7 @@ steps:
     type: set_member_auto_follow
     node: calimero-node-2
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
     auto_follow_contexts: false
     auto_follow_subgroups: false
     requester: '{{p2_identity}}'
@@ -150,7 +155,7 @@ steps:
     type: set_member_auto_follow
     node: calimero-node-1
     group_id: '{{group_id}}'
-    member_id: '{{p1_admin_key}}'
+    member_id: '{{p1_admin_account}}'
     auto_follow_contexts: true
     auto_follow_subgroups: false
     requester: '{{p1_admin_key}}'

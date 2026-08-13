@@ -123,6 +123,15 @@ jobs:
           # steps need a merod carrying `merod account export|import`
           # (calimero-network/core#3362, unmerged). Re-add to the docker matrix
           # once merod:edge carries those commands; binary mode can never run it.
+          # group-admin, group-metadata and set-member-auto-follow name members by
+          # ACCOUNT (64 hex), which merod now requires on every member-addressing
+          # endpoint. A released merod still names them by bs58 signing key and
+          # returns no account at all, so `memberAccount` / `account` capture
+          # nothing and the first member step is handed an unresolved
+          # placeholder. The two ids are unrelated values, so no single spelling
+          # satisfies both lanes; docker mode (merod:edge) keeps full coverage.
+          # Re-add here once a core release carries the account rename —
+          # 0.11.0-rc.20 and the pending rc.21 both predate it.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
             grep -v fuzzy-kv-store | \
@@ -133,6 +142,9 @@ jobs:
             grep -v nat-topology | \
             grep -v cascade-namespace | \
             grep -v blob-cross-node-download | \
+            grep -v group-admin-example | \
+            grep -v group-metadata-example | \
+            grep -v set-member-auto-follow | \
             grep -v '/tee-' | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
           echo "binary=$BINARY" >> $GITHUB_OUTPUT
@@ -160,6 +172,12 @@ jobs:
           # against a merod built with --features mock-attestation (built by the
           # build-merod-mock job); the release binary and merod:edge are both
           # default-off (core#3269) and hard-error on `merod run --mock-tee`.
+          # build-merod-mock builds from the latest core RELEASE tag, so these
+          # still name members by signing key and are correct as written. They
+          # flip to accounts in the same move that re-adds the three workflows
+          # excluded from BINARY above: remove_group_members takes accounts, and
+          # assert_tee_member / assert_not_member match against a member list
+          # that becomes accounts.
           TEE=$(ls workflow-examples/tee-*.yml | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";""))})')
           echo "tee=$TEE" >> $GITHUB_OUTPUT

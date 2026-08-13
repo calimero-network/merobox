@@ -44,6 +44,14 @@ class JoinNamespaceStep(BaseStep):
                 "namespace_member_identity_{node_name}",
                 "Member identity public key after joining",
             ),
+            # Member-addressing endpoints take this, not the key: governance rows
+            # are keyed by account, and the two encodings deliberately differ so
+            # one cannot be passed where the other belongs.
+            (
+                "memberAccount",
+                "namespace_member_account_{node_name}",
+                "Account the joining key speaks for (64 hex characters)",
+            ),
         ]
 
     def _auto_install_app_on_node(
