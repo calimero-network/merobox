@@ -316,7 +316,7 @@ class DeleteBlobStep(BaseStep):
                 if expected_failure:
                     self._report_unexpected_success()
                 return True
-            result = fail("delete_blob failed", error=e)
+            result = fail(f"delete_blob failed: {e}", error=e)
 
         if not result["success"]:
             if expected_failure:

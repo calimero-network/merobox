@@ -43,7 +43,7 @@ class ListNamespacesStep(BaseStep):
                 # Backward compatibility for older client versions.
                 result = ok(client.list_groups())
         except Exception as e:
-            result = fail("list_namespaces failed", error=e)
+            result = fail(f"list_namespaces failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
@@ -104,7 +104,7 @@ class GetNamespaceIdentityStep(BaseStep):
                     "get_namespace_identity is not available in current client"
                 )
         except Exception as e:
-            result = fail("get_namespace_identity failed", error=e)
+            result = fail(f"get_namespace_identity failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
@@ -227,7 +227,7 @@ class CreateGroupInNamespaceStep(BaseStep):
                         "create_group_in_namespace is not available in current client"
                     )
         except Exception as e:
-            result = fail("create_group_in_namespace failed", error=e)
+            result = fail(f"create_group_in_namespace failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -284,7 +284,7 @@ class ListNamespaceGroupsStep(BaseStep):
                 # Backward compatibility: best-effort fallback to generic group listing.
                 result = ok(client.list_groups())
         except Exception as e:
-            result = fail("list_namespace_groups failed", error=e)
+            result = fail(f"list_namespace_groups failed: {e}", error=e)
 
         if not result["success"]:
             console.print(

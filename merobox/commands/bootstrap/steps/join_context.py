@@ -57,7 +57,7 @@ class JoinContextStep(BaseStep):
             api_result = client.join_context(context_id=context_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("join_context failed", error=e)
+            result = fail(f"join_context failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

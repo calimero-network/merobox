@@ -77,7 +77,7 @@ class CreateNamespaceStep(BaseStep):
                 api_result = client.create_group(application_id=application_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("create_namespace failed", error=e)
+            result = fail(f"create_namespace failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

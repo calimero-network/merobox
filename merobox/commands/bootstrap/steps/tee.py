@@ -152,7 +152,7 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                 # readers always get a dict, not None.
                 result = ok(self._parse_json(response.text) or {})
         except Exception as e:
-            result = fail("set_tee_admission_policy failed", error=e)
+            result = fail(f"set_tee_admission_policy failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -236,7 +236,7 @@ class TeeFleetJoinStep(BaseStep):
                 else:
                     result = ok(payload)
         except Exception as e:
-            result = fail("tee_fleet_join failed", error=e)
+            result = fail(f"tee_fleet_join failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

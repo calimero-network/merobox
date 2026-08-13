@@ -877,7 +877,7 @@ class DockerManager(CleanupMixin):
                 container.remove()
                 console.print(f"[red]✗ Node {node_name} failed to start[/red]")
                 console.print("[yellow]Container logs:[/yellow]")
-                console.print(logs)
+                console.print(logs, markup=False)
 
                 # Check for common issues
                 if "GLIBC" in logs:
@@ -2237,7 +2237,7 @@ class DockerManager(CleanupMixin):
 
             logs = container.logs(tail=tail, timestamps=True).decode("utf-8")
             console.print(f"\n[bold]Logs for {node_name}:[/bold]")
-            console.print(logs)
+            console.print(logs, markup=False)
 
         except Exception as e:
             console.print(f"[red]Failed to get logs for {node_name}: {str(e)}[/red]")

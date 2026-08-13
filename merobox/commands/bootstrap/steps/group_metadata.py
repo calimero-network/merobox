@@ -154,7 +154,7 @@ class _SetMetadataBase(BaseStep):
             api_result = method(group_id, *extra_args, body)
             result = ok(api_result)
         except Exception as e:
-            result = fail(f"{self._api_method} failed", error=e)
+            result = fail(f"{self._api_method} failed: {e}", error=e)
 
         if not result["success"]:
             if expected_failure:
@@ -265,7 +265,7 @@ class _GetMetadataBase(BaseStep):
             api_result = method(group_id, *extra_args)
             result = ok(api_result)
         except Exception as e:
-            result = fail(f"{self._api_method} failed", error=e)
+            result = fail(f"{self._api_method} failed: {e}", error=e)
 
         if not result["success"]:
             if expected_failure:

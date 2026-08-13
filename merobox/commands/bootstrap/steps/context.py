@@ -154,7 +154,7 @@ class CreateContextStep(BaseStep):
 
             result = ok(api_result)
         except Exception as e:
-            result = fail("create_context failed", error=e)
+            result = fail(f"create_context failed: {e}", error=e)
 
         # Log detailed API response
         import json as json_lib

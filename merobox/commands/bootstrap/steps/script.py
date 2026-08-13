@@ -289,7 +289,7 @@ class ScriptStep(BaseStep):
 
             if output.strip():
                 console.print("[cyan]Local script output:[/cyan]")
-                console.print(output)
+                console.print(output, markup=False)
 
             if completed.returncode != 0:
                 console.print(
@@ -484,7 +484,7 @@ class ScriptStep(BaseStep):
                 output = result.output.decode("utf-8", errors="replace")
                 if output.strip():
                     console.print("[cyan]Script output:[/cyan]")
-                    console.print(output)
+                    console.print(output, markup=False)
 
                 if result.exit_code != 0:
                     console.print(
@@ -612,7 +612,7 @@ class ScriptStep(BaseStep):
                             console.print(
                                 f"[cyan]Script output from {node_name}:[/cyan]"
                             )
-                            console.print(output)
+                            console.print(output, markup=False)
 
                         # Check exit code
                         if result.exit_code != 0:

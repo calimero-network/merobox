@@ -217,7 +217,7 @@ class DownloadBlobStep(BaseStep):
                 f"[red]✗ Blob download failed after retries: "
                 f"{type(e).__name__}: {e}[/red]"
             )
-            result = fail("download_blob failed", error=e)
+            result = fail(f"download_blob failed: {e}", error=e)
 
         if not result["success"]:
             return self._retrieval_failed(str(result.get("error", "Unknown error")))

@@ -1361,7 +1361,9 @@ class BaseStep:
                 # Binary mode - use BinaryManager's get_node_logs
                 log_content = self.manager.get_node_logs(node_name, lines=lines)
                 if log_content:
-                    console.print(log_content)
+                    # Node output may contain literal square brackets (e.g. a
+                    # multiaddr list) that Rich would otherwise try to parse as markup.
+                    console.print(log_content, markup=False)
                 else:
                     console.print(f"[dim]No logs found for {node_name}[/dim]")
             else:
@@ -1376,7 +1378,7 @@ class BaseStep:
 
                     logs = container.logs(tail=lines, timestamps=True).decode("utf-8")
                     if logs:
-                        console.print(logs)
+                        console.print(logs, markup=False)
                     else:
                         console.print(f"[dim]No logs available for {node_name}[/dim]")
                 except Exception as e:

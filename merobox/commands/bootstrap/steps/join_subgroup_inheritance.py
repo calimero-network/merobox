@@ -83,7 +83,7 @@ class JoinSubgroupInheritanceStep(BaseStep):
             api_result = method(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("join_subgroup_inheritance failed", error=e)
+            result = fail(f"join_subgroup_inheritance failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

@@ -71,7 +71,7 @@ class CreateNamespaceInvitationStep(BaseStep):
                 api_result = client.create_group_invitation(namespace_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("create_namespace_invitation failed", error=e)
+            result = fail(f"create_namespace_invitation failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

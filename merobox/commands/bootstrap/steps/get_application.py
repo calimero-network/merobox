@@ -63,7 +63,7 @@ class GetApplicationStep(BaseStep):
             api_result = client.get_application(application_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_application failed", error=e)
+            result = fail(f"get_application failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

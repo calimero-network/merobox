@@ -122,7 +122,7 @@ class AccountCreateStep(_AccountStepBase):
             client = self._client(node_name)
             result = ok(self._data(client.create_account(namespace_id)))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account create failed", error=e)
+            result = fail(f"account create failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
@@ -233,7 +233,7 @@ class AccountPairStep(_AccountStepBase):
                 )
             result = ok({**complete, "deviceId": init["deviceId"]})
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account pair failed", error=e)
+            result = fail(f"account pair failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
@@ -320,7 +320,7 @@ class AccountRevokeStep(_AccountStepBase):
                 self._data(client.revoke_device(namespace_id, device_id, proof))
             )
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account revoke failed", error=e)
+            result = fail(f"account revoke failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
@@ -373,7 +373,7 @@ class AccountShowStep(_AccountStepBase):
             client = self._client(node_name)
             result = ok(self._data(client.get_namespace_account(namespace_id)))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account show failed", error=e)
+            result = fail(f"account show failed: {e}", error=e)
 
         if not result["success"]:
             console.print(

@@ -360,7 +360,7 @@ class UpgradeGroupStep(BaseStep):
             api_result = client.upgrade_group(**upgrade_kwargs)
             result = ok(api_result)
         except Exception as e:
-            result = fail("upgrade_group failed", error=e)
+            result = fail(f"upgrade_group failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -488,7 +488,7 @@ class CascadeNamespaceApplicationStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("cascade_namespace_application failed", error=e)
+            result = fail(f"cascade_namespace_application failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -559,7 +559,7 @@ class GetGroupUpgradeStatusStep(BaseStep):
             api_result = client.get_group_upgrade_status(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_group_upgrade_status failed", error=e)
+            result = fail(f"get_group_upgrade_status failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -619,7 +619,7 @@ class RetryGroupUpgradeStep(BaseStep):
             api_result = client.retry_group_upgrade(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("retry_group_upgrade failed", error=e)
+            result = fail(f"retry_group_upgrade failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -706,7 +706,7 @@ class GetCascadeStatusStep(BaseStep):
             api_result = client.get_cascade_status(namespace_id=namespace_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_cascade_status failed", error=e)
+            result = fail(f"get_cascade_status failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -995,7 +995,7 @@ class AbortMigrationStep(BaseStep):
             api_result = client.abort_migration(namespace_id=namespace_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("abort_migration failed", error=e)
+            result = fail(f"abort_migration failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -1090,7 +1090,7 @@ class GetMigrationStatusStep(BaseStep):
             api_result = client.get_migration_status(namespace_id=namespace_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_migration_status failed", error=e)
+            result = fail(f"get_migration_status failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -1396,7 +1396,7 @@ class ResyncContextStep(BaseStep):
             api_result = client.resync_context(context_id=context_id, force=force)
             result = ok(api_result)
         except Exception as e:
-            result = fail("resync_context failed", error=e)
+            result = fail(f"resync_context failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -1498,7 +1498,7 @@ class ListApplicationVersionsStep(BaseStep):
             api_result = client.list_application_versions(application_id=application_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("list_application_versions failed", error=e)
+            result = fail(f"list_application_versions failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

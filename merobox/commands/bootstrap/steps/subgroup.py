@@ -49,7 +49,7 @@ class ReparentGroupStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("reparent_group failed", error=e)
+            result = fail(f"reparent_group failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -107,7 +107,7 @@ class ListSubgroupsStep(BaseStep):
             api_result = client.list_subgroups(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("list_subgroups failed", error=e)
+            result = fail(f"list_subgroups failed: {e}", error=e)
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
                 return False
@@ -173,7 +173,7 @@ class AddGroupMembersStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("add_group_members failed", error=e)
+            result = fail(f"add_group_members failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 

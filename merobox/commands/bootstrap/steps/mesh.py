@@ -237,7 +237,7 @@ class CreateMeshStep(BaseStep):
                     )
                 )
         except Exception as e:
-            namespace_result = fail("create_namespace failed", error=e)
+            namespace_result = fail(f"create_namespace failed: {e}", error=e)
 
         if not namespace_result.get("success"):
             console.print(
@@ -269,7 +269,7 @@ class CreateMeshStep(BaseStep):
             api_result = client.create_context(**context_kwargs)
             context_result = ok(api_result)
         except Exception as e:
-            context_result = fail("create_context failed", error=e)
+            context_result = fail(f"create_context failed: {e}", error=e)
 
         if not context_result.get("success"):
             console.print(
