@@ -221,7 +221,11 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         report = entry.get("report")
         report = report if isinstance(report, dict) else {}
         state = str(entry.get("state", "")).lower()
-        member_states[state] += 1
+        # Counted on a separator-free key: the response spells its sibling
+        # rollup counter `inProgress`, so lowercasing a camelCase state gives
+        # `inprogress` and matching only `in_progress` would silently skip the
+        # reconciliation. The row keeps the lowercased value it always had.
+        member_states[state.replace("_", "").replace("-", "")] += 1
         schema_version = _opt_int(report.get("schemaVersion"))
         if schema_version is not None:
             reported_versions.append(schema_version)
@@ -255,7 +259,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     # Reconcile every non-converged counter with the member states, so a member
     # the rollup misses is never dropped (see docstring).
     failed = max(_as_int(rollup.get("failed")), member_states["failed"])
-    in_progress = max(_as_int(rollup.get("inProgress")), member_states["in_progress"])
+    in_progress = max(_as_int(rollup.get("inProgress")), member_states["inprogress"])
     unknown = max(_as_int(rollup.get("unknown")), member_states["unknown"])
     # Catches a state core spells differently or adds later, which no named
     # counter above would see.

@@ -232,6 +232,22 @@ class TestSummarizeMigrationStatus:
         assert s["in_progress"] == 1
         assert s["all_migrated"] is False
 
+    def test_the_in_progress_state_is_counted_whichever_way_core_spells_it(self):
+        # The rollup spells its own counter `inProgress`, so the member state
+        # may well be camelCase too. Reconciliation must not depend on which.
+        for spelling in ("in_progress", "inProgress", "IN_PROGRESS", "in-progress"):
+            s = _summarize_migration_status(
+                {
+                    "rollup": _rollup(migrated=1, total=2, allMigrated=True),
+                    "members": [
+                        {"peer": "a", "state": "migrated"},
+                        {"peer": "b", "state": spelling},
+                    ],
+                }
+            )
+            assert s["in_progress"] == 1, spelling
+            assert s["all_migrated"] is False, spelling
+
     def test_unknown_and_in_progress_reconciled_from_members(self):
         # The rollup zeroes both counters while the member rows contradict it,
         # the same shape the `failed` reconciliation was written for.
