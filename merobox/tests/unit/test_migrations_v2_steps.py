@@ -106,6 +106,46 @@ class TestSummarizeMigrationStatus:
         assert s["total"] == 0
         assert s["all_migrated"] is False
         assert s["members"] == []
+        assert s["fleet_completed_at"] is None
+        assert s["cohort_pinned_at_hlc"] is None
+
+    def test_fleet_completed_at_is_surfaced(self):
+        # The durable evidence that convergence happened, which allMigrated
+        # cannot provide: it is TTL-derived and lapses when a member goes quiet.
+        s = _summarize_migration_status(
+            {
+                "fleetCompletedAt": 1_700_002_000,
+                "cohortPinnedAtHlc": "hlc-abc",
+                "rollup": _rollup(total=1),
+            }
+        )
+        assert s["fleet_completed_at"] == 1_700_002_000
+        assert s["cohort_pinned_at_hlc"] == "hlc-abc"
+
+    def test_fleet_completed_at_outlives_a_lapsed_all_migrated(self):
+        # A converged fleet whose members went quiet: allMigrated is back to
+        # false, and the timestamp is the only remaining evidence.
+        s = _summarize_migration_status(
+            {
+                "fleetCompletedAt": 1_700_002_000,
+                "rollup": _rollup(unknown=2, total=2, allMigrated=False),
+            }
+        )
+        assert s["all_migrated"] is False
+        assert s["fleet_completed_at"] == 1_700_002_000
+
+    def test_an_unconverged_namespace_reports_none_not_zero(self):
+        # Core omits the key entirely rather than sending 0, and 0 is a valid
+        # unix timestamp, so absent must not collapse into it.
+        s = _summarize_migration_status({"rollup": _rollup(total=2)})
+        assert s["fleet_completed_at"] is None
+        assert s["cohort_pinned_at_hlc"] is None
+
+    def test_a_zero_fleet_timestamp_is_preserved(self):
+        s = _summarize_migration_status(
+            {"fleetCompletedAt": 0, "rollup": _rollup(total=1)}
+        )
+        assert s["fleet_completed_at"] == 0
 
     def test_bool_counters_coerced_to_zero(self):
         # A bool is an int subclass — it must NOT be treated as a count.

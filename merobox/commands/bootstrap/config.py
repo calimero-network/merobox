@@ -419,6 +419,11 @@ class WebSocketEventAssertStepConfig(BaseStepConfig):
     absent: Optional[bool] = Field(
         False, description="Assert the event must NOT arrive within the window"
     )
+    count: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Assert exactly this many arrive (mutually exclusive with absent)",
+    )
     timeout_seconds: Optional[float] = Field(
         None, gt=0, description="Length of the watch window in seconds"
     )

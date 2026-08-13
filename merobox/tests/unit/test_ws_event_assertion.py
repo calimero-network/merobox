@@ -255,7 +255,8 @@ class TestNegativeAssertion:
         result, _ = _execute(step, [_ack(), cascade])
         assert result is False
         combined = capsys.readouterr().out
-        assert "asserted absent but arrived" in combined
+        assert "expected exactly 0 'CascadeProgress'" in combined
+        assert "but 1 arrived" in combined
         assert _SUBGROUP in combined, "the offending frame must be printed"
 
     def test_absent_respects_match_so_a_different_payload_is_not_a_violation(self):
@@ -264,6 +265,57 @@ class TestNegativeAssertion:
             event="MigrationCompleted", match={"data.toVersion": "3.0.0"}, absent=True
         )
         result, _ = _execute(step, [_ack(), _migration_completed(to_version="2.0.0")])
+        assert result is True
+
+
+class TestExactCount:
+    def test_exactly_one_passes_when_exactly_one_arrives(self):
+        step = _step(event="MigrationCompleted", count=1)
+        result, _ = _execute(step, [_ack(), _migration_completed()])
+        assert result is True
+
+    def test_a_second_arrival_fails_the_exactly_one_assertion(self, capsys):
+        # The guarantee core holds is that convergence fires MigrationCompleted
+        # once; a duplicate is the regression this catches.
+        step = _step(event="MigrationCompleted", count=1)
+        result, _ = _execute(
+            step, [_ack(), _migration_completed(), _migration_completed()]
+        )
+        assert result is False
+        combined = capsys.readouterr().out
+        assert "expected exactly 1 'MigrationCompleted'" in combined
+        assert "but 2 arrived" in combined
+        # Both arrivals are replayed and marked as the ones that were counted.
+        assert combined.count("match >") == 2
+
+    def test_no_arrival_fails_the_exactly_one_assertion(self, capsys):
+        step = _step(event="MigrationCompleted", count=1)
+        result, _ = _execute(step, [_ack(), _migration_progress()])
+        assert result is False
+        combined = capsys.readouterr().out
+        assert "but 0 arrived" in combined
+        # The non-matching event still has to be replayed, unmarked.
+        assert "MigrationProgress" in combined
+        assert combined.count("match >") == 0
+
+    def test_count_two_passes_on_two_arrivals(self):
+        step = _step(event="MigrationProgress", count=2)
+        result, _ = _execute(
+            step, [_ack(), _migration_progress(), _migration_progress()]
+        )
+        assert result is True
+
+    def test_count_zero_is_the_same_assertion_as_absent(self):
+        step = _step(event="CascadeProgress", count=0)
+        result, _ = _execute(step, [_ack(), _migration_progress()])
+        assert result is True
+
+    def test_the_default_form_tolerates_a_second_arrival(self):
+        # Without `count`, "at least one" stays the default and stops early, so
+        # a repeat must not turn a passing assertion red.
+        result, _ = _execute(
+            _step(), [_ack(), _migration_started(), _migration_started()]
+        )
         assert result is True
 
 
@@ -314,6 +366,14 @@ class TestValidation:
     def test_match_must_be_a_dict_of_paths(self):
         with pytest.raises(ValueError):
             _step(match={"": "x"})
+
+    def test_count_and_absent_are_mutually_exclusive(self):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            _step(count=1, absent=True)
+
+    def test_a_negative_count_is_rejected(self):
+        with pytest.raises(ValueError):
+            _step(count=-1)
 
 
 if __name__ == "__main__":

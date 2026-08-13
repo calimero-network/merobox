@@ -579,8 +579,8 @@ snake_case, so paths read `data.toVersion`, not `data.to_version`.
     data.toVersion: "2.0.0"
 ```
 
-`absent: true` inverts the verdict, for the guarantees that are about an event
-firing at most once or never:
+`absent: true` inverts the verdict, and `count: n` demands exactly `n`, for the
+guarantees that are about an event firing a fixed number of times or never:
 
 ```yaml
 - type: assert_ws_event
@@ -589,7 +589,21 @@ firing at most once or never:
   event: MigrationCompleted
   absent: true
   timeout_seconds: 15
+
+# Convergence announces itself once, and a duplicate is a regression.
+- type: assert_ws_event
+  node: calimero-node-2
+  group_id: "{{namespace_id}}"
+  event: MigrationCompleted
+  count: 1
+  timeout_seconds: 30
 ```
+
+`count` is counted over the bounded window, so it proves the event did not fire
+more than `count` times within `timeout_seconds`, not that it never fires again
+afterwards. It also always costs the whole window, since ruling out a further
+arrival means watching for one. `absent: true` is the same assertion as
+`count: 0`, and the two cannot be combined.
 
 A failure prints every event that did arrive, plus the per-path mismatch for
 any event of the right type that missed on a `match` value, so CI output alone

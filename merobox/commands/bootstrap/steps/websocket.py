@@ -185,9 +185,10 @@ class WebSocketConnectStep(_WebSocketStepBase):
 class WebSocketEventAssertStep(_WebSocketStepBase):
     """Subscribe to a group's event stream and assert what arrives on it.
 
-    Watches the stream for ``timeout_seconds``. The positive form passes as soon
-    as an event of type ``event`` satisfying ``match`` arrives; ``absent: true``
-    inverts the verdict, passing only if the window elapses without one.
+    Watches the stream for ``timeout_seconds``. The default form passes as soon
+    as an event of type ``event`` satisfying ``match`` arrives. ``absent: true``
+    inverts the verdict, passing only if the window elapses without one, and
+    ``count: n`` demands exactly ``n``.
 
     Required fields: ``node``, ``group_id``, ``event``.
 
@@ -197,10 +198,17 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
       wire frame, which is camelCase where the Rust is snake_case:
       ``groupId``, ``data.toVersion``, ``data.toStateVersion``.
     - ``absent`` (bool): assert the event must NOT arrive.
+    - ``count`` (int): assert exactly this many arrive. Mutually exclusive with
+      ``absent``, which is the same assertion for ``count: 0``.
     - ``timeout_seconds`` (number): window length, default ``30``.
     - ``token`` (str): explicit JWT (supports ``{{placeholders}}``); otherwise
       the token a prior ``login`` cached for the node, or none at all on a node
       running without auth.
+
+    ``count`` is counted over the bounded window, so it proves the event did not
+    fire more than ``count`` times within ``timeout_seconds``, not that it never
+    fires again afterwards. Establishing the count also costs the whole window,
+    since a further arrival can only be ruled out by watching for one.
 
     Two properties of the transport a workflow author has to plan around:
 
@@ -225,6 +233,14 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         self._validate_string_field("event")
         self._validate_string_field("token", required=False)
         self._validate_boolean_field("absent", required=False)
+        self._validate_integer_field("count", required=False, non_negative=True)
+        # Both express an expected number of arrivals, so a config carrying two
+        # of them has no single answer to honour.
+        if self.config.get("count") is not None and self.config.get("absent"):
+            raise ValueError(
+                f"Step '{self._get_step_name()}': 'count' and 'absent' are "
+                f"mutually exclusive ('absent: true' is 'count: 0')"
+            )
         self._validate_number_field("timeout_seconds", required=False, positive=True)
         timeout = self.config.get("timeout_seconds")
         # NaN/inf survive the positive check but leave the deadline non-finite,
@@ -252,7 +268,14 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         event_type = self._resolve_dynamic_value(
             self.config["event"], workflow_results, dynamic_values
         )
-        absent = bool(self.config.get("absent", False))
+        # How many matches the window must hold. `None` means "at least one",
+        # the default, which is also the only form that can stop at the first
+        # arrival; an exact count is only knowable at the end of the window.
+        required: int | None = None
+        if self.config.get("absent"):
+            required = 0
+        elif self.config.get("count") is not None:
+            required = int(self.config["count"])
         # `.get(key, default)` returns the default only when the key is ABSENT;
         # an explicit `timeout_seconds: null` yields a present key with value
         # None, which float() would crash on.
@@ -281,59 +304,62 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         token = self._resolve_token(cache_node_name, workflow_results, dynamic_values)
         ws_url = self._build_ws_url(rpc_url, token)
 
+        wanted = (
+            f"at least one '{event_type}'"
+            if required is None
+            else f"exactly {required} '{event_type}'"
+        )
         console.print(
-            f"[blue]⏳ Watching {node_name} for {'no ' if absent else ''}"
-            f"'{event_type}' on group {group_id} "
+            f"[blue]⏳ Watching {node_name} for {wanted} on group {group_id} "
             f"(timeout {timeout_seconds:g}s)[/blue]"
         )
 
-        matched, received, blocker = await self._watch(
-            ws_url, group_id, event_type, match_spec, timeout_seconds
+        matches, received, blocker = await self._watch(
+            ws_url, group_id, event_type, match_spec, timeout_seconds, required
         )
 
         if blocker is not None:
-            # The window was never observed, so neither verdict was tested. An
-            # unobserved window is not an absent event, so `absent` fails here
-            # too rather than passing vacuously.
+            # The window was never observed, so no verdict was tested. An
+            # unobserved window is not an absent event, so the `absent` and
+            # `count` forms fail here too rather than passing vacuously.
             console.print(
                 f"✗ assert_ws_event on {node_name}: {blocker}",
                 style="red",
                 markup=False,
             )
-            self._report_received(received, event_type, match_spec)
+            self._report_received(received, event_type, match_spec, matches)
             return False
 
-        if absent:
-            if matched is None:
+        satisfied = len(matches) >= 1 if required is None else len(matches) == required
+        if satisfied:
+            if matches:
+                workflow_results[f"ws_event_{node_name}"] = matches[0]
+            if required == 0:
                 console.print(
                     f"[green]✓ assert_ws_event: no '{event_type}' reached "
                     f"{node_name} for group {group_id} in {timeout_seconds:g}s "
                     f"({len(received)} other event(s) observed)[/green]"
                 )
-                return True
-            console.print(
-                f"✗ assert_ws_event on {node_name}: '{event_type}' was asserted "
-                f"absent but arrived: {json.dumps(matched, sort_keys=True)}",
-                style="red",
-                markup=False,
-            )
-            return False
-
-        if matched is not None:
-            workflow_results[f"ws_event_{node_name}"] = matched
-            console.print(
-                f"[green]✓ assert_ws_event: '{event_type}' arrived on {node_name} "
-                f"for group {group_id}[/green]"
-            )
+            elif required is None:
+                console.print(
+                    f"[green]✓ assert_ws_event: '{event_type}' arrived on "
+                    f"{node_name} for group {group_id}[/green]"
+                )
+            else:
+                console.print(
+                    f"[green]✓ assert_ws_event: exactly {required} "
+                    f"'{event_type}' arrived on {node_name} for group "
+                    f"{group_id} in {timeout_seconds:g}s[/green]"
+                )
             return True
 
         console.print(
-            f"✗ assert_ws_event on {node_name}: no '{event_type}' on group "
-            f"{group_id} matched within {timeout_seconds:g}s",
+            f"✗ assert_ws_event on {node_name}: expected {wanted} on group "
+            f"{group_id} within {timeout_seconds:g}s, but {len(matches)} arrived",
             style="red",
             markup=False,
         )
-        self._report_received(received, event_type, match_spec)
+        self._report_received(received, event_type, match_spec, matches)
         return False
 
     async def _watch(
@@ -343,16 +369,24 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         event_type: str,
         match_spec: dict[str, Any],
         timeout_seconds: float,
-    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str | None]:
-        """Subscribe and collect frames until a match or the deadline.
+        required: int | None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
+        """Subscribe and collect frames until the verdict is settled or the deadline.
 
-        Returns ``(matched_frame, received_frames, blocker)``. ``blocker`` is set
-        when the window could not be observed at all (a refused handshake, a
-        denied subscription, an early close) and invalidates both verdicts.
+        Returns ``(matching_frames, received_frames, blocker)``. ``blocker`` is
+        set when the window could not be observed at all (a refused handshake, a
+        denied subscription, an early close) and invalidates every verdict.
         The received frames come back on every path so a caller can report what
         actually arrived instead of only that the expectation went unmet.
+
+        One arrival past the ceiling settles the run early: for the default
+        "at least one" that is the success, and for an exact ``required`` it is
+        a failure no further watching can undo. An exact count that is still
+        reachable has to watch the whole window.
         """
         received: list[dict[str, Any]] = []
+        matches: list[dict[str, Any]] = []
+        stop_after = required if required is not None else 0
         deadline = time.monotonic() + timeout_seconds
 
         try:
@@ -365,7 +399,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                     )
                 except asyncio.TimeoutError:
                     return (
-                        None,
+                        matches,
                         received,
                         f"the handshake did not complete within {timeout_seconds:g}s",
                     )
@@ -394,7 +428,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                             break  # the window elapsed, the normal end
                         if msg.type is not aiohttp.WSMsgType.TEXT:
                             return (
-                                None,
+                                matches,
                                 received,
                                 f"the connection ended after "
                                 f"{timeout_seconds - max(remaining, 0.0):.1f}s "
@@ -415,7 +449,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                                 "groupIds"
                             ):
                                 return (
-                                    None,
+                                    matches,
                                     received,
                                     f"the node refused a subscription to group "
                                     f"{group_id} (not a member of it, or the id "
@@ -430,12 +464,15 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                         received.append(result)
                         if result.get("type") != event_type:
                             continue
-                        if not self._match_failures(result, match_spec):
-                            return result, received, None
+                        if self._match_failures(result, match_spec):
+                            continue
+                        matches.append(result)
+                        if len(matches) > stop_after:
+                            return matches, received, None
 
                     if not subscribed:
                         return (
-                            None,
+                            matches,
                             received,
                             "the subscription was never acknowledged, so the "
                             "window was not observed",
@@ -443,11 +480,11 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                 finally:
                     await ws.close()
         except (aiohttp.ClientError, OSError) as e:
-            return None, received, f"WebSocket error: {e}"
+            return matches, received, f"WebSocket error: {e}"
         except json.JSONDecodeError as e:
-            return None, received, f"the node sent a frame that is not JSON: {e}"
+            return matches, received, f"the node sent a frame that is not JSON: {e}"
 
-        return None, received, None
+        return matches, received, None
 
     def _match_failures(
         self, frame: dict[str, Any], match_spec: dict[str, Any]
@@ -465,11 +502,14 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         received: list[dict[str, Any]],
         event_type: str,
         match_spec: dict[str, Any],
+        matches: list[dict[str, Any]],
     ) -> None:
-        """Replay what actually arrived, with per-path mismatches for near misses.
+        """Replay what actually arrived, marking matches and near misses.
 
-        markup=False so event payloads containing ``[..]`` are not eaten as Rich
-        console tags.
+        Matching frames are marked rather than replayed separately, so a count
+        mismatch shows which arrivals were counted without printing the stream
+        twice. markup=False so event payloads containing ``[..]`` are not eaten
+        as Rich console tags.
         """
         if not received:
             console.print(
@@ -477,17 +517,24 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
             )
             return
         console.print(
-            f"  {len(received)} event(s) arrived on the subscription:",
+            f"  {len(received)} event(s) arrived on the subscription, "
+            f"{len(matches)} of them matching:",
             style="red",
             markup=False,
         )
+        # Identity, not equality: two matches can be equal frames, and each
+        # arrival counted separately toward `count`.
+        matched_ids = {id(frame) for frame in matches}
         for frame in received[:_MAX_REPORTED_FRAMES]:
+            marker = "match >" if id(frame) in matched_ids else "      "
             console.print(
-                f"    {json.dumps(frame, sort_keys=True)}", style="red", markup=False
+                f"    {marker} {json.dumps(frame, sort_keys=True)}",
+                style="red",
+                markup=False,
             )
             if match_spec and frame.get("type") == event_type:
                 for failure in self._match_failures(frame, match_spec):
-                    console.print(f"      match {failure}", style="red", markup=False)
+                    console.print(f"      {failure}", style="red", markup=False)
         if len(received) > _MAX_REPORTED_FRAMES:
             console.print(
                 f"    ... and {len(received) - _MAX_REPORTED_FRAMES} more",

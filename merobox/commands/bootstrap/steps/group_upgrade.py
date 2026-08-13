@@ -146,10 +146,25 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     documented fail-fast would silently degrade to a poll-to-timeout. `total`
     falls back to the member count only when the rollup omits it entirely (an
     explicit `0` cohort is preserved).
+
+    `fleet_completed_at` and `cohort_pinned_at_hlc` are the two top-level
+    optionals, passed through as `None` when the response omits them.
+    `fleet_completed_at` is the durable answer to "did this fleet ever
+    converge": `all_migrated` is recomputed from in-TTL heartbeats and lapses
+    when a converged member goes quiet, while the timestamp does not follow it
+    back down. Absent must therefore stay distinguishable from `0`, so neither
+    goes through `_as_int`.
+
+    The summary is an allowlist, which silently drops anything core adds later.
+    The per-member rows are deliberately narrowed to `peer`, `state`, and
+    `migration_failed`; the rest of each member's report (`schema_version`,
+    `residue_auto`, `synced_up_to_hlc`, `reported_at`, `authored_remaining`) is
+    reachable only by widening that loop.
     """
-    rollup = response.get("rollup") if isinstance(response, dict) else None
+    source = response if isinstance(response, dict) else {}
+    rollup = source.get("rollup")
     rollup = rollup if isinstance(rollup, dict) else {}
-    raw_members = response.get("members") if isinstance(response, dict) else None
+    raw_members = source.get("members")
     raw_members = raw_members if isinstance(raw_members, list) else []
 
     members: list[dict[str, Any]] = []
@@ -187,12 +202,15 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     failed = max(_as_int(rollup.get("failed")), members_failed)
 
     return {
-        "target_version": (
-            response.get("targetVersion") if isinstance(response, dict) else None
-        ),
-        "expected_members": (
-            response.get("expectedMembers") if isinstance(response, dict) else None
-        ),
+        "target_version": source.get("targetVersion"),
+        "expected_members": source.get("expectedMembers"),
+        # Both are omitted from the response rather than sent null, and both
+        # have a meaningful zero, so they pass through untouched: coercing an
+        # absent key to 0 would claim the fleet converged at the epoch, and
+        # coercing it to a falsy default would lose the difference from a
+        # namespace that genuinely has not converged.
+        "fleet_completed_at": source.get("fleetCompletedAt"),
+        "cohort_pinned_at_hlc": source.get("cohortPinnedAtHlc"),
         "total": total,
         "migrated": _as_int(rollup.get("migrated")),
         "in_progress": _as_int(rollup.get("inProgress")),
