@@ -162,19 +162,25 @@ def _step(**extra):
     return WebSocketEventAssertStep(config, manager=_manager())
 
 
-def _execute(step, frames, workflow_results=None):
-    """Run the step against a socket replaying `frames`, returning (result, ws)."""
+def _execute(step, frames, workflow_results=None, session=None, token=None):
+    """Run the step against a socket replaying `frames`, returning (result, ws).
+
+    `session` overrides the transport for the tests that need a slow or
+    refusing connect; `token` seeds the auth cache for the redaction tests.
+    """
     ws = _ScriptedWS(frames)
-    no_token = MagicMock()
-    no_token.get_cached_token.return_value = None
+    auth = MagicMock()
+    auth.get_cached_token.return_value = (
+        MagicMock(access_token=token) if token else None
+    )
     with (
         patch(
             "merobox.commands.bootstrap.steps.websocket.AuthManager",
-            return_value=no_token,
+            return_value=auth,
         ),
         patch(
             "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
-            return_value=_FakeSession(ws),
+            return_value=session if session is not None else _FakeSession(ws),
         ),
     ):
         return (
@@ -185,6 +191,18 @@ def _execute(step, frames, workflow_results=None):
             ),
             ws,
         )
+
+
+class _SlowHandshake(_FakeSession):
+    """A session whose connect takes `delay` seconds to complete."""
+
+    def __init__(self, ws, delay):
+        super().__init__(ws)
+        self._delay = delay
+
+    async def ws_connect(self, url):
+        await asyncio.sleep(self._delay)
+        return self._ws
 
 
 class TestPositiveAssertion:
@@ -390,41 +408,23 @@ class TestUnobservedWindow:
 class TestTokenRedaction:
     """The JWT rides in the URL's query string, which aiohttp errors echo."""
 
-    def _execute_against(self, session, capsys):
-        step = _step()
-        cached = MagicMock()
-        cached.access_token = "acc.jwt.tok"
-        auth = MagicMock()
-        auth.get_cached_token.return_value = cached
-        with (
-            patch(
-                "merobox.commands.bootstrap.steps.websocket.AuthManager",
-                return_value=auth,
-            ),
-            patch(
-                "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
-                return_value=session,
-            ),
-        ):
-            result = _run(step.execute({}, {}))
-        return result, capsys.readouterr().out
-
     def test_a_transport_error_echoing_the_url_is_masked(self, capsys):
         class _Refusing(_FakeSession):
             async def ws_connect(self, url):
                 raise aiohttp.ClientError(f"Cannot connect to {url}")
 
-        result, out = self._execute_against(_Refusing(None), capsys)
+        result, _ = _execute(_step(), [], session=_Refusing(None), token="acc.jwt.tok")
         assert result is False
+        out = capsys.readouterr().out
         assert "acc.jwt.tok" not in out
         assert "token=***" in out
 
     def test_the_watched_url_is_never_printed_in_full(self, capsys):
-        result, out = self._execute_against(
-            _FakeSession(_ScriptedWS([_ack(), _migration_started()])), capsys
+        result, _ = _execute(
+            _step(), [_ack(), _migration_started()], token="acc.jwt.tok"
         )
         assert result is True
-        assert "acc.jwt.tok" not in out
+        assert "acc.jwt.tok" not in capsys.readouterr().out
 
 
 class TestWatchWindow:
@@ -432,27 +432,21 @@ class TestWatchWindow:
         # A slow handshake must not eat the window: `absent` would then call
         # the shortfall evidence of absence, and a positive assertion would
         # time out for a reason that has nothing to do with the stream.
-        step = _step(timeout_seconds=1.0)
         ws = _ScriptedWS([_ack(), _delayed(0.6, _migration_started())])
-        no_token = MagicMock()
-        no_token.get_cached_token.return_value = None
+        result, _ = _execute(
+            _step(timeout_seconds=1.0), [], session=_SlowHandshake(ws, 0.6)
+        )
+        assert result is True
 
-        class _SlowHandshake(_FakeSession):
-            async def ws_connect(self, url):
-                await asyncio.sleep(0.6)
-                return self._ws
-
-        with (
-            patch(
-                "merobox.commands.bootstrap.steps.websocket.AuthManager",
-                return_value=no_token,
-            ),
-            patch(
-                "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
-                return_value=_SlowHandshake(ws),
-            ),
-        ):
-            assert _run(step.execute({}, {})) is True
+    def test_a_slow_handshake_is_not_reported_as_an_unacknowledged_one(self, capsys):
+        # The acknowledgement gets its own window too: charging the handshake
+        # to it would blame the node for a connect merobox waited out.
+        ws = _ScriptedWS([_delayed(0.4, _ack()), _migration_started()])
+        result, _ = _execute(
+            _step(timeout_seconds=1.0), [], session=_SlowHandshake(ws, 0.8)
+        )
+        assert result is True
+        assert "never acknowledged" not in capsys.readouterr().out
 
 
 class TestValidation:

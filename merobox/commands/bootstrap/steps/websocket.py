@@ -405,19 +405,18 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         a failure no further watching can undo. An exact count that is still
         reachable has to watch the whole window.
 
-        The window starts when the subscription is acknowledged, not when the
-        step does: the stream delivers nothing before that, so counting the
-        handshake against ``timeout_seconds`` would hand `absent` a shorter
-        window than it asked for and call the shortfall evidence of absence.
-        The handshake is bounded separately by the same number, so the step
-        still terminates.
+        Each of the three phases gets ``timeout_seconds`` of its own: the
+        handshake, then the wait for the acknowledgement, then the watch. The
+        stream delivers nothing until the subscription lands, so charging the
+        handshake to the window would hand `absent` less time than it asked
+        for and count the shortfall as evidence of absence - and charging it to
+        the acknowledgement would report a slow connect as a node that never
+        acknowledged. Every phase is bounded, so the step still terminates.
         """
         received: list[dict[str, Any]] = []
         matches: list[dict[str, Any]] = []
         stop_after = required if required is not None else 0
-        # Bounds the wait for the acknowledgement; reset to the full window
-        # once it lands (see docstring).
-        deadline = time.monotonic() + timeout_seconds
+        deadline = 0.0
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -433,6 +432,11 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                         received,
                         f"the handshake did not complete within {timeout_seconds:g}s",
                     )
+                # Set here, not before the connect: a slow handshake would
+                # otherwise leave the acknowledgement no time to arrive and be
+                # reported as a node that never acknowledged. Reset again when
+                # it lands (see docstring).
+                deadline = time.monotonic() + timeout_seconds
 
                 try:
                     await ws.send_str(
