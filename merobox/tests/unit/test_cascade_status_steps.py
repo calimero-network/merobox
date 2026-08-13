@@ -111,6 +111,15 @@ class TestSummarizeCascadeStatus:
         assert s["groups"] == resp["data"]
         assert "data" not in s
 
+    def test_an_empty_subtree_still_offers_an_empty_groups_list(self):
+        assert _summarize_cascade_status(_resp([]))["groups"] == []
+
+    def test_groups_is_omitted_when_the_response_carried_no_list(self):
+        # `groups: []` would claim core answered with an empty subtree, and a
+        # capture of it would bind rather than fail.
+        for bad in (None, {}, {"data": "nope"}, {"error": "boom"}):
+            assert "groups" not in _summarize_cascade_status(bad)
+
 
 # =============================================================================
 # GetCascadeStatusStep — validation

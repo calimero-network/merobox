@@ -99,15 +99,16 @@ class TestSummarizeMigrationStatus:
         assert s["total"] == 1  # falls back to len(members)
         assert s["migrated"] == 0
         assert s["all_migrated"] is False
-        assert s["members"][0]["migration_failed"] is None
+        assert "migration_failed" not in s["members"][0]
 
     def test_garbage_response_is_empty_summary(self):
         s = _summarize_migration_status("not-a-dict")
         assert s["total"] == 0
         assert s["all_migrated"] is False
-        assert s["members"] == []
-        assert s["fleet_completed_at"] is None
-        assert s["cohort_pinned_at_hlc"] is None
+        # The counters degrade; the pass-throughs are absent rather than null.
+        assert "members" not in s
+        assert "fleet_completed_at" not in s
+        assert "cohort_pinned_at_hlc" not in s
 
     def test_fleet_completed_at_is_surfaced(self):
         # The durable evidence that convergence happened, which allMigrated
@@ -134,12 +135,13 @@ class TestSummarizeMigrationStatus:
         assert s["all_migrated"] is False
         assert s["fleet_completed_at"] == 1_700_002_000
 
-    def test_an_unconverged_namespace_reports_none_not_zero(self):
-        # Core omits the key entirely rather than sending 0, and 0 is a valid
-        # unix timestamp, so absent must not collapse into it.
+    def test_an_unconverged_namespace_omits_the_key_entirely(self):
+        # Core omits the key rather than sending 0, and 0 is a valid unix
+        # timestamp, so absent must not collapse into it — nor into a null,
+        # which a capture would happily bind.
         s = _summarize_migration_status({"rollup": _rollup(total=2)})
-        assert s["fleet_completed_at"] is None
-        assert s["cohort_pinned_at_hlc"] is None
+        assert "fleet_completed_at" not in s
+        assert "cohort_pinned_at_hlc" not in s
 
     def test_a_zero_fleet_timestamp_is_preserved(self):
         s = _summarize_migration_status(
@@ -376,7 +378,7 @@ class TestReportedSchemaVersions:
         assert s["reported_missing"] == 1
         assert s["reported_below_target"] == 0
         assert s["reported_at_target"] == 1
-        assert s["members"][1]["schema_version"] is None
+        assert "schema_version" not in s["members"][1]
 
     def test_absent_target_leaves_the_target_relative_counters_none(self):
         # Defaulting the target to 0 would classify every member as at-target
@@ -463,6 +465,82 @@ class TestReportedSchemaVersions:
             }
         )
         assert s["stuck_members"] == ["peerA", "peerB"]
+
+
+class TestAbsentReportFieldsStayOutOfTheAggregates:
+    """A report field core did not send must not reach a counter as a zero.
+
+    The aggregates are the only member-level evidence that can falsify the
+    rollup, so an unreported field arriving as 0 would put the false green back
+    in the one place there is nothing left to cross-check it against.
+    """
+
+    def test_an_unreported_version_is_missing_not_a_zero_at_target(self):
+        # A target of 0 is the sharp case: a version coerced to 0 would count a
+        # silent member as at-target and empty out `reported_missing`.
+        s = _summarize_migration_status(
+            {"targetVersion": 0, "members": [{"peer": "a", "state": "unknown"}]}
+        )
+        assert s["reported_missing"] == 1
+        assert s["reported_at_target"] == 0
+        assert s["reported_below_target"] == 0
+        assert s["min_reported_schema_version"] is None
+
+    def test_an_unreported_residue_leaves_the_total_to_those_that_did_report(self):
+        s = _summarize_migration_status(
+            {
+                "members": [
+                    _member("a", schemaVersion=2, residueAuto=3),
+                    {"peer": "b", "state": "unknown"},
+                ]
+            }
+        )
+        assert s["residue_total"] == 3
+        # `residue_total` alone cannot tell a drained cohort from a silent one;
+        # `reported_missing` is the companion signal that can, which is why a
+        # workflow asserting the drain has to assert both.
+        assert s["reported_missing"] == 1
+
+    def test_an_absent_failure_reason_is_not_stringified(self):
+        # The absence marker is not None, so an `is not None` guard alone would
+        # push its repr into the list and make failure_reasons unassertable.
+        s = _summarize_migration_status(
+            {
+                "members": [
+                    _member("a", schemaVersion=2),
+                    {"peer": "b", "state": "unknown"},
+                ]
+            }
+        )
+        assert s["failure_reasons"] == []
+
+    def test_a_null_report_field_is_kept_and_still_counts_as_missing(self):
+        # Present-and-null is core's answer, so the row keeps it; it is still
+        # not a usable state version.
+        s = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "members": [
+                    {
+                        "peer": "a",
+                        "state": "unknown",
+                        "report": {"schemaVersion": None, "migrationFailed": None},
+                    }
+                ],
+            }
+        )
+        row = s["members"][0]
+        assert row["schema_version"] is None
+        assert row["migration_failed"] is None
+        assert s["reported_missing"] == 1
+        assert s["failure_reasons"] == []
+
+    def test_an_empty_cohort_stays_distinct_from_an_unanswered_one(self):
+        assert (
+            _summarize_migration_status({"members": [], "rollup": _rollup()})["members"]
+            == []
+        )
+        assert "members" not in _summarize_migration_status({"rollup": _rollup()})
 
 
 # =============================================================================

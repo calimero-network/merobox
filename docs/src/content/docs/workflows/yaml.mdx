@@ -1093,6 +1093,14 @@ Poll until a namespace migration finishes, or fail. Same fields as
 `residue_auto`, `synced_up_to_hlc`, `reported_at`, `authored_remaining`,
 `migration_failed`).
 
+Any of those the node did not send is **left out** of the summary rather than
+offered as `null`, so capturing one
+[fails the step](/workflows/engine/#capturing-outputs) naming the field. A node that has not converged omits `fleet_completed_at`, and
+a member that has not reported omits its whole report, so a capture of either is
+a real failure rather than a `null` an assertion cannot tell from a converged
+one. A field the node genuinely sends as `null` still binds. The rollup counters
+are computed, not passed through, and are always present.
+
 Alongside those, merobox recomputes these aggregates from the raw member reports
 rather than reading core's rollup, so an assertion on them can falsify the
 rollup rather than confirm it against itself:
