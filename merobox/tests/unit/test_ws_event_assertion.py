@@ -449,6 +449,25 @@ class TestWatchWindow:
         assert "never acknowledged" not in capsys.readouterr().out
 
 
+class TestUnresolvedPlaceholder:
+    def test_it_is_reported_as_this_step_s_failure(self, capsys):
+        # Same contract as assert / json_assert: a placeholder that never
+        # bound is a failed assertion, not an exception for the executor.
+        result, _ = _execute(
+            _step(group_id="{{never_bound}}"), [_ack(), _migration_started()]
+        )
+        assert result is False
+        assert "✗ assert_ws_event on calimero-node-2" in capsys.readouterr().out
+
+    def test_a_match_value_that_never_bound_is_reported_too(self, capsys):
+        result, _ = _execute(
+            _step(match={"data.toVersion": "{{never_bound}}"}),
+            [_ack(), _migration_started()],
+        )
+        assert result is False
+        assert "✗ assert_ws_event on calimero-node-2" in capsys.readouterr().out
+
+
 class TestValidation:
     def test_group_id_and_event_are_required(self):
         with pytest.raises(ValueError):

@@ -20,6 +20,7 @@ from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_READ_TIMEOUT,
 )
+from merobox.commands.errors import UnresolvedPlaceholderError
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -87,6 +88,22 @@ class AssertApiResponseStep(BaseStep):
         )
 
     async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        # A placeholder that never bound is this step's own verdict, not a
+        # crash for the executor to reformat. `path` resolves here and `match`
+        # values resolve later, so the catch wraps the whole assertion.
+        try:
+            return await self._assert(workflow_results, dynamic_values)
+        except UnresolvedPlaceholderError as e:
+            console.print(
+                f"✗ assert_api_response on {self.config['node']}: {e.message}",
+                style="red",
+                markup=False,
+            )
+            return False
+
+    async def _assert(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]

@@ -24,6 +24,7 @@ from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import DEFAULT_CONNECTION_TIMEOUT
+from merobox.commands.errors import UnresolvedPlaceholderError
 from merobox.commands.utils import console
 
 WS_ENDPOINT = "/ws"
@@ -256,6 +257,22 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                 )
 
     async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        # A placeholder that never bound is this step's own verdict, not a
+        # crash for the executor to reformat, so it reads like every other
+        # miss this step reports.
+        try:
+            return await self._assert(workflow_results, dynamic_values)
+        except UnresolvedPlaceholderError as e:
+            console.print(
+                f"✗ assert_ws_event on {self.config['node']}: {e.message}",
+                style="red",
+                markup=False,
+            )
+            return False
+
+    async def _assert(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
