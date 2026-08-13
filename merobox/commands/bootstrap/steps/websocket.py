@@ -36,6 +36,9 @@ _SUBSCRIBE_REQUEST_ID = 1
 # frames cannot bury the assertion that failed.
 _MAX_REPORTED_FRAMES = 20
 
+# Stands in for the JWT wherever a URL reaches the console.
+_REDACTED = "***"
+
 
 class _WebSocketStepBase(BaseStep):
     """Shared node/token/URL resolution for the WebSocket steps."""
@@ -73,6 +76,15 @@ class _WebSocketStepBase(BaseStep):
         if token:
             url = f"{url}?token={token}"
         return url
+
+    def _redact(self, text: str, token: str | None) -> str:
+        """Mask a token anywhere in text bound for the console.
+
+        aiohttp errors stringify the request URL, and the JWT rides in that
+        URL's query string, so every error path can otherwise print the token
+        into a CI log that outlives the node.
+        """
+        return text.replace(token, _REDACTED) if token else text
 
 
 class WebSocketConnectStep(_WebSocketStepBase):
@@ -136,8 +148,9 @@ class WebSocketConnectStep(_WebSocketStepBase):
                 return False
 
         ws_url = self._build_ws_url(rpc_url, token)
-        display_url = self._build_ws_url(rpc_url, "***" if token else None)
-        console.print(f"[cyan]Opening WebSocket to {display_url}[/cyan]")
+        console.print(
+            f"[cyan]Opening WebSocket to {self._redact(ws_url, token)}[/cyan]"
+        )
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -157,21 +170,27 @@ class WebSocketConnectStep(_WebSocketStepBase):
             # The server rejected the upgrade handshake — the genuine auth signal.
             # Only an auth status (401/403) proves a rejected-without-token test;
             # other statuses are a real failure even under expected_failure.
+            detail = self._redact(str(e), token)
             if expected_failure:
                 if e.status in (401, 403):
-                    self._report_expected_failure(str(e))
+                    self._report_expected_failure(detail)
                     return True
                 console.print(
                     f"[red]❌ Expected a 401/403 auth rejection but the "
                     f"{node_name} handshake returned HTTP {e.status}[/red]"
                 )
                 return False
-            console.print(f"[red]❌ WebSocket connect to {node_name} failed: {e}[/red]")
+            console.print(
+                f"[red]❌ WebSocket connect to {node_name} failed: {detail}[/red]"
+            )
             return False
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             # Connection refused / reset / timeout doesn't prove an auth
             # rejection, so it never satisfies expected_failure.
-            console.print(f"[red]❌ WebSocket connect to {node_name} error: {e}[/red]")
+            console.print(
+                f"[red]❌ WebSocket connect to {node_name} error: "
+                f"{self._redact(str(e), token)}[/red]"
+            )
             return False
 
         if expected_failure:
@@ -322,8 +341,10 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
             # The window was never observed, so no verdict was tested. An
             # unobserved window is not an absent event, so the `absent` and
             # `count` forms fail here too rather than passing vacuously.
+            # A transport blocker quotes the exception, which quotes the URL the
+            # token rides in, so redact here rather than at each raising site.
             console.print(
-                f"✗ assert_ws_event on {node_name}: {blocker}",
+                f"✗ assert_ws_event on {node_name}: {self._redact(blocker, token)}",
                 style="red",
                 markup=False,
             )
@@ -443,11 +464,18 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                             result = frame.get("result")
                             # The server answers with the ids it actually
                             # subscribed, dropping any the caller may not
-                            # observe, so an empty (or absent) list is a denial
-                            # and not something to wait out.
-                            if not isinstance(result, dict) or not result.get(
-                                "groupIds"
-                            ):
+                            # observe, so the requested id missing from the ack
+                            # is a denial and not something to wait out. A
+                            # non-empty list is not enough: an ack naming only
+                            # other groups leaves this one unwatched, and
+                            # `absent` would then pass without observing
+                            # anything.
+                            acked = (
+                                result.get("groupIds")
+                                if isinstance(result, dict)
+                                else None
+                            )
+                            if not isinstance(acked, list) or group_id not in acked:
                                 return (
                                     matches,
                                     received,

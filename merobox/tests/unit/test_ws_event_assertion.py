@@ -329,6 +329,27 @@ class TestUnobservedWindow:
         assert result is False
         assert "refused a subscription" in capsys.readouterr().out
 
+    def test_an_ack_naming_only_another_group_is_a_denial(self, capsys):
+        # A non-empty ack is not proof: this group stays unwatched, so the
+        # window was never observed.
+        result, _ = _execute(_step(), [_ack(group_ids=(_SUBGROUP,))])
+        assert result is False
+        assert "refused a subscription" in capsys.readouterr().out
+
+    def test_an_ack_naming_only_another_group_fails_absent_too(self, capsys):
+        # The vacuous pass this guards: nothing arrives because nothing is
+        # being watched, which is not evidence of absence.
+        step = _step(event="CascadeProgress", absent=True)
+        result, _ = _execute(step, [_ack(group_ids=(_SUBGROUP,))])
+        assert result is False
+        assert "refused a subscription" in capsys.readouterr().out
+
+    def test_an_ack_listing_the_group_among_others_is_accepted(self):
+        result, _ = _execute(
+            _step(), [_ack(group_ids=(_SUBGROUP, _GROUP)), _migration_started()]
+        )
+        assert result is True
+
     def test_denied_subscription_fails_the_negative_assertion_too(self, capsys):
         step = _step(event="CascadeProgress", absent=True)
         result, _ = _execute(step, [_ack(group_ids=())])
@@ -348,6 +369,46 @@ class TestUnobservedWindow:
         result, _ = _execute(step, [_ack(), closed])
         assert result is False
         assert "the connection ended" in capsys.readouterr().out
+
+
+class TestTokenRedaction:
+    """The JWT rides in the URL's query string, which aiohttp errors echo."""
+
+    def _execute_against(self, session, capsys):
+        step = _step()
+        cached = MagicMock()
+        cached.access_token = "acc.jwt.tok"
+        auth = MagicMock()
+        auth.get_cached_token.return_value = cached
+        with (
+            patch(
+                "merobox.commands.bootstrap.steps.websocket.AuthManager",
+                return_value=auth,
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
+                return_value=session,
+            ),
+        ):
+            result = _run(step.execute({}, {}))
+        return result, capsys.readouterr().out
+
+    def test_a_transport_error_echoing_the_url_is_masked(self, capsys):
+        class _Refusing(_FakeSession):
+            async def ws_connect(self, url):
+                raise aiohttp.ClientError(f"Cannot connect to {url}")
+
+        result, out = self._execute_against(_Refusing(None), capsys)
+        assert result is False
+        assert "acc.jwt.tok" not in out
+        assert "token=***" in out
+
+    def test_the_watched_url_is_never_printed_in_full(self, capsys):
+        result, out = self._execute_against(
+            _FakeSession(_ScriptedWS([_ack(), _migration_started()])), capsys
+        )
+        assert result is True
+        assert "acc.jwt.tok" not in out
 
 
 class TestValidation:
