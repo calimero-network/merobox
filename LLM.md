@@ -616,6 +616,53 @@ step triggered it. And `CascadeProgress` is admin-gated at subscribe time while
 the other migration events are member-visible, so a non-admin subscriber never
 receives it and `absent: true` on it would pass for the wrong reason.
 
+#### 9b. Raw Admin-API Assertion Step (`assert_api_response`)
+
+Issue the HTTP request directly and assert against the JSON the node sent.
+
+Every other step reads its response through `calimero-client-py`, a compiled
+wrapper built from a pinned core revision whose DTOs drop any key that build
+does not know about - silently, on deserialize, before merobox sees the body.
+So a field newly added to core reads as missing everywhere, and a brand-new
+field is indistinguishable from a broken one in exactly the environment where
+you would want to verify it. This step never hands the body to a typed
+deserializer.
+
+```yaml
+- type: assert_api_response
+  node: calimero-node-1
+  path: "/admin-api/namespaces/{{namespace_id}}/migration-status"
+  match:
+    data.rollup.allMigrated: true
+  present:
+    - data.fleetCompletedAt
+```
+
+Paths address the body verbatim, envelope included: the admin API wraps payloads
+in `data` and serializes camelCase, so a field reads `data.fleetCompletedAt`.
+`match` is a subset test, so unlisted fields are ignored.
+
+Core marks optional fields `skip_serializing_if = "Option::is_none"`, so a key
+being ABSENT is meaningful and distinct from present-and-null. The three
+assertions separate the two states:
+
+| Assertion | Present with a value | Present and null | Absent |
+| --- | --- | --- | --- |
+| `present: [k]` | pass | pass | fail |
+| `absent: [k]` | fail | fail | pass |
+| `match: {k: null}` | fail | pass | fail (reported as absent) |
+
+At least one of `match` / `present` / `absent` is required, so the step can never
+silently assert nothing. A failure prints the per-path verdict and then the whole
+response body, so CI output alone tells "the field is missing" from "the field is
+wrong".
+
+One request, no polling - wrap it in `repeat` or precede it with `wait_for_sync`
+when the assertion has to wait for state to settle. The JWT a prior `login`
+cached for the node is attached as a bearer token, or an explicit `token:`
+overrides it; a node running without auth needs neither. A non-2xx status fails
+the step and composes with `expected_failure` / `expected_error`.
+
 #### 10. Proposals
 
 Create and vote on proposals in a context.

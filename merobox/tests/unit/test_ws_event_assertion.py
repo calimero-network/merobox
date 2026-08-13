@@ -175,7 +175,7 @@ def _execute(step, frames, workflow_results=None, session=None, token=None):
     )
     with (
         patch(
-            "merobox.commands.bootstrap.steps.websocket.AuthManager",
+            "merobox.commands.bootstrap.steps.base.AuthManager",
             return_value=auth,
         ),
         patch(

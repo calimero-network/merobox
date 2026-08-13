@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from rich.markup import escape
 
+from merobox.commands.auth import AuthManager
 from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, get_node_rpc_url, vprint
 
 if TYPE_CHECKING:
@@ -765,6 +766,32 @@ class BaseStep:
             client_node_name = node_name if self.auth_mode == "embedded" else None
 
         return rpc_url, client_node_name
+
+    def _resolve_node_target(self, node_name: str) -> tuple[str, str]:
+        """Resolve a node to its RPC URL and the name its token is cached under."""
+        resolved = self._resolve_node(node_name)
+        if resolved:
+            return resolved.url, resolved.node_name
+        return self._get_node_rpc_url(node_name), node_name
+
+    def _resolve_token(
+        self,
+        cache_node_name: str,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> Optional[str]:
+        """Resolve the JWT to attach: explicit ``token`` field wins, else cache.
+
+        A node running without auth issues no token, so None is a normal answer
+        and not an error - the request's own outcome is the auth signal.
+        """
+        explicit = self.config.get("token")
+        if explicit:
+            return self._resolve_dynamic_value(
+                explicit, workflow_results, dynamic_values
+            )
+        cached = AuthManager().get_cached_token(cache_node_name)
+        return cached.access_token if cached else None
 
     def _parse_json(self, value: Any) -> Any:
         """Parse JSON string to Python object using a robust multi-strategy parser.

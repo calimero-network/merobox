@@ -22,7 +22,6 @@ from typing import Any
 import aiohttp
 from rich.markup import escape
 
-from merobox.commands.auth import AuthManager
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import DEFAULT_CONNECTION_TIMEOUT
 from merobox.commands.utils import console
@@ -42,29 +41,7 @@ _REDACTED = "***"
 
 
 class _WebSocketStepBase(BaseStep):
-    """Shared node/token/URL resolution for the WebSocket steps."""
-
-    def _resolve_ws_target(self, node_name: str) -> tuple[str, str]:
-        """Resolve a node to its RPC URL and the name its token is cached under."""
-        resolved = self._resolve_node(node_name)
-        if resolved:
-            return resolved.url, resolved.node_name
-        return self._get_node_rpc_url(node_name), node_name
-
-    def _resolve_token(
-        self,
-        cache_node_name: str,
-        workflow_results: dict[str, Any],
-        dynamic_values: dict[str, Any],
-    ) -> str | None:
-        """Resolve the JWT to attach: explicit ``token`` field wins, else cache."""
-        explicit = self.config.get("token")
-        if explicit:
-            return self._resolve_dynamic_value(
-                explicit, workflow_results, dynamic_values
-            )
-        cached = AuthManager().get_cached_token(cache_node_name)
-        return cached.access_token if cached else None
+    """Shared ``ws(s)://`` URL construction for the WebSocket steps."""
 
     def _build_ws_url(self, rpc_url: str, token: str | None) -> str:
         """Build the ``ws(s)://host:port/ws[?token=...]`` URL from the RPC URL."""
@@ -131,7 +108,7 @@ class WebSocketConnectStep(_WebSocketStepBase):
         )
 
         try:
-            rpc_url, cache_node_name = self._resolve_ws_target(node_name)
+            rpc_url, cache_node_name = self._resolve_node_target(node_name)
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
@@ -312,7 +289,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         }
 
         try:
-            rpc_url, cache_node_name = self._resolve_ws_target(node_name)
+            rpc_url, cache_node_name = self._resolve_node_target(node_name)
         except Exception as e:
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False

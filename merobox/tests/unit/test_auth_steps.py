@@ -387,7 +387,7 @@ class TestWebSocketConnectStep:
 
         with (
             patch(
-                "merobox.commands.bootstrap.steps.websocket.AuthManager",
+                "merobox.commands.bootstrap.steps.base.AuthManager",
                 return_value=fake_auth,
             ),
             patch(
@@ -407,7 +407,7 @@ class TestWebSocketConnectStep:
         fake_auth.get_cached_token.return_value = None
 
         with patch(
-            "merobox.commands.bootstrap.steps.websocket.AuthManager",
+            "merobox.commands.bootstrap.steps.base.AuthManager",
             return_value=fake_auth,
         ):
             result = _run(step.execute({}, {}))
@@ -511,7 +511,7 @@ class TestWebSocketTokenRedaction:
         fake_auth.get_cached_token.return_value = _token()
         with (
             patch(
-                "merobox.commands.bootstrap.steps.websocket.AuthManager",
+                "merobox.commands.bootstrap.steps.base.AuthManager",
                 return_value=fake_auth,
             ),
             patch(

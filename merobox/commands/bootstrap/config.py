@@ -132,6 +132,7 @@ VALID_STEP_TYPES = frozenset(
         "ws_connect",
         "ws_subscribe",
         "assert_ws_event",
+        "assert_api_response",
     }
 )
 
@@ -426,6 +427,27 @@ class WebSocketEventAssertStepConfig(BaseStepConfig):
     )
     timeout_seconds: Optional[float] = Field(
         None, gt=0, description="Length of the watch window in seconds"
+    )
+    token: Optional[str] = Field(
+        None, description="Explicit JWT to attach (overrides the cached token)"
+    )
+
+
+class AssertApiResponseStepConfig(BaseStepConfig):
+    """Configuration for assert_api_response step (raw admin-API assertion)."""
+
+    type: Literal["assert_api_response"] = "assert_api_response"
+    node: str = Field(..., description="Node whose admin API is queried")
+    path: str = Field(..., description="Admin-API path, e.g. /admin-api/health")
+    match: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths into the response body mapped to expected values",
+    )
+    present: Optional[list[str]] = Field(
+        None, description="Dotted paths that must exist, whatever their value"
+    )
+    absent: Optional[list[str]] = Field(
+        None, description="Dotted paths that must not exist in the body"
     )
     token: Optional[str] = Field(
         None, description="Explicit JWT to attach (overrides the cached token)"
@@ -1689,6 +1711,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "ws_connect": WebSocketConnectStepConfig,
     "ws_subscribe": WebSocketConnectStepConfig,
     "assert_ws_event": WebSocketEventAssertStepConfig,
+    "assert_api_response": AssertApiResponseStepConfig,
     "wait": WaitStep,
     "wait_for_sync": WaitForSyncStep,
     "repeat": RepeatStep,

@@ -1463,6 +1463,67 @@ at least `min_matches` times; `assert_log_absent` fails if any pattern appears.
     - 'panicked'
 ```
 
+### assert_api_response
+
+GET a path on a node's admin API and assert against the JSON the node actually
+sent. Every other step reads its response through `calimero-client-py`, whose
+compiled DTOs silently drop any key the pinned core build does not know about,
+so a field added to core is unassertable until a client release lands. This step
+never hands the body to a typed deserializer.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Node whose admin API is queried. |
+| `path` | yes | string | Admin-API path, e.g. `/admin-api/health`. |
+| `match` | one of | map | Dotted paths mapped to expected values. |
+| `present` | one of | list | Dotted paths that must exist, whatever their value. |
+| `absent` | one of | list | Dotted paths that must not exist. |
+| `token` | no | string | Explicit JWT (otherwise the token `login` cached for the node). |
+
+At least one of `match` / `present` / `absent` is required, so a step can never
+silently assert nothing. Paths address the body verbatim, envelope included: the
+admin API wraps payloads in `data` and serializes camelCase, so a field reads
+`data.fleetCompletedAt`.
+
+```yaml
+- type: assert_api_response
+  node: calimero-node-1
+  path: '/admin-api/namespaces/{{namespace_id}}/migration-status'
+  match:
+    data.rollup.allMigrated: true
+  present:
+    - data.fleetCompletedAt
+```
+
+Core marks optional fields `skip_serializing_if = "Option::is_none"`, so a key
+being **absent** is meaningful and distinct from present-and-null. The three
+assertions separate the two states: `present` accepts a null value, `absent`
+rejects one, and `match: {path: null}` demands the key be there *and* null - an
+absent key fails it and is reported as absent, not as null.
+
+```yaml
+# A namespace with no upgrade record must not emit the field at all.
+- type: assert_api_response
+  node: calimero-node-1
+  path: '/admin-api/namespaces/{{namespace_id}}/migration-status'
+  absent:
+    - data.targetVersion
+```
+
+A failure prints the per-path verdict and then the whole response body, so CI
+output alone tells "the field is missing" from "the field is wrong". The step
+issues one request and does not poll; wrap it in `repeat` or precede it with
+`wait_for_sync` when the assertion has to wait for state to settle. A non-2xx
+status fails the step and works with `expected_failure` / `expected_error`:
+
+```yaml
+- type: assert_api_response
+  node: calimero-node-1
+  path: '/admin-api/namespaces/deadbeef/migration-status'
+  expected_failure: true
+  expected_error: 'HTTP 404'
+```
+
 ---
 
 ## Mesh & fuzzy steps

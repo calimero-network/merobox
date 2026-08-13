@@ -2184,6 +2184,12 @@ class WorkflowExecutor:
             )
 
             return WebSocketEventAssertStep(step_config, **common_kwargs)
+        elif step_type == "assert_api_response":
+            from merobox.commands.bootstrap.steps.api_assertion import (
+                AssertApiResponseStep,
+            )
+
+            return AssertApiResponseStep(step_config, **common_kwargs)
         elif step_type == "wait":
             return WaitStep(step_config, **common_kwargs)
         elif step_type == "wait_for_sync":
