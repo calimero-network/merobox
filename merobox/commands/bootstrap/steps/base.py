@@ -1107,42 +1107,9 @@ class BaseStep:
         )
 
         for exported_variable, assigned_var in outputs_config.items():
-            if isinstance(assigned_var, str):
-                # Unified _get_value for both simple keys and dotted paths; it
-                # parses JSON at each path segment.
-                source = assigned_var
-                target_key = exported_variable
-                value = self._get_value(actual_data, source, default=_MISSING)
-
-            elif isinstance(assigned_var, dict) and "field" in assigned_var:
-                source = assigned_var["field"]
-                target_key = assigned_var.get("target", exported_variable).replace(
-                    "{node_name}", node_name
-                )
-                # Literal key lookup (not path traversal) for backward compatibility
-                value = (
-                    actual_data.get(source, _MISSING)
-                    if isinstance(actual_data, dict)
-                    else _MISSING
-                )
-                if value is not _MISSING:
-                    # JSON parse only when explicitly requested
-                    if assigned_var.get("json"):
-                        value = self._parse_json(value)
-                    # Optional nested path within the field's value
-                    path = assigned_var.get("path")
-                    if isinstance(path, str):
-                        source = f"{source}.{path}"
-                        value = self._get_value(value, path, default=_MISSING)
-
-            else:
-                raise OutputCaptureError(
-                    f"Step '{self._get_step_name()}': output '{exported_variable}' "
-                    f"is configured as {assigned_var!r}, which is neither a source "
-                    f"field name nor a mapping with a 'field' key",
-                    step_name=self._get_step_name(),
-                    step_type=self.config.get("type"),
-                )
+            source, target_key, value = self._resolve_capture(
+                exported_variable, assigned_var, actual_data, node_name
+            )
 
             # Checked before the capture is required to bind: a protected key
             # already holds the value the error pass exported, so its
@@ -1180,6 +1147,58 @@ class BaseStep:
                 f"[green]   ✓[/green] [bold cyan]{target_key}[/bold cyan] [dim]=[/dim] {display_value}",
                 level=LOG_LEVEL_VERBOSE,
             )
+
+    def _resolve_capture(
+        self,
+        exported_variable: str,
+        assigned_var: Any,
+        actual_data: Any,
+        node_name: str,
+    ) -> tuple[str, str, Any]:
+        """Read one `outputs:` entry, as ``(source, target_key, value)``.
+
+        Dispatch only - the caller owns the single verdict on what an
+        unbindable value means, so the protected / absent / lenient rules stay
+        in one place instead of once per capture form.
+        """
+        if isinstance(assigned_var, str):
+            # Unified _get_value for both simple keys and dotted paths; it
+            # parses JSON at each path segment.
+            return (
+                assigned_var,
+                exported_variable,
+                self._get_value(actual_data, assigned_var, default=_MISSING),
+            )
+
+        if isinstance(assigned_var, dict) and "field" in assigned_var:
+            source = assigned_var["field"]
+            target_key = assigned_var.get("target", exported_variable).replace(
+                "{node_name}", node_name
+            )
+            # Literal key lookup (not path traversal) for backward compatibility
+            value = (
+                actual_data.get(source, _MISSING)
+                if isinstance(actual_data, dict)
+                else _MISSING
+            )
+            if value is not _MISSING:
+                # JSON parse only when explicitly requested
+                if assigned_var.get("json"):
+                    value = self._parse_json(value)
+                # Optional nested path within the field's value
+                path = assigned_var.get("path")
+                if isinstance(path, str):
+                    source = f"{source}.{path}"
+                    value = self._get_value(value, path, default=_MISSING)
+            return source, target_key, value
+
+        raise OutputCaptureError(
+            f"Step '{self._get_step_name()}': output '{exported_variable}' "
+            f"is configured as {assigned_var!r}, which is neither a source "
+            f"field name nor a mapping with a 'field' key",
+            step_name=self._get_step_name(),
+            step_type=self.config.get("type"),
+        )
 
     def _export_variables(
         self,
