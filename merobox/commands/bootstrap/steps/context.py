@@ -204,8 +204,9 @@ class CreateContextStep(BaseStep):
             # Check if the JSON-RPC response contains an error
             if self._check_jsonrpc_error(result["data"]):
                 if expected_failure:
-                    self._report_expected_failure("JSON-RPC error returned")
-                    return True
+                    return self._report_expected_failure(
+                        self._jsonrpc_error_detail(result["data"])
+                    )
                 return False
 
             # Store result for later use
@@ -249,12 +250,11 @@ class CreateContextStep(BaseStep):
                     )
 
             if expected_failure:
-                self._report_unexpected_success()
+                return self._report_unexpected_success()
             return True
         else:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]Context creation failed: "
                 f"{escape(str(result.get('error', 'Unknown error')))}[/red]"

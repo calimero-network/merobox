@@ -135,8 +135,7 @@ class _SetMetadataBase(BaseStep):
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
         except Exception as e:
             if expected_failure:
-                self._report_expected_failure(f"node resolution failed: {e}")
-                return True
+                return self._report_expected_failure(f"node resolution failed: {e}")
             console.print(
                 f"[red]Failed to resolve node {node_name}: {escape(str(e))}[/red]"
             )
@@ -150,8 +149,7 @@ class _SetMetadataBase(BaseStep):
                     f"calimero-client-py >= {_REQUIRED_CLIENT_VERSION} (got an older version)"
                 )
                 if expected_failure:
-                    self._report_expected_failure(msg)
-                    return True
+                    return self._report_expected_failure(msg)
                 console.print(f"[red]{msg}[/red]")
                 return False
             method = getattr(client, self._api_method)
@@ -162,8 +160,7 @@ class _SetMetadataBase(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]{self._api_method} failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -172,8 +169,9 @@ class _SetMetadataBase(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             console.print(
                 f"[red]{self._api_method} returned a JSON-RPC error on {node_name}[/red]"
             )
@@ -185,7 +183,7 @@ class _SetMetadataBase(BaseStep):
             f"on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -249,8 +247,7 @@ class _GetMetadataBase(BaseStep):
             rpc_url, client_node_name = self._resolve_node_for_client(node_name)
         except Exception as e:
             if expected_failure:
-                self._report_expected_failure(f"node resolution failed: {e}")
-                return True
+                return self._report_expected_failure(f"node resolution failed: {e}")
             console.print(
                 f"[red]Failed to resolve node {node_name}: {escape(str(e))}[/red]"
             )
@@ -264,8 +261,7 @@ class _GetMetadataBase(BaseStep):
                     f"calimero-client-py >= {_REQUIRED_CLIENT_VERSION} (got an older version)"
                 )
                 if expected_failure:
-                    self._report_expected_failure(msg)
-                    return True
+                    return self._report_expected_failure(msg)
                 console.print(f"[red]{msg}[/red]")
                 return False
             method = getattr(client, self._api_method)
@@ -276,8 +272,7 @@ class _GetMetadataBase(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]{self._api_method} failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -285,8 +280,9 @@ class _GetMetadataBase(BaseStep):
             return False
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             console.print(
                 f"[red]{self._api_method} returned a JSON-RPC error on {node_name}[/red]"
             )
@@ -299,7 +295,7 @@ class _GetMetadataBase(BaseStep):
             f"on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 

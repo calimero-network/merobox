@@ -126,6 +126,15 @@ def _summarize_cascade_status(response: Any) -> dict[str, Any]:
     }
 
 
+def _opt_int(value: Any) -> int | None:
+    """Return `value` when it is a genuine int, else None (bool is not an int).
+
+    Distinct from the `_as_int` coercion inside the summarizer: a state version
+    or a residue count has a meaningful 0, so absent must not become 0.
+    """
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _summarize_migration_status(response: Any) -> dict[str, Any]:
     """Flatten a `get_migration_status` response into a flat, exportable summary.
 
@@ -157,11 +166,32 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     back down. Absent must therefore stay distinguishable from `0`, so neither
     goes through `_as_int`.
 
+    Each member row carries its whole report (`schema_version`, `residue_auto`,
+    `synced_up_to_hlc`, `reported_at`, `authored_remaining`) passed through
+    raw, absent as `None`. `report.schemaVersion` is the ABI *state* version of
+    the bytes a member actually holds, which is the only member-level evidence
+    that a state migration ran; the app's own `schema_info` is a constant
+    compiled into the binary and answers the same string whether or not the
+    state was ever migrated.
+
+    The six `reported_*` / `residue_total` / `failure_reasons` aggregates are
+    recomputed here from the raw member rows and NEVER read from `rollup`. That
+    is the point of them: `rollup.allMigrated` is core's own answer to "did
+    everyone converge", so asserting it against itself cannot falsify the
+    rollup arithmetic. Do not "simplify" them back into the rollup fields.
+
+    `reported_at_target` / `reported_below_target` are `None` when the response
+    carries no `targetVersion` (a namespace with no upgrade record). Defaulting
+    the target to 0 would classify every member as at-target and hand back a
+    green summary for a namespace that never migrated. The other four
+    aggregates do not depend on the target and are always computed: a cohort
+    where nobody reported must surface as `reported_missing`, not as zeroes.
+    Together `reported_at_target`, `reported_below_target` and
+    `reported_missing` partition the member rows; a report whose
+    `schemaVersion` is missing or non-integer counts as missing, the direction
+    that cannot manufacture a green result.
+
     The summary is an allowlist, which silently drops anything core adds later.
-    The per-member rows are deliberately narrowed to `peer`, `state`, and
-    `migration_failed`; the rest of each member's report (`schema_version`,
-    `residue_auto`, `synced_up_to_hlc`, `reported_at`, `authored_remaining`) is
-    reachable only by widening that loop.
     """
     source = response if isinstance(response, dict) else {}
     rollup = source.get("rollup")
@@ -171,21 +201,34 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
 
     members: list[dict[str, Any]] = []
     members_failed = 0
+    reported_versions: list[int] = []
+    residue_total = 0
+    failure_reasons: list[str] = []
     for entry in raw_members:
         if not isinstance(entry, dict):
             continue
         report = entry.get("report")
-        report = report if isinstance(report, dict) else None
+        report = report if isinstance(report, dict) else {}
         state = str(entry.get("state", "")).lower()
         if state == "failed":
             members_failed += 1
+        schema_version = _opt_int(report.get("schemaVersion"))
+        if schema_version is not None:
+            reported_versions.append(schema_version)
+        residue_total += _opt_int(report.get("residueAuto")) or 0
+        reason = report.get("migrationFailed")
+        if reason is not None:
+            failure_reasons.append(str(reason))
         members.append(
             {
                 "peer": entry.get("peer"),
                 "state": state,
-                "migration_failed": (
-                    report.get("migrationFailed") if report is not None else None
-                ),
+                "migration_failed": reason,
+                "schema_version": report.get("schemaVersion"),
+                "residue_auto": report.get("residueAuto"),
+                "synced_up_to_hlc": report.get("syncedUpToHlc"),
+                "reported_at": report.get("reportedAt"),
+                "authored_remaining": report.get("authoredRemaining"),
             }
         )
 
@@ -202,6 +245,13 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     # Reconcile with member states so a failed member is never missed when the
     # rollup counter is absent/malformed (see docstring).
     failed = max(_as_int(rollup.get("failed")), members_failed)
+
+    target_version = _opt_int(source.get("targetVersion"))
+    below_target = (
+        None
+        if target_version is None
+        else sum(1 for v in reported_versions if v < target_version)
+    )
 
     return {
         "target_version": source.get("targetVersion"),
@@ -226,6 +276,17 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         # false either way.
         "all_migrated": bool(rollup.get("allMigrated", False)) and failed == 0,
         "members_pending_signature": _as_int(rollup.get("membersPendingSignature")),
+        # Recomputed from the member rows, never from `rollup`. See docstring.
+        "reported_at_target": (
+            None if below_target is None else len(reported_versions) - below_target
+        ),
+        "reported_below_target": below_target,
+        "reported_missing": len(members) - len(reported_versions),
+        "min_reported_schema_version": (
+            min(reported_versions) if reported_versions else None
+        ),
+        "residue_total": residue_total,
+        "failure_reasons": sorted(failure_reasons),
         "members": members,
     }
 
@@ -283,8 +344,7 @@ class RegisterGroupSigningKeyStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]register_group_signing_key failed on {node_name}: {result.get('error')}[/red]"
             )
@@ -292,8 +352,9 @@ class RegisterGroupSigningKeyStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         # Deliberately do NOT store the raw API response: if the server ever
@@ -308,7 +369,7 @@ class RegisterGroupSigningKeyStep(BaseStep):
             f"[green]✓ Registered signing key for group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -360,8 +421,7 @@ class UpgradeGroupStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if self._is_expected_failure():
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -386,8 +446,7 @@ class UpgradeGroupStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]upgrade_group failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -396,8 +455,9 @@ class UpgradeGroupStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"upgrade_group_{node_name}"] = result["data"]
@@ -405,7 +465,7 @@ class UpgradeGroupStep(BaseStep):
             f"[green]✓ Initiated upgrade of group {group_id} to {target_application_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -482,8 +542,7 @@ class CascadeNamespaceApplicationStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if self._is_expected_failure():
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -515,8 +574,7 @@ class CascadeNamespaceApplicationStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]cascade_namespace_application failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -525,8 +583,9 @@ class CascadeNamespaceApplicationStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"cascade_namespace_application_{node_name}"] = result["data"]
@@ -540,7 +599,7 @@ class CascadeNamespaceApplicationStep(BaseStep):
             f"[green]✓ Cascaded namespace {namespace_id} to {target_application_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -587,8 +646,7 @@ class GetGroupUpgradeStatusStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]get_group_upgrade_status failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -597,8 +655,9 @@ class GetGroupUpgradeStatusStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"upgrade_status_{node_name}"] = result["data"]
@@ -611,7 +670,7 @@ class GetGroupUpgradeStatusStep(BaseStep):
             f"[green]✓ Read upgrade status for group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -648,8 +707,7 @@ class RetryGroupUpgradeStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]retry_group_upgrade failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -658,8 +716,9 @@ class RetryGroupUpgradeStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"retry_group_upgrade_{node_name}"] = result["data"]
@@ -667,7 +726,7 @@ class RetryGroupUpgradeStep(BaseStep):
             f"[green]✓ Retried upgrade for group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -715,8 +774,7 @@ class GetCascadeStatusStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if self._is_expected_failure():
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -736,8 +794,7 @@ class GetCascadeStatusStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]get_cascade_status failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -749,8 +806,9 @@ class GetCascadeStatusStep(BaseStep):
         # an empty (all-zero) status.
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         summary = _summarize_cascade_status(result["data"])
@@ -767,7 +825,7 @@ class GetCascadeStatusStep(BaseStep):
             f"{summary['pending']} pending, {summary['failed']} failed[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -838,8 +896,7 @@ class AssertCascadeCompleteStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if expected_failure:
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -867,8 +924,7 @@ class AssertCascadeCompleteStep(BaseStep):
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
         except Exception as e:
             if expected_failure:
-                self._report_expected_failure(str(e))
-                return True
+                return self._report_expected_failure(str(e))
             console.print(
                 f"[red]assert_cascade_complete: failed to reach {node_name}: "
                 f"{escape(str(e))}[/red]"
@@ -931,7 +987,7 @@ class AssertCascadeCompleteStep(BaseStep):
                         f"all {summary['total']} groups migrated on {node_name}[/green]"
                     )
                     if expected_failure:
-                        self._report_unexpected_success()
+                        return self._report_unexpected_success()
                     return True
                 if summary["failed"] > 0:
                     # Unrecoverable: a failed descendant means all_completed
@@ -960,8 +1016,7 @@ class AssertCascadeCompleteStep(BaseStep):
         )
 
         if expected_failure:
-            self._report_expected_failure(msg)
-            return True
+            return self._report_expected_failure(msg)
         console.print(f"[red]✗ {msg}[/red]")
         return False
 
@@ -1006,8 +1061,7 @@ class AbortMigrationStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if self._is_expected_failure():
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -1027,8 +1081,7 @@ class AbortMigrationStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]abort_migration failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -1038,8 +1091,9 @@ class AbortMigrationStep(BaseStep):
         # A transport-level success can still carry a JSON-RPC error body.
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         # The abort route returns a `{namespace_id, aborted}` object; coerce any
@@ -1056,7 +1110,7 @@ class AbortMigrationStep(BaseStep):
             f"aborted={aborted}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -1102,8 +1156,7 @@ class GetMigrationStatusStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if self._is_expected_failure():
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -1123,8 +1176,7 @@ class GetMigrationStatusStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]get_migration_status failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -1135,8 +1187,9 @@ class GetMigrationStatusStep(BaseStep):
         # the cascade-status step so it isn't silently summarised as empty.
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         summary = _summarize_migration_status(result["data"])
@@ -1150,7 +1203,7 @@ class GetMigrationStatusStep(BaseStep):
             f"{summary['failed']} failed[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -1221,8 +1274,7 @@ class AssertMigrationCompleteStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if expected_failure:
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -1249,8 +1301,7 @@ class AssertMigrationCompleteStep(BaseStep):
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
         except Exception as e:
             if expected_failure:
-                self._report_expected_failure(str(e))
-                return True
+                return self._report_expected_failure(str(e))
             console.print(
                 f"[red]assert_migration_complete: failed to reach {node_name}: "
                 f"{escape(str(e))}[/red]"
@@ -1310,7 +1361,7 @@ class AssertMigrationCompleteStep(BaseStep):
                         f"all {summary['total']} cohort members migrated on {node_name}[/green]"
                     )
                     if expected_failure:
-                        self._report_unexpected_success()
+                        return self._report_unexpected_success()
                     return True
                 if summary["failed"] > 0:
                     # Unrecoverable: a failed member means all_migrated is
@@ -1338,6 +1389,21 @@ class AssertMigrationCompleteStep(BaseStep):
                 f"{last_summary['in_progress']} in-progress, "
                 f"{last_summary['unknown']} unknown, {last_summary['failed']} failed"
             )
+            # The counters alone cannot separate "a member is slow" from "a
+            # member is answering with the wrong state version", which is the
+            # whole reason the reported-version aggregates exist.
+            below = last_summary["reported_below_target"]
+            if below:
+                detail += (
+                    f" - {below} member(s) below target state version "
+                    f"{last_summary['target_version']} "
+                    f"(min reported: {last_summary['min_reported_schema_version']})"
+                )
+            if last_summary["reported_missing"]:
+                detail += (
+                    f" - {last_summary['reported_missing']} member(s) with no "
+                    f"reported state version"
+                )
         else:
             detail = "no successful status read"
             # No poll ever succeeded, so there's no summary to export. Synthesising
@@ -1354,8 +1420,7 @@ class AssertMigrationCompleteStep(BaseStep):
         )
 
         if expected_failure:
-            self._report_expected_failure(msg)
-            return True
+            return self._report_expected_failure(msg)
         console.print(f"[red]✗ {msg}[/red]")
         return False
 
@@ -1405,8 +1470,7 @@ class ResyncContextStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if self._is_expected_failure():
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -1431,8 +1495,7 @@ class ResyncContextStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]resync_context failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -1441,8 +1504,9 @@ class ResyncContextStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         raw = result["data"]
@@ -1463,7 +1527,7 @@ class ResyncContextStep(BaseStep):
             f"resync_started={resync_started}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -1513,8 +1577,7 @@ class ListApplicationVersionsStep(BaseStep):
                 f"(installed: {_CLIENT_PY_VERSION_STR}) on {node_name}"
             )
             if self._is_expected_failure():
-                self._report_expected_failure(msg)
-                return True
+                return self._report_expected_failure(msg)
             console.print(f"[red]{msg}[/red]")
             return False
 
@@ -1534,8 +1597,7 @@ class ListApplicationVersionsStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]list_application_versions failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -1544,8 +1606,9 @@ class ListApplicationVersionsStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         data = result["data"]
@@ -1573,5 +1636,5 @@ class ListApplicationVersionsStep(BaseStep):
             f"{summary['count']} version(s)[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True

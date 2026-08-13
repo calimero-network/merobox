@@ -57,8 +57,7 @@ class ReparentGroupStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]reparent_group failed on {node_name}: "
                 f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
@@ -67,8 +66,9 @@ class ReparentGroupStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"reparent_group_{node_name}"] = result["data"]
@@ -76,7 +76,7 @@ class ReparentGroupStep(BaseStep):
             f"[green]✓ Reparented group {child_group_id} to {new_parent_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -183,8 +183,7 @@ class AddGroupMembersStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]Failed to add group members on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -193,13 +192,14 @@ class AddGroupMembersStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
         workflow_results[f"add_group_members_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Added {len(resolved_members)} member(s) to group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True

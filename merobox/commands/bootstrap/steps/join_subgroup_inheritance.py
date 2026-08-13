@@ -92,8 +92,9 @@ class JoinSubgroupInheritanceStep(BaseStep):
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
                 if expected_failure:
-                    self._report_expected_failure("JSON-RPC error returned")
-                    return True
+                    return self._report_expected_failure(
+                        self._jsonrpc_error_detail(result["data"])
+                    )
                 return False
 
             step_key = f"join_subgroup_inheritance_{node_name}"
@@ -126,12 +127,11 @@ class JoinSubgroupInheritanceStep(BaseStep):
                 f"via inheritance[/green]"
             )
             if expected_failure:
-                self._report_unexpected_success()
+                return self._report_unexpected_success()
             return True
         else:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]join_subgroup_inheritance failed on {node_name}: "
                 f"{escape(str(result.get('error', 'Unknown error')))}[/red]"

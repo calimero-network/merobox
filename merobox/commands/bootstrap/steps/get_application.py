@@ -71,8 +71,7 @@ class GetApplicationStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]get_application failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -81,8 +80,9 @@ class GetApplicationStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         data = result["data"]
@@ -107,5 +107,5 @@ class GetApplicationStep(BaseStep):
             f"version={version} bytecode={bytecode}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True

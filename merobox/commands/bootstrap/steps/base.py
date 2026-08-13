@@ -37,6 +37,9 @@ class BaseStep:
         self._validate_required_fields()
         # Validate field types
         self._validate_field_types()
+        # Validated here rather than in _validate_field_types() so a subclass
+        # override cannot drop it.
+        self._validate_expected_error()
 
     def _get_exportable_variables(self) -> list[tuple[str, str, str]]:
         """
@@ -1250,27 +1253,86 @@ class BaseStep:
             )
         return value
 
-    def _report_expected_failure(self, error_message: str) -> None:
-        """Log the standard yellow message when an expected failure occurred.
+    def _validate_expected_error(self) -> None:
+        """Validate `expected_error`, the optional reason pin on a negative test.
 
-        error_message may carry a raw exception's text, which can itself
-        contain square brackets (e.g. a multiaddr) that Rich would otherwise
-        try to parse as markup - escape it, keep the surrounding tag.
+        `expected_error` without `expected_failure` can never assert anything,
+        and silently asserting nothing is the exact failure mode it exists to
+        close, so that pairing is a hard config error.
         """
+        if self.config.get("expected_error") is None:
+            return
+        self._validate_string_field("expected_error", required=False)
+        if not self._is_expected_failure():
+            raise ValueError(
+                f"Step '{self._get_step_name()}': 'expected_error' requires "
+                f"'expected_failure: true' - on its own it never asserts anything"
+            )
+
+    def _failure_detail(self, result: dict[str, Any]) -> str:
+        """The most specific error text a `fail()` result carries.
+
+        `fail()` records the step's own message under `error` and the
+        underlying cause under `exception.message`. `expected_error` has to
+        match the cause, so report both rather than the generic message alone.
+        """
+        message = str(result.get("error", "Unknown error"))
+        exception = result.get("exception")
+        cause = exception.get("message") if isinstance(exception, dict) else None
+        return f"{message}: {cause}" if cause else message
+
+    def _jsonrpc_error_detail(self, result_data: Any) -> str:
+        """Flatten a JSON-RPC error envelope onto one line for `expected_error`.
+
+        merod puts the refusal reason in `error.data` for some routes and
+        `error.type` for others, so both are included verbatim.
+        """
+        error = result_data.get("error") if isinstance(result_data, dict) else None
+        if isinstance(error, dict):
+            return (
+                f"JSON-RPC error returned: {error.get('type', 'Unknown')} - "
+                f"{error.get('data', 'No details')}"
+            )
+        if error is not None:
+            return f"JSON-RPC error returned: {error}"
+        return "JSON-RPC error returned"
+
+    def _report_expected_failure(self, error_message: str) -> bool:
+        """Report an expected failure, returning whether it was the RIGHT one.
+
+        With no `expected_error` configured any failure satisfies the step, so
+        this returns True. With one configured the step passes only if the
+        recorded message contains that substring (case-sensitive) - otherwise
+        `expected_failure: true` would green-light a refusal that never
+        happened, e.g. an unreachable node standing in for a rejected upgrade.
+        """
+        expected = self.config.get("expected_error")
+        if expected is not None and expected not in error_message:
+            # markup=False so an error body containing brackets survives Rich.
+            console.print(
+                f"✗ expected the failure to mention {expected!r}, "
+                f"but it was: {error_message}",
+                style="red",
+                markup=False,
+                highlight=False,
+            )
+            return False
+        # error_message may carry raw exception text whose brackets (e.g. a
+        # multiaddr) Rich would otherwise parse as markup.
         console.print(
             f"[yellow]✓ Expected failure occurred: {escape(error_message)}[/yellow]"
         )
+        return True
 
-    def _report_unexpected_success(self) -> None:
-        """Log a warning when `expected_failure: true` was set but the step succeeded.
+    def _report_unexpected_success(self) -> bool:
+        """Fail the step when `expected_failure: true` was set but it succeeded.
 
-        Matches the semantic of the `call` step: we warn rather than flip the
-        step to a hard failure, so an over-eager `expected_failure` flag never
-        silently turns a passing workflow into a failing one on refactor.
+        A negative test whose subject succeeds has not been proven - it has
+        been disproven, so returning True here would make every gate the flag
+        guards unable to fail.
         """
-        console.print(
-            "[yellow]⚠️  Warning: expected_failure was set but the step succeeded[/yellow]"
-        )
+        console.print("[red]✗ expected_failure was set but the step succeeded[/red]")
+        return False
 
     def _is_connectivity_error(self, error_message: str) -> bool:
         """Return True if an error message looks like a network/connectivity fault.

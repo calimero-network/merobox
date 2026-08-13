@@ -242,8 +242,9 @@ class InstallApplicationStep(BaseStep):
             # Check if the JSON-RPC response contains an error
             if self._check_jsonrpc_error(result["data"]):
                 if expected_failure:
-                    self._report_expected_failure("JSON-RPC error returned")
-                    return True
+                    return self._report_expected_failure(
+                        self._jsonrpc_error_detail(result["data"])
+                    )
                 # Print node logs to help with debugging
                 self._print_node_logs_on_failure(node_name=node_name, lines=50)
                 return False
@@ -286,12 +287,11 @@ class InstallApplicationStep(BaseStep):
                     )
 
             if expected_failure:
-                self._report_unexpected_success()
+                return self._report_unexpected_success()
             return True
         else:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]Installation failed: {result.get('error', 'Unknown error')}[/red]"
             )

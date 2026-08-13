@@ -243,8 +243,7 @@ class CreateGroupInNamespaceStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]Failed to create group in namespace on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -253,14 +252,15 @@ class CreateGroupInNamespaceStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
         workflow_results[f"group_in_namespace_{node_name}"] = result["data"]
         self._export_variables(result["data"], node_name, dynamic_values)
         console.print(f"[green]✓ Created group in namespace on {node_name}[/green]")
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 

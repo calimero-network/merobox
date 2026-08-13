@@ -104,8 +104,7 @@ class DownloadBlobStep(BaseStep):
         touched.
         """
         if self._is_expected_failure():
-            self._report_expected_failure(reason)
-            return True
+            return self._report_expected_failure(reason)
         console.print(f"[red]✗ {escape(reason)}[/red]")
         return False
 
@@ -285,14 +284,12 @@ class DownloadBlobStep(BaseStep):
         self._export_variables(blob_info, node_name, dynamic_values)
 
         if self._is_expected_failure():
-            # Warn rather than hard-fail, matching every other step's contract.
-            # Worth spelling out for this one: a negative control that succeeds
-            # means the node already had the bytes, so any cross-node assertion
-            # after it is proving nothing.
+            # A negative control that succeeds means the node already had the
+            # bytes, so any cross-node assertion after it proves nothing.
             console.print(
-                f"[yellow]⚠️  {blob_id} WAS retrievable on {node_name} — a "
-                f"following cross-node fetch cannot prove the network path[/yellow]"
+                f"[red]✗ {blob_id} WAS retrievable on {node_name} - a "
+                f"following cross-node fetch cannot prove the network path[/red]"
             )
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
 
         return True

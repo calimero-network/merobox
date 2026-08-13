@@ -205,6 +205,166 @@ class TestSummarizeMigrationStatus:
 
 
 # =============================================================================
+# _summarize_migration_status - the per-member report and the aggregates
+# recomputed from it. These are the only evidence that a member STATE-migrated:
+# the app's own schema_info is a constant compiled into the binary.
+# =============================================================================
+
+
+def _member(peer, state="migrated", **report):
+    return {"peer": peer, "state": state, "report": {**report}}
+
+
+class TestReportedSchemaVersions:
+    def test_report_fields_are_passed_through(self):
+        s = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "rollup": _rollup(migrated=1, total=1, allMigrated=True),
+                "members": [
+                    _member(
+                        "peerA",
+                        schemaVersion=2,
+                        residueAuto=0,
+                        residueIdentity=0,
+                        syncedUpToHlc="hlc-9",
+                        reportedAt=1_700_000_000,
+                        authoredRemaining=0,
+                    )
+                ],
+            }
+        )
+        m = s["members"][0]
+        assert m["schema_version"] == 2
+        assert m["residue_auto"] == 0
+        assert m["synced_up_to_hlc"] == "hlc-9"
+        assert m["reported_at"] == 1_700_000_000
+        assert m["authored_remaining"] == 0
+
+    def test_a_member_below_target_is_counted_even_when_core_claims_converged(self):
+        # The load-bearing case. A rollup comparing the wrong version axis can
+        # answer allMigrated while a member still holds pre-migration state;
+        # the aggregate is recomputed from the raw reports, so it dissents.
+        s = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "rollup": _rollup(migrated=2, total=2, allMigrated=True),
+                "members": [
+                    _member("peerA", schemaVersion=2),
+                    _member("peerB", schemaVersion=1),
+                ],
+            }
+        )
+        assert s["all_migrated"] is True
+        assert s["reported_below_target"] == 1
+        assert s["reported_at_target"] == 1
+        assert s["min_reported_schema_version"] == 1
+
+    def test_a_converged_cohort_is_zero_below_target(self):
+        s = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "rollup": _rollup(migrated=2, total=2, allMigrated=True),
+                "members": [
+                    _member("peerA", schemaVersion=2),
+                    _member("peerB", schemaVersion=3),
+                ],
+            }
+        )
+        assert s["reported_below_target"] == 0
+        assert s["reported_at_target"] == 2
+        assert s["reported_missing"] == 0
+        assert s["min_reported_schema_version"] == 2
+
+    def test_no_report_is_missing_not_below_target(self):
+        # "did not report" and "reported the wrong version" are different
+        # failures; 28's no-false-green contract turns on the distinction.
+        s = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "rollup": _rollup(migrated=1, unknown=1, total=2),
+                "members": [
+                    _member("peerA", schemaVersion=2),
+                    {"peer": "peerB", "state": "unknown"},
+                ],
+            }
+        )
+        assert s["reported_missing"] == 1
+        assert s["reported_below_target"] == 0
+        assert s["reported_at_target"] == 1
+        assert s["members"][1]["schema_version"] is None
+
+    def test_absent_target_leaves_the_target_relative_counters_none(self):
+        # Defaulting the target to 0 would classify every member as at-target
+        # and hand back a green summary for a namespace that never migrated.
+        s = _summarize_migration_status(
+            {
+                "rollup": _rollup(total=1),
+                "members": [_member("peerA", schemaVersion=1)],
+            }
+        )
+        assert s["reported_at_target"] is None
+        assert s["reported_below_target"] is None
+        # The target-independent aggregates are still computed.
+        assert s["min_reported_schema_version"] == 1
+        assert s["reported_missing"] == 0
+
+    def test_absent_target_still_reports_a_silent_cohort_as_missing(self):
+        s = _summarize_migration_status(
+            {"rollup": _rollup(total=2), "members": [{"peer": "a"}, {"peer": "b"}]}
+        )
+        assert s["reported_missing"] == 2
+        assert s["min_reported_schema_version"] is None
+
+    def test_a_bool_schema_version_counts_as_missing(self):
+        # bool is an int subclass. Counting True as version 1 would silently
+        # manufacture a reported version out of a malformed report.
+        s = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "members": [_member("peerA", schemaVersion=True)],
+            }
+        )
+        assert s["reported_missing"] == 1
+        assert s["reported_below_target"] == 0
+
+    def test_residue_is_summed_and_zero_stays_zero(self):
+        s = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "members": [
+                    _member("peerA", schemaVersion=2, residueAuto=3),
+                    _member("peerB", schemaVersion=2, residueAuto=0),
+                    _member("peerC", schemaVersion=2),
+                ],
+            }
+        )
+        assert s["residue_total"] == 3
+
+    def test_failure_reasons_are_sorted_and_order_independent(self):
+        # A sorted list can be asserted whole; members.N.migration_failed
+        # depends on an ordering the API does not guarantee.
+        s = _summarize_migration_status(
+            {
+                "members": [
+                    _member(
+                        "peerA", state="failed", migrationFailed="no_migration_path"
+                    ),
+                    _member("peerB", state="failed", migrationFailed="check_aborted"),
+                    _member("peerC", schemaVersion=2),
+                ]
+            }
+        )
+        assert s["failure_reasons"] == ["check_aborted", "no_migration_path"]
+
+    def test_no_failures_is_an_empty_reason_list(self):
+        s = _summarize_migration_status(
+            {"members": [_member("peerA", schemaVersion=2)]}
+        )
+        assert s["failure_reasons"] == []
+
+
+# =============================================================================
 # GetMigrationStatusStep
 # =============================================================================
 
@@ -480,6 +640,34 @@ class TestAssertMigrationCompleteExecute:
         ):
             result = _run(step.execute({}, {}))
         assert result is False
+
+    def test_timeout_message_names_the_below_target_member(self, capsys):
+        # The bare counters cannot separate "a member is slow" from "a member is
+        # answering with the wrong state version" - the whole point of the
+        # reported-version aggregates.
+        step = AssertMigrationCompleteStep(self.config)
+        client = MagicMock()
+        client.get_migration_status.return_value = {
+            "targetVersion": 2,
+            "rollup": _rollup(migrated=1, inProgress=1, total=2),
+            "members": [
+                _member("peerA", schemaVersion=2),
+                _member("peerB", state="in_progress", schemaVersion=1),
+            ],
+        }
+        p1, p2, p3, p4 = self._patched(step, client)
+        with (
+            p1,
+            p2,
+            p3,
+            p4,
+            patch(f"{_MODULE}.time.monotonic", side_effect=itertools.count(0, 5)),
+        ):
+            assert _run(step.execute({}, {})) is False
+        # Rich hard-wraps to the terminal width, so compare on collapsed space.
+        out = " ".join(capsys.readouterr().out.split())
+        assert "1 member(s) below target state version 2" in out
+        assert "min reported: 1" in out
 
     def test_all_polls_jsonrpc_error_times_out(self):
         # Every poll returns a JSON-RPC error body → summary always None →
