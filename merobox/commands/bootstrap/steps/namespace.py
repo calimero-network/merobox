@@ -78,6 +78,13 @@ class GetNamespaceIdentityStep(BaseStep):
                 "namespace_public_key_{node_name}",
                 "Namespace-scoped public key for this node (group admin)",
             ),
+            # What names this node as a *member*. `publicKey` still signs, so a
+            # step that both targets and signs for this node needs both.
+            (
+                "account",
+                "namespace_account_{node_name}",
+                "Account this node writes as in the namespace (64 hex characters)",
+            ),
             (
                 "namespaceId",
                 "namespace_id_echo_{node_name}",

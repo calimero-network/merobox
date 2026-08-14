@@ -51,6 +51,9 @@ steps:
     type: wait
     seconds: 5
 
+  # Two ids, and they are not interchangeable. `memberIdentity` is the bs58 key
+  # node 2 signs with; `memberAccount` is the 64-hex account governance rows are
+  # keyed by. Adding a member names the key, everything after names the account.
   - name: Node 2 Joins Namespace
     type: join_namespace
     node: calimero-node-2
@@ -58,6 +61,7 @@ steps:
     invitation: '{{invitation}}'
     outputs:
       p2_identity: memberIdentity
+      p2_account: memberAccount
 
   - name: Create Subgroup
     type: create_group_in_namespace
@@ -129,19 +133,19 @@ steps:
       group_meta: data
 
   # Setting member metadata from node 2: the requester defaults to node 2's
-  # own namespace identity and targets its own p2_identity.
+  # own namespace identity and targets its own account.
   - name: Set Member Metadata (from node 2)
     type: set_member_metadata
     node: calimero-node-2
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
     record_name: 'Bob'
 
   - name: Read Member Metadata
     type: get_member_metadata
     node: calimero-node-2
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
 
   # Phase 3: Default policy
   - name: Set Default Capabilities (create context + invite)
@@ -161,20 +165,20 @@ steps:
     type: get_member_capabilities
     node: calimero-node-1
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
 
   - name: Grant Node 2 Full Manage Capabilities
     type: set_member_capabilities
     node: calimero-node-1
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
     capabilities: 15
 
   - name: Promote Node 2 to Admin
     type: update_member_role
     node: calimero-node-1
     group_id: '{{group_id}}'
-    member_id: '{{p2_identity}}'
+    member_id: '{{p2_account}}'
     role: Admin
 
   - name: List Members After Role Change
@@ -217,7 +221,7 @@ steps:
     node: calimero-node-1
     group_id: '{{group_id}}'
     members:
-      - '{{p2_identity}}'
+      - '{{p2_account}}'
 
   - name: List Members After Removal
     type: list_group_members
