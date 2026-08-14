@@ -1275,10 +1275,14 @@ class BaseStep:
         executors that own both dicts bind the value ahead of the step.
         """
         expected = self.config.get("expected_error")
-        if isinstance(expected, str):
-            self._expected_error = self._resolve_dynamic_value(
-                expected, workflow_results, dynamic_values
-            )
+        if not isinstance(expected, str):
+            return
+        resolved = str(
+            self._resolve_dynamic_value(expected, workflow_results, dynamic_values)
+        )
+        # A pin resolving to blank is a substring of every error, so it would
+        # accept any failure. Keep the raw form: it fails closed and names itself.
+        self._expected_error = resolved if resolved.strip() else expected
 
     def _failure_detail(self, result: dict[str, Any]) -> str:
         """`fail()` files the step's own message under `error` and the cause

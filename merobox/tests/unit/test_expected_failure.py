@@ -160,6 +160,18 @@ class TestExpectedErrorHelper:
         step.bind_expected_error({}, {"version": "1.2.3"})
         assert step._report_expected_failure("refused: downgrade to 1.2.3") is True
 
+    def test_a_placeholder_resolving_to_empty_does_not_accept_any_failure(self):
+        # "" is a substring of every message, so a pin resolving to it would
+        # reopen the loophole the config-time empty check closes.
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.bind_expected_error({}, {"reason": ""})
+        assert step._report_expected_failure("connection refused") is False
+
+    def test_a_non_string_placeholder_value_does_not_crash_the_match(self):
+        step = self._step(expected_failure=True, expected_error="{{code}}")
+        step.bind_expected_error({}, {"code": 404})
+        assert step._report_expected_failure("HTTP 404 returned") is True
+
     @pytest.mark.asyncio
     async def test_the_workflow_executor_binds_before_running_a_step(self):
         # A dynamic `expected_error` only works if the executor binds it, so

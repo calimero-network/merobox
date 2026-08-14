@@ -242,11 +242,8 @@ class ExecuteStep(BaseStep):
                             error_info, node_name, dynamic_values
                         )
 
-                        # `expected_error` is matched against the whole error
-                        # envelope: merod splits the reason across `error_type`
-                        # and `error_message` inconsistently by route.
                         return self._report_expected_failure(
-                            f"JSON-RPC error: {error_info.get('error')}"
+                            self._jsonrpc_error_detail(result["data"])
                         )
                     else:
                         console.print(
