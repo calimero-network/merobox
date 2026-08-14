@@ -10,7 +10,9 @@ PyYAML>=6.0.0
 #     requires and a master node ignores. 0.6.22 and 0.6.23 omitted it and could
 #     not create a namespace on any released node — which is what turned this
 #     suite red when it was floored at 0.6.23.
-calimero-client-py>=0.6.24
+# 0.6.26 gives that up: it decodes `join_namespace` into a master-only struct
+# requiring `memberAccount`, which no released node sends. Lift once one does.
+calimero-client-py>=0.6.24,<0.6.26
 aiohttp>=3.9.0
 toml>=0.10.2
 pydantic>=2.0.0
