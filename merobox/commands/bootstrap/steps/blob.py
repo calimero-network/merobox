@@ -5,6 +5,8 @@ Blob upload step executor.
 import os
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -97,7 +99,9 @@ class UploadBlobStep(BaseStep):
 
             return ok(result)
         except Exception as e:
-            console.print(f"[red]✗ Blob upload failed: {type(e).__name__}: {e}[/red]")
+            console.print(
+                f"[red]✗ Blob upload failed: {type(e).__name__}: {escape(str(e))}[/red]"
+            )
             return fail("upload_blob failed", error=e)
 
     async def execute(

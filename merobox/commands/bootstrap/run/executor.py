@@ -10,6 +10,7 @@ import uuid
 from typing import Any, Optional
 
 import docker
+from rich.markup import escape
 from rich.progress import (
     BarColumn,
     Progress,
@@ -829,20 +830,24 @@ class WorkflowExecutor:
                 container.stop(timeout=5)
             except Exception as e:
                 console.print(
-                    f"[yellow]NAT teardown: failed to stop {client_name}: {e}[/yellow]"
+                    f"[yellow]NAT teardown: failed to stop {client_name}: "
+                    f"{escape(str(e))}[/yellow]"
                 )
             try:
                 container.remove(force=True)
             except Exception as e:
                 console.print(
-                    f"[yellow]NAT teardown: failed to remove {client_name}: {e}[/yellow]"
+                    f"[yellow]NAT teardown: failed to remove {client_name}: "
+                    f"{escape(str(e))}[/yellow]"
                 )
         try:
             from merobox.topology import teardown_nat_topology
 
             teardown_nat_topology(self.manager.client, self._nat_state)
         except Exception as e:
-            console.print(f"[yellow]NAT topology teardown raised: {e}[/yellow]")
+            console.print(
+                f"[yellow]NAT topology teardown raised: {escape(str(e))}[/yellow]"
+            )
         finally:
             self._nat_state = None
             # Drop the manager-side handle in lockstep so a
@@ -904,7 +909,8 @@ class WorkflowExecutor:
                             )
                     except Exception as e:
                         console.print(
-                            f"[red]Warning: force_pull_image failed for image: {image} - {e}[/red]"
+                            f"[red]Warning: force_pull_image failed for image: "
+                            f"{image} - {escape(str(e))}[/red]"
                         )
 
                 # Check for images in individual node configurations
@@ -924,7 +930,8 @@ class WorkflowExecutor:
                                 )
                         except Exception as e:
                             console.print(
-                                f"[red]Warning: force_pull_image failed for node {node_name}: {image} - {e}[/red]"
+                                f"[red]Warning: force_pull_image failed for node "
+                                f"{node_name}: {image} - {escape(str(e))}[/red]"
                             )
 
         except Exception as e:
@@ -1107,7 +1114,7 @@ class WorkflowExecutor:
                 boot_node_image_override=boot_node_image_override,
             )
         except Exception as e:
-            console.print(f"[red]❌ NAT topology setup failed: {e}[/red]")
+            console.print(f"[red]❌ NAT topology setup failed: {escape(str(e))}[/red]")
             return False
 
         # Expose the topology state on the manager so step
@@ -1258,7 +1265,7 @@ class WorkflowExecutor:
             except RuntimeError as e:
                 console.print(
                     f"[red]❌ Could not route {node_name} through the NAT "
-                    f"gateway: {e}[/red]"
+                    f"gateway: {escape(str(e))}[/red]"
                 )
                 self._teardown_nat_topology_if_present()
                 return False
@@ -1278,7 +1285,7 @@ class WorkflowExecutor:
             except RuntimeError as e:
                 console.print(
                     f"[red]❌ {node_name} cannot reach the boot-node via "
-                    f"the NAT gateway: {e}[/red]"
+                    f"the NAT gateway: {escape(str(e))}[/red]"
                 )
                 self._teardown_nat_topology_if_present()
                 return False
@@ -1529,7 +1536,7 @@ class WorkflowExecutor:
                             container.remove()
                     except Exception as e:
                         console.print(
-                            f"[yellow]Warning: Failed to stop node: {e}[/yellow]"
+                            f"[yellow]Warning: Failed to stop node: {escape(str(e))}[/yellow]"
                         )
 
                     console.print(f"Starting node '{node_name}'...")
@@ -1854,12 +1861,14 @@ class WorkflowExecutor:
 
             except AuthenticationError as e:
                 console.print(
-                    f"[red]  ✗ Failed to authenticate with {node_name}: {e}[/red]"
+                    f"[red]  ✗ Failed to authenticate with {node_name}: "
+                    f"{escape(str(e))}[/red]"
                 )
                 failed_nodes.append(node_name)
             except Exception as e:
                 console.print(
-                    f"[red]  ✗ Error authenticating with {node_name}: {e}[/red]"
+                    f"[red]  ✗ Error authenticating with {node_name}: "
+                    f"{escape(str(e))}[/red]"
                 )
                 failed_nodes.append(node_name)
 

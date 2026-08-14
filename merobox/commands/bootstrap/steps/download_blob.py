@@ -28,6 +28,8 @@ import hashlib
 import os
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -104,7 +106,7 @@ class DownloadBlobStep(BaseStep):
         if self._is_expected_failure():
             self._report_expected_failure(reason)
             return True
-        console.print(f"[red]✗ {reason}[/red]")
+        console.print(f"[red]✗ {escape(reason)}[/red]")
         return False
 
     def _assertion_failed(self, reason: str) -> bool:
@@ -155,7 +157,9 @@ class DownloadBlobStep(BaseStep):
         except _RETRIEVAL_ERRORS as e:
             # A genuine "cannot retrieve" verdict. Anything outside this tuple is
             # deliberately left to propagate — see _RETRIEVAL_ERRORS.
-            console.print(f"[red]✗ Blob download failed: {type(e).__name__}: {e}[/red]")
+            console.print(
+                f"[red]✗ Blob download failed: {type(e).__name__}: {escape(str(e))}[/red]"
+            )
             return fail("download_blob failed", error=e)
         return ok(blob_data)
 
@@ -215,9 +219,9 @@ class DownloadBlobStep(BaseStep):
             # to keep travelling so it surfaces as the bug it is.
             console.print(
                 f"[red]✗ Blob download failed after retries: "
-                f"{type(e).__name__}: {e}[/red]"
+                f"{type(e).__name__}: {escape(str(e))}[/red]"
             )
-            result = fail("download_blob failed", error=e)
+            result = fail(f"download_blob failed: {e}", error=e)
 
         if not result["success"]:
             return self._retrieval_failed(str(result.get("error", "Unknown error")))

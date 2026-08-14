@@ -5,6 +5,7 @@ Namespace-related workflow step executors.
 from typing import Any
 
 import requests
+from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
@@ -43,11 +44,12 @@ class ListNamespacesStep(BaseStep):
                 # Backward compatibility for older client versions.
                 result = ok(client.list_groups())
         except Exception as e:
-            result = fail("list_namespaces failed", error=e)
+            result = fail(f"list_namespaces failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
-                f"[red]Failed to list namespaces on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to list namespaces on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -111,11 +113,12 @@ class GetNamespaceIdentityStep(BaseStep):
                     "get_namespace_identity is not available in current client"
                 )
         except Exception as e:
-            result = fail("get_namespace_identity failed", error=e)
+            result = fail(f"get_namespace_identity failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
-                f"[red]Failed to get namespace identity on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to get namespace identity on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -234,7 +237,7 @@ class CreateGroupInNamespaceStep(BaseStep):
                         "create_group_in_namespace is not available in current client"
                     )
         except Exception as e:
-            result = fail("create_group_in_namespace failed", error=e)
+            result = fail(f"create_group_in_namespace failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -243,7 +246,8 @@ class CreateGroupInNamespaceStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]Failed to create group in namespace on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to create group in namespace on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -291,11 +295,12 @@ class ListNamespaceGroupsStep(BaseStep):
                 # Backward compatibility: best-effort fallback to generic group listing.
                 result = ok(client.list_groups())
         except Exception as e:
-            result = fail("list_namespace_groups failed", error=e)
+            result = fail(f"list_namespace_groups failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
-                f"[red]Failed to list namespace groups on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to list namespace groups on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

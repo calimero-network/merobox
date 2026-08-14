@@ -4,6 +4,8 @@ Join context step executor (via group membership).
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -57,7 +59,7 @@ class JoinContextStep(BaseStep):
             api_result = client.join_context(context_id=context_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("join_context failed", error=e)
+            result = fail(f"join_context failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -99,7 +101,7 @@ class JoinContextStep(BaseStep):
                 return True
             console.print(
                 f"[red]Join context failed on {node_name}: "
-                f"{result.get('error', 'Unknown error')}[/red]"
+                f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
             )
             self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False

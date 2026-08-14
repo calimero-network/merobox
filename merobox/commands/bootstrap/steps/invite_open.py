@@ -8,6 +8,8 @@ Step types 'invite', 'invite_open', and 'invite_identity' all route here.
 import json as json_lib
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.identity import create_namespace_invitation_via_admin_api
 from merobox.commands.utils import console
@@ -99,9 +101,10 @@ class InviteOpenStep(BaseStep):
             if expected_failure:
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
-            console.print(f"  Error: {result.get('error')}")
+            console.print(f"  Error: {escape(str(result.get('error')))}")
             console.print(
-                f"[red]Namespace invitation creation failed: {result.get('error', 'Unknown error')}[/red]"
+                f"[red]Namespace invitation creation failed: "
+                f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
             )
             return False
 

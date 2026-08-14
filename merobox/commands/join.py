@@ -10,6 +10,7 @@ import sys
 
 import click
 from rich import box
+from rich.markup import escape
 from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
@@ -78,7 +79,7 @@ async def join_namespace_via_admin_api(
             result = client.join_group(invitation_json=invitation_json)
         return ok(result)
     except Exception as e:
-        return fail("join_namespace failed", error=e)
+        return fail(f"join_namespace failed: {e}", error=e)
 
 
 # Deprecated alias kept for backward compatibility.
@@ -103,7 +104,7 @@ async def join_context_via_admin_api(
         result = client.join_context(context_id=context_id)
         return ok(result)
     except Exception as e:
-        return fail("join_context failed", error=e)
+        return fail(f"join_context failed: {e}", error=e)
 
 
 @click.group()
@@ -156,11 +157,13 @@ def join_namespace_cmd(node, namespace_id, invitation, verbose):
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
+            console.print(f"{escape(str(result))}")
 
     else:
         console.print("\n[red]✗ Failed to join namespace[/red]")
-        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+        console.print(
+            f"[red]Error: {escape(str(result.get('error', 'Unknown error')))}[/red]"
+        )
 
         if "errors" in result:
             console.print("\n[yellow]Detailed errors:[/yellow]")
@@ -169,7 +172,7 @@ def join_namespace_cmd(node, namespace_id, invitation, verbose):
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
+            console.print(f"{escape(str(result))}")
 
         sys.exit(1)
 
@@ -211,11 +214,13 @@ def join_context_cmd(node, context_id, verbose):
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
+            console.print(f"{escape(str(result))}")
 
     else:
         console.print("\n[red]✗ Failed to join context[/red]")
-        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+        console.print(
+            f"[red]Error: {escape(str(result.get('error', 'Unknown error')))}[/red]"
+        )
 
         if "errors" in result:
             console.print("\n[yellow]Detailed errors:[/yellow]")
@@ -224,7 +229,7 @@ def join_context_cmd(node, context_id, verbose):
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
+            console.print(f"{escape(str(result))}")
 
         sys.exit(1)
 

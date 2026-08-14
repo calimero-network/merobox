@@ -7,6 +7,8 @@ Steps for managing group membership, roles, capabilities, and lifecycle.
 import json
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -55,7 +57,7 @@ class RemoveGroupMembersStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("remove_group_members failed", error=e)
+            result = fail(f"remove_group_members failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -64,7 +66,8 @@ class RemoveGroupMembersStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]Failed to remove group members on {node_name}: {result.get('error')}[/red]"
+                f"[red]Failed to remove group members on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -111,7 +114,7 @@ class ListGroupMembersStep(BaseStep):
             api_result = client.list_group_members(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("list_group_members failed", error=e)
+            result = fail(f"list_group_members failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -120,7 +123,8 @@ class ListGroupMembersStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]list_group_members failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]list_group_members failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -173,7 +177,7 @@ class UpdateMemberRoleStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("update_member_role failed", error=e)
+            result = fail(f"update_member_role failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -182,7 +186,8 @@ class UpdateMemberRoleStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]update_member_role failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]update_member_role failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -235,7 +240,7 @@ class SetMemberCapabilitiesStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("set_member_capabilities failed", error=e)
+            result = fail(f"set_member_capabilities failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -244,7 +249,8 @@ class SetMemberCapabilitiesStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_member_capabilities failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_member_capabilities failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -343,7 +349,7 @@ class SetMemberAutoFollowStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("set_member_auto_follow failed", error=e)
+            result = fail(f"set_member_auto_follow failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -352,7 +358,8 @@ class SetMemberAutoFollowStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_member_auto_follow failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_member_auto_follow failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -406,7 +413,7 @@ class GetMemberCapabilitiesStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_member_capabilities failed", error=e)
+            result = fail(f"get_member_capabilities failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -415,7 +422,8 @@ class GetMemberCapabilitiesStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_member_capabilities failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_member_capabilities failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -467,7 +475,7 @@ class SetDefaultCapabilitiesStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("set_default_capabilities failed", error=e)
+            result = fail(f"set_default_capabilities failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -476,7 +484,8 @@ class SetDefaultCapabilitiesStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_default_capabilities failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_default_capabilities failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -535,7 +544,7 @@ class SetSubgroupVisibilityStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("set_subgroup_visibility failed", error=e)
+            result = fail(f"set_subgroup_visibility failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -544,7 +553,8 @@ class SetSubgroupVisibilityStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]set_subgroup_visibility failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]set_subgroup_visibility failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -596,7 +606,7 @@ class GetGroupInfoStep(BaseStep):
             api_result = client.get_group_info(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_group_info failed", error=e)
+            result = fail(f"get_group_info failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -605,7 +615,8 @@ class GetGroupInfoStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_group_info failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_group_info failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -651,7 +662,7 @@ class ListGroupContextsStep(BaseStep):
             api_result = client.list_group_contexts(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("list_group_contexts failed", error=e)
+            result = fail(f"list_group_contexts failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -660,7 +671,8 @@ class ListGroupContextsStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]list_group_contexts failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]list_group_contexts failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
@@ -1101,11 +1113,12 @@ class UninstallApplicationStep(BaseStep):
             api_result = client.uninstall_application(app_id=application_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("uninstall_application failed", error=e)
+            result = fail(f"uninstall_application failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
-                f"[red]uninstall_application failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]uninstall_application failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
         if self._check_jsonrpc_error(result["data"]):
