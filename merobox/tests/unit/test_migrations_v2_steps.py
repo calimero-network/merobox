@@ -204,9 +204,8 @@ class TestSummarizeMigrationStatus:
         assert s["all_migrated"] is False
 
     def test_all_migrated_false_when_a_member_is_unknown(self):
-        # `unknown` is the state a member that never reported sits in, and it
-        # is the shape the three-node cohort test asserts on. Trusting core's
-        # flag here would report a cohort with a silent member as converged.
+        # `unknown` is where a member that never reported sits; trusting core's
+        # flag would report a cohort with a silent member as converged.
         s = _summarize_migration_status(
             {
                 "rollup": _rollup(migrated=1, unknown=1, total=2, allMigrated=True),
@@ -293,8 +292,7 @@ class TestSummarizeMigrationStatus:
 
 # =============================================================================
 # _summarize_migration_status - the per-member report and the aggregates
-# recomputed from it. These are the only evidence that a member STATE-migrated:
-# the app's own schema_info is a constant compiled into the binary.
+# recomputed from it, the only evidence that a member STATE-migrated.
 # =============================================================================
 
 
@@ -329,9 +327,8 @@ class TestReportedSchemaVersions:
         assert m["authored_remaining"] == 0
 
     def test_a_member_below_target_is_counted_even_when_core_claims_converged(self):
-        # The load-bearing case. A rollup comparing the wrong version axis can
-        # answer allMigrated while a member still holds pre-migration state;
-        # the aggregate is recomputed from the raw reports, so it dissents.
+        # The load-bearing case: a rollup comparing the wrong version axis can
+        # answer allMigrated while a member still holds pre-migration state.
         s = _summarize_migration_status(
             {
                 "targetVersion": 2,
@@ -365,7 +362,7 @@ class TestReportedSchemaVersions:
 
     def test_no_report_is_missing_not_below_target(self):
         # "did not report" and "reported the wrong version" are different
-        # failures; 28's no-false-green contract turns on the distinction.
+        # failures, and only the latter is evidence the migration ran wrong.
         s = _summarize_migration_status(
             {
                 "targetVersion": 2,
@@ -747,8 +744,7 @@ class TestAssertMigrationCompleteExecute:
 
     def test_timeout_message_names_the_below_target_member(self, capsys):
         # The bare counters cannot separate "a member is slow" from "a member is
-        # answering with the wrong state version" - the whole point of the
-        # reported-version aggregates.
+        # on the wrong state version".
         step = AssertMigrationCompleteStep(self.config)
         client = MagicMock()
         client.get_migration_status.return_value = {

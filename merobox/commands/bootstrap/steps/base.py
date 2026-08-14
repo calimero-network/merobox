@@ -37,11 +37,9 @@ class BaseStep:
         self._validate_required_fields()
         # Validate field types
         self._validate_field_types()
-        # Validated here rather than in _validate_field_types() so a subclass
-        # override cannot drop it.
+        # Kept out of _validate_field_types() so a subclass override cannot drop
+        # it. The raw value stands in until an executor binds any placeholders.
         self._validate_expected_error()
-        # The raw value stands in until an executor binds it, so a config
-        # carrying no placeholder needs no binding at all.
         self._expected_error = self.config.get("expected_error")
 
     def _get_exportable_variables(self) -> list[tuple[str, str, str]]:
@@ -1257,12 +1255,8 @@ class BaseStep:
         return value
 
     def _validate_expected_error(self) -> None:
-        """Validate `expected_error`, the optional reason pin on a negative test.
-
-        `expected_error` without `expected_failure` can never assert anything,
-        and silently asserting nothing is the exact failure mode it exists to
-        close, so that pairing is a hard config error.
-        """
+        """`expected_error` without `expected_failure` never asserts anything,
+        so that pairing is a config error rather than a silent no-op."""
         if self.config.get("expected_error") is None:
             return
         self._validate_string_field("expected_error", required=False)
@@ -1277,9 +1271,8 @@ class BaseStep:
     ) -> None:
         """Resolve `expected_error`'s placeholders before the step can fail.
 
-        `_report_expected_failure` is reached from a hundred call sites that
-        hold no resolution context, so the executors that own both dicts bind
-        the value here instead of threading them through all of them.
+        `_report_expected_failure` has no resolution context of its own, so the
+        executors that own both dicts bind the value ahead of the step.
         """
         expected = self.config.get("expected_error")
         if isinstance(expected, str):
@@ -1288,28 +1281,21 @@ class BaseStep:
             )
 
     def _failure_detail(self, result: dict[str, Any]) -> str:
-        """The most specific error text a `fail()` result carries.
-
-        `fail()` records the step's own message under `error` and the
-        underlying cause under `exception.message`. `expected_error` has to
-        match the cause, so report both rather than the generic message alone.
-        """
+        """`fail()` files the step's own message under `error` and the cause
+        under `exception.message`; `expected_error` has to match the cause."""
         message = str(result.get("error", "Unknown error"))
         exception = result.get("exception")
         cause = exception.get("message") if isinstance(exception, dict) else None
-        # Most call sites build the message as f"<verb> failed: {e}" and pass
-        # the same exception, so appending the cause unconditionally prints it
-        # twice.
+        # Call sites usually build the message as f"<verb> failed: {e}" from the
+        # same exception, so appending unconditionally would print it twice.
         if not cause or cause in message:
             return message
         return f"{message}: {cause}"
 
     def _jsonrpc_error_detail(self, result_data: Any) -> str:
-        """Flatten a JSON-RPC error envelope onto one line for `expected_error`.
-
-        merod puts the refusal reason in `error.data` for some routes and
-        `error.type` for others, so both are included verbatim.
-        """
+        """Flatten a JSON-RPC error envelope onto one line. merod puts the
+        refusal reason in `error.data` on some routes and `error.type` on
+        others, so `expected_error` gets both verbatim."""
         error = result_data.get("error") if isinstance(result_data, dict) else None
         if isinstance(error, dict):
             return (
@@ -1323,11 +1309,9 @@ class BaseStep:
     def _report_expected_failure(self, error_message: str) -> bool:
         """Report an expected failure, returning whether it was the RIGHT one.
 
-        With no `expected_error` configured any failure satisfies the step, so
-        this returns True. With one configured the step passes only if the
-        recorded message contains that substring (case-sensitive) - otherwise
-        `expected_failure: true` would green-light a refusal that never
-        happened, e.g. an unreachable node standing in for a rejected upgrade.
+        Any failure satisfies a step with no `expected_error`; with one, only a
+        message containing it (case-sensitive), so an unreachable node cannot
+        stand in for the refusal under test.
         """
         expected = self._expected_error
         if expected is not None and expected not in error_message:
@@ -1348,12 +1332,8 @@ class BaseStep:
         return True
 
     def _report_unexpected_success(self) -> bool:
-        """Fail the step when `expected_failure: true` was set but it succeeded.
-
-        A negative test whose subject succeeds has not been proven - it has
-        been disproven, so returning True here would make every gate the flag
-        guards unable to fail.
-        """
+        """A negative test whose subject succeeds has been disproven, so passing
+        here would make every gate the flag guards unable to fail."""
         console.print("[red]✗ expected_failure was set but the step succeeded[/red]")
         return False
 

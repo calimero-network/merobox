@@ -192,9 +192,8 @@ class ExecuteStep(BaseStep):
                         step_key = f"execute_{node_name}_{method}"
                         workflow_results[step_key] = error_info
 
-                        # Always export error details when expected_failure is
-                        # True, including when `expected_error` rejects the
-                        # verdict below; the assertion that follows needs them.
+                        # Exported even when `expected_error` rejects the verdict
+                        # below, so the mismatch can be diagnosed.
                         self._export_error_variables(
                             error_info, node_name, dynamic_values
                         )
@@ -261,10 +260,9 @@ class ExecuteStep(BaseStep):
                 step_key = f"execute_{node_name}_{method}"
                 workflow_results[step_key] = result["data"]
 
-                # `call` alone stays lenient here where every other step type
-                # now fails: shipped workflows use `expected_failure` on a read
-                # as a soft "may not have propagated yet" probe, and exporting
-                # None error fields is the documented contract for that.
+                # `call` alone stays lenient where every other step now fails:
+                # workflows use it as a soft "may not have propagated yet" probe
+                # and depend on the None error exports below.
                 if expected_failure:
                     console.print(
                         "[yellow]⚠️  Warning: Expected failure but call succeeded[/yellow]"

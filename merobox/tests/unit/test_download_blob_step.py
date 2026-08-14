@@ -328,9 +328,8 @@ class TestDownloadBlobExpectedFailure:
             assert _run(step.execute({}, {})) is False
 
     def test_unexpected_success_fails_but_still_exports(self):
-        # The negative control's premise is that the bytes are NOT here. If they
-        # are, the following cross-node fetch proves nothing, so the step fails,
-        # but the export still lands so the failure can be diagnosed.
+        # The negative control's premise is that the bytes are NOT here; if they
+        # are it proves nothing. The export still lands, to diagnose the failure.
         step = DownloadBlobStep(self.config)
         client = MagicMock()
         client.download_blob.return_value = _PAYLOAD

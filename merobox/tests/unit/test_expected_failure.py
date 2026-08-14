@@ -78,11 +78,8 @@ class TestExpectedFailureHelpers:
 
 
 class TestExpectedErrorHelper:
-    """`expected_error` pins WHICH failure a negative test accepts.
-
-    Without it `expected_failure: true` passes on any error at all, including
-    the node being unreachable standing in for the refusal under test.
-    """
+    """`expected_error` pins WHICH failure a negative test accepts; without it
+    an unreachable node stands in for the refusal under test."""
 
     def _step(self, **extra):
         return JoinContextStep(
@@ -165,8 +162,8 @@ class TestExpectedErrorHelper:
 
     @pytest.mark.asyncio
     async def test_the_workflow_executor_binds_before_running_a_step(self):
-        # The binding is what makes a dynamic `expected_error` work at all, so
-        # the executor forgetting it must not be a silent regression.
+        # A dynamic `expected_error` only works if the executor binds it, so
+        # dropping that call must not be a silent regression.
         from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 
         step = self._step(expected_failure=True, expected_error="{{reason}}")
@@ -237,11 +234,8 @@ class TestJoinContextExpectedFailure:
     def test_jsonrpc_error_path_passes_when_expected(self):
         """HTTP-200 response carrying a JSON-RPC error envelope is the
         real-world shape merod returns for "context does not belong to any
-        group" - this is the branch we regressed on before the fix.
-
-        `ok()` stores the client's return value verbatim under `data`, so the
-        error envelope has to be at the top level of what the client returns
-        for `_check_jsonrpc_error` to see it.
+        group" - this is the branch we regressed on before the fix. `ok()`
+        stores the client's return verbatim, so the envelope must be top level.
         """
         mock_client = MagicMock()
         mock_client.join_context.return_value = {
@@ -263,9 +257,8 @@ class TestJoinContextExpectedFailure:
 
 
 class TestUpgradeGroupRefusalGate:
-    """End-to-end on `upgrade_group`, the step the migration suite gates
-    refusals with: an L1 identity downgrade and a target with no embedded ABI
-    must be refused, for the named reason, or the step is red."""
+    """End-to-end on `upgrade_group`: an identity downgrade or a target with no
+    embedded ABI must be refused for the named reason, or the step is red."""
 
     def _step(self, **extra):
         return UpgradeGroupStep(
@@ -306,9 +299,8 @@ class TestUpgradeGroupRefusalGate:
         assert self._exec(step, self._raising("identity downgrade forbidden")) is True
 
     def test_an_unreachable_node_no_longer_stands_in_for_the_refusal(self):
-        # `fail()` files the step's own message under `error` and the real cause
-        # under `exception.message`; matching only the former would accept any
-        # error at all, which is what expected_error exists to stop.
+        # `fail()` files the cause under `exception.message`; matching only the
+        # step's own `error` message would accept any error at all.
         step = self._step(
             expected_failure=True, expected_error="identity downgrade forbidden"
         )
@@ -331,8 +323,8 @@ class TestUpgradeGroupRefusalGate:
         assert self._exec(step, client) is False
 
     def test_a_gate_that_lets_the_upgrade_through_now_fails(self):
-        # The whole point of W2: before this, a broken refusal gate left the
-        # step green with a warning and the workflow had no failing guard.
+        # Before this, a broken refusal gate left the step green with a warning,
+        # so the workflow had no failing guard at all.
         client = MagicMock()
         client.upgrade_group.return_value = {"status": "in_progress"}
         step = self._step(
@@ -378,11 +370,8 @@ class TestCreateNamespaceInvitationUnexpectedShape:
         )
 
     def test_unusable_shape_with_expected_failure_reports_unexpected_success(self):
-        # Client returns a string instead of a dict → ok(api_result) wraps it
-        # as {"success": True, "data": "not-a-dict"} and the shape-extraction
-        # block can't find the nested invitation. The API call itself succeeded,
-        # so this is the unexpected-success verdict rather than a plain failure;
-        # either way the step is red, but the message names the right cause.
+        # The API call itself succeeded (the shape is just unusable), so this is
+        # the unexpected-success verdict rather than a plain failure.
         assert self._exec(self._step(expected_failure=True), "not-a-dict") is False
 
     def test_unusable_shape_without_flag_still_fails(self):

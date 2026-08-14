@@ -1093,7 +1093,7 @@ Poll until a namespace migration finishes, or fail. Same fields as
 `residue_auto`, `synced_up_to_hlc`, `reported_at`, `authored_remaining`,
 `migration_failed`).
 
-Alongside those, merobox recomputes six aggregates from the raw member reports
+Alongside those, merobox recomputes these aggregates from the raw member reports
 rather than reading core's rollup, so an assertion on them can falsify the
 rollup rather than confirm it against itself:
 
@@ -1105,6 +1105,7 @@ rollup rather than confirm it against itself:
 | `min_reported_schema_version` | Lowest reported state version, or `None`. |
 | `residue_total` | Sum of `residue_auto` across members. |
 | `failure_reasons` | Sorted list of the members' `migration_failed` reasons. |
+| `stuck_members` | Sorted peers behind those reasons. |
 
 `report.schema_version` is a **u32 ABI state version**, unlike an application's
 own `schema_info`, which is a semver string compiled into the binary and reports
