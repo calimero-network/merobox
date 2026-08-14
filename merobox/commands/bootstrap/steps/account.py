@@ -21,6 +21,8 @@ error mapping and the connection handling this layer exists to provide.
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -122,12 +124,12 @@ class AccountCreateStep(_AccountStepBase):
             client = self._client(node_name)
             result = ok(self._data(client.create_account(namespace_id)))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account create failed", error=e)
+            result = fail(f"account create failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
                 f"[red]Failed to enrol an account on {node_name}: "
-                f"{result.get('error')}[/red]"
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -233,12 +235,12 @@ class AccountPairStep(_AccountStepBase):
                 )
             result = ok({**complete, "deviceId": init["deviceId"]})
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account pair failed", error=e)
+            result = fail(f"account pair failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
                 f"[red]Failed to pair {node_name} onto the account held by "
-                f"{holder}: {result.get('error')}[/red]"
+                f"{holder}: {escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -320,12 +322,12 @@ class AccountRevokeStep(_AccountStepBase):
                 self._data(client.revoke_device(namespace_id, device_id, proof))
             )
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account revoke failed", error=e)
+            result = fail(f"account revoke failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
                 f"[red]Failed to revoke {device_id} via {node_name}: "
-                f"{result.get('error')}[/red]"
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -373,12 +375,12 @@ class AccountShowStep(_AccountStepBase):
             client = self._client(node_name)
             result = ok(self._data(client.get_namespace_account(namespace_id)))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail("account show failed", error=e)
+            result = fail(f"account show failed: {e}", error=e)
 
         if not result["success"]:
             console.print(
                 f"[red]Failed to read {node_name}'s account: "
-                f"{result.get('error')}[/red]"
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

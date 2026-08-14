@@ -9,6 +9,8 @@ working access token.
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.auth import AuthenticationError, AuthManager
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -73,16 +75,20 @@ class RefreshStep(BaseStep):
                 if self._is_connectivity_error(str(e)):
                     console.print(
                         f"[red]❌ Expected a refresh rejection but hit a "
-                        f"connectivity error for {node_name}: {e}[/red]"
+                        f"connectivity error for {node_name}: {escape(str(e))}[/red]"
                     )
                     return False
                 self._report_expected_failure(str(e))
                 return True
-            console.print(f"[red]❌ Token refresh failed for {node_name}: {e}[/red]")
+            console.print(
+                f"[red]❌ Token refresh failed for {node_name}: {escape(str(e))}[/red]"
+            )
             return False
         except Exception as e:
             # An unexpected exception is never proof of a refresh rejection.
-            console.print(f"[red]❌ Token refresh error for {node_name}: {e}[/red]")
+            console.print(
+                f"[red]❌ Token refresh error for {node_name}: {escape(str(e))}[/red]"
+            )
             return False
 
         if expected_failure:

@@ -13,6 +13,8 @@ with no chicken-and-egg.
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.auth import AuthenticationError, AuthManager
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -83,17 +85,21 @@ class LoginStep(BaseStep):
                 if self._is_connectivity_error(str(e)):
                     console.print(
                         f"[red]❌ Expected an auth rejection but hit a "
-                        f"connectivity error for {node_name}: {e}[/red]"
+                        f"connectivity error for {node_name}: {escape(str(e))}[/red]"
                     )
                     return False
                 self._report_expected_failure(str(e))
                 return True
-            console.print(f"[red]❌ Login failed for {node_name}: {e}[/red]")
+            console.print(
+                f"[red]❌ Login failed for {node_name}: {escape(str(e))}[/red]"
+            )
             self._print_node_logs_on_failure(node_name=node_name, lines=50)
             return False
         except Exception as e:
             # An unexpected exception is never proof of an auth rejection.
-            console.print(f"[red]❌ Login error for {node_name}: {e}[/red]")
+            console.print(
+                f"[red]❌ Login error for {node_name}: {escape(str(e))}[/red]"
+            )
             return False
 
         if expected_failure:

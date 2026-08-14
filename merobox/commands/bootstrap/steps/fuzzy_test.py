@@ -33,6 +33,8 @@ import time
 import uuid as uuid_module
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.assertion import (
     AssertStep,
     FuzzyTestResultsTracker,
@@ -533,7 +535,8 @@ class FuzzyTestStep(BaseStep):
                 except Exception as e:
                     # If generation fails, return original
                     console.print(
-                        f"[yellow]Warning: Failed to resolve {{{{{generator_name}}}}}: {e}[/yellow]"
+                        f"[yellow]Warning: Failed to resolve "
+                        f"{{{{{generator_name}}}}}: {escape(str(e))}[/yellow]"
                     )
                     return match.group(0)
 

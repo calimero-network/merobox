@@ -6,6 +6,7 @@ import sys
 
 import click
 from rich import box
+from rich.markup import escape
 from rich.table import Table
 
 from merobox.commands.client import get_client_for_rpc_url
@@ -64,7 +65,7 @@ async def list_identities_via_admin_api(
         result = client.list_identities(context_id)
         return ok(result)
     except Exception as e:
-        return fail("list_identities failed", error=e)
+        return fail(f"list_identities failed: {e}", error=e)
 
 
 @with_retry(config=NETWORK_RETRY_CONFIG)
@@ -83,9 +84,9 @@ async def generate_identity_via_admin_api(rpc_url: str, node_name: str = None) -
         import traceback
 
         console.print(
-            f"[red]Exception in generate_identity: {type(e).__name__}: {e}[/red]"
+            f"[red]Exception in generate_identity: {type(e).__name__}: {escape(str(e))}[/red]"
         )
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        console.print(f"[dim]{escape(traceback.format_exc())}[/dim]")
         return fail(f"generate_context_identity failed: {e}", error=e)
 
 
@@ -118,7 +119,7 @@ async def create_namespace_invitation_via_admin_api(
             result = client.create_group_invitation(namespace_id)
         return ok(result)
     except Exception as e:
-        return fail("create_namespace_invitation failed", error=e)
+        return fail(f"create_namespace_invitation failed: {e}", error=e)
 
 
 # Deprecated alias kept for backward compatibility.
@@ -160,7 +161,7 @@ def list_identities(node, context_id, verbose):
             )
             if verbose:
                 console.print("\n[bold]Response structure:[/bold]")
-                console.print(f"{result}")
+                console.print(f"{escape(str(result))}")
             return
 
         console.print(f"\n[green]Found {len(identities_data)} identity(ies):[/green]")
@@ -171,11 +172,13 @@ def list_identities(node, context_id, verbose):
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
+            console.print(f"{escape(str(result))}")
 
     else:
         console.print("\n[red]✗ Failed to list identities[/red]")
-        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+        console.print(
+            f"[red]Error: {escape(str(result.get('error', 'Unknown error')))}[/red]"
+        )
         sys.exit(1)
 
 
@@ -281,11 +284,13 @@ def invite_group(node, group_id, verbose):
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
+            console.print(f"{escape(str(result))}")
 
     else:
         console.print("\n[red]✗ Failed to create group invitation[/red]")
-        console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+        console.print(
+            f"[red]Error: {escape(str(result.get('error', 'Unknown error')))}[/red]"
+        )
 
         if "errors" in result:
             console.print("\n[yellow]Detailed errors:[/yellow]")
@@ -294,7 +299,7 @@ def invite_group(node, group_id, verbose):
 
         if verbose:
             console.print("\n[bold]Full response:[/bold]")
-            console.print(f"{result}")
+            console.print(f"{escape(str(result))}")
 
         sys.exit(1)
 

@@ -36,7 +36,7 @@ def logs(node_name, tail, follow, no_docker):
                 )
                 return
             console.print(f"\n[bold]Logs for {node_name}:[/bold]")
-            console.print(content)
+            console.print(content, markup=False)
     else:
         calimero_manager = DockerManager()
         calimero_manager.get_node_logs(node_name, tail)

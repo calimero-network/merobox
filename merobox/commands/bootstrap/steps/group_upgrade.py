@@ -19,6 +19,8 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -360,7 +362,7 @@ class UpgradeGroupStep(BaseStep):
             api_result = client.upgrade_group(**upgrade_kwargs)
             result = ok(api_result)
         except Exception as e:
-            result = fail("upgrade_group failed", error=e)
+            result = fail(f"upgrade_group failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -369,7 +371,8 @@ class UpgradeGroupStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]upgrade_group failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]upgrade_group failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -488,7 +491,7 @@ class CascadeNamespaceApplicationStep(BaseStep):
             )
             result = ok(api_result)
         except Exception as e:
-            result = fail("cascade_namespace_application failed", error=e)
+            result = fail(f"cascade_namespace_application failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -497,7 +500,8 @@ class CascadeNamespaceApplicationStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]cascade_namespace_application failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]cascade_namespace_application failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -559,7 +563,7 @@ class GetGroupUpgradeStatusStep(BaseStep):
             api_result = client.get_group_upgrade_status(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_group_upgrade_status failed", error=e)
+            result = fail(f"get_group_upgrade_status failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -568,7 +572,8 @@ class GetGroupUpgradeStatusStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_group_upgrade_status failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_group_upgrade_status failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -619,7 +624,7 @@ class RetryGroupUpgradeStep(BaseStep):
             api_result = client.retry_group_upgrade(group_id=group_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("retry_group_upgrade failed", error=e)
+            result = fail(f"retry_group_upgrade failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -628,7 +633,8 @@ class RetryGroupUpgradeStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]retry_group_upgrade failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]retry_group_upgrade failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -706,7 +712,7 @@ class GetCascadeStatusStep(BaseStep):
             api_result = client.get_cascade_status(namespace_id=namespace_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_cascade_status failed", error=e)
+            result = fail(f"get_cascade_status failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -715,7 +721,8 @@ class GetCascadeStatusStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_cascade_status failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_cascade_status failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -845,7 +852,8 @@ class AssertCascadeCompleteStep(BaseStep):
                 self._report_expected_failure(str(e))
                 return True
             console.print(
-                f"[red]assert_cascade_complete: failed to reach {node_name}: {e}[/red]"
+                f"[red]assert_cascade_complete: failed to reach {node_name}: "
+                f"{escape(str(e))}[/red]"
             )
             return False
 
@@ -995,7 +1003,7 @@ class AbortMigrationStep(BaseStep):
             api_result = client.abort_migration(namespace_id=namespace_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("abort_migration failed", error=e)
+            result = fail(f"abort_migration failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -1004,7 +1012,8 @@ class AbortMigrationStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]abort_migration failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]abort_migration failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -1090,7 +1099,7 @@ class GetMigrationStatusStep(BaseStep):
             api_result = client.get_migration_status(namespace_id=namespace_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("get_migration_status failed", error=e)
+            result = fail(f"get_migration_status failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -1099,7 +1108,8 @@ class GetMigrationStatusStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]get_migration_status failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]get_migration_status failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -1224,7 +1234,8 @@ class AssertMigrationCompleteStep(BaseStep):
                 self._report_expected_failure(str(e))
                 return True
             console.print(
-                f"[red]assert_migration_complete: failed to reach {node_name}: {e}[/red]"
+                f"[red]assert_migration_complete: failed to reach {node_name}: "
+                f"{escape(str(e))}[/red]"
             )
             return False
 
@@ -1396,7 +1407,7 @@ class ResyncContextStep(BaseStep):
             api_result = client.resync_context(context_id=context_id, force=force)
             result = ok(api_result)
         except Exception as e:
-            result = fail("resync_context failed", error=e)
+            result = fail(f"resync_context failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -1405,7 +1416,8 @@ class ResyncContextStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]resync_context failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]resync_context failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 
@@ -1498,7 +1510,7 @@ class ListApplicationVersionsStep(BaseStep):
             api_result = client.list_application_versions(application_id=application_id)
             result = ok(api_result)
         except Exception as e:
-            result = fail("list_application_versions failed", error=e)
+            result = fail(f"list_application_versions failed: {e}", error=e)
 
         expected_failure = self._is_expected_failure()
 
@@ -1507,7 +1519,8 @@ class ListApplicationVersionsStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]list_application_versions failed on {node_name}: {result.get('error')}[/red]"
+                f"[red]list_application_versions failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
             )
             return False
 

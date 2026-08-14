@@ -7,6 +7,8 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from rich.markup import escape
+
 from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, get_node_rpc_url, vprint
 
 if TYPE_CHECKING:
@@ -710,8 +712,8 @@ class BaseStep:
                     raise Exception(f"Failed to resolve URL '{node_name}': {e}") from e
                 # Log the resolver error but try fallback for local nodes
                 console.print(
-                    f"[yellow]Warning: Resolver failed for {node_name}: {e}. "
-                    f"Trying legacy resolution...[/yellow]"
+                    f"[yellow]Warning: Resolver failed for {node_name}: "
+                    f"{escape(str(e))}. Trying legacy resolution...[/yellow]"
                 )
 
         # Fallback to legacy get_node_rpc_url (only for local nodes)
@@ -1249,8 +1251,15 @@ class BaseStep:
         return value
 
     def _report_expected_failure(self, error_message: str) -> None:
-        """Log the standard yellow message when an expected failure occurred."""
-        console.print(f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]")
+        """Log the standard yellow message when an expected failure occurred.
+
+        error_message may carry a raw exception's text, which can itself
+        contain square brackets (e.g. a multiaddr) that Rich would otherwise
+        try to parse as markup - escape it, keep the surrounding tag.
+        """
+        console.print(
+            f"[yellow]✓ Expected failure occurred: {escape(error_message)}[/yellow]"
+        )
 
     def _report_unexpected_success(self) -> None:
         """Log a warning when `expected_failure: true` was set but the step succeeded.
@@ -1361,7 +1370,9 @@ class BaseStep:
                 # Binary mode - use BinaryManager's get_node_logs
                 log_content = self.manager.get_node_logs(node_name, lines=lines)
                 if log_content:
-                    console.print(log_content)
+                    # Node output may contain literal square brackets (e.g. a
+                    # multiaddr list) that Rich would otherwise try to parse as markup.
+                    console.print(log_content, markup=False)
                 else:
                     console.print(f"[dim]No logs found for {node_name}[/dim]")
             else:
@@ -1376,7 +1387,7 @@ class BaseStep:
 
                     logs = container.logs(tail=lines, timestamps=True).decode("utf-8")
                     if logs:
-                        console.print(logs)
+                        console.print(logs, markup=False)
                     else:
                         console.print(f"[dim]No logs available for {node_name}[/dim]")
                 except Exception as e:

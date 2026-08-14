@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
 
@@ -82,14 +84,16 @@ class _AssertLogStepBase(BaseStep):
             try:
                 listed = self.manager.list_nodes() or []
             except Exception as e:
-                console.print(f"[yellow]⚠️  manager.list_nodes() failed: {e}[/yellow]")
+                console.print(
+                    f"[yellow]⚠️  manager.list_nodes() failed: {escape(str(e))}[/yellow]"
+                )
                 return []
             return [n["name"] for n in listed if isinstance(n, dict) and "name" in n]
         try:
             return list(self.manager.get_running_nodes() or [])
         except Exception as e:
             console.print(
-                f"[yellow]⚠️  manager.get_running_nodes() failed: {e}[/yellow]"
+                f"[yellow]⚠️  manager.get_running_nodes() failed: {escape(str(e))}[/yellow]"
             )
             return []
 
@@ -103,7 +107,8 @@ class _AssertLogStepBase(BaseStep):
                 return self.manager.get_node_logs(node_name, lines=lines)
             except Exception as e:
                 console.print(
-                    f"[yellow]⚠️  Could not retrieve logs for {node_name}: {e}[/yellow]"
+                    f"[yellow]⚠️  Could not retrieve logs for {node_name}: "
+                    f"{escape(str(e))}[/yellow]"
                 )
                 return None
         # Docker mode
@@ -126,7 +131,8 @@ class _AssertLogStepBase(BaseStep):
             return str(raw)
         except Exception as e:
             console.print(
-                f"[yellow]⚠️  Could not retrieve logs for {node_name}: {e}[/yellow]"
+                f"[yellow]⚠️  Could not retrieve logs for {node_name}: "
+                f"{escape(str(e))}[/yellow]"
             )
             return None
 

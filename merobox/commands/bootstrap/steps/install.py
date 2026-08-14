@@ -6,6 +6,8 @@ import os
 import shutil
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
@@ -209,9 +211,10 @@ class InstallApplicationStep(BaseStep):
             import traceback
 
             console.print(
-                f"[red]Exception during install_application: {type(e).__name__}: {e}[/red]"
+                f"[red]Exception during install_application: "
+                f"{type(e).__name__}: {escape(str(e))}[/red]"
             )
-            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            console.print(f"[dim]{escape(traceback.format_exc())}[/dim]")
             result = fail(f"install_application failed: {e}", error=e)
 
         # Log detailed API response

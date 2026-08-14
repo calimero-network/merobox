@@ -8,6 +8,8 @@ Step types 'join' and 'join_open' route here as deprecated aliases.
 import json as json_lib
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.join import join_namespace_via_admin_api
 from merobox.commands.utils import console
@@ -115,7 +117,9 @@ class JoinNamespaceStep(BaseStep):
             invitation_json,
             node_name=client_node_name,
         )
-        console.print(f"[blue]Join namespace function returned: {result}[/blue]")
+        console.print(
+            f"[blue]Join namespace function returned: {escape(str(result))}[/blue]"
+        )
 
         console.print(f"[cyan]🔍 Join Namespace API Response for {node_name}:[/cyan]")
         console.print(f"  Success: {result.get('success')}")
@@ -131,7 +135,7 @@ class JoinNamespaceStep(BaseStep):
             console.print(f"  Data: {data}")
 
         if not result.get("success"):
-            console.print(f"  Error: {result.get('error')}")
+            console.print(f"  Error: {escape(str(result.get('error')))}")
 
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
@@ -145,7 +149,8 @@ class JoinNamespaceStep(BaseStep):
             return True
         else:
             console.print(
-                f"[red]Join namespace failed: {result.get('error', 'Unknown error')}[/red]"
+                f"[red]Join namespace failed: "
+                f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
             )
             return False
 

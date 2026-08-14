@@ -799,13 +799,13 @@ class BinaryManager(CleanupMixin):
                             bytes_to_read = min(f.tell(), block_size)
                         lines_buf = data.splitlines()[-tail:]
                         for line in lines_buf:
-                            console.print(line)
+                            console.print(line, markup=False)
                     except Exception:
                         # Fallback: read all and slice
                         f.seek(0)
                         lines_buf = f.readlines()[-tail:]
                         for line in lines_buf:
-                            console.print(line.rstrip("\n"))
+                            console.print(line.rstrip("\n"), markup=False)
 
                 # Now follow appended content
                 f.seek(0, os.SEEK_END)
@@ -814,7 +814,7 @@ class BinaryManager(CleanupMixin):
                     if not line:
                         time.sleep(0.25)
                         continue
-                    console.print(line.rstrip("\n"))
+                    console.print(line.rstrip("\n"), markup=False)
 
         except KeyboardInterrupt:
             return True

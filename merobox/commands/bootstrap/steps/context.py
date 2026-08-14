@@ -4,6 +4,8 @@ Create context step executor.
 
 from typing import Any
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -154,7 +156,7 @@ class CreateContextStep(BaseStep):
 
             result = ok(api_result)
         except Exception as e:
-            result = fail("create_context failed", error=e)
+            result = fail(f"create_context failed: {e}", error=e)
 
         # Log detailed API response
         import json as json_lib
@@ -173,7 +175,7 @@ class CreateContextStep(BaseStep):
             console.print(f"  Data: {data}")
 
         if not result.get("success"):
-            console.print(f"  Error: {result.get('error')}")
+            console.print(f"  Error: {escape(str(result.get('error')))}")
             # Print exception details if available
             if "exception" in result:
                 exception = result["exception"]
@@ -254,7 +256,8 @@ class CreateContextStep(BaseStep):
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
             console.print(
-                f"[red]Context creation failed: {result.get('error', 'Unknown error')}[/red]"
+                f"[red]Context creation failed: "
+                f"{escape(str(result.get('error', 'Unknown error')))}[/red]"
             )
             # Print node logs to help with debugging
             self._print_node_logs_on_failure(node_name=node_name, lines=50)

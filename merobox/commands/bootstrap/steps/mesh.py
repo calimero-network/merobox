@@ -14,6 +14,8 @@ import os
 import shutil
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
@@ -178,7 +180,8 @@ class CreateMeshStep(BaseStep):
             return True
         except Exception as e:
             console.print(
-                f"  [yellow]\u26a0\ufe0f Failed to pre-install app on {node_name}: {e}[/yellow]"
+                f"  [yellow]\u26a0\ufe0f Failed to pre-install app on {node_name}: "
+                f"{escape(str(e))}[/yellow]"
             )
             return False
 
@@ -237,11 +240,12 @@ class CreateMeshStep(BaseStep):
                     )
                 )
         except Exception as e:
-            namespace_result = fail("create_namespace failed", error=e)
+            namespace_result = fail(f"create_namespace failed: {e}", error=e)
 
         if not namespace_result.get("success"):
             console.print(
-                f"[red]Namespace creation failed: {namespace_result.get('error', 'Unknown error')}[/red]"
+                f"[red]Namespace creation failed: "
+                f"{escape(str(namespace_result.get('error', 'Unknown error')))}[/red]"
             )
             return False
 
@@ -269,11 +273,12 @@ class CreateMeshStep(BaseStep):
             api_result = client.create_context(**context_kwargs)
             context_result = ok(api_result)
         except Exception as e:
-            context_result = fail("create_context failed", error=e)
+            context_result = fail(f"create_context failed: {e}", error=e)
 
         if not context_result.get("success"):
             console.print(
-                f"[red]Context creation failed: {context_result.get('error', 'Unknown error')}[/red]"
+                f"[red]Context creation failed: "
+                f"{escape(str(context_result.get('error', 'Unknown error')))}[/red]"
             )
             return False
 
@@ -394,7 +399,8 @@ class CreateMeshStep(BaseStep):
 
             if not identity_result.get("success"):
                 console.print(
-                    f"[red]Identity creation failed for {node_name}: {identity_result.get('error', 'Unknown error')}[/red]"
+                    f"[red]Identity creation failed for {node_name}: "
+                    f"{escape(str(identity_result.get('error', 'Unknown error')))}[/red]"
                 )
                 return False
 
@@ -464,7 +470,8 @@ class CreateMeshStep(BaseStep):
 
             if not invite_result.get("success"):
                 console.print(
-                    f"[red]Namespace invitation failed for {node_name}: {invite_result.get('error', 'Unknown error')}[/red]"
+                    f"[red]Namespace invitation failed for {node_name}: "
+                    f"{escape(str(invite_result.get('error', 'Unknown error')))}[/red]"
                 )
                 return False
 
@@ -505,7 +512,8 @@ class CreateMeshStep(BaseStep):
 
             if not join_result.get("success"):
                 console.print(
-                    f"[red]Join namespace failed for {node_name}: {join_result.get('error', 'Unknown error')}[/red]"
+                    f"[red]Join namespace failed for {node_name}: "
+                    f"{escape(str(join_result.get('error', 'Unknown error')))}[/red]"
                 )
                 return False
 
