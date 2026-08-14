@@ -14,6 +14,7 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from merobox.commands.bootstrap.steps.api_assertion import AssertApiResponseStep
 
@@ -78,11 +79,13 @@ def _execute(
     workflow_results=None,
     dynamic=None,
     text=None,
+    error=None,
 ):
     """Run the step against a canned response, returning (result, get, results).
 
     ``text`` overrides only the decoded view, so a test can simulate requests
     guessing the charset wrong while the transmitted bytes stay correct.
+    ``error`` makes the request raise instead of answering.
     """
     auth = MagicMock()
     auth.get_cached_token.return_value = (
@@ -100,6 +103,7 @@ def _execute(
         patch(
             "merobox.commands.bootstrap.steps.api_assertion.requests.get",
             return_value=response,
+            side_effect=error,
         ) as get,
     ):
         return _run(step.execute(results, dynamic or {})), get, results
@@ -331,6 +335,21 @@ class TestTransportFailures:
         raw = json.dumps(_body(reason=reason), ensure_ascii=False)
         step = _step(match={"data.reason": reason})
         assert _execute(step, raw, text=raw.encode().decode("latin-1"))[0] is True
+
+    def test_an_unreachable_node_fails_the_step_rather_than_raising(self, capsys):
+        step = _step(present=["data"])
+        result, _, _ = _execute(
+            step, _body(), error=requests.ConnectionError("refused")
+        )
+        assert result is False
+        assert "refused" in capsys.readouterr().out
+
+    def test_a_bug_in_the_step_is_not_reported_as_a_request_failure(self):
+        # A TypeError from this step's own plumbing must reach the runner, not
+        # `expected_failure`, or a negative test turns green on a defect.
+        step = _step(expected_failure=True, present=["data"])
+        with pytest.raises(TypeError):
+            _execute(step, _body(), error=TypeError("headers is not a mapping"))
 
     def test_expected_failure_accepts_a_refused_request(self):
         step = _step(expected_failure=True, expected_error="HTTP 403")

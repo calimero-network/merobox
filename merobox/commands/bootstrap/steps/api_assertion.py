@@ -123,17 +123,20 @@ class AssertApiResponseStep(BaseStep):
                 result = ok(json.loads(response.content))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             result = fail(f"GET {path} on {node_name} returned a non-JSON body: {e}")
-        except Exception as e:
+        # Only what `requests` raises for a transport fault: a TypeError from
+        # this step's own plumbing must not pass as an ordinary request failure.
+        except requests.RequestException as e:
             result = fail(f"GET {path} on {node_name} failed", error=e)
 
         expected_failure = self._is_expected_failure()
 
         if not result["success"]:
+            detail = self._failure_detail(result)
             if expected_failure:
-                return self._report_expected_failure(self._failure_detail(result))
+                return self._report_expected_failure(detail)
             # markup=False so a response body containing brackets survives Rich.
             console.print(
-                f"✗ assert_api_response: {result['error']}",
+                f"✗ assert_api_response: {detail}",
                 style="red",
                 markup=False,
             )
