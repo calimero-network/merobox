@@ -46,22 +46,35 @@ _mock_constants.DEFAULT_RPC_PORT = 2528
 
 _mock_remote_nodes = MagicMock()
 
-# Install mocks
-sys.modules["merobox.commands.auth"] = _mock_auth
-sys.modules["merobox.commands.constants"] = _mock_constants
-sys.modules["merobox.commands.remote_nodes"] = _mock_remote_nodes
-sys.modules["aiohttp"] = MagicMock()
-sys.modules["rich"] = MagicMock()
-sys.modules["rich.console"] = MagicMock()
-sys.modules["rich.prompt"] = MagicMock()
+_STUBS = {
+    "merobox.commands.auth": _mock_auth,
+    "merobox.commands.constants": _mock_constants,
+    "merobox.commands.remote_nodes": _mock_remote_nodes,
+    "aiohttp": MagicMock(),
+    "rich": MagicMock(),
+    "rich.console": MagicMock(),
+    "rich.prompt": MagicMock(),
+}
 
-# Load node_resolver directly
+# Load node_resolver directly, with its dependencies stubbed only for the
+# duration of the exec. Leaving the stubs installed hands every test module
+# imported later a MagicMock in place of the real aiohttp and rich, which
+# silently breaks any assertion those modules' real values take part in.
 _workspace = Path(__file__).parent.parent.parent.parent
 _node_resolver_path = _workspace / "merobox" / "commands" / "node_resolver.py"
-_module, _spec = _load_module_directly(
-    "merobox.commands.node_resolver", str(_node_resolver_path)
-)
-_spec.loader.exec_module(_module)
+_saved = {name: sys.modules.get(name) for name in _STUBS}
+sys.modules.update(_STUBS)
+try:
+    _module, _spec = _load_module_directly(
+        "merobox.commands.node_resolver", str(_node_resolver_path)
+    )
+    _spec.loader.exec_module(_module)
+finally:
+    for name, original in _saved.items():
+        if original is None:
+            del sys.modules[name]
+        else:
+            sys.modules[name] = original
 
 NodeResolver = _module.NodeResolver
 

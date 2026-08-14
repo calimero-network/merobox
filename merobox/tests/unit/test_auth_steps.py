@@ -19,6 +19,17 @@ from merobox.commands.bootstrap.steps.refresh import RefreshStep
 from merobox.commands.bootstrap.steps.websocket import WebSocketConnectStep
 
 
+@pytest.fixture(autouse=True)
+def _wide_console():
+    """Rich soft-wraps at terminal width, splitting the strings asserted on."""
+    from merobox.commands.utils import console
+
+    original = console.width
+    console.width = 400
+    yield
+    console.width = original
+
+
 def _run(coro):
     """Run a coroutine on a dedicated loop, leaving a fresh current loop behind.
 
@@ -337,17 +348,20 @@ class _FakeHandshakeError(aiohttp.WSServerHandshakeError):
     versions. We skip the base ``__init__`` and override ``__str__`` so the
     fixture is version-proof; it still matches ``except
     aiohttp.WSServerHandshakeError`` (the step only reads ``.status``).
+    ``url`` reproduces the real ``__str__``, which echoes the request URL.
     """
 
-    def __init__(self, status):
+    def __init__(self, status, url=""):
         self.status = status
+        self._url = url
 
     def __str__(self):
-        return f"handshake rejected with {self.status}"
+        echoed = f", url={self._url!r}" if self._url else ""
+        return f"handshake rejected with {self.status}{echoed}"
 
 
-def _handshake_error(status):
-    return _FakeHandshakeError(status)
+def _handshake_error(status, url=""):
+    return _FakeHandshakeError(status, url)
 
 
 class TestWebSocketConnectStep:
@@ -478,6 +492,93 @@ class TestWebSocketConnectStep:
 
         # Asserted rejection but the connection succeeded -> step fails.
         assert result is False
+
+
+class TestWebSocketTokenRedaction:
+    """No console path may echo the JWT the URL carries in its query string."""
+
+    def _step(self, **extra):
+        config = {
+            "type": "ws_connect",
+            "name": "ws",
+            "node": "calimero-node-1",
+            **extra,
+        }
+        return WebSocketConnectStep(config, manager=_manager())
+
+    def _run_with(self, step, ws_connect, capsys):
+        fake_auth = MagicMock()
+        fake_auth.get_cached_token.return_value = _token()
+        with (
+            patch(
+                "merobox.commands.bootstrap.steps.websocket.AuthManager",
+                return_value=fake_auth,
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.websocket.aiohttp.ClientSession",
+                return_value=_FakeSession(ws_connect),
+            ),
+        ):
+            result = _run(step.execute({}, {}))
+        return result, capsys.readouterr().out
+
+    def test_the_opened_url_is_masked(self, capsys):
+        async def ws_connect(url):
+            return _FakeWS()
+
+        result, out = self._run_with(self._step(), ws_connect, capsys)
+        assert result is True
+        assert "acc.jwt.tok" not in out
+
+    def test_a_handshake_error_echoing_the_url_is_masked(self, capsys):
+        # ClientResponseError (which WSServerHandshakeError subclasses)
+        # stringifies the request URL, query string included.
+        async def ws_connect(url):
+            raise _handshake_error(500, url)
+
+        result, out = self._run_with(self._step(), ws_connect, capsys)
+        assert result is False
+        assert "acc.jwt.tok" not in out
+        assert "token=***" in out
+
+    def test_a_rejection_reported_as_expected_is_masked(self, capsys):
+        async def ws_connect(url):
+            raise _handshake_error(401, url)
+
+        result, out = self._run_with(
+            self._step(expected_failure=True), ws_connect, capsys
+        )
+        assert result is True
+        assert "acc.jwt.tok" not in out
+
+    def test_a_transport_error_echoing_the_url_is_masked(self, capsys):
+        async def ws_connect(url):
+            raise aiohttp.ClientError(f"Cannot connect to {url}")
+
+        result, out = self._run_with(self._step(), ws_connect, capsys)
+        assert result is False
+        assert "acc.jwt.tok" not in out
+        assert "token=***" in out
+
+    # Masking is not enough on its own: both paths interpolate into [red] tags,
+    # so a bracketed message (a multiaddr is the common case) must also be
+    # escaped or Rich parses it as a malformed tag and raises instead of
+    # reporting.
+    def test_a_bracketed_handshake_error_is_reported_not_parsed(self, capsys):
+        async def ws_connect(url):
+            raise _handshake_error(500, "[/ip4/127.0.0.1/tcp/2428]")
+
+        result, out = self._run_with(self._step(), ws_connect, capsys)
+        assert result is False
+        assert "/ip4/127.0.0.1/tcp/2428" in out
+
+    def test_a_bracketed_transport_error_is_reported_not_parsed(self, capsys):
+        async def ws_connect(url):
+            raise aiohttp.ClientError("no route to [/ip4/127.0.0.1/tcp/2428]")
+
+        result, out = self._run_with(self._step(), ws_connect, capsys)
+        assert result is False
+        assert "/ip4/127.0.0.1/tcp/2428" in out
 
 
 if __name__ == "__main__":
