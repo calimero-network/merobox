@@ -1,0 +1,51 @@
+description: Assert against the JSON a node's admin API actually sent
+name: Assert API Response Example
+
+# Keep it light: single node to speed up CI
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  base_port: 9012
+  base_rpc_port: 9112
+
+steps:
+  - name: Install Application
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  # A namespace nobody has upgraded. `fleetCompletedAt` is stamped only when a
+  # fleet converges, and core marks it skip_serializing_if_none, so its absence
+  # here is a fact - distinct from present-and-null, which is what the typed
+  # client used to manufacture.
+  - name: Assert the untouched migration-status shape
+    type: assert_api_response
+    node: calimero-node-1
+    path: '/admin-api/groups/{{namespace_id}}/migration-status'
+    match:
+      rollup.total: 1
+    present:
+      - rollup.allMigrated
+      - members
+    absent:
+      - fleetCompletedAt
+
+  # The same read through the typed client. It agreeing with the raw body is
+  # what makes a later disagreement mean a dropped field rather than a defect.
+  - name: Read the rollup through the typed client
+    type: get_migration_status
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      typed_total: total

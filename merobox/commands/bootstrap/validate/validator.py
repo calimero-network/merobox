@@ -11,6 +11,7 @@ from merobox.commands.bootstrap.steps.account import (
     AccountRevokeStep,
     AccountShowStep,
 )
+from merobox.commands.bootstrap.steps.api_assertion import AssertApiResponseStep
 from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogAbsentStep,
     AssertLogPresentStep,
@@ -420,6 +421,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = WebSocketConnectStep
         elif step_type == "assert_ws_event":
             step_class = WebSocketEventAssertStep
+        elif step_type == "assert_api_response":
+            step_class = AssertApiResponseStep
         elif step_type == "set_tee_admission_policy":
             step_class = SetTeeAdmissionPolicyStep
         elif step_type == "tee_fleet_join":
