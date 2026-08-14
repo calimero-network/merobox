@@ -317,10 +317,13 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         # wrong; a count plus a reason still does not say WHICH member is
         # holding the fleet back. Sorted, so it does not depend on member
         # ordering the API never promised.
+        # `.get`, not `[]`: a member row omits the keys its node did not send,
+        # so a healthy member carries no `migration_failed` at all.
         "stuck_members": sorted(
             str(member["peer"])
             for member in members
-            if member["migration_failed"] is not None and member["peer"] is not None
+            if member.get("migration_failed") is not None
+            and member.get("peer") is not None
         ),
         "members": members,
     }
