@@ -1297,7 +1297,12 @@ class BaseStep:
         message = str(result.get("error", "Unknown error"))
         exception = result.get("exception")
         cause = exception.get("message") if isinstance(exception, dict) else None
-        return f"{message}: {cause}" if cause else message
+        # Most call sites build the message as f"<verb> failed: {e}" and pass
+        # the same exception, so appending the cause unconditionally prints it
+        # twice.
+        if not cause or cause in message:
+            return message
+        return f"{message}: {cause}"
 
     def _jsonrpc_error_detail(self, result_data: Any) -> str:
         """Flatten a JSON-RPC error envelope onto one line for `expected_error`.

@@ -107,6 +107,24 @@ class TestExpectedErrorHelper:
         step = self._step(expected_failure=True, expected_error="No Embedded ABI")
         assert step._report_expected_failure("no embedded ABI") is False
 
+    def test_failure_detail_does_not_repeat_an_embedded_cause(self):
+        """Call sites build the message as f"<verb> failed: {e}" and pass the
+        same exception, so appending the cause would print it twice."""
+        from merobox.commands.result import fail
+
+        step = self._step(expected_failure=True)
+        err = RuntimeError("node unreachable")
+        detail = step._failure_detail(fail(f"create_context failed: {err}", error=err))
+        assert detail == "create_context failed: node unreachable"
+
+    def test_failure_detail_appends_a_distinct_cause(self):
+        from merobox.commands.result import fail
+
+        step = self._step(expected_failure=True)
+        err = RuntimeError("node unreachable")
+        detail = step._failure_detail(fail("create_context failed", error=err))
+        assert detail == "create_context failed: node unreachable"
+
     def test_no_expected_error_accepts_any_failure(self):
         assert (
             self._step(expected_failure=True)._report_expected_failure("boom") is True
