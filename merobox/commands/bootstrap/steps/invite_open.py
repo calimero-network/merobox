@@ -99,8 +99,7 @@ class InviteOpenStep(BaseStep):
 
         if not result.get("success"):
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(f"  Error: {escape(str(result.get('error')))}")
             console.print(
                 f"[red]Namespace invitation creation failed: "
@@ -110,8 +109,9 @@ class InviteOpenStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         step_key = f"invite_{node_name}_{namespace_id}"
@@ -124,5 +124,5 @@ class InviteOpenStep(BaseStep):
         self._export_variables(synthetic_response, node_name, dynamic_values)
 
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True

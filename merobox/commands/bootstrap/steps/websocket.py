@@ -174,8 +174,7 @@ class WebSocketConnectStep(_WebSocketStepBase):
             detail = self._redact(str(e), token)
             if expected_failure:
                 if e.status in (401, 403):
-                    self._report_expected_failure(detail)
-                    return True
+                    return self._report_expected_failure(detail)
                 console.print(
                     f"[red]❌ Expected a 401/403 auth rejection but the "
                     f"{node_name} handshake returned HTTP {e.status}[/red]"
@@ -196,8 +195,7 @@ class WebSocketConnectStep(_WebSocketStepBase):
             return False
 
         if expected_failure:
-            self._report_unexpected_success()
-            return False
+            return self._report_unexpected_success()
 
         console.print(f"[green]✓ WebSocket connected to {node_name}[/green]")
         return True

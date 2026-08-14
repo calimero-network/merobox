@@ -50,8 +50,7 @@ class UpdateGroupSettingsStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]update_group_settings failed on {node_name}: {result.get('error')}[/red]"
             )
@@ -59,8 +58,9 @@ class UpdateGroupSettingsStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"update_group_settings_{node_name}"] = result["data"]
@@ -68,7 +68,7 @@ class UpdateGroupSettingsStep(BaseStep):
             f"[green]✓ Updated group {group_id} settings (upgrade_policy={upgrade_policy}) on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -110,8 +110,7 @@ class DetachContextFromGroupStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]detach_context_from_group failed on {node_name}: {result.get('error')}[/red]"
             )
@@ -119,8 +118,9 @@ class DetachContextFromGroupStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"detach_context_from_group_{node_name}"] = result["data"]
@@ -128,7 +128,7 @@ class DetachContextFromGroupStep(BaseStep):
             f"[green]✓ Detached context {context_id} from group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -165,8 +165,7 @@ class SyncGroupStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]sync_group failed on {node_name}: {result.get('error')}[/red]"
             )
@@ -174,8 +173,9 @@ class SyncGroupStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         workflow_results[f"sync_group_{node_name}"] = result["data"]
@@ -183,5 +183,5 @@ class SyncGroupStep(BaseStep):
             f"[green]✓ Triggered governance sync for group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True

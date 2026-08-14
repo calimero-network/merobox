@@ -80,8 +80,9 @@ class CreateNamespaceInvitationStep(BaseStep):
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
                 if expected_failure:
-                    self._report_expected_failure("JSON-RPC error returned")
-                    return True
+                    return self._report_expected_failure(
+                        self._jsonrpc_error_detail(result["data"])
+                    )
                 return False
 
             step_name = self.config.get("name", "")
@@ -111,21 +112,19 @@ class CreateNamespaceInvitationStep(BaseStep):
                 console.print(
                     f"[yellow]⚠️  Could not extract invitation from response on {node_name}[/yellow]"
                 )
-                # The API call itself succeeded (just with an unusable shape);
-                # honor expected_failure the same way the normal success path
-                # does — warn and pass rather than silently failing the step.
+                # The API call itself succeeded (just with an unusable shape),
+                # so route it through the same unexpected-success verdict as
+                # the normal success branch rather than a plain failure.
                 if expected_failure:
-                    self._report_unexpected_success()
-                    return True
+                    return self._report_unexpected_success()
                 return False
 
             if expected_failure:
-                self._report_unexpected_success()
+                return self._report_unexpected_success()
             return True
         else:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]Namespace invitation creation failed on {node_name}: "
                 f"{escape(str(result.get('error', 'Unknown error')))}[/red]"

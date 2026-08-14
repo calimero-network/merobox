@@ -2082,6 +2082,9 @@ class WorkflowExecutor:
                     return False
 
                 # Execute the step
+                step_executor.bind_expected_error(
+                    self.workflow_results, self.dynamic_values
+                )
                 success = await step_executor.execute(
                     self.workflow_results, self.dynamic_values
                 )

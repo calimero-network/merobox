@@ -10,7 +10,7 @@ add_group_members.
 """
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -32,6 +32,7 @@ from merobox.commands.bootstrap.steps.group_management import (
     SetSubgroupVisibilityStep,
     UpdateMemberRoleStep,
 )
+from merobox.commands.bootstrap.steps.group_upgrade import UpgradeGroupStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.join_context import JoinContextStep
 from merobox.commands.bootstrap.steps.namespace import CreateGroupInNamespaceStep
@@ -74,6 +75,121 @@ class TestExpectedFailureHelpers:
         step = self._make_step(expected_failure="yes")
         with pytest.raises(ValueError, match="expected_failure.*boolean"):
             step._is_expected_failure()
+
+
+class TestExpectedErrorHelper:
+    """`expected_error` pins WHICH failure a negative test accepts; without it
+    an unreachable node stands in for the refusal under test."""
+
+    def _step(self, **extra):
+        return JoinContextStep(
+            {
+                "type": "join_context",
+                "name": "reason test",
+                "node": "n1",
+                "context_id": "ctx1",
+                **extra,
+            }
+        )
+
+    def test_matching_substring_passes(self):
+        step = self._step(expected_failure=True, expected_error="identity downgrade")
+        assert step._report_expected_failure("identity downgrade forbidden") is True
+
+    def test_wrong_reason_fails(self):
+        step = self._step(expected_failure=True, expected_error="identity downgrade")
+        assert step._report_expected_failure("connection refused") is False
+
+    def test_match_is_case_sensitive(self):
+        step = self._step(expected_failure=True, expected_error="No Embedded ABI")
+        assert step._report_expected_failure("no embedded ABI") is False
+
+    def test_failure_detail_does_not_repeat_an_embedded_cause(self):
+        """Call sites build the message as f"<verb> failed: {e}" and pass the
+        same exception, so appending the cause would print it twice."""
+        from merobox.commands.result import fail
+
+        step = self._step(expected_failure=True)
+        err = RuntimeError("node unreachable")
+        detail = step._failure_detail(fail(f"create_context failed: {err}", error=err))
+        assert detail == "create_context failed: node unreachable"
+
+    def test_failure_detail_appends_a_distinct_cause(self):
+        from merobox.commands.result import fail
+
+        step = self._step(expected_failure=True)
+        err = RuntimeError("node unreachable")
+        detail = step._failure_detail(fail("create_context failed", error=err))
+        assert detail == "create_context failed: node unreachable"
+
+    def test_no_expected_error_accepts_any_failure(self):
+        assert (
+            self._step(expected_failure=True)._report_expected_failure("boom") is True
+        )
+
+    def test_without_expected_failure_it_is_a_config_error(self):
+        # Silently never asserting is the exact failure mode being closed here.
+        with pytest.raises(ValueError, match="expected_error.*requires"):
+            self._step(expected_error="whatever")
+
+    def test_non_string_raises(self):
+        with pytest.raises(ValueError, match="'expected_error' must be a string"):
+            self._step(expected_failure=True, expected_error=7)
+
+    def test_empty_string_raises(self):
+        # An empty substring matches everything, so it asserts nothing.
+        with pytest.raises(ValueError, match="expected_error.*empty"):
+            self._step(expected_failure=True, expected_error="  ")
+
+    def test_a_placeholder_is_resolved_before_matching(self):
+        # An unresolved template can never occur in a runtime error, so an
+        # unbound `expected_error` fails every gate that parameterizes it.
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.bind_expected_error({}, {"reason": "identity downgrade"})
+        assert step._report_expected_failure("identity downgrade forbidden") is True
+
+    def test_a_resolved_placeholder_still_rejects_the_wrong_reason(self):
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.bind_expected_error({}, {"reason": "identity downgrade"})
+        assert step._report_expected_failure("connection refused") is False
+
+    def test_an_embedded_placeholder_is_resolved(self):
+        step = self._step(
+            expected_failure=True, expected_error="downgrade to {{version}}"
+        )
+        step.bind_expected_error({}, {"version": "1.2.3"})
+        assert step._report_expected_failure("refused: downgrade to 1.2.3") is True
+
+    def test_a_placeholder_resolving_to_empty_does_not_accept_any_failure(self):
+        # "" is a substring of every message, so a pin resolving to it would
+        # reopen the loophole the config-time empty check closes.
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.bind_expected_error({}, {"reason": ""})
+        assert step._report_expected_failure("connection refused") is False
+
+    def test_a_non_string_placeholder_value_does_not_crash_the_match(self):
+        step = self._step(expected_failure=True, expected_error="{{code}}")
+        step.bind_expected_error({}, {"code": 404})
+        assert step._report_expected_failure("HTTP 404 returned") is True
+
+    @pytest.mark.asyncio
+    async def test_the_workflow_executor_binds_before_running_a_step(self):
+        # A dynamic `expected_error` only works if the executor binds it, so
+        # dropping that call must not be a silent regression.
+        from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+
+        step = self._step(expected_failure=True, expected_error="{{reason}}")
+        step.execute = AsyncMock(return_value=True)
+        executor = WorkflowExecutor(
+            {"name": "wf", "steps": [{"type": "join_context", "name": "s"}]},
+            MagicMock(),
+        )
+        executor.dynamic_values["reason"] = "identity downgrade"
+
+        with patch.object(executor, "_create_step_executor", return_value=step):
+            assert await executor._execute_workflow_steps() is True
+
+        assert step._report_expected_failure("identity downgrade forbidden") is True
 
 
 # =============================================================================
@@ -130,24 +246,103 @@ class TestJoinContextExpectedFailure:
     def test_jsonrpc_error_path_passes_when_expected(self):
         """HTTP-200 response carrying a JSON-RPC error envelope is the
         real-world shape merod returns for "context does not belong to any
-        group" — this is the branch we regressed on before the fix."""
+        group" - this is the branch we regressed on before the fix. `ok()`
+        stores the client's return verbatim, so the envelope must be top level.
+        """
         mock_client = MagicMock()
         mock_client.join_context.return_value = {
-            "data": {"error": {"type": "ApiError", "data": "context does not belong"}}
+            "error": {"type": "ApiError", "data": "context does not belong"}
         }
         step = self._setup(expected_failure=True)
         assert self._run_with_mock_client(step, mock_client) is True
 
-    def test_success_with_expected_failure_warns_but_still_passes(self):
-        """Matches the existing `call` semantic: an over-eager
-        expected_failure flag should not convert a passing workflow into a
-        failing one during refactor."""
+    def test_success_with_expected_failure_fails(self):
+        """A negative test whose subject succeeds has been disproven, not
+        proven. Passing here would make every gate the flag guards - the
+        identity-downgrade refusal, the missing-ABI refusal - unable to fail."""
         mock_client = MagicMock()
         mock_client.join_context.return_value = {
             "data": {"contextId": "ctx", "memberPublicKey": "pk"}
         }
         step = self._setup(expected_failure=True)
-        assert self._run_with_mock_client(step, mock_client) is True
+        assert self._run_with_mock_client(step, mock_client) is False
+
+
+class TestUpgradeGroupRefusalGate:
+    """End-to-end on `upgrade_group`: an identity downgrade or a target with no
+    embedded ABI must be refused for the named reason, or the step is red."""
+
+    def _step(self, **extra):
+        return UpgradeGroupStep(
+            {
+                "type": "upgrade_group",
+                "name": "t",
+                "node": "n1",
+                "group_id": "g",
+                "target_application_id": "app-v2",
+                **extra,
+            }
+        )
+
+    def _exec(self, step, client):
+        with (
+            patch.object(
+                step,
+                "_resolve_node_for_client",
+                return_value=("http://localhost:1234", "n1"),
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.group_upgrade.get_client_for_rpc_url",
+                return_value=client,
+            ),
+            patch.object(step, "_resolve_dynamic_value", side_effect=lambda v, *_: v),
+        ):
+            return _run(step.execute({}, {}))
+
+    def _raising(self, message):
+        client = MagicMock()
+        client.upgrade_group.side_effect = RuntimeError(message)
+        return client
+
+    def test_named_refusal_passes(self):
+        step = self._step(
+            expected_failure=True, expected_error="identity downgrade forbidden"
+        )
+        assert self._exec(step, self._raising("identity downgrade forbidden")) is True
+
+    def test_an_unreachable_node_no_longer_stands_in_for_the_refusal(self):
+        # `fail()` files the cause under `exception.message`; matching only the
+        # step's own `error` message would accept any error at all.
+        step = self._step(
+            expected_failure=True, expected_error="identity downgrade forbidden"
+        )
+        assert self._exec(step, self._raising("Connection refused")) is False
+
+    def test_jsonrpc_refusal_reason_is_matched(self):
+        client = MagicMock()
+        client.upgrade_group.return_value = {
+            "error": {"type": "ApiError", "data": "no embedded ABI in target bundle"}
+        }
+        step = self._step(expected_failure=True, expected_error="no embedded ABI")
+        assert self._exec(step, client) is True
+
+    def test_jsonrpc_wrong_reason_fails(self):
+        client = MagicMock()
+        client.upgrade_group.return_value = {
+            "error": {"type": "ApiError", "data": "group not found"}
+        }
+        step = self._step(expected_failure=True, expected_error="no embedded ABI")
+        assert self._exec(step, client) is False
+
+    def test_a_gate_that_lets_the_upgrade_through_now_fails(self):
+        # Before this, a broken refusal gate left the step green with a warning,
+        # so the workflow had no failing guard at all.
+        client = MagicMock()
+        client.upgrade_group.return_value = {"status": "in_progress"}
+        step = self._step(
+            expected_failure=True, expected_error="identity downgrade forbidden"
+        )
+        assert self._exec(step, client) is False
 
 
 class TestCreateNamespaceInvitationUnexpectedShape:
@@ -186,12 +381,10 @@ class TestCreateNamespaceInvitationUnexpectedShape:
             }
         )
 
-    def test_unusable_shape_with_expected_failure_passes(self):
-        # Client returns a string instead of a dict → ok(api_result) wraps it
-        # as {"success": True, "data": "not-a-dict"} and the shape-extraction
-        # block can't find the nested invitation. That path used to hit
-        # return False unconditionally, ignoring expected_failure.
-        assert self._exec(self._step(expected_failure=True), "not-a-dict") is True
+    def test_unusable_shape_with_expected_failure_reports_unexpected_success(self):
+        # The API call itself succeeded (the shape is just unusable), so this is
+        # the unexpected-success verdict rather than a plain failure.
+        assert self._exec(self._step(expected_failure=True), "not-a-dict") is False
 
     def test_unusable_shape_without_flag_still_fails(self):
         assert self._exec(self._step(expected_failure=False), "not-a-dict") is False
@@ -560,17 +753,21 @@ class TestSetMemberCapabilitiesExpectedFailure:
         mock_client = MagicMock()
         mock_client.set_member_capabilities.side_effect = RuntimeError("nope")
         step = self._setup(expected_failure=True)
-        with patch.object(step, "_report_expected_failure") as report:
+        with patch.object(
+            step, "_report_expected_failure", return_value=True
+        ) as report:
             assert self._run_with_mock_client(step, mock_client) is True
             report.assert_called_once()
 
-    def test_success_with_expected_failure_warns_but_passes(self):
+    def test_success_with_expected_failure_fails(self):
         mock_client = MagicMock()
         mock_client.set_member_capabilities.return_value = {"data": "ok"}
         step = self._setup(expected_failure=True)
-        with patch.object(step, "_report_unexpected_success") as warn:
-            assert self._run_with_mock_client(step, mock_client) is True
-            warn.assert_called_once()
+        with patch.object(
+            step, "_report_unexpected_success", return_value=False
+        ) as report:
+            assert self._run_with_mock_client(step, mock_client) is False
+            report.assert_called_once()
 
     def test_exception_path_fails_without_flag(self):
         mock_client = MagicMock()

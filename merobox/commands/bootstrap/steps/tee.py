@@ -159,8 +159,7 @@ class SetTeeAdmissionPolicyStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]set_tee_admission_policy failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -173,7 +172,7 @@ class SetTeeAdmissionPolicyStep(BaseStep):
             f"for group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 
@@ -243,8 +242,7 @@ class TeeFleetJoinStep(BaseStep):
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]tee_fleet_join failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -278,7 +276,7 @@ class TeeFleetJoinStep(BaseStep):
                 f"assert_tee_member is the gate)[/yellow]"
             )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
 

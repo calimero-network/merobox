@@ -221,13 +221,12 @@ class DeleteBlobOnDiskStep(BaseStep):
             f"{verb} ({path})[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True
 
     def _fail(self, message: str, expected_failure: bool) -> bool:
         if expected_failure:
-            self._report_expected_failure(message)
-            return True
+            return self._report_expected_failure(message)
         console.print(f"[red]delete_blob_on_disk failed: {message}[/red]")
         return False
 
@@ -316,14 +315,13 @@ class DeleteBlobStep(BaseStep):
                     f"already absent[/green]"
                 )
                 if expected_failure:
-                    self._report_unexpected_success()
+                    return self._report_unexpected_success()
                 return True
             result = fail(f"delete_blob failed: {e}", error=e)
 
         if not result["success"]:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]delete_blob failed on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
@@ -332,8 +330,9 @@ class DeleteBlobStep(BaseStep):
 
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
-                self._report_expected_failure("JSON-RPC error returned")
-                return True
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
             return False
 
         # client-py returns the flat `BlobDeleteResponse` (`{blob_id, deleted}`).
@@ -342,10 +341,9 @@ class DeleteBlobStep(BaseStep):
         data = result["data"]
         if not isinstance(data, dict):
             if expected_failure:
-                self._report_expected_failure(
+                return self._report_expected_failure(
                     f"unexpected delete_blob response type {type(data).__name__}"
                 )
-                return True
             console.print(
                 f"[red]delete_blob on {node_name}: unexpected response type "
                 f"{type(data).__name__}[/red]"
@@ -360,5 +358,5 @@ class DeleteBlobStep(BaseStep):
             f"[green]✓ delete_blob {blob_id} on {node_name}: deleted={deleted}[/green]"
         )
         if expected_failure:
-            self._report_unexpected_success()
+            return self._report_unexpected_success()
         return True

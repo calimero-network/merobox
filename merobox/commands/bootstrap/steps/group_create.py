@@ -86,8 +86,9 @@ class CreateNamespaceStep(BaseStep):
         if result["success"]:
             if self._check_jsonrpc_error(result["data"]):
                 if expected_failure:
-                    self._report_expected_failure("JSON-RPC error returned")
-                    return True
+                    return self._report_expected_failure(
+                        self._jsonrpc_error_detail(result["data"])
+                    )
                 return False
 
             namespace_data = result["data"]
@@ -113,12 +114,11 @@ class CreateNamespaceStep(BaseStep):
                 f"{dynamic_values.get(f'namespace_id_{node_name}', 'unknown')}[/green]"
             )
             if expected_failure:
-                self._report_unexpected_success()
+                return self._report_unexpected_success()
             return True
         else:
             if expected_failure:
-                self._report_expected_failure(str(result.get("error", "Unknown error")))
-                return True
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]Namespace creation failed on {node_name}: "
                 f"{escape(str(result.get('error', 'Unknown error')))}[/red]"

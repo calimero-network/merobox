@@ -78,8 +78,7 @@ class RefreshStep(BaseStep):
                         f"connectivity error for {node_name}: {escape(str(e))}[/red]"
                     )
                     return False
-                self._report_expected_failure(str(e))
-                return True
+                return self._report_expected_failure(str(e))
             console.print(
                 f"[red]❌ Token refresh failed for {node_name}: {escape(str(e))}[/red]"
             )

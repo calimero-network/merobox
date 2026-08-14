@@ -183,11 +183,6 @@ class ExecuteStep(BaseStep):
                     error_message = result.get("error", "Unknown error")
 
                     if expected_failure:
-                        # This is an expected failure - capture error details and continue
-                        console.print(
-                            f"[yellow]✓ Expected failure occurred: {error_message}[/yellow]"
-                        )
-
                         # Structure error information for export
                         error_info = self._extract_error_info(
                             result, expected=expected_failure
@@ -197,12 +192,13 @@ class ExecuteStep(BaseStep):
                         step_key = f"execute_{node_name}_{method}"
                         workflow_results[step_key] = error_info
 
-                        # Always export error details when expected_failure is True
+                        # Exported even when `expected_error` rejects the verdict
+                        # below, so the mismatch can be diagnosed.
                         self._export_error_variables(
                             error_info, node_name, dynamic_values
                         )
 
-                        return True
+                        return self._report_expected_failure(str(error_message))
                     else:
                         # Unexpected failure - stop workflow
                         console.print(
@@ -239,10 +235,6 @@ class ExecuteStep(BaseStep):
                         result["data"], expected=expected_failure
                     )
                     if expected_failure:
-                        console.print(
-                            "[yellow]✓ Expected failure occurred (JSON-RPC error detected)[/yellow]"
-                        )
-
                         step_key = f"execute_{node_name}_{method}"
                         workflow_results[step_key] = error_info
 
@@ -250,7 +242,9 @@ class ExecuteStep(BaseStep):
                             error_info, node_name, dynamic_values
                         )
 
-                        return True
+                        return self._report_expected_failure(
+                            self._jsonrpc_error_detail(result["data"])
+                        )
                     else:
                         console.print(
                             "[red]❌ Unexpected JSON-RPC error detected[/red]"
@@ -263,7 +257,9 @@ class ExecuteStep(BaseStep):
                 step_key = f"execute_{node_name}_{method}"
                 workflow_results[step_key] = result["data"]
 
-                # If failure was expected but call succeeded, warn the user
+                # `call` alone stays lenient where every other step now fails:
+                # workflows use it as a soft "may not have propagated yet" probe
+                # and depend on the None error exports below.
                 if expected_failure:
                     console.print(
                         "[yellow]⚠️  Warning: Expected failure but call succeeded[/yellow]"

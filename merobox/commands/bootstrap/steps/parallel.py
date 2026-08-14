@@ -593,6 +593,9 @@ class ParallelStep(BaseStep):
                             }
 
                         # Execute the nested step
+                        step_executor.bind_expected_error(
+                            workflow_results, iteration_dynamic_values
+                        )
                         success = await step_executor.execute(
                             workflow_results, iteration_dynamic_values
                         )

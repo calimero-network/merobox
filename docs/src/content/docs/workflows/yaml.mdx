@@ -168,6 +168,25 @@ Every step is a mapping with a `type`. These keys are available on all steps:
 | `type` | yes | string | The step type (one of the catalogue below). |
 | `name` | no | string | Human-readable label shown in output. |
 | `outputs` | no | map | Capture response values into workflow variables — see [capturing outputs](/workflows/engine/#capturing-outputs). |
+| `expected_failure` | no | bool (`false`) | Pass only if the operation is refused. A step that unexpectedly **succeeds** fails. |
+| `expected_error` | no | string | Pass only if the recorded error contains this substring (case-sensitive), `{{placeholders}}` resolved first. Requires `expected_failure: true`. |
+
+Without `expected_error`, `expected_failure: true` accepts any error at all,
+including the node being unreachable standing in for the refusal under test.
+Pin the reason whenever the workflow is gating a specific refusal:
+
+```yaml
+- type: upgrade_group
+  node: calimero-node-1
+  group_id: '{{group_id}}'
+  target_application_id: '{{app_v2}}'
+  expected_failure: true
+  expected_error: 'identity downgrade forbidden'
+```
+
+The `call` step is the one exception to the unexpected-success rule: it keeps
+warning and passing, because workflows use `expected_failure` on a read as a
+soft "may not have propagated yet" probe and rely on its `None` error exports.
 
 Fields specific to each step are documented per type. Placeholder references
 (`{{var}}`, `{{env.VAR}}`) and `${ENV}` expansion are described in the
@@ -1065,6 +1084,38 @@ Poll until a namespace migration finishes, or fail. Same fields as
   context_id: '{{context_id}}'
   force: true
 ```
+
+`get_migration_status` and `assert_migration_complete` flatten the response into
+`target_version`, `expected_members`, `fleet_completed_at`,
+`cohort_pinned_at_hlc`, the rollup counters (`total`, `migrated`, `in_progress`,
+`unknown`, `failed`, `all_migrated`, `members_pending_signature`), and one
+`members` row per cohort member carrying its whole report (`schema_version`,
+`residue_auto`, `synced_up_to_hlc`, `reported_at`, `authored_remaining`,
+`migration_failed`).
+
+Alongside those, merobox recomputes these aggregates from the raw member reports
+rather than reading core's rollup, so an assertion on them can falsify the
+rollup rather than confirm it against itself:
+
+| Output | Meaning |
+| --- | --- |
+| `reported_at_target` | Members whose reported ABI state version is at or above `target_version`. |
+| `reported_below_target` | Members that reported a version *below* the target. |
+| `reported_missing` | Members that reported no usable state version at all. |
+| `min_reported_schema_version` | Lowest reported state version, or `None`. |
+| `residue_total` | Sum of `residue_auto` across members. |
+| `failure_reasons` | Sorted list of the members' `migration_failed` reasons. |
+| `stuck_members` | Sorted peers behind those reasons. |
+
+`report.schema_version` is a **u32 ABI state version**, unlike an application's
+own `schema_info`, which is a semver string compiled into the binary and reports
+which WASM is loaded rather than whether the state was migrated. Assert
+`reported_below_target` to check the latter.
+
+The two target-relative counters are `None` when the response carries no
+`target_version` (a namespace with no upgrade record): defaulting the target to
+`0` would classify every member as at-target and report green for a namespace
+that never migrated.
 
 ---
 

@@ -327,16 +327,16 @@ class TestDownloadBlobExpectedFailure:
         with p1, p2, p3:
             assert _run(step.execute({}, {})) is False
 
-    def test_unexpected_success_still_returns_true_and_exports(self):
-        # Warn-only, matching every other step's `expected_failure` contract —
-        # an over-eager flag must not flip a passing workflow to failing.
+    def test_unexpected_success_fails_but_still_exports(self):
+        # The negative control's premise is that the bytes are NOT here; if they
+        # are it proves nothing. The export still lands, to diagnose the failure.
         step = DownloadBlobStep(self.config)
         client = MagicMock()
         client.download_blob.return_value = _PAYLOAD
         workflow_results = {}
         p1, p2, p3 = self._patched(step, client)
         with p1, p2, p3:
-            assert _run(step.execute(workflow_results, {})) is True
+            assert _run(step.execute(workflow_results, {})) is False
         assert workflow_results["downloaded_blob_node-2"]["sha256"] == _SHA
 
     def test_unresolved_placeholder_fails_even_when_expected(self):
