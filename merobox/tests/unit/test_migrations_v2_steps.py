@@ -449,6 +449,23 @@ class TestReportedSchemaVersions:
             {"members": [_member("peerA", schemaVersion=2)]}
         )
         assert s["failure_reasons"] == []
+        assert s["stuck_members"] == []
+
+    def test_stuck_members_name_the_peers_behind_the_reasons(self):
+        # The reason list says WHAT went wrong; a count plus a reason still
+        # does not say WHICH member is holding the fleet back.
+        s = _summarize_migration_status(
+            {
+                "members": [
+                    _member("peerB", state="failed", migrationFailed="check_aborted"),
+                    _member(
+                        "peerA", state="failed", migrationFailed="no_migration_path"
+                    ),
+                    _member("peerC", schemaVersion=2),
+                ]
+            }
+        )
+        assert s["stuck_members"] == ["peerA", "peerB"]
 
 
 # =============================================================================

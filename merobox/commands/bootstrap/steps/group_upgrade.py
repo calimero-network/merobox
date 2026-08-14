@@ -185,8 +185,9 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     compiled into the binary and answers the same string whether or not the
     state was ever migrated.
 
-    The six `reported_*` / `residue_total` / `failure_reasons` aggregates are
-    recomputed here from the raw member rows and NEVER read from `rollup`. That
+    The `reported_*` / `residue_total` / `failure_reasons` / `stuck_members`
+    aggregates are recomputed here from the raw member rows and NEVER read from
+    `rollup`. That
     is the point of them: `rollup.allMigrated` is core's own answer to "did
     everyone converge", so asserting it against itself cannot falsify the
     rollup arithmetic. Do not "simplify" them back into the rollup fields.
@@ -312,6 +313,15 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         ),
         "residue_total": residue_total,
         "failure_reasons": sorted(failure_reasons),
+        # The peers behind those reasons. `failure_reasons` names WHAT went
+        # wrong; a count plus a reason still does not say WHICH member is
+        # holding the fleet back. Sorted, so it does not depend on member
+        # ordering the API never promised.
+        "stuck_members": sorted(
+            str(member["peer"])
+            for member in members
+            if member["migration_failed"] is not None and member["peer"] is not None
+        ),
         "members": members,
     }
 
