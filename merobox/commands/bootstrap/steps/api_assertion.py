@@ -2,11 +2,9 @@
 Raw admin-API response assertion.
 
 ``calimero-client-py`` is compiled from a pinned core revision and its DTOs drop
-any response key that build does not know about, silently, on deserialize. So a
-field newly added to core reads as missing through every typed step, and a
-brand-new field is indistinguishable from a broken one. This step issues the
-HTTP request itself and asserts against the parsed body, so the assertion sees
-what the node actually sent.
+unknown response keys silently on deserialize, so a field newly added to core
+reads as missing through every typed step. This step issues the HTTP request
+itself and asserts against the parsed body.
 """
 
 from __future__ import annotations
@@ -25,24 +23,21 @@ from merobox.commands.constants import (
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
-# Distinguishes an absent key from one present with a null value. Core marks
-# optional fields `skip_serializing_if = "Option::is_none"`, so omission is the
-# observable difference between None and a value, and collapsing the two would
-# blind the step to exactly the case it exists to test.
+# Core marks optional fields `skip_serializing_if = "Option::is_none"`, so an
+# absent key is the observable difference between None and a value.
 _MISSING = object()
 
 
 def _lookup(payload: Any, path: str) -> Any:
     """Value at a dotted path, or ``_MISSING`` if the path does not exist.
 
-    Unlike ``BaseStep._get_value`` this re-parses nothing on the way down: a
-    string stays a string, so the assertion sees the body verbatim.
+    Unlike ``BaseStep._get_value`` this neither re-parses JSON on the way down
+    nor collapses a missing path to None, so the assertion sees the body verbatim.
     """
     current = payload
     for segment in path.split("."):
         if isinstance(current, list) and segment.isdigit():
-            index = int(segment)
-            if index >= len(current):
+            if (index := int(segment)) >= len(current):
                 return _MISSING
             current = current[index]
         elif isinstance(current, dict) and segment in current:
@@ -55,30 +50,9 @@ def _lookup(payload: Any, path: str) -> Any:
 class AssertApiResponseStep(BaseStep):
     """GET a path on a node's admin API and assert against the JSON it returned.
 
-    Required fields: ``node``, ``path``, and at least one of ``match`` /
-    ``present`` / ``absent``.
-
-    Optional fields:
-    - ``match`` (dict): dotted paths mapped to expected values. ``null`` asserts
-      the key is present AND null, which an absent key does not satisfy.
-    - ``present`` (list): dotted paths that must exist, whatever their value.
-    - ``absent`` (list): dotted paths that must not exist.
-    - ``token`` (str): explicit JWT (supports ``{{placeholders}}``); otherwise
-      the token a prior ``login`` cached for the node, or none at all on a node
-      running without auth.
-
-    Paths address the body verbatim, envelope included: the admin API wraps
-    payloads in ``data`` and serializes camelCase, so a field reads
-    ``data.fleetCompletedAt``.
-
-    One request, no polling - the other assertion steps do not poll either.
-    Compose with ``repeat`` or ``wait_for_sync`` when the assertion has to wait
-    for state to settle.
-
     ``expected_failure`` / ``expected_error`` govern the request outcome only.
-    An assertion that misses always fails the step: a miss satisfying
-    ``expected_failure`` would turn a typo in a path into a green negative
-    test, which is the failure the flag exists to prevent.
+    A missed assertion always fails the step, or a typo'd path would read as a
+    green negative test.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -91,8 +65,6 @@ class AssertApiResponseStep(BaseStep):
         self._validate_dict_field("match", required=False)
         self._validate_list_field("present", required=False, element_type=str)
         self._validate_list_field("absent", required=False, element_type=str)
-        # Iterating a dict yields its keys and a list its elements, so one loop
-        # covers all three fields.
         for field in ("match", "present", "absent"):
             for path in self.config.get(field) or []:
                 if not isinstance(path, str) or not path.strip():
@@ -100,9 +72,8 @@ class AssertApiResponseStep(BaseStep):
                         f"Step '{self._get_step_name()}': '{field}' entries must "
                         f"be non-empty dotted paths into the response body"
                     )
+        # Without an assertion the step would pass unconditionally.
         if not self._assertion_count() and not self._is_expected_failure():
-            # An assertion step with nothing to assert passes unconditionally,
-            # the silent no-op `expected_error` exists to close.
             raise ValueError(
                 f"Step '{self._get_step_name()}': needs at least one of 'match', "
                 f"'present' or 'absent' - without one it asserts nothing"
@@ -131,28 +102,26 @@ class AssertApiResponseStep(BaseStep):
         headers = {"Authorization": f"Bearer {token}"} if token else {}
 
         try:
-            # Off the loop: this is the one step that issues its own HTTP
-            # rather than delegating to the compiled client, so it is the one
-            # that can yield while a `parallel:` sibling runs.
+            # Off the loop: `requests` is synchronous, and this is the one step
+            # issuing its own HTTP, so a `parallel:` sibling must keep running.
             response = await asyncio.to_thread(
                 requests.get,
                 f"{rpc_url.rstrip('/')}/{path.lstrip('/')}",
                 headers=headers,
                 timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT),
             )
-            # The whole 2xx range, not just 200: a route answering 201/204 has
-            # served the request, and rejecting it would report a working
-            # endpoint as an HTTP failure.
+            # The whole 2xx range: a route answering 201/204 has served the
+            # request, and failing it would report a working endpoint as broken.
             if not 200 <= response.status_code < 300:
                 result = fail(
                     f"GET {path} on {node_name} returned HTTP "
                     f"{response.status_code}: {response.text}"
                 )
             else:
-                # json.loads, not _parse_json: its fallbacks would repair a body
-                # the node should not have sent, and hide that it did.
-                result = ok(json.loads(response.text))
-        except json.JSONDecodeError as e:
+                # Raw bytes, not response.text, whose charset requests guesses;
+                # json.loads, not _parse_json, whose repairs would hide a bad body.
+                result = ok(json.loads(response.content))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
             result = fail(f"GET {path} on {node_name} returned a non-JSON body: {e}")
         except Exception as e:
             result = fail(f"GET {path} on {node_name} failed", error=e)

@@ -70,15 +70,29 @@ def _step(**extra):
     return AssertApiResponseStep(config, manager=_manager())
 
 
-def _execute(step, payload, status=200, token=None, workflow_results=None):
-    """Run the step against a canned response, returning (result, get, results)."""
+def _execute(
+    step,
+    payload,
+    status=200,
+    token=None,
+    workflow_results=None,
+    dynamic=None,
+    text=None,
+):
+    """Run the step against a canned response, returning (result, get, results).
+
+    ``text`` overrides only the decoded view, so a test can simulate requests
+    guessing the charset wrong while the transmitted bytes stay correct.
+    """
     auth = MagicMock()
     auth.get_cached_token.return_value = (
         MagicMock(access_token=token) if token else None
     )
+    body = payload if isinstance(payload, str) else json.dumps(payload)
     response = MagicMock()
     response.status_code = status
-    response.text = payload if isinstance(payload, str) else json.dumps(payload)
+    response.content = body.encode()
+    response.text = body if text is None else text
 
     results = workflow_results if workflow_results is not None else {}
     with (
@@ -88,7 +102,7 @@ def _execute(step, payload, status=200, token=None, workflow_results=None):
             return_value=response,
         ) as get,
     ):
-        return _run(step.execute(results, {})), get, results
+        return _run(step.execute(results, dynamic or {})), get, results
 
 
 class TestConcurrency:
@@ -101,7 +115,7 @@ class TestConcurrency:
         auth.get_cached_token.return_value = None
         response = MagicMock()
         response.status_code = 200
-        response.text = json.dumps(_body())
+        response.content = json.dumps(_body()).encode()
 
         def slow_get(*args, **kwargs):
             time.sleep(0.3)
@@ -132,8 +146,9 @@ class TestConcurrency:
             ),
         ):
             assert _run(both()) is True
-        # A blocked loop yields no ticks at all; a free one manages ~30.
-        assert ticks > 10
+        # Exactly 0 if the loop was blocked: nothing before the call awaits, so
+        # the ticker never starts. A count threshold would only time the runner.
+        assert ticks > 0
 
 
 class TestRequest:
@@ -148,21 +163,7 @@ class TestRequest:
 
     def test_the_path_resolves_placeholders(self):
         step = _step(path="/admin-api/namespaces/{{ns}}/x", present=["data"])
-        auth = MagicMock()
-        auth.get_cached_token.return_value = None
-        response = MagicMock()
-        response.status_code = 200
-        response.text = json.dumps(_body())
-        with (
-            patch(
-                "merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth
-            ),
-            patch(
-                "merobox.commands.bootstrap.steps.api_assertion.requests.get",
-                return_value=response,
-            ) as get,
-        ):
-            _run(step.execute({}, {"ns": "deadbeef"}))
+        _, get, _ = _execute(step, _body(), dynamic={"ns": "deadbeef"})
         assert get.call_args[0][0].endswith("/admin-api/namespaces/deadbeef/x")
 
     def test_a_cached_token_is_attached_as_a_bearer_header(self):
@@ -215,21 +216,8 @@ class TestMatch:
 
     def test_a_match_value_resolves_placeholders(self):
         step = _step(match={"data.fleetCompletedAt": "{{stamp}}"})
-        auth = MagicMock()
-        auth.get_cached_token.return_value = None
-        response = MagicMock()
-        response.status_code = 200
-        response.text = json.dumps(_body(fleetCompletedAt="42"))
-        with (
-            patch(
-                "merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth
-            ),
-            patch(
-                "merobox.commands.bootstrap.steps.api_assertion.requests.get",
-                return_value=response,
-            ),
-        ):
-            assert _run(step.execute({}, {"stamp": "42"})) is True
+        body = _body(fleetCompletedAt="42")
+        assert _execute(step, body, dynamic={"stamp": "42"})[0] is True
 
     def test_unlisted_fields_are_ignored(self):
         # A subset test: the body carries four more keys than are asserted.
@@ -334,6 +322,16 @@ class TestTransportFailures:
         assert result is False
         assert "non-JSON body" in capsys.readouterr().out
 
+    def test_a_utf8_body_is_read_from_the_bytes_not_the_guessed_text(self):
+        # requests guesses the charset whenever the response omits it, so
+        # `.text` can arrive mojibaked while the bytes are intact.
+        reason = "quorum perdu à 3 nœuds"
+        # ensure_ascii=False, or the body is pure ASCII escapes and both the
+        # bytes and the mis-decoded text would agree.
+        raw = json.dumps(_body(reason=reason), ensure_ascii=False)
+        step = _step(match={"data.reason": reason})
+        assert _execute(step, raw, text=raw.encode().decode("latin-1"))[0] is True
+
     def test_expected_failure_accepts_a_refused_request(self):
         step = _step(expected_failure=True, expected_error="HTTP 403")
         result, _, _ = _execute(step, "forbidden", status=403)
@@ -387,7 +385,3 @@ class TestValidation:
     def test_match_must_be_a_dict(self):
         with pytest.raises(ValueError, match="match"):
             _step(match=["data"])
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
