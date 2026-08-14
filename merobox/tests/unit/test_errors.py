@@ -332,11 +332,8 @@ class TestErrorHierarchy:
 
 
 def test_all_lists_every_error_class_the_module_defines():
-    """`__all__` is this module's documented API surface, so it cannot drift.
-
-    Naming the two that were missed would only catch those two; enumerating
-    what the module defines catches the next one added as well.
-    """
+    # Enumerated rather than named one by one, so the next class added is
+    # covered too.
     import inspect
 
     from merobox.commands import errors

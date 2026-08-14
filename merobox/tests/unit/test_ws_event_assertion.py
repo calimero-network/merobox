@@ -241,6 +241,23 @@ class TestPositiveAssertion:
         assert "'2.0.0'" in combined
         assert "'1.9.0'" in combined
 
+    def test_an_absent_path_does_not_satisfy_a_null_match(self, capsys):
+        # Absent and present-and-null are different answers, so `match: {x: null}`
+        # may not be satisfied by a frame that never carries x.
+        step = _step(event="MigrationCompleted", match={"data.rolledBackAt": None})
+        result, _ = _execute(step, [_ack(), _migration_completed()])
+        assert result is False
+        assert "data.rolledBackAt: expected None, but the key is absent" in (
+            capsys.readouterr().out
+        )
+
+    def test_an_explicit_null_satisfies_a_null_match(self):
+        step = _step(event="MigrationCompleted", match={"data.rolledBackAt": None})
+        result, _ = _execute(
+            step, [_ack(), _event("MigrationCompleted", {"rolledBackAt": None})]
+        )
+        assert result is True
+
     def test_matching_is_a_subset_so_unlisted_fields_are_ignored(self):
         # Only toStateVersion is asserted; the frame carries three more fields.
         step = _step(match={"data.toStateVersion": 2})

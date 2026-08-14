@@ -326,9 +326,8 @@ class ExecuteStep(BaseStep):
                 "data": Any
             }
         """
-        # Seeded so the four documented error fields are always capturable: a
-        # network-level failure fills in only some of them, and a capture that
-        # depends on which failure occurred is one nobody can write.
+        # Seeded so all four documented error fields stay capturable: a capture
+        # that binds only for some kinds of failure is one nobody can write.
         error_info = {
             "success": False,
             "expected": expected,

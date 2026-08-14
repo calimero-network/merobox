@@ -28,8 +28,7 @@ def _describe_keys(data: Any) -> str:
     if not data:
         return "the response is empty"
     keys = sorted(data)
-    shown = ", ".join(keys[:10])
-    return shown + ("..." if len(keys) > 10 else "")
+    return ", ".join(keys[:10]) + ("..." if len(keys) > 10 else "")
 
 
 class BaseStep:
@@ -1059,9 +1058,8 @@ class BaseStep:
         """
         Export variables based on custom outputs configuration specified by the user.
 
-        A capture the response cannot satisfy raises OutputCaptureError: the
-        placeholder would otherwise stay unbound, and an unbound placeholder
-        reads as the literal string "{{name}}", which satisfies most assertions.
+        A capture the response cannot satisfy raises: the placeholder would stay
+        unbound, and an unbound one reads as the literal "{{name}}".
 
         Args:
             response_data: The API response data
@@ -1093,14 +1091,6 @@ class BaseStep:
             is_error_info = False
             actual_data = response_data
 
-        # An error report carries the error fields, never the ones the call would
-        # have returned, so which half of an `expected_failure` step's captures
-        # can bind depends on the outcome. Failing on the other half would make
-        # that step type impossible to write. The step is already failing loudly
-        # here unless the workflow declared the failure expected, and a capture
-        # that stays unbound is caught where it is used, by the assertion steps.
-        lenient = is_error_info
-
         vprint(
             f"[cyan]📝 Exporting variables from {node_name} response:[/cyan]",
             level=LOG_LEVEL_VERBOSE,
@@ -1111,10 +1101,8 @@ class BaseStep:
                 exported_variable, assigned_var, actual_data, node_name
             )
 
-            # Checked before the capture is required to bind: a protected key
-            # already holds the value the error pass exported, so its
-            # placeholder is bound and the second pass has nothing to demand
-            # from a payload that was never going to carry that field.
+            # Before the bind is required: a protected key is already bound by
+            # the error pass, so the second payload owes it nothing.
             if target_key in protected_keys:
                 console.print(
                     f"[yellow]⚠️  Skipped export to protected key '{target_key}' (error field export)[/yellow]"
@@ -1122,7 +1110,9 @@ class BaseStep:
                 continue
 
             if value is _MISSING:
-                if lenient:
+                # An error report carries the error fields and never the call's
+                # own, so `expected_failure` captures bind one half per outcome.
+                if is_error_info:
                     vprint(
                         f"[yellow]   ⚠️  {exported_variable}: '{source}' not in the "
                         f"response, left unset[/yellow]",
@@ -1157,13 +1147,12 @@ class BaseStep:
     ) -> tuple[str, str, Any]:
         """Read one `outputs:` entry, as ``(source, target_key, value)``.
 
-        Dispatch only - the caller owns the single verdict on what an
-        unbindable value means, so the protected / absent / lenient rules stay
-        in one place instead of once per capture form.
+        Dispatch only - the caller owns the verdict on an unbindable value, so
+        that rule stays in one place instead of once per capture form.
         """
         if isinstance(assigned_var, str):
-            # Unified _get_value for both simple keys and dotted paths; it
-            # parses JSON at each path segment.
+            # _get_value takes simple keys and dotted paths alike, parsing JSON
+            # at each segment.
             return (
                 assigned_var,
                 exported_variable,
@@ -1530,10 +1519,8 @@ class BaseStep:
     ) -> str:
         """Resolve dynamic values using placeholders and captured results.
 
-        Under `strict_placeholders` a placeholder that resolved to nothing raises
-        instead of surviving as its own text. Every unresolved branch below hands
-        the input straight back, so identity is the reliable signal that nothing
-        bound - there is no single return to hang the check on.
+        Every unresolved branch below hands the input straight back, so identity
+        is the only reliable signal that nothing bound.
         """
         resolved = self._resolve_dynamic_value_impl(
             value, workflow_results, dynamic_values
@@ -1802,9 +1789,8 @@ class BaseStep:
     ) -> str:
         """Resolve a single placeholder without the {{}} wrapper.
 
-        An embedded placeholder that resolves to nothing is replaced by its own
-        NAME, braces and all gone, so a later scan for `{{` cannot see it. That is
-        why strictness lives here rather than on the resolved string.
+        An embedded miss is substituted as its own NAME, braces gone, so a scan
+        of the resolved string cannot find it - hence the check here.
         """
         resolved = self._resolve_single_placeholder_impl(
             placeholder, workflow_results, dynamic_values

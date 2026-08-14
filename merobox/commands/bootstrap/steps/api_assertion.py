@@ -91,8 +91,7 @@ class AssertApiResponseStep(BaseStep):
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         # A placeholder that never bound is this step's own verdict, not a
-        # crash for the executor to reformat. `path` resolves here and `match`
-        # values resolve later, so the catch wraps the whole assertion.
+        # crash. `path` and `match` resolve at different depths, so wrap both.
         try:
             return await self._assert(workflow_results, dynamic_values)
         except UnresolvedPlaceholderError as e:

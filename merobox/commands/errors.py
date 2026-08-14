@@ -194,8 +194,7 @@ class StepExecutionError(WorkflowError):
 class OutputCaptureError(WorkflowError):
     """Raised when an `outputs:` entry names a field the response does not have.
 
-    A capture that cannot be satisfied leaves its placeholder unbound, and an
-    unbound placeholder satisfies most assertions, so this has to stop the step.
+    An unbound placeholder satisfies most assertions, so this stops the step.
     """
 
     def __init__(
@@ -217,8 +216,7 @@ class OutputCaptureError(WorkflowError):
 class UnresolvedPlaceholderError(WorkflowError):
     """Raised when a `{{placeholder}}` in an assertion never resolved.
 
-    Comparing against an unresolved placeholder compares against its own text,
-    which passes almost anything.
+    The comparison is then against its own text, which passes almost anything.
     """
 
     def __init__(
