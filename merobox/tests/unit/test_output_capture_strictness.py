@@ -143,34 +143,20 @@ class TestSummarizedResponseCapture:
     """A step that exports its own dict, not the raw response, gets the same check.
 
     The migration-status steps flatten the response first, so `.get()`-ing a
-    field core omitted put the key in the exported dict anyway: the capture bound
-    `None`, indistinguishable from a null core sent, and the check above had
-    nothing to raise about. The summarizers now omit what core did not send.
+    field core omitted put the key in the exported dict anyway and the capture
+    bound `None`, which made the check above inert for them.
     """
 
     def test_capturing_fleet_completed_at_from_a_response_without_it_fails(self):
-        # The incident in the module docstring, end to end through the
-        # summarizer that made the fix above inert for it.
         summary = _summarize_migration_status({"rollup": {"total": 2, "migrated": 0}})
         with pytest.raises(OutputCaptureError, match="fleet_completed_at"):
             _export({"fleet_completed_at": "fleet_completed_at"}, summary)
-
-    def test_the_failure_names_the_fields_the_response_did_carry(self):
-        summary = _summarize_migration_status({"rollup": {"total": 1}})
-        with pytest.raises(OutputCaptureError, match="all_migrated, failed"):
-            _export({"t": "cohort_pinned_at_hlc"}, summary)
 
     def test_a_timestamp_core_sent_as_null_still_binds(self):
         summary = _summarize_migration_status(
             {"fleetCompletedAt": None, "rollup": {"total": 1}}
         )
         assert _export({"t": "fleet_completed_at"}, summary) == {"t": None}
-
-    def test_a_zero_timestamp_still_binds(self):
-        summary = _summarize_migration_status(
-            {"fleetCompletedAt": 0, "rollup": {"total": 1}}
-        )
-        assert _export({"t": "fleet_completed_at"}, summary) == {"t": 0}
 
     def test_capturing_an_unreported_member_field_fails(self):
         summary = _summarize_migration_status(

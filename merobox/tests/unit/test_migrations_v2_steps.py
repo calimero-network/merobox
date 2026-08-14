@@ -137,8 +137,8 @@ class TestSummarizeMigrationStatus:
 
     def test_an_unconverged_namespace_omits_the_key_entirely(self):
         # Core omits the key rather than sending 0, and 0 is a valid unix
-        # timestamp, so absent must not collapse into it — nor into a null,
-        # which a capture would happily bind.
+        # timestamp, so absent must not collapse into it, nor into a null that
+        # a capture would happily bind.
         s = _summarize_migration_status({"rollup": _rollup(total=2)})
         assert "fleet_completed_at" not in s
         assert "cohort_pinned_at_hlc" not in s
@@ -471,8 +471,8 @@ class TestAbsentReportFieldsStayOutOfTheAggregates:
     """A report field core did not send must not reach a counter as a zero.
 
     The aggregates are the only member-level evidence that can falsify the
-    rollup, so an unreported field arriving as 0 would put the false green back
-    in the one place there is nothing left to cross-check it against.
+    rollup, so a 0 standing in for an unreported field puts the false green
+    back where nothing is left to cross-check it against.
     """
 
     def test_an_unreported_version_is_missing_not_a_zero_at_target(self):
@@ -496,9 +496,8 @@ class TestAbsentReportFieldsStayOutOfTheAggregates:
             }
         )
         assert s["residue_total"] == 3
-        # `residue_total` alone cannot tell a drained cohort from a silent one;
-        # `reported_missing` is the companion signal that can, which is why a
-        # workflow asserting the drain has to assert both.
+        # `residue_total` alone cannot tell a drained cohort from a silent one,
+        # so a workflow asserting the drain has to assert both.
         assert s["reported_missing"] == 1
 
     def test_an_absent_failure_reason_is_not_stringified(self):

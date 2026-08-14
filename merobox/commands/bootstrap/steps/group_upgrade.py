@@ -82,9 +82,9 @@ def _client_py_below(min_version: tuple[int, int, int]) -> bool:
 def _drop_absent(summary: dict[str, Any]) -> dict[str, Any]:
     """Drop the `_MISSING`-marked keys, so a capture of one raises instead of binding.
 
-    A summary key is merobox's invention, so `.get()`-ing an absent response
-    field makes it always bindable; leaving it out routes it back through the
-    absent-key check `_export_custom_outputs` applies to a raw response.
+    A summary key is merobox's invention: `.get()`-ing an absent response field
+    would make it bindable, where omitting it hits the same absent-key check
+    `_export_custom_outputs` applies to a raw response.
     """
     return {key: value for key, value in summary.items() if value is not _MISSING}
 
@@ -111,10 +111,8 @@ def _summarize_cascade_status(response: Any) -> dict[str, Any]:
     `outputs:`. Keeping the list under `groups` leaves the whole summary
     addressable.
 
-    `groups` mirrors core's `data`, so a response that carried no list at all
-    omits it rather than offering an empty one: the counters are honestly
-    derived from nothing, but `groups: []` would claim core answered with an
-    empty subtree.
+    `groups` mirrors core's `data`, so a response carrying no list omits it:
+    `groups: []` would claim core answered with an empty subtree.
     """
     raw_entries = response.get("data") if isinstance(response, dict) else None
     entries: list[Any] = raw_entries if isinstance(raw_entries, list) else []
@@ -157,8 +155,8 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     `all_migrated`) alongside one `members` row per cohort member
     (`{peer, report?, state}`). This lifts the rollup counters to the top level
     (so `outputs:` can address them without an `all_migrated` envelope), answers
-    `all_migrated` from core's flag reconciled against the member rows, and
-    re-attaches a compact per-member list under `members` carrying each member's `state` plus
+    `all_migrated` from core's flag reconciled against the rows, and re-attaches a
+    compact per-member list under `members` carrying each member's `state` plus
     the `migration_failed` reason from its report (a stranded member surfaces as
     `state:"failed"`). Counter keys are coerced to ints with a 0 default so a
     missing/partial rollup degrades to an all-zero (never-complete) summary
@@ -174,35 +172,32 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     entirely (an explicit `0` cohort is preserved).
 
     `target_version`, `expected_members`, `fleet_completed_at` and
-    `cohort_pinned_at_hlc` are the top-level pass-throughs, and each is OMITTED
-    from the summary when the response omits it (`_drop_absent`) rather than
-    offered as `None`. `fleet_completed_at` is the durable answer to "did this
-    fleet ever converge": `all_migrated` is recomputed from in-TTL heartbeats
-    and lapses when a converged member goes quiet, while the timestamp does not
-    follow it back down. Absent must therefore stay distinguishable both from
-    `0` (so neither goes through `_as_int`) and from a null core did send, which
-    is what the omission buys — a capture of a field a pre-convergence node
-    never sent fails naming that field instead of binding `None`.
+    `cohort_pinned_at_hlc` are the top-level pass-throughs, each OMITTED when
+    the response omits it (`_drop_absent`) rather than offered as `None`.
+    `fleet_completed_at` is the durable answer to "did this fleet ever
+    converge": `all_migrated` is recomputed from in-TTL heartbeats and lapses
+    when a converged member goes quiet, while the timestamp does not follow it
+    back down. Absent must therefore stay distinct from `0` (so it skips
+    `_as_int`) and from a null core did send, which a capture cannot tell apart.
 
     Each member row carries its whole report (`schema_version`, `residue_auto`,
-    `synced_up_to_hlc`, `reported_at`, `authored_remaining`) passed through
-    raw, and omits the ones the report did not carry, on the same rule. A
-    member that has not reported at all therefore yields a row of `peer` and
-    `state` alone. `report.schemaVersion` is the ABI *state* version of the
-    bytes a member actually holds, which is the only member-level evidence that
-    a state migration ran; the app's own `schema_info` is a constant compiled
-    into the binary and answers the same string whether or not the state was
-    ever migrated.
+    `synced_up_to_hlc`, `reported_at`, `authored_remaining`) passed through raw,
+    omitting the ones the report did not carry, on the same rule: a member that
+    never reported yields a row of `peer` and `state` alone.
+    `report.schemaVersion` is the ABI *state* version of the bytes a member
+    actually holds, which is the only member-level evidence that a state
+    migration ran; the app's own `schema_info` is a constant compiled into the
+    binary and answers the same string whether or not the state was ever
+    migrated.
 
     The six `reported_*` / `residue_total` / `failure_reasons` aggregates are
     recomputed here from the raw member rows and NEVER read from `rollup`. That
     is the point of them: `rollup.allMigrated` is core's own answer to "did
     everyone converge", so asserting it against itself cannot falsify the
-    rollup arithmetic. Do not "simplify" them back into the rollup fields. They
-    are computed from the raw report values, so the omission above never enters
-    their arithmetic as a zero: `_opt_int` rejects the absence marker like any
-    non-int, and an absent `migrationFailed` is tested for explicitly so it
-    cannot stringify into `failure_reasons`.
+    rollup arithmetic. Do not "simplify" them back into the rollup fields. The
+    omission above never enters their arithmetic as a zero: `_opt_int` rejects
+    the absence marker like any non-int, and an absent `migrationFailed` is
+    tested for explicitly so it cannot stringify into `failure_reasons`.
 
     `reported_at_target` / `reported_below_target` are `None` when the response
     carries no `targetVersion` (a namespace with no upgrade record). Defaulting
@@ -242,10 +237,9 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         schema_version = report.get("schemaVersion", _MISSING)
         residue_auto = report.get("residueAuto", _MISSING)
         reason = report.get("migrationFailed", _MISSING)
-        # The aggregates below take these raw values, and `_MISSING` is not an
-        # int, so `_opt_int` rejects it the way it rejects any non-int: an
-        # unreported version lands in `reported_missing` rather than arriving as
-        # a zero that reads as at-target.
+        # `_MISSING` is not an int, so `_opt_int` rejects it like any non-int:
+        # an unreported version lands in `reported_missing` rather than in a
+        # zero that reads as at-target.
         version = _opt_int(schema_version)
         if version is not None:
             reported_versions.append(version)
@@ -299,8 +293,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
 
     return _drop_absent(
         {
-            # The four top-level pass-throughs: absent stays absent rather than
-            # becoming a 0 (`_as_int`) or a null. See the docstring.
+            # Absent stays absent, never a 0 (`_as_int`) or a null. See docstring.
             "target_version": source.get("targetVersion", _MISSING),
             "expected_members": source.get("expectedMembers", _MISSING),
             "fleet_completed_at": source.get("fleetCompletedAt", _MISSING),

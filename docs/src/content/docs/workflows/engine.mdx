@@ -153,7 +153,7 @@ A source the response does not carry **fails the step**.
 A capture that silently produced nothing would leave its placeholder unbound, and an unbound placeholder reaches later steps as the literal text `{{name}}`, which satisfies most assertions.
 Capturing a field that is present and `null` is fine - absent and null are different answers.
 
-Steps that roll a response up before exporting it — the cascade and migration status steps — carry that distinction into their summary, leaving a field the node did not send out of the summary rather than offering it as `null`.
+The cascade and migration status steps roll a response up before exporting it, and carry that distinction into their summary: a field the node did not send is left out rather than offered as `null`.
 So capturing `fleet_completed_at` from a node that has not converged fails naming the field, instead of binding a `null` no assertion can tell from a real one.
 
 The one exception is a step whose call failed: an error report carries the error fields and never the ones the call itself would have returned, so on that path a capture that cannot bind is skipped rather than fatal.

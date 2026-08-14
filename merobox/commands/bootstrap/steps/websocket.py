@@ -526,7 +526,11 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
     def _match_failures(
         self, frame: dict[str, Any], match_spec: dict[str, Any]
     ) -> list[str]:
-        """Per-path mismatches; empty means the frame satisfies ``match``."""
+        """Per-path mismatches; empty means the frame satisfies ``match``.
+
+        ``lookup``, not ``_get_value``: an absent path is not null, and a node's
+        literal ``"null"`` string must not be re-parsed into one.
+        """
         failures = []
         for path, expected in match_spec.items():
             # Absent and present-and-null are different answers: without the
