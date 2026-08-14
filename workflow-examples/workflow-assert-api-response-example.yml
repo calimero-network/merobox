@@ -25,17 +25,21 @@ steps:
     outputs:
       namespace_id: namespaceId
 
-  # A namespace nobody has upgraded: the rollup exists, and the fields core
-  # only serializes for an active upgrade are genuinely absent.
+  # A namespace nobody has upgraded. `fleetCompletedAt` is stamped only when a
+  # fleet converges, and core marks it skip_serializing_if_none, so its absence
+  # here is a fact - distinct from present-and-null, which is what the typed
+  # client used to manufacture.
   - name: Assert the untouched migration-status shape
     type: assert_api_response
     node: calimero-node-1
-    path: '/admin-api/namespaces/{{namespace_id}}/migration-status'
+    path: '/admin-api/groups/{{namespace_id}}/migration-status'
+    match:
+      rollup.total: 1
     present:
-      - data.rollup
-      - data.members
+      - rollup.allMigrated
+      - members
     absent:
-      - data.targetVersion
+      - fleetCompletedAt
 
   # The same read through the typed client. It agreeing with the raw body is
   # what makes a later disagreement mean a dropped field rather than a defect.

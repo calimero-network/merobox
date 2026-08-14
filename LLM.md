@@ -631,15 +631,15 @@ deserializer.
 ```yaml
 - type: assert_api_response
   node: calimero-node-1
-  path: "/admin-api/namespaces/{{namespace_id}}/migration-status"
+  path: "/admin-api/groups/{{namespace_id}}/migration-status"
   match:
-    data.rollup.allMigrated: true
+    rollup.allMigrated: true
   present:
-    - data.fleetCompletedAt
+    - fleetCompletedAt
 ```
 
 Paths address the body verbatim, envelope included: the admin API wraps payloads
-in `data` and serializes camelCase, so a field reads `data.fleetCompletedAt`.
+directly, camelCase, with no envelope, so a field reads `fleetCompletedAt`.
 `match` is a subset test, so unlisted fields are ignored.
 
 Core marks optional fields `skip_serializing_if = "Option::is_none"`, so a key

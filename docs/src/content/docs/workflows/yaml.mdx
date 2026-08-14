@@ -1481,18 +1481,18 @@ never hands the body to a typed deserializer.
 | `token` | no | string | Explicit JWT (otherwise the token `login` cached for the node). |
 
 At least one of `match` / `present` / `absent` is required, so a step can never
-silently assert nothing. Paths address the body verbatim, envelope included: the
-admin API wraps payloads in `data` and serializes camelCase, so a field reads
-`data.fleetCompletedAt`.
+silently assert nothing. Paths address the body verbatim: the admin API
+serializes its payload directly, camelCase, with no envelope, so a field reads
+`fleetCompletedAt`.
 
 ```yaml
 - type: assert_api_response
   node: calimero-node-1
-  path: '/admin-api/namespaces/{{namespace_id}}/migration-status'
+  path: '/admin-api/groups/{{namespace_id}}/migration-status'
   match:
-    data.rollup.allMigrated: true
+    rollup.allMigrated: true
   present:
-    - data.fleetCompletedAt
+    - fleetCompletedAt
 ```
 
 Core marks optional fields `skip_serializing_if = "Option::is_none"`, so a key
@@ -1502,12 +1502,12 @@ rejects one, and `match: {path: null}` demands the key be there *and* null - an
 absent key fails it and is reported as absent, not as null.
 
 ```yaml
-# A namespace with no upgrade record must not emit the field at all.
+# A namespace whose fleet never converged must not emit the stamp at all.
 - type: assert_api_response
   node: calimero-node-1
-  path: '/admin-api/namespaces/{{namespace_id}}/migration-status'
+  path: '/admin-api/groups/{{namespace_id}}/migration-status'
   absent:
-    - data.targetVersion
+    - fleetCompletedAt
 ```
 
 A failure prints the per-path verdict and then the whole response body, so CI
