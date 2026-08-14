@@ -38,6 +38,7 @@ class JoinNamespaceStep(BaseStep):
         Available variables from join_namespace API response:
         - namespaceId: ID of the namespace joined
         - memberIdentity: Member identity public key after joining
+        - memberAccount: Account that key joined as
         """
         return [
             (
@@ -49,6 +50,14 @@ class JoinNamespaceStep(BaseStep):
                 "memberIdentity",
                 "join_member_identity_{node_name}",
                 "Member identity after joining the namespace",
+            ),
+            # Member-addressing endpoints take this, not the key: governance rows
+            # are keyed by account, and the two encodings deliberately differ so
+            # one cannot be passed where the other belongs.
+            (
+                "memberAccount",
+                "join_member_account_{node_name}",
+                "Account the joining key speaks for (64 hex characters)",
             ),
         ]
 

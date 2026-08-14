@@ -358,7 +358,12 @@ Join a namespace using an invitation. Deprecated alias: `join_group`.
   invitation: '{{invitation}}'
   outputs:
     member_identity: memberIdentity
+    member_account: memberAccount
 ```
+
+`memberIdentity` is the bs58 key the node signs with; `memberAccount` is the
+64-hex account governance rows are keyed by. They are different values and are
+not interchangeable — see [Naming a member](#naming-a-member).
 
 ### create_group_in_namespace
 
@@ -421,6 +426,17 @@ Read-only lookups. Each takes `node` plus the id shown.
 
 ## Membership & capabilities steps
 
+### Naming a member
+
+A node has two ids in a namespace and they are not interchangeable.
+Its **signing key** is bs58; its **account** is 64 hex characters, and that is the principal governance rows are keyed by.
+The encodings differ on purpose, so passing one where the other belongs is a `400` rather than a silent no-op.
+
+Read them from `join_namespace` (`memberIdentity` / `memberAccount`) or `get_namespace_identity` (`publicKey` / `account`).
+
+Use the **account** for `member_id` on every member-addressing step, and for `remove_group_members`.
+Use the **key** for `add_group_members`' `identity` and for any `requester` field.
+
 ### add_group_members
 
 Add members with roles to a group.
@@ -429,7 +445,7 @@ Add members with roles to a group.
 | --- | --- | --- | --- |
 | `node` | yes | string | Target node. |
 | `group_id` | yes | string | Group to add to. |
-| `members` | yes | list of `{identity, role}` | Members and their roles. |
+| `members` | yes | list of `{identity, role}` | Members and their roles. `identity` is a signing key, not an account. |
 
 ```yaml
 - type: add_group_members
@@ -442,14 +458,14 @@ Add members with roles to a group.
 
 ### remove_group_members
 
-Remove members. Fields: `node`, `group_id`, `members` (list of public keys).
+Remove members. Fields: `node`, `group_id`, `members` (list of accounts).
 
 ```yaml
 - type: remove_group_members
   node: calimero-node-1
   group_id: '{{group_id}}'
   members:
-    - '{{member_pub}}'
+    - '{{member_account}}'
 ```
 
 ### update_member_role
@@ -461,7 +477,7 @@ Change a member's role. Fields: `node`, `group_id`, `member_id`, `role`
 - type: update_member_role
   node: calimero-node-1
   group_id: '{{group_id}}'
-  member_id: '{{member_pub}}'
+  member_id: '{{member_account}}'
   role: Admin
 ```
 
@@ -474,7 +490,7 @@ Set a member's capability bitmask. Fields: `node`, `group_id`, `member_id`,
 - type: set_member_capabilities
   node: calimero-node-1
   group_id: '{{group_id}}'
-  member_id: '{{member_pub}}'
+  member_id: '{{member_account}}'
   capabilities: 7
 ```
 
@@ -498,7 +514,7 @@ Toggle a member's auto-follow flags for new contexts and nested subgroups.
 | --- | --- | --- | --- |
 | `node` | yes | string | Target node. |
 | `group_id` | yes | string | Group. |
-| `member_id` | yes | string | Target member public key. |
+| `member_id` | yes | string | Target member account (64 hex). |
 | `auto_follow_contexts` | yes | bool | Auto-join new contexts in this group. |
 | `auto_follow_subgroups` | yes | bool | Self-admit into nested subgroups. |
 | `requester` | no | string | Admin or self public key to act as. |
@@ -507,7 +523,7 @@ Toggle a member's auto-follow flags for new contexts and nested subgroups.
 - type: set_member_auto_follow
   node: calimero-node-1
   group_id: '{{group_id}}'
-  member_id: '{{member_pub}}'
+  member_id: '{{member_account}}'
   auto_follow_contexts: true
   auto_follow_subgroups: false
 ```
