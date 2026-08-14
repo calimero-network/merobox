@@ -560,6 +560,26 @@ class TestWebSocketTokenRedaction:
         assert "acc.jwt.tok" not in out
         assert "token=***" in out
 
+    # Masking is not enough on its own: both paths interpolate into [red] tags,
+    # so a bracketed message (a multiaddr is the common case) must also be
+    # escaped or Rich parses it as a malformed tag and raises instead of
+    # reporting.
+    def test_a_bracketed_handshake_error_is_reported_not_parsed(self, capsys):
+        async def ws_connect(url):
+            raise _handshake_error(500, "[/ip4/127.0.0.1/tcp/2428]")
+
+        result, out = self._run_with(self._step(), ws_connect, capsys)
+        assert result is False
+        assert "/ip4/127.0.0.1/tcp/2428" in out
+
+    def test_a_bracketed_transport_error_is_reported_not_parsed(self, capsys):
+        async def ws_connect(url):
+            raise aiohttp.ClientError("no route to [/ip4/127.0.0.1/tcp/2428]")
+
+        result, out = self._run_with(self._step(), ws_connect, capsys)
+        assert result is False
+        assert "/ip4/127.0.0.1/tcp/2428" in out
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
