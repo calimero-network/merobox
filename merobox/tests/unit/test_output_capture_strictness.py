@@ -14,6 +14,10 @@ import pytest
 from merobox.commands.bootstrap.steps.assertion import AssertStep
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
+from merobox.commands.bootstrap.steps.group_upgrade import (
+    _summarize_cascade_status,
+    _summarize_migration_status,
+)
 from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.errors import OutputCaptureError, UnresolvedPlaceholderError
 
@@ -134,6 +138,55 @@ class TestMissingCaptureFails:
         bound = _export({"r": "result", "t": "error_type"}, error_info)
         assert bound == {"t": "FunctionCallError"}
 
+
+class TestSummarizedResponseCapture:
+    """A step that exports its own dict, not the raw response, gets the same check.
+
+    The migration-status steps flatten the response first, so `.get()`-ing a
+    field core omitted put the key in the exported dict anyway and the capture
+    bound `None`, which made the check above inert for them.
+    """
+
+    def test_capturing_fleet_completed_at_from_a_response_without_it_fails(self):
+        summary = _summarize_migration_status({"rollup": {"total": 2, "migrated": 0}})
+        with pytest.raises(OutputCaptureError, match="fleet_completed_at"):
+            _export({"fleet_completed_at": "fleet_completed_at"}, summary)
+
+    def test_a_timestamp_core_sent_as_null_still_binds(self):
+        summary = _summarize_migration_status(
+            {"fleetCompletedAt": None, "rollup": {"total": 1}}
+        )
+        assert _export({"t": "fleet_completed_at"}, summary) == {"t": None}
+
+    def test_capturing_an_unreported_member_field_fails(self):
+        summary = _summarize_migration_status(
+            {"targetVersion": 2, "members": [{"peer": "a", "state": "unknown"}]}
+        )
+        with pytest.raises(OutputCaptureError, match="members.0.schema_version"):
+            _export({"v": "members.0.schema_version"}, summary)
+
+    def test_a_reported_member_field_still_binds(self):
+        summary = _summarize_migration_status(
+            {
+                "targetVersion": 2,
+                "members": [
+                    {"peer": "a", "state": "migrated", "report": {"schemaVersion": 2}}
+                ],
+            }
+        )
+        assert _export({"v": "members.0.schema_version"}, summary) == {"v": 2}
+
+    def test_capturing_cascade_groups_fails_when_core_sent_no_list(self):
+        with pytest.raises(OutputCaptureError, match="groups"):
+            _export({"g": "groups"}, _summarize_cascade_status({"error": "boom"}))
+
+    def test_an_empty_cascade_subtree_still_binds_an_empty_list(self):
+        assert _export({"g": "groups"}, _summarize_cascade_status({"data": []})) == {
+            "g": []
+        }
+
+
+class TestErrorPayloadCaptureContract:
     def test_every_documented_error_field_is_capturable(self):
         # A capture that binds for a JSON-RPC error but not a connection refusal
         # is unwritable, so all four fields are present, null where unknown.

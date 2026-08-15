@@ -22,7 +22,7 @@ from typing import Any
 
 from rich.markup import escape
 
-from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.bootstrap.steps.base import _MISSING, BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, vprint
@@ -79,6 +79,16 @@ def _client_py_below(min_version: tuple[int, int, int]) -> bool:
     return _CLIENT_PY_VERSION is not None and _CLIENT_PY_VERSION < min_version
 
 
+def _drop_absent(summary: dict[str, Any]) -> dict[str, Any]:
+    """Drop the `_MISSING`-marked keys, so a capture of one raises instead of binding.
+
+    A summary key is merobox's invention: `.get()`-ing an absent response field
+    would make it bindable, where omitting it hits the same absent-key check
+    `_export_custom_outputs` applies to a raw response.
+    """
+    return {key: value for key, value in summary.items() if value is not _MISSING}
+
+
 def _summarize_cascade_status(response: Any) -> dict[str, Any]:
     """Roll a `get_cascade_status` response up into per-status counts.
 
@@ -100,10 +110,12 @@ def _summarize_cascade_status(response: Any) -> dict[str, Any]:
     as an envelope to unwrap, which would hide the count fields from
     `outputs:`. Keeping the list under `groups` leaves the whole summary
     addressable.
+
+    `groups` mirrors core's `data`, so a response carrying no list omits it:
+    `groups: []` would claim core answered with an empty subtree.
     """
-    entries: list[Any] = []
-    if isinstance(response, dict) and isinstance(response.get("data"), list):
-        entries = response["data"]
+    raw_entries = response.get("data") if isinstance(response, dict) else None
+    entries: list[Any] = raw_entries if isinstance(raw_entries, list) else []
 
     completed = 0
     failed = 0
@@ -117,14 +129,16 @@ def _summarize_cascade_status(response: Any) -> dict[str, Any]:
             failed += 1
 
     total = len(entries)
-    return {
-        "total": total,
-        "completed": completed,
-        "failed": failed,
-        "pending": total - completed - failed,
-        "all_completed": total > 0 and completed == total,
-        "groups": entries,
-    }
+    return _drop_absent(
+        {
+            "total": total,
+            "completed": completed,
+            "failed": failed,
+            "pending": total - completed - failed,
+            "all_completed": total > 0 and completed == total,
+            "groups": entries if isinstance(raw_entries, list) else _MISSING,
+        }
+    )
 
 
 def _opt_int(value: Any) -> int | None:
@@ -140,8 +154,8 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     (`rollup`: migrated / in_progress / unknown / failed / total +
     `all_migrated`) alongside one `members` row per cohort member
     (`{peer, report?, state}`). This lifts the rollup counters to the top level
-    (so `outputs:` can address them without an `all_migrated` envelope), faithfully
-    passes through core's authoritative `all_migrated` flag, and re-attaches a
+    (so `outputs:` can address them without an `all_migrated` envelope), answers
+    `all_migrated` from core's flag reconciled against the rows, and re-attaches a
     compact per-member list under `members` carrying each member's `state` plus
     the `migration_failed` reason from its report (a stranded member surfaces as
     `state:"failed"`). Counter keys are coerced to ints with a 0 default so a
@@ -157,32 +171,54 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     `total` falls back to the member count only when the rollup omits it
     entirely (an explicit `0` cohort is preserved).
 
-    `fleet_completed_at` and `cohort_pinned_at_hlc` are the two top-level
-    optionals, passed through as `None` when the response omits them.
+    `target_version`, `expected_members`, `fleet_completed_at` and
+    `cohort_pinned_at_hlc` are the top-level pass-throughs, each OMITTED when
+    the response omits it (`_drop_absent`) rather than offered as `None`.
     `fleet_completed_at` is the durable answer to "did this fleet ever
     converge": `all_migrated` is recomputed from in-TTL heartbeats and lapses
     when a converged member goes quiet, while the timestamp does not follow it
-    back down. Absent must therefore stay distinguishable from `0`, so neither
-    goes through `_as_int`.
+    back down. Absent must therefore stay distinct from `0` (so it skips
+    `_as_int`) and from a null core did send, which a capture cannot tell apart.
 
-    The `reported_*` / `residue_total` / `failure_reasons` / `stuck_members`
-    aggregates are recomputed from the raw member rows and NEVER read from
-    `rollup`: asserting core's own convergence answer against itself cannot
-    falsify it. Do not "simplify" them back into the rollup fields.
-    `report.schemaVersion` is the ABI *state* version a member actually holds,
-    the only member-level evidence a migration ran - the app's `schema_info` is
-    a constant compiled into the binary. A missing or non-integer version counts
-    as `reported_missing`, the direction that cannot manufacture a green result,
-    and the two target-relative counters stay `None` with no `targetVersion` so
-    a namespace that never migrated is not reported as fully at-target.
+    Each member row carries its whole report (`schema_version`, `residue_auto`,
+    `synced_up_to_hlc`, `reported_at`, `authored_remaining`) passed through raw,
+    omitting the ones the report did not carry, on the same rule: a member that
+    never reported yields a row of `peer` and `state` alone.
+    `report.schemaVersion` is the ABI *state* version of the bytes a member
+    actually holds, which is the only member-level evidence that a state
+    migration ran; the app's own `schema_info` is a constant compiled into the
+    binary and answers the same string whether or not the state was ever
+    migrated.
+
+    The six `reported_*` / `residue_total` / `failure_reasons` aggregates are
+    recomputed here from the raw member rows and NEVER read from `rollup`. That
+    is the point of them: `rollup.allMigrated` is core's own answer to "did
+    everyone converge", so asserting it against itself cannot falsify the
+    rollup arithmetic. Do not "simplify" them back into the rollup fields. The
+    omission above never enters their arithmetic as a zero: `_opt_int` rejects
+    the absence marker like any non-int, and an absent `migrationFailed` is
+    tested for explicitly so it cannot stringify into `failure_reasons`.
+
+    `reported_at_target` / `reported_below_target` are `None` when the response
+    carries no `targetVersion` (a namespace with no upgrade record). Defaulting
+    the target to 0 would classify every member as at-target and hand back a
+    green summary for a namespace that never migrated. The other four
+    aggregates do not depend on the target and are always computed: a cohort
+    where nobody reported must surface as `reported_missing`, not as zeroes.
+    Together `reported_at_target`, `reported_below_target` and
+    `reported_missing` partition the member rows; a report whose
+    `schemaVersion` is missing or non-integer counts as missing, the direction
+    that cannot manufacture a green result.
 
     The summary is an allowlist, which silently drops anything core adds later.
+    `members` itself mirrors core's list and is omitted when the response
+    carried none, so an empty cohort stays distinct from an unanswered one.
     """
     source = response if isinstance(response, dict) else {}
     rollup = source.get("rollup")
     rollup = rollup if isinstance(rollup, dict) else {}
     raw_members = source.get("members")
-    raw_members = raw_members if isinstance(raw_members, list) else []
+    member_entries = raw_members if isinstance(raw_members, list) else []
 
     members: list[dict[str, Any]] = []
     member_states: Counter = Counter()
@@ -190,7 +226,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     residue_total = 0
     failure_reasons: list[str] = []
     stuck_members: list[str] = []
-    for entry in raw_members:
+    for entry in member_entries:
         if not isinstance(entry, dict):
             continue
         report = entry.get("report")
@@ -199,27 +235,34 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         # Counted on a separator-free key: core spells the sibling rollup counter
         # `inProgress`, so matching only `in_progress` would skip reconciliation.
         member_states[state.replace("_", "").replace("-", "")] += 1
-        schema_version = _opt_int(report.get("schemaVersion"))
-        if schema_version is not None:
-            reported_versions.append(schema_version)
-        residue_total += _opt_int(report.get("residueAuto")) or 0
+        schema_version = report.get("schemaVersion", _MISSING)
+        residue_auto = report.get("residueAuto", _MISSING)
+        reason = report.get("migrationFailed", _MISSING)
+        # `_MISSING` is not an int, so `_opt_int` rejects it like any non-int:
+        # an unreported version lands in `reported_missing` rather than in a
+        # zero that reads as at-target.
+        version = _opt_int(schema_version)
+        if version is not None:
+            reported_versions.append(version)
+        residue_total += _opt_int(residue_auto) or 0
         peer = entry.get("peer")
-        reason = report.get("migrationFailed")
-        if reason is not None:
+        if reason is not _MISSING and reason is not None:
             failure_reasons.append(str(reason))
             if peer is not None:
                 stuck_members.append(str(peer))
         members.append(
-            {
-                "peer": peer,
-                "state": state,
-                "migration_failed": reason,
-                "schema_version": report.get("schemaVersion"),
-                "residue_auto": report.get("residueAuto"),
-                "synced_up_to_hlc": report.get("syncedUpToHlc"),
-                "reported_at": report.get("reportedAt"),
-                "authored_remaining": report.get("authoredRemaining"),
-            }
+            _drop_absent(
+                {
+                    "peer": entry.get("peer", _MISSING),
+                    "state": state,
+                    "migration_failed": reason,
+                    "schema_version": schema_version,
+                    "residue_auto": residue_auto,
+                    "synced_up_to_hlc": report.get("syncedUpToHlc", _MISSING),
+                    "reported_at": report.get("reportedAt", _MISSING),
+                    "authored_remaining": report.get("authoredRemaining", _MISSING),
+                }
+            )
         )
 
     def _as_int(value: Any) -> int:
@@ -250,42 +293,45 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         else sum(1 for v in reported_versions if v < target_version)
     )
 
-    return {
-        "target_version": source.get("targetVersion"),
-        "expected_members": source.get("expectedMembers"),
-        # Both are omitted from the response rather than sent null, and both
-        # have a meaningful zero, so they pass through untouched: coercing an
-        # absent key to 0 would claim the fleet converged at the epoch, and
-        # coercing it to a falsy default would lose the difference from a
-        # namespace that genuinely has not converged.
-        "fleet_completed_at": source.get("fleetCompletedAt"),
-        "cohort_pinned_at_hlc": source.get("cohortPinnedAtHlc"),
-        "total": total,
-        "migrated": _as_int(rollup.get("migrated")),
-        "in_progress": in_progress,
-        "unknown": unknown,
-        "failed": failed,
-        # Reconciled against every non-converged signal rather than trusted (see
-        # docstring). An empty/no-record response yields false either way.
-        "all_migrated": bool(rollup.get("allMigrated", False))
-        and not (failed or in_progress or unknown or members_unconverged),
-        "members_pending_signature": _as_int(rollup.get("membersPendingSignature")),
-        # Recomputed from the member rows, never from `rollup`. See docstring.
-        "reported_at_target": (
-            None if below_target is None else len(reported_versions) - below_target
-        ),
-        "reported_below_target": below_target,
-        "reported_missing": len(members) - len(reported_versions),
-        "min_reported_schema_version": (
-            min(reported_versions) if reported_versions else None
-        ),
-        "residue_total": residue_total,
-        "failure_reasons": sorted(failure_reasons),
-        # `failure_reasons` names WHAT went wrong; this names WHICH member is
-        # holding the fleet back. Sorted, member order is not promised.
-        "stuck_members": sorted(stuck_members),
-        "members": members,
-    }
+    return _drop_absent(
+        {
+            # Absent stays absent, never a 0 (`_as_int`) or a null. See docstring.
+            "target_version": source.get("targetVersion", _MISSING),
+            "expected_members": source.get("expectedMembers", _MISSING),
+            "fleet_completed_at": source.get("fleetCompletedAt", _MISSING),
+            "cohort_pinned_at_hlc": source.get("cohortPinnedAtHlc", _MISSING),
+            "total": total,
+            "migrated": _as_int(rollup.get("migrated")),
+            "in_progress": in_progress,
+            "unknown": unknown,
+            "failed": failed,
+            # `rollup.allMigrated` is core's own answer to "did everyone
+            # converge", so it is reconciled against every non-converged signal
+            # rather than trusted (see docstring). An empty/no-record response
+            # yields false either way.
+            "all_migrated": (
+                bool(rollup.get("allMigrated", False))
+                and failed == 0
+                and in_progress == 0
+                and unknown == 0
+                and members_unconverged == 0
+            ),
+            "members_pending_signature": _as_int(rollup.get("membersPendingSignature")),
+            # Recomputed from the member rows, never from `rollup`. See docstring.
+            "reported_at_target": (
+                None if below_target is None else len(reported_versions) - below_target
+            ),
+            "reported_below_target": below_target,
+            "reported_missing": len(members) - len(reported_versions),
+            "min_reported_schema_version": (
+                min(reported_versions) if reported_versions else None
+            ),
+            "residue_total": residue_total,
+            "failure_reasons": sorted(failure_reasons),
+            "stuck_members": sorted(stuck_members),
+            "members": members if isinstance(raw_members, list) else _MISSING,
+        }
+    )
 
 
 class RegisterGroupSigningKeyStep(BaseStep):
