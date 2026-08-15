@@ -97,6 +97,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
     type: tee_fleet_join
@@ -104,12 +105,13 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   - name: Assert the replica is a ReadOnlyTee member at the root
     type: assert_tee_member
     node: tee-owner
     group_id: '{{ns}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
     role: ReadOnlyTee
 
   - name: Wait for subgroup auto-follow to settle
@@ -120,7 +122,7 @@ steps:
     type: assert_tee_member
     node: tee-owner
     group_id: '{{sub}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
     role: ReadOnlyTee
 
   # ---------- Remove the TEE at the root ----------
@@ -140,13 +142,13 @@ steps:
     type: assert_not_member
     node: tee-owner
     group_id: '{{ns}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
 
   - name: Assert the TEE is ABSENT from the subgroup (cascade)
     type: assert_not_member
     node: tee-owner
     group_id: '{{sub}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
 
   - name: No panics on either node
     type: assert_log_absent
