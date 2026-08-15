@@ -22,8 +22,9 @@ description: >
        without the id and both keys. The step also compares the confirmation code
        both sides derive, which is the check a human is meant to make.
 
-    4. `account_show` on both nodes proves the payoff: same account, different
-       devices. One person, two replicas.
+    4. `node_identity` on both nodes proves the payoff: same account, different
+       devices. One person, two replicas. It takes no namespace, because none of
+       what it reports varies by one.
 
     5. node-1 revokes node-3's device (`account_revoke`) and the scope key
        rotates.
@@ -170,16 +171,14 @@ steps:
   # ── Phase 4: one account, two devices ─────────────────────────────
 
   - name: What the laptop speaks for
-    type: account_show
+    type: node_identity
     node: account-demo-2
-    namespace_id: '{{namespace_id}}'
     outputs:
       laptop_account: accountId
 
   - name: What the phone speaks for
-    type: account_show
+    type: node_identity
     node: account-demo-3
-    namespace_id: '{{namespace_id}}'
     outputs:
       phone_account: accountId
 
@@ -259,9 +258,8 @@ steps:
 
   # The root round-tripped: the account it presents is the one it had before.
   - name: The restored root still owns the same account
-    type: account_show
+    type: node_identity
     node: account-demo-2
-    namespace_id: '{{namespace_id}}'
     outputs:
       recovered_account: accountId
 
