@@ -995,6 +995,20 @@ class BaseStep:
                 f"[yellow]⚠️  Could not export {source_field} → {target_key} (value is None)[/yellow]"
             )
 
+    @staticmethod
+    def _unwrap_response(response_data: Any) -> tuple[bool, Any]:
+        """An error report carries its fields at the top level while a success
+        payload nests them under `data`, so both export passes unwrap by it."""
+        if not isinstance(response_data, dict):
+            return False, response_data
+        is_error_info = response_data.get("success") is False and any(
+            key in response_data
+            for key in ["error_code", "error_type", "error_message"]
+        )
+        if is_error_info:
+            return True, response_data
+        return False, response_data.get("data", response_data)
+
     def _export_variables_from_response(
         self,
         response_data: dict[str, Any],
@@ -1013,21 +1027,7 @@ class BaseStep:
         if not self.exportable_variables:
             return
 
-        # Extract the actual data (handle nested structures)
-        # If response_data is error_info (has error fields at top level), use it directly
-        # Check for success=False and at least one error-specific field to reliably detect error_info
-        if isinstance(response_data, dict):
-            is_error_info = response_data.get("success") is False and any(
-                key in response_data
-                for key in ["error_code", "error_type", "error_message"]
-            )
-            actual_data = (
-                response_data
-                if is_error_info
-                else response_data.get("data", response_data)
-            )
-        else:
-            actual_data = response_data
+        _, actual_data = self._unwrap_response(response_data)
 
         for source_field, target_key_template, description in self.exportable_variables:
             # Replace placeholders in target_key_template
@@ -1074,22 +1074,7 @@ class BaseStep:
         if protected_keys is None:
             protected_keys = set()
 
-        # Extract the actual data (handle nested structures)
-        # If response_data is error_info (has error fields at top level), use it directly
-        # Check for success=False and at least one error-specific field to reliably detect error_info
-        if isinstance(response_data, dict):
-            is_error_info = response_data.get("success") is False and any(
-                key in response_data
-                for key in ["error_code", "error_type", "error_message"]
-            )
-            actual_data = (
-                response_data
-                if is_error_info
-                else response_data.get("data", response_data)
-            )
-        else:
-            is_error_info = False
-            actual_data = response_data
+        is_error_info, actual_data = self._unwrap_response(response_data)
 
         vprint(
             f"[cyan]📝 Exporting variables from {node_name} response:[/cyan]",
