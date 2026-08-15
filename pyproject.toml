@@ -29,9 +29,13 @@ dependencies = [
     # 0.6.21 is where `revoke_device` grew its `proof` argument. Below it the
     # account_revoke step's three-argument call is a TypeError at run time, not a
     # resolution failure at install time, so the floor has to say so.
-    # 0.6.26 decodes `join_namespace` into a master-only struct requiring
-    # `memberAccount`, which no released node sends. Lift once one does.
-    "calimero-client-py>=0.6.24,<0.6.26",
+    # The <0.6.26 cap was there because 0.6.26 decodes `join_namespace` into a
+    # struct requiring `memberAccount`, which no released node sent. 0.11.0-rc.21
+    # sends it (core#3391), so the cap is lifted.
+    # The floor is 0.6.28 because that is the first wheel built against a core
+    # carrying `revokedIn` on the revoke-device response; below it the
+    # account_revoke step cannot export the field a scenario captures.
+    "calimero-client-py>=0.6.28",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",
