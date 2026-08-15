@@ -266,6 +266,25 @@ class TestUnresolvedPlaceholderInAssertions:
             is False
         )
 
+    @pytest.mark.parametrize(
+        "placeholder",
+        [
+            "install.node-1",
+            "context.node-1",
+            "context.node-1.memberPublicKey",
+            "identity.node-1",
+            "invite.malformed",
+            "iteration_index",
+            "never_captured",
+        ],
+    )
+    def test_every_unresolved_branch_still_hands_the_name_back(self, placeholder):
+        # A miss is detected as `resolved is placeholder`, so a branch that built
+        # a new string instead would silently stop enforcing strictness.
+        step = AssertStep({"type": "assert", "name": "a", "statements": ["1 == 1"]})
+        with pytest.raises(UnresolvedPlaceholderError, match="never resolved"):
+            step._resolve_dynamic_value(f"prefix_{{{{{placeholder}}}}}_suffix", {}, {})
+
     def test_bound_placeholders_are_untouched(self):
         assert self._assert_step("is_set({{ctx}})", {"ctx": "abc"}) is True
         assert self._assert_step("equal(id_{{ctx}}, 'id_abc')", {"ctx": "abc"}) is True
