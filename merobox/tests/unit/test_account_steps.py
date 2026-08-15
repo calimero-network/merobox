@@ -1,7 +1,7 @@
 """
 Unit tests for the account-identity workflow steps.
 
-Covers: AccountCreateStep, AccountPairStep, AccountRevokeStep, AccountShowStep —
+Covers: AccountCreateStep, AccountPairStep, AccountRevokeStep, NodeIdentityStep —
 validation, the client calls they make, and the two behaviours that are the reason
 these exist as steps rather than shell scripts: values flow out through `outputs`,
 and pairing's confirmation code is checked rather than passed along.
@@ -24,7 +24,7 @@ from merobox.commands.bootstrap.steps.account import (
     AccountCreateStep,
     AccountPairStep,
     AccountRevokeStep,
-    AccountShowStep,
+    NodeIdentityStep,
 )
 
 NAMESPACE = "ab" * 32
@@ -340,39 +340,55 @@ class TestAccountRevokeStep:
 
 
 # =============================================================================
-# AccountShowStep
+# NodeIdentityStep
 # =============================================================================
 
 
-class TestAccountShowStep:
+class TestNodeIdentityStep:
     def setup_method(self):
         self.config = {
-            "type": "account_show",
-            "name": "Show",
+            "type": "node_identity",
+            "name": "Who am I",
             "node": "calimero-node-2",
-            "namespace_id": NAMESPACE,
         }
 
     def test_valid_config_passes_validation(self):
-        _step(AccountShowStep, self.config)
+        _step(NodeIdentityStep, self.config)
 
-    def test_reads_the_account_and_keeps_a_null_device_as_an_answer(self):
-        """`deviceId: None` is meaningful — it is how "no device here" is said.
+    def test_takes_no_namespace(self):
+        """A namespace would be a parameter the answer cannot depend on.
+
+        One root key is one account and one device, whatever namespaces the node
+        happens to be in — so accepting a `namespace_id` would invite a caller to
+        believe the reply varied by it.
+        """
+        assert (
+            "namespace_id"
+            not in NodeIdentityStep(self.config, MagicMock())._get_required_fields()
+        )
+
+    def test_reads_the_identity_and_keeps_a_null_device_as_an_answer(self):
+        """`deviceId: None` is meaningful — it is how "not enrolled yet" is said.
 
         A step that treated it as missing data could not be used to assert that a
         revocation stuck.
         """
         client = MagicMock()
-        client.get_namespace_account.return_value = _envelope(
-            {"accountId": "aa" * 32, "deviceId": None}
+        client.get_node_identity.return_value = _envelope(
+            {
+                "accountId": "aa" * 32,
+                "deviceId": None,
+                "publicKey": "z" * 44,
+                "accountRootPublicKey": "bb" * 32,
+            }
         )
-        step = _step(AccountShowStep, self.config, client)
+        step = _step(NodeIdentityStep, self.config, client)
 
         results = {}
         assert _run(step.execute(results, {})) is True
 
-        client.get_namespace_account.assert_called_once_with(NAMESPACE)
-        assert results["shown_account_calimero-node-2"]["deviceId"] is None
+        client.get_node_identity.assert_called_once_with()
+        assert results["identity_calimero-node-2"]["deviceId"] is None
 
 
 class TestOutputsAreActuallyExported:
@@ -479,22 +495,38 @@ class TestOutputsAreActuallyExported:
         assert _run(step.execute({}, dynamic_values)) is True
         assert dynamic_values["rotated"] is True
 
-    def test_account_show_exports_the_account(self):
+    def test_node_identity_exports_what_account_create_used_to(self):
+        """The three ids scenarios were calling `account_create` to obtain.
+
+        That step was a mutation used as a getter — the join had already enrolled
+        the node — and `deviceId` and the account root had no other source. This
+        is the source.
+        """
         client = MagicMock()
-        client.get_namespace_account.return_value = _envelope(
-            {"accountId": "aa" * 32, "deviceId": None}
+        client.get_node_identity.return_value = _envelope(
+            {
+                "accountId": "aa" * 32,
+                "deviceId": "cc" * 32,
+                "publicKey": "z" * 44,
+                "accountRootPublicKey": "bb" * 32,
+            }
         )
         step = _step(
-            AccountShowStep,
+            NodeIdentityStep,
             {
-                "type": "account_show",
-                "name": "Show",
+                "type": "node_identity",
+                "name": "Who am I",
                 "node": "calimero-node-2",
-                "namespace_id": NAMESPACE,
-                "outputs": {"shown": "accountId"},
+                "outputs": {
+                    "acct": "accountId",
+                    "dev": "deviceId",
+                    "root": "accountRootPublicKey",
+                },
             },
             client,
         )
         dynamic_values = {}
         assert _run(step.execute({}, dynamic_values)) is True
-        assert dynamic_values["shown"] == "aa" * 32
+        assert dynamic_values["acct"] == "aa" * 32
+        assert dynamic_values["dev"] == "cc" * 32
+        assert dynamic_values["root"] == "bb" * 32
