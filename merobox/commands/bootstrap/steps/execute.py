@@ -326,9 +326,15 @@ class ExecuteStep(BaseStep):
                 "data": Any
             }
         """
+        # Seeded so all four documented error fields stay capturable: a capture
+        # that binds only for some kinds of failure is one nobody can write.
         error_info = {
             "success": False,
             "expected": expected,
+            "error_code": None,
+            "error_type": None,
+            "error_message": None,
+            "error": None,
         }
 
         # Network/API level failure (call_function caught an exception)

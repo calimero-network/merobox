@@ -20,6 +20,7 @@ import time
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.errors import UnresolvedPlaceholderError
 from merobox.commands.utils import console
 
 
@@ -153,6 +154,8 @@ class AssertStep(BaseStep):
           message: "Value should be set"
     """
 
+    strict_placeholders = True
+
     def _get_required_fields(self) -> list[str]:
         # Statement syntax only
         return ["statements"]
@@ -206,9 +209,14 @@ class AssertStep(BaseStep):
                     )
                 continue
 
-            passed, detail = self._eval_statement(
-                stmt, workflow_results, dynamic_values
-            )
+            try:
+                passed, detail = self._eval_statement(
+                    stmt, workflow_results, dynamic_values
+                )
+            except UnresolvedPlaceholderError as e:
+                # Reported as a failed assertion rather than raised so a
+                # non-blocking fuzzy run records it and keeps going.
+                passed, detail = False, f"({e.message})"
             description = message or f"Assertion #{idx}: {stmt}"
 
             # Record result in tracker if available

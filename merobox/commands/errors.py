@@ -191,6 +191,50 @@ class StepExecutionError(WorkflowError):
         )
 
 
+class OutputCaptureError(WorkflowError):
+    """Raised when an `outputs:` entry names a field the response does not have.
+
+    An unbound placeholder satisfies most assertions, so this stops the step.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        step_name: Optional[str] = None,
+        step_type: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        super().__init__(
+            message,
+            step_name=step_name,
+            step_type=step_type,
+            code="OUTPUT_CAPTURE_FAILED",
+            details=details,
+        )
+
+
+class UnresolvedPlaceholderError(WorkflowError):
+    """Raised when a `{{placeholder}}` in an assertion never resolved.
+
+    The comparison is then against its own text, which passes almost anything.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        step_name: Optional[str] = None,
+        step_type: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        super().__init__(
+            message,
+            step_name=step_name,
+            step_type=step_type,
+            code="UNRESOLVED_PLACEHOLDER",
+            details=details,
+        )
+
+
 class ValidationError(MeroboxError):
     """Input validation errors.
 
@@ -306,6 +350,8 @@ __all__ = [
     "WorkflowError",
     "StepValidationError",
     "StepExecutionError",
+    "OutputCaptureError",
+    "UnresolvedPlaceholderError",
     "ValidationError",
     "ClientError",
     "MeroboxTimeoutError",

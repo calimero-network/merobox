@@ -3,8 +3,8 @@
 The per-call / per-iteration chatter from the export machinery (validated
 config banners, "Exporting variables", per-field "✓ name = value" lines) is
 the dominant source of CI log noise on the happy path. These tests pin that
-output to VERBOSE while keeping genuine warnings (missing field, etc.) always
-visible.
+output to VERBOSE, and pin a failed capture to raising rather than to a log
+line that verbosity could hide.
 """
 
 from unittest.mock import patch
@@ -13,6 +13,7 @@ import pytest
 
 from merobox.commands import utils
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.errors import OutputCaptureError
 from merobox.commands.utils import (
     LOG_LEVEL_NORMAL,
     LOG_LEVEL_VERBOSE,
@@ -71,12 +72,12 @@ def test_export_confirmation_lines_are_verbose_only():
     assert any("✓" in p for p in printed)
 
 
-def test_missing_field_warning_always_shown():
+def test_missing_field_raises_at_every_verbosity():
     step = BaseStep({"name": "s", "outputs": {"my_key": "absent_field"}})
     response = {"data": {"present": 1}}
 
-    # Even at NORMAL, a genuine export failure must surface.
-    printed, cap = _capture(LOG_LEVEL_NORMAL)
-    with cap:
-        step._export_custom_outputs(response, "node-1", {})
-    assert any("Export failed" in p for p in printed)
+    # A failed capture is not a log line to be gated - it stops the step.
+    for level in (LOG_LEVEL_NORMAL, LOG_LEVEL_VERBOSE):
+        _printed, cap = _capture(level)
+        with cap, pytest.raises(OutputCaptureError, match="absent_field"):
+            step._export_custom_outputs(response, "node-1", {})

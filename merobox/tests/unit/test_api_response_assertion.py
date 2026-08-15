@@ -370,6 +370,20 @@ class TestTransportFailures:
         assert result is False
         assert "missed 1 of 1 assertion(s)" in capsys.readouterr().out
 
+    def test_an_unresolved_placeholder_is_reported_as_this_step_s_failure(self, capsys):
+        # It fails either way, but through the step's own report rather than
+        # as an exception the executor reformats, matching assert/json_assert.
+        step = _step(match={"data.targetVersion": "{{never_bound}}"})
+        result, _, _ = _execute(step, _body())
+        assert result is False
+        assert "✗ assert_api_response on calimero-node-1" in capsys.readouterr().out
+
+    def test_an_unresolved_placeholder_in_the_path_is_reported_too(self, capsys):
+        step = _step(path="/admin-api/{{never_bound}}/x", present=["data"])
+        result, _, _ = _execute(step, _body())
+        assert result is False
+        assert "✗ assert_api_response on calimero-node-1" in capsys.readouterr().out
+
     def test_expected_failure_fails_when_the_request_succeeds(self, capsys):
         result, _, _ = _execute(_step(expected_failure=True), _body())
         assert result is False

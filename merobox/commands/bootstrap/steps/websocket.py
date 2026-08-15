@@ -22,8 +22,9 @@ from typing import Any
 import aiohttp
 from rich.markup import escape
 
-from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.bootstrap.steps.base import _MISSING, BaseStep
 from merobox.commands.constants import DEFAULT_CONNECTION_TIMEOUT
+from merobox.commands.errors import UnresolvedPlaceholderError
 from merobox.commands.utils import console
 
 WS_ENDPOINT = "/ws"
@@ -190,8 +191,9 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
 
     Optional fields:
     - ``match`` (dict): dotted paths into the delivered frame mapped to expected
-      values. A subset test, so unlisted fields are ignored. Paths address the
-      wire frame, which is camelCase where the Rust is snake_case:
+      values. A subset test, so unlisted fields are ignored. ``null`` asserts
+      the key is present AND null, which an absent key does not satisfy. Paths
+      address the wire frame, which is camelCase where the Rust is snake_case:
       ``groupId``, ``data.toVersion``, ``data.toStateVersion``.
     - ``absent`` (bool): assert the event must NOT arrive.
     - ``count`` (int): assert exactly this many arrive. Mutually exclusive with
@@ -219,6 +221,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
     """
 
     _DEFAULT_TIMEOUT_SECONDS = 30.0
+    strict_placeholders = True
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "group_id", "event"]
@@ -255,6 +258,21 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
                 )
 
     async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        # A placeholder that never bound is this step's own verdict, so it reads
+        # like every other miss this step reports rather than as a crash.
+        try:
+            return await self._assert(workflow_results, dynamic_values)
+        except UnresolvedPlaceholderError as e:
+            console.print(
+                f"✗ assert_ws_event on {self.config['node']}: {e.message}",
+                style="red",
+                markup=False,
+            )
+            return False
+
+    async def _assert(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self.config["node"]
@@ -511,8 +529,12 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         """Per-path mismatches; empty means the frame satisfies ``match``."""
         failures = []
         for path, expected in match_spec.items():
-            actual = self._get_value(frame, path)
-            if actual != expected:
+            # Absent and present-and-null are different answers: without the
+            # sentinel `match: {x: null}` is satisfied by a frame lacking x.
+            actual = self._get_value(frame, path, default=_MISSING)
+            if actual is _MISSING:
+                failures.append(f"{path}: expected {expected!r}, but the key is absent")
+            elif actual != expected:
                 failures.append(f"{path}: expected {expected!r}, got {actual!r}")
         return failures
 

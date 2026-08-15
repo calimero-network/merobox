@@ -1,0 +1,46 @@
+description: A capture that cannot bind must fail its step, not warn and continue
+name: Output Capture Strictness Example
+
+# Keep it light: single node to speed up CI
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  base_port: 9032
+  base_rpc_port: 9132
+
+steps:
+  - name: Install Application
+    type: install_application
+    node: calimero-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: A capture that binds
+    type: get_migration_status
+    node: calimero-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      strand_reasons: failure_reasons
+
+  - name: The bound capture carries the real value
+    type: json_assert
+    statements:
+      - 'json_equal({{strand_reasons}}, [])'
+
+  # The gate is this file going red, not a step asserting a refusal:
+  # OUTPUT_CAPTURE_FAILED is raised outside the step's pass/fail path and is
+  # deliberately not catchable by expected_failure - a capture naming a key the
+  # response lacks is an authoring bug, not a condition to assert on. Rename
+  # `failure_reasons` above to a key the summary does not carry and this
+  # workflow fails; before strictness it warned and passed with the literal
+  # `{{strand_reasons}}` compared against `[]`.
