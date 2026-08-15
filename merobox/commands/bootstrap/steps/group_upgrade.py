@@ -88,6 +88,8 @@ def _drop_absent(summary: dict[str, Any]) -> dict[str, Any]:
     `_export_custom_outputs` applies to a raw response.
     """
     return {key: value for key, value in summary.items() if value is not _MISSING}
+
+
 # Response keys the summarizers below map into their curated summaries. Both
 # summaries are hand-picked allowlists (a raw passthrough would break `outputs:`
 # addressing), so a field core adds upstream is dropped; these sets are what
@@ -282,9 +284,6 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     _warn_unmapped_keys(
         rollup, _MIGRATION_ROLLUP_MAPPED_KEYS, "get_migration_status.rollup"
     )
-
-    raw_members = response.get("members") if isinstance(response, dict) else None
-    raw_members = raw_members if isinstance(raw_members, list) else []
 
     members: list[dict[str, Any]] = []
     member_states: Counter = Counter()
