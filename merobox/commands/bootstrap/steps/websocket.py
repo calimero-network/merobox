@@ -22,7 +22,7 @@ from typing import Any
 import aiohttp
 from rich.markup import escape
 
-from merobox.commands.bootstrap.steps.base import _MISSING, BaseStep
+from merobox.commands.bootstrap.steps.base import _MISSING, BaseStep, lookup
 from merobox.commands.constants import DEFAULT_CONNECTION_TIMEOUT
 from merobox.commands.errors import UnresolvedPlaceholderError
 from merobox.commands.utils import console
@@ -535,7 +535,7 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         for path, expected in match_spec.items():
             # Absent and present-and-null are different answers: without the
             # sentinel `match: {x: null}` is satisfied by a frame lacking x.
-            actual = self._get_value(frame, path, default=_MISSING)
+            actual = lookup(frame, path)
             if actual is _MISSING:
                 failures.append(f"{path}: expected {expected!r}, but the key is absent")
             elif actual != expected:
