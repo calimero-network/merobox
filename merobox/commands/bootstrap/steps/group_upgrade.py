@@ -225,6 +225,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     reported_versions: list[int] = []
     residue_total = 0
     failure_reasons: list[str] = []
+    stuck_members: list[str] = []
     for entry in member_entries:
         if not isinstance(entry, dict):
             continue
@@ -244,6 +245,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
         if version is not None:
             reported_versions.append(version)
         residue_total += _opt_int(residue_auto) or 0
+        peer = entry.get("peer")
         if reason is not _MISSING and reason is not None:
             failure_reasons.append(str(reason))
             if peer is not None:
@@ -326,13 +328,7 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
             ),
             "residue_total": residue_total,
             "failure_reasons": sorted(failure_reasons),
-            # `.get`, not `[]`: a row omits the keys its node did not send.
-            "stuck_members": sorted(
-                str(member["peer"])
-                for member in members
-                if member.get("migration_failed") is not None
-                and member.get("peer") is not None
-            ),
+            "stuck_members": sorted(stuck_members),
             "members": members if isinstance(raw_members, list) else _MISSING,
         }
     )
