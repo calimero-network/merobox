@@ -111,6 +111,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
       tee_admitted: admitted
 
   - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
@@ -119,6 +120,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
       tee_admitted: admitted
 
   # Extra mesh windows (see tee-matrix-restricted-late-join for rationale): the
@@ -130,6 +132,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
       tee_admitted: admitted
 
   - name: TEE fleet-join attempt 4 (extra mesh window)
@@ -138,6 +141,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
       tee_admitted: admitted
 
   - name: Assert the replica reported a namespace identity
@@ -153,14 +157,14 @@ steps:
     type: assert_tee_member
     node: tee-owner
     group_id: '{{ns}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
     role: ReadOnlyTee
 
   - name: Assert the replica is a ReadOnlyTee member of the (empty) subgroup
     type: assert_tee_member
     node: tee-owner
     group_id: '{{sub}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
     role: ReadOnlyTee
 
   # ---------- STEP 3: register the context AFTER admission ----------

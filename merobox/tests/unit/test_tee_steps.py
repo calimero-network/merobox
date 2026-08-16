@@ -219,11 +219,13 @@ class TestTeeFleetJoinExecute:
 # AssertTeeMemberStep / AssertNotMemberStep
 # =============================================================================
 
-_TEE_IDENTITY = "tee-pubkey-1"
+# An ACCOUNT, not a signing key: the member listing reports accounts, and
+# passing a key is precisely the mistake that made ten TEE scenarios red.
+_TEE_ACCOUNT = "aa" * 32
 
 
 def _members_payload(*members):
-    return {"members": list(members), "selfIdentity": "owner-key"}
+    return {"members": list(members)}
 
 
 class TestAssertTeeMember:
@@ -232,14 +234,14 @@ class TestAssertTeeMember:
             AssertTeeMemberStep,
             type="assert_tee_member",
             group_id="gid",
-            identity=_TEE_IDENTITY,
+            account=_TEE_ACCOUNT,
         )
         with patch(f"{_MODULE}.requests") as req:
             req.request.return_value = _response(
                 200,
                 _members_payload(
-                    {"identity": "owner-key", "role": "Admin"},
-                    {"identity": _TEE_IDENTITY, "role": "ReadOnlyTee"},
+                    {"identity": "bb" * 32, "role": "Admin"},
+                    {"identity": _TEE_ACCOUNT, "role": "ReadOnlyTee"},
                 ),
             )
             result = _run(step.execute({}, {}))
@@ -254,11 +256,11 @@ class TestAssertTeeMember:
             AssertTeeMemberStep,
             type="assert_tee_member",
             group_id="gid",
-            identity=_TEE_IDENTITY,
+            account=_TEE_ACCOUNT,
         )
         with patch(f"{_MODULE}.requests") as req:
             req.request.return_value = _response(
-                200, _members_payload({"identity": "owner-key", "role": "Admin"})
+                200, _members_payload({"identity": "bb" * 32, "role": "Admin"})
             )
             result = _run(step.execute({}, {}))
         assert result is False
@@ -268,12 +270,12 @@ class TestAssertTeeMember:
             AssertTeeMemberStep,
             type="assert_tee_member",
             group_id="gid",
-            identity=_TEE_IDENTITY,
+            account=_TEE_ACCOUNT,
         )
         with patch(f"{_MODULE}.requests") as req:
             req.request.return_value = _response(
                 200,
-                _members_payload({"identity": _TEE_IDENTITY, "role": "Member"}),
+                _members_payload({"identity": _TEE_ACCOUNT, "role": "Member"}),
             )
             result = _run(step.execute({}, {}))
         assert result is False
@@ -283,13 +285,13 @@ class TestAssertTeeMember:
             AssertTeeMemberStep,
             type="assert_tee_member",
             group_id="gid",
-            identity=_TEE_IDENTITY,
+            account=_TEE_ACCOUNT,
             role="Member",
         )
         with patch(f"{_MODULE}.requests") as req:
             req.request.return_value = _response(
                 200,
-                _members_payload({"identity": _TEE_IDENTITY, "role": "Member"}),
+                _members_payload({"identity": _TEE_ACCOUNT, "role": "Member"}),
             )
             result = _run(step.execute({}, {}))
         assert result is True
@@ -301,11 +303,11 @@ class TestAssertNotMember:
             AssertNotMemberStep,
             type="assert_not_member",
             group_id="gid",
-            identity=_TEE_IDENTITY,
+            account=_TEE_ACCOUNT,
         )
         with patch(f"{_MODULE}.requests") as req:
             req.request.return_value = _response(
-                200, _members_payload({"identity": "owner-key", "role": "Admin"})
+                200, _members_payload({"identity": "bb" * 32, "role": "Admin"})
             )
             result = _run(step.execute({}, {}))
         assert result is True
@@ -315,12 +317,12 @@ class TestAssertNotMember:
             AssertNotMemberStep,
             type="assert_not_member",
             group_id="gid",
-            identity=_TEE_IDENTITY,
+            account=_TEE_ACCOUNT,
         )
         with patch(f"{_MODULE}.requests") as req:
             req.request.return_value = _response(
                 200,
-                _members_payload({"identity": _TEE_IDENTITY, "role": "ReadOnlyTee"}),
+                _members_payload({"identity": _TEE_ACCOUNT, "role": "ReadOnlyTee"}),
             )
             result = _run(step.execute({}, {}))
         assert result is False
