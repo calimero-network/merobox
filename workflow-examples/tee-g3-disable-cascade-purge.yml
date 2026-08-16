@@ -126,12 +126,15 @@ steps:
     role: ReadOnlyTee
 
   # ---------- Remove the TEE at the root ----------
+  # By ACCOUNT, like the assertions below. Membership is keyed by the account a
+  # key speaks for, so the API rejects a signing key outright: `members[0]:
+  # expected 64 hex characters (32 bytes)`.
   - name: Owner removes the TEE member AT THE ROOT
     type: remove_group_members
     node: tee-owner
     group_id: '{{ns}}'
     members:
-      - '{{tee_pk}}'
+      - '{{tee_account}}'
 
   - name: Wait for the cascade purge to propagate
     type: wait
