@@ -117,7 +117,7 @@ Per-group and namespace-wide application upgrades.
 
 | Example | Teaches | Key steps |
 | --- | --- | --- |
-| [`workflow-group-upgrade-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-upgrade-example.yml) | The per-group upgrade lifecycle v1→v2: set policy, upgrade, poll status, retry (expected-fail after completion). | `update_group_settings`, `upgrade_group`, `get_group_upgrade_status`, `retry_group_upgrade` |
+| [`workflow-group-upgrade-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-upgrade-example.yml) | The per-group upgrade lifecycle v1→v2: upgrade, poll status, retry (expected-fail after completion). | `upgrade_group`, `get_group_upgrade_status`, `retry_group_upgrade` |
 | [`workflow-cascade-namespace-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-cascade-namespace-example.yml) | The namespace cascade: one signed op fans the target-application change out to every matching descendant subgroup. | `cascade_namespace_application`, `get_group_info`, `json_assert` |
 
 ## Auth

@@ -32,7 +32,6 @@ from merobox.commands.bootstrap.steps.group_create import CreateNamespaceStep
 from merobox.commands.bootstrap.steps.group_governance import (
     DetachContextFromGroupStep,
     SyncGroupStep,
-    UpdateGroupSettingsStep,
 )
 from merobox.commands.bootstrap.steps.group_invite import CreateNamespaceInvitationStep
 from merobox.commands.bootstrap.steps.group_join import JoinNamespaceStep
@@ -347,8 +346,6 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = SetContextMetadataStep
         elif step_type == "get_context_metadata":
             step_class = GetContextMetadataStep
-        elif step_type == "update_group_settings":
-            step_class = UpdateGroupSettingsStep
         elif step_type == "detach_context_from_group":
             step_class = DetachContextFromGroupStep
         elif step_type == "sync_group":

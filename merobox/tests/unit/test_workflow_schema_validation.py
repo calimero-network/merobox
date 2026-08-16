@@ -1034,39 +1034,7 @@ class TestMetadataStepSchemas:
 
 
 class TestGroupGovernanceStepSchemas:
-    """Schema validation for update_group_settings / detach_context_from_group / sync_group."""
-
-    def test_valid_update_group_settings(self, config_module):
-        step = {
-            "type": "update_group_settings",
-            "node": "calimero-node-1",
-            "group_id": "{{group_id}}",
-            "upgrade_policy": "automatic",
-        }
-        assert config_module.validate_workflow_step(step, 0) == []
-
-    def test_valid_update_group_settings_lazy_variants(self, config_module):
-        for policy in ("lazy", "lazy-on-access", "lazy_on_access", "lazyonaccess"):
-            step = {
-                "type": "update_group_settings",
-                "node": "calimero-node-1",
-                "group_id": "{{group_id}}",
-                "upgrade_policy": policy,
-            }
-            assert config_module.validate_workflow_step(step, 0) == [], policy
-
-    def test_invalid_update_group_settings_bad_policy(self, config_module):
-        # 'coordinated' was removed from the server and must now be rejected at
-        # schema time alongside any other unknown policy.
-        for policy in ("eager", "coordinated"):
-            step = {
-                "type": "update_group_settings",
-                "node": "calimero-node-1",
-                "group_id": "{{group_id}}",
-                "upgrade_policy": policy,
-            }
-            errors = config_module.validate_workflow_step(step, 0)
-            assert any("upgrade_policy" in e.lower() for e in errors), policy
+    """Schema validation for detach_context_from_group / sync_group."""
 
     def test_valid_detach_context_from_group(self, config_module):
         step = {

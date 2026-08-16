@@ -85,7 +85,6 @@ from merobox.commands.bootstrap.steps import (
     SyncGroupStep,
     TeeFleetJoinStep,
     UninstallApplicationStep,
-    UpdateGroupSettingsStep,
     UpdateMemberRoleStep,
     UpgradeGroupStep,
     UploadBlobStep,
@@ -2308,8 +2307,6 @@ class WorkflowExecutor:
             return SetContextMetadataStep(step_config, **common_kwargs)
         elif step_type == "get_context_metadata":
             return GetContextMetadataStep(step_config, **common_kwargs)
-        elif step_type == "update_group_settings":
-            return UpdateGroupSettingsStep(step_config, **common_kwargs)
         elif step_type == "detach_context_from_group":
             return DetachContextFromGroupStep(step_config, **common_kwargs)
         elif step_type == "sync_group":
