@@ -50,7 +50,7 @@ VALID_STEP_TYPES = frozenset(
         "account_create",
         "account_pair",
         "account_revoke",
-        "account_show",
+        "node_identity",
         "node_exec",
         "create_group_in_namespace",
         "list_namespace_groups",
@@ -1014,12 +1014,11 @@ class AccountRevokeStepConfig(BaseStepConfig):
     )
 
 
-class AccountShowStepConfig(BaseStepConfig):
-    """Configuration for account_show step."""
+class NodeIdentityStepConfig(BaseStepConfig):
+    """Configuration for node_identity step."""
 
-    type: Literal["account_show"] = "account_show"
+    type: Literal["node_identity"] = "node_identity"
     node: str = Field(..., description="Node to ask")
-    namespace_id: str = Field(..., description="Namespace to report on")
 
 
 class CreateGroupInNamespaceStepConfig(BaseStepConfig):
@@ -1662,7 +1661,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
     "account_revoke": AccountRevokeStepConfig,
-    "account_show": AccountShowStepConfig,
+    "node_identity": NodeIdentityStepConfig,
     "node_exec": NodeExecStepConfig,
     "create_group_in_namespace": CreateGroupInNamespaceStepConfig,
     "list_namespace_groups": ListNamespaceGroupsStepConfig,

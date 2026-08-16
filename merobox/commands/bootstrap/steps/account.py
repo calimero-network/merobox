@@ -340,28 +340,54 @@ class AccountRevokeStep(_AccountStepBase):
         return self._finish(node_name, "revoke", data, workflow_results, dynamic_values)
 
 
-class AccountShowStep(_AccountStepBase):
-    """Report which account a node speaks for in a namespace, and its device.
+class NodeIdentityStep(_AccountStepBase):
+    """Report who a node is — account, device, signing key, account root.
 
-    A read, so it mints nothing: the account id is derived from the node's root
-    and the namespace, and exists whether or not a device has been enrolled. A
-    `deviceId` of `null` is a real answer — "this node holds no device here" —
-    which is what makes it usable to assert that a revocation stuck.
+    A read; it mints nothing. Enrolment is implicit on every join path, so by
+    the time a node has joined anything it already has an account and a device,
+    and this reports them.
+
+    Takes NO namespace, because none of what it reports varies by one: a node
+    has one root key, therefore one account, and one device per installation.
+    It replaces `account_show`, which asked per namespace and could not answer
+    `accountRootPublicKey` at all.
+
+    Why this exists rather than reusing `account_create`: scenarios were calling
+    that step purely for its outputs, after the join had already enrolled them —
+    a mutation used as a getter, because there was no getter. `deviceId` and the
+    account root had no other source.
+
+    Requires calimero-client-py >= 0.6.27 (the `get_node_identity` binding) and
+    a node exposing `GET /admin-api/identity`.
     """
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "namespace_id"]
+        return ["node"]
 
     def _validate_field_types(self) -> None:
-        self._require_strings(("node", "namespace_id"))
+        self._require_strings(("node",))
 
     def _get_exportable_variables(self):
         return [
-            ("accountId", "shown_account_id_{node_name}", "Account this node owns"),
+            (
+                "accountId",
+                "identity_account_id_{node_name}",
+                "Account this node writes as",
+            ),
             (
                 "deviceId",
-                "shown_device_id_{node_name}",
-                "Device it holds there, or null if none",
+                "identity_device_id_{node_name}",
+                "This node's device — its replica id within the account",
+            ),
+            (
+                "publicKey",
+                "identity_public_key_{node_name}",
+                "The DEVICE's signing key, which is what op signatures verify against",
+            ),
+            (
+                "accountRootPublicKey",
+                "identity_account_root_{node_name}",
+                "Public half of the account root — what a second device pairs against",
             ),
         ]
 
@@ -369,26 +395,25 @@ class AccountShowStep(_AccountStepBase):
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self._resolved("node", dynamic_values)
-        namespace_id = self._resolved("namespace_id", dynamic_values)
 
         try:
             client = self._client(node_name)
-            result = ok(self._data(client.get_namespace_account(namespace_id)))
+            result = ok(self._data(client.get_node_identity()))
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail(f"account show failed: {e}", error=e)
+            result = fail("node identity read failed", error=e)
 
         if not result["success"]:
             console.print(
-                f"[red]Failed to read {node_name}'s account: "
-                f"{escape(str(result.get('error')))}[/red]"
+                f"[red]Failed to read {node_name}'s identity: "
+                f"{result.get('error')}[/red]"
             )
             return False
 
         data = result["data"]
         console.print(
-            f"[green]✓[/green] {node_name} owns account {data.get('accountId')} "
+            f"[green]✓[/green] {node_name} is account {data.get('accountId')} "
             f"(device: {data.get('deviceId')})"
         )
         return self._finish(
-            node_name, "shown_account", data, workflow_results, dynamic_values
+            node_name, "identity", data, workflow_results, dynamic_values
         )

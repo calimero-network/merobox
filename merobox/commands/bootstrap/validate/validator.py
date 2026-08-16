@@ -9,7 +9,7 @@ from merobox.commands.bootstrap.steps.account import (
     AccountCreateStep,
     AccountPairStep,
     AccountRevokeStep,
-    AccountShowStep,
+    NodeIdentityStep,
 )
 from merobox.commands.bootstrap.steps.api_assertion import AssertApiResponseStep
 from merobox.commands.bootstrap.steps.assert_log import (
@@ -289,8 +289,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = AccountPairStep
         elif step_type == "account_revoke":
             step_class = AccountRevokeStep
-        elif step_type == "account_show":
-            step_class = AccountShowStep
+        elif step_type == "node_identity":
+            step_class = NodeIdentityStep
         elif step_type == "node_exec":
             step_class = NodeExecStep
         elif step_type == "create_group_in_namespace":

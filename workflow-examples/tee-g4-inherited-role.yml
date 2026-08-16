@@ -100,6 +100,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
     type: tee_fleet_join
@@ -107,12 +108,13 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   - name: Assert the replica is a ReadOnlyTee member at the root
     type: assert_tee_member
     node: tee-owner
     group_id: '{{ns}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
     role: ReadOnlyTee
 
   - name: Wait for Open-subgroup inheritance to settle
@@ -124,7 +126,7 @@ steps:
     type: assert_tee_member
     node: tee-owner
     group_id: '{{sub}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
     role: ReadOnlyTee
 
   - name: No panics on either node
