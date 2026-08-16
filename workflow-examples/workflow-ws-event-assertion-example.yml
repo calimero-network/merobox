@@ -79,12 +79,12 @@ steps:
     node: calimero-node-2
 
   - name: Assert MigrationStarted reached node 2 over /ws
-    # fromVersion is resolvable on node 2 because it runs v1; toVersion is not,
-    # since node 2 never installed v2, so it is deliberately not matched.
     type: assert_ws_event
     node: calimero-node-2
     group_id: '{{namespace_id}}'
     event: MigrationStarted
+    # Not fromVersion: merobox installs a bare .wasm and passes no version, so
+    # core stamps "0.0.0". localContextsTotal is node 2's OWN context count.
     match:
-      data.fromVersion: '1.0.0'
+      data.localContextsTotal: 1
     timeout_seconds: 120
