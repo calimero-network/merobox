@@ -1634,14 +1634,18 @@ Blocks server-side for one admission window.
 
 ### assert_tee_member / assert_not_member
 
-Assert presence / absence of an identity in a group's member list. Fields:
-`node`, `group_id`, `identity`.
+Assert presence / absence of an **account** in a group's member list. Fields:
+`node`, `group_id`, `account`.
+
+Takes the account, not the signing key: membership is recorded against the
+account a key speaks for, so the listing reports accounts and a key matches
+nothing. `tee_fleet_join` reports both — capture `account`.
 
 ```yaml
 - type: assert_tee_member
   node: tee-owner
   group_id: '{{namespace_id}}'
-  identity: '{{replica_identity}}'
+  account: '{{replica_account}}'
 ```
 
 ## See also

@@ -10,7 +10,7 @@ Drive the local mock-TEE fleet lifecycle against a node's merod admin API:
   (``POST /admin-api/tee/fleet-join``). Designed to compose with ``repeat`` since
   a single call covers one mesh window and may need re-invoking until admitted.
 - ``assert_tee_member`` / ``assert_not_member`` — assert (presence|absence) of an
-  identity in a group's member list.
+  account in a group's member list.
 
 These steps talk to the admin API over raw HTTP (``requests``), mirroring the
 other admin-API helpers (``application.py``, ``join.py``). The merod admin API
@@ -302,18 +302,27 @@ def _fetch_members(step: BaseStep, node_name: str, group_id: str) -> list[dict]:
 
 
 class AssertTeeMemberStep(BaseStep):
-    """Assert that an identity is present in a group's member list with a role.
+    """Assert that an ACCOUNT is present in a group's member list with a role.
+
+    Takes the account, not the signing key. Membership is recorded against the
+    account a key speaks for, so the member listing reports accounts — a key
+    matches nothing, and no endpoint maps one to the other from outside the node
+    that owns it. `tee_fleet_join` reports both; capture `account`.
+
+    The field is named `account` rather than `identity` so a scenario written
+    against the old shape fails required-field validation instead of silently
+    comparing a key against an account and reporting the member absent.
 
     Defaults to ``role="ReadOnlyTee"`` — the role a TEE fleet node holds after a
     successful fleet-join admission.
     """
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "group_id", "identity"]
+        return ["node", "group_id", "account"]
 
     def _validate_field_types(self) -> None:
         step_name = self._get_step_name()
-        for field in ("node", "group_id", "identity"):
+        for field in ("node", "group_id", "account"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
         if "role" in self.config and not isinstance(self.config.get("role"), str):
@@ -326,8 +335,8 @@ class AssertTeeMemberStep(BaseStep):
         group_id = self._resolve_dynamic_value(
             self.config["group_id"], workflow_results, dynamic_values
         )
-        identity = self._resolve_dynamic_value(
-            self.config["identity"], workflow_results, dynamic_values
+        account = self._resolve_dynamic_value(
+            self.config["account"], workflow_results, dynamic_values
         )
         role = self._resolve_dynamic_value(
             self.config.get("role", "ReadOnlyTee"), workflow_results, dynamic_values
@@ -345,17 +354,17 @@ class AssertTeeMemberStep(BaseStep):
         for m in members:
             if (
                 isinstance(m, dict)
-                and m.get("identity") == identity
+                and m.get("identity") == account
                 and m.get("role") == role
             ):
                 console.print(
-                    f"[green]✓ {identity} is a '{role}' member of group "
+                    f"[green]✓ {account} is a '{role}' member of group "
                     f"{group_id} on {node_name}[/green]"
                 )
                 return True
 
         console.print(
-            f"[red]assert_tee_member: identity {identity} with role '{role}' "
+            f"[red]assert_tee_member: account {account} with role '{role}' "
             f"NOT found in group {group_id} on {node_name}. "
             f"Members: {json.dumps(members)}[/red]"
         )
@@ -363,14 +372,18 @@ class AssertTeeMemberStep(BaseStep):
 
 
 class AssertNotMemberStep(BaseStep):
-    """Assert that an identity is ABSENT from a group's member list."""
+    """Assert that an ACCOUNT is ABSENT from a group's member list.
+
+    Takes the account, for the same reason as `assert_tee_member` — and here the
+    consequence of passing a key would be worse: a key matches nothing, so the
+    assertion would PASS for a member that is present."""
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "group_id", "identity"]
+        return ["node", "group_id", "account"]
 
     def _validate_field_types(self) -> None:
         step_name = self._get_step_name()
-        for field in ("node", "group_id", "identity"):
+        for field in ("node", "group_id", "account"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
 
@@ -381,8 +394,8 @@ class AssertNotMemberStep(BaseStep):
         group_id = self._resolve_dynamic_value(
             self.config["group_id"], workflow_results, dynamic_values
         )
-        identity = self._resolve_dynamic_value(
-            self.config["identity"], workflow_results, dynamic_values
+        account = self._resolve_dynamic_value(
+            self.config["account"], workflow_results, dynamic_values
         )
 
         try:
@@ -395,17 +408,17 @@ class AssertNotMemberStep(BaseStep):
             return False
 
         present = [
-            m for m in members if isinstance(m, dict) and m.get("identity") == identity
+            m for m in members if isinstance(m, dict) and m.get("identity") == account
         ]
         if present:
             console.print(
-                f"[red]assert_not_member: identity {identity} IS present in group "
+                f"[red]assert_not_member: account {account} IS present in group "
                 f"{group_id} on {node_name} (expected absent). "
                 f"Entry: {json.dumps(present)}[/red]"
             )
             return False
 
         console.print(
-            f"[green]✓ {identity} is absent from group {group_id} on {node_name}[/green]"
+            f"[green]✓ {account} is absent from group {group_id} on {node_name}[/green]"
         )
         return True

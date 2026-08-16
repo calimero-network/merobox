@@ -124,6 +124,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   - name: TEE fleet-join attempt 2 (covers a second mesh window if needed)
     type: tee_fleet_join
@@ -131,6 +132,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   # Extra mesh windows (see tee-matrix-restricted-late-join for rationale): the
   # local libp2p mesh can take longer to form than in tee-g2. The
@@ -141,6 +143,7 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   - name: TEE fleet-join attempt 4 (extra mesh window)
     type: tee_fleet_join
@@ -148,12 +151,13 @@ steps:
     group_id: '{{ns}}'
     outputs:
       tee_pk: public_key
+      tee_account: account
 
   - name: Assert the replica is a ReadOnlyTee member at the root
     type: assert_tee_member
     node: tee-owner
     group_id: '{{ns}}'
-    identity: '{{tee_pk}}'
+    account: '{{tee_account}}'
     role: ReadOnlyTee
 
   # ---------- Prove inherited replication of the PRE-EXISTING context ----------

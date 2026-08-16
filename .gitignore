@@ -80,3 +80,4 @@ kv-store-benchmark-report.txt
 workflow-examples/res/kv_store.wasm
 workflow-examples/res/blobs.wasm
 workflow-examples/.core-repo/
+.claude/
