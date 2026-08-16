@@ -137,9 +137,8 @@ def namespace_identity(namespace_id, node, verbose):
 @click.argument("application_id")
 @click.option("--node", "-n", required=True, help="Node name")
 @click.option("--alias", help="Namespace alias")
-@click.option("--upgrade-policy", help="Upgrade policy")
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def create_namespace(node, application_id, alias, upgrade_policy, verbose):
+def create_namespace(node, application_id, alias, verbose):
     """Create a namespace."""
     manager = DockerManager()
     rpc_url = get_node_rpc_url(node, manager)
@@ -150,8 +149,6 @@ def create_namespace(node, application_id, alias, upgrade_policy, verbose):
     kwargs = {}
     if alias is not None:
         kwargs["alias"] = alias
-    if upgrade_policy is not None:
-        kwargs["upgrade_policy"] = upgrade_policy
 
     result = run_async_function(
         call_namespace_api,

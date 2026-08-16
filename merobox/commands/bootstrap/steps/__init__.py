@@ -26,7 +26,6 @@ from merobox.commands.bootstrap.steps.group_create import (
 from merobox.commands.bootstrap.steps.group_governance import (
     DetachContextFromGroupStep,
     SyncGroupStep,
-    UpdateGroupSettingsStep,
 )
 from merobox.commands.bootstrap.steps.group_invite import (
     CreateGroupInvitationStep,
@@ -204,7 +203,6 @@ __all__ = [
     "GetMemberMetadataStep",
     "SetContextMetadataStep",
     "GetContextMetadataStep",
-    "UpdateGroupSettingsStep",
     "DetachContextFromGroupStep",
     "SyncGroupStep",
     "RegisterGroupSigningKeyStep",

@@ -16,6 +16,7 @@ import asyncio
 import math
 import time
 from collections import Counter
+from functools import cache
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import Any
@@ -89,6 +90,47 @@ def _drop_absent(summary: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in summary.items() if value is not _MISSING}
 
 
+# Response keys the summarizers below map into their curated summaries. Both
+# summaries are hand-picked allowlists (a raw passthrough would break `outputs:`
+# addressing), so a field core adds upstream is dropped; these sets are what
+# `_warn_unmapped_keys` diffs against to make that drop visible.
+_CASCADE_STATUS_MAPPED_KEYS = frozenset({"data"})
+_MIGRATION_STATUS_MAPPED_KEYS = frozenset(
+    {"targetVersion", "expectedMembers", "rollup", "members"}
+)
+_MIGRATION_ROLLUP_MAPPED_KEYS = frozenset(
+    {
+        "migrated",
+        "inProgress",
+        "unknown",
+        "failed",
+        "total",
+        "allMigrated",
+        "membersPendingSignature",
+    }
+)
+
+
+@cache
+def _warn_once(message: str) -> None:
+    # Cached on the message: the assert_* steps re-summarize on every poll, and
+    # the same drift warning repeated once per poll is one nobody reads.
+    console.print(message)
+
+
+def _warn_unmapped_keys(source: Any, mapped: frozenset[str], rpc: str) -> None:
+    """Warn when a response carries keys the summary silently drops."""
+    if not isinstance(source, dict):
+        return
+    unmapped = sorted(set(source) - mapped)
+    if unmapped:
+        _warn_once(
+            f"[yellow]⚠️  {rpc}: response field(s) {', '.join(unmapped)} are not "
+            f"mapped by merobox's summary and are unreachable from `outputs:`; "
+            f"this merod is newer than merobox.[/yellow]"
+        )
+
+
 def _summarize_cascade_status(response: Any) -> dict[str, Any]:
     """Roll a `get_cascade_status` response up into per-status counts.
 
@@ -116,6 +158,11 @@ def _summarize_cascade_status(response: Any) -> dict[str, Any]:
     """
     raw_entries = response.get("data") if isinstance(response, dict) else None
     entries: list[Any] = raw_entries if isinstance(raw_entries, list) else []
+    _warn_unmapped_keys(response, _CASCADE_STATUS_MAPPED_KEYS, "get_cascade_status")
+
+    entries: list[Any] = []
+    if isinstance(response, dict) and isinstance(response.get("data"), list):
+        entries = response["data"]
 
     completed = 0
     failed = 0
@@ -213,12 +260,30 @@ def _summarize_migration_status(response: Any) -> dict[str, Any]:
     The summary is an allowlist, which silently drops anything core adds later.
     `members` itself mirrors core's list and is omitted when the response
     carried none, so an empty cohort stays distinct from an unanswered one.
+    `failed` is reconciled against the per-member states (`max` of the rollup
+    counter and the count of members in `state:"failed"`) so the
+    `assert_migration_complete` fast-exit still honours a failed member even
+    when the rollup is missing or carries a non-int counter — without it the
+    documented fail-fast would silently degrade to a poll-to-timeout. `total`
+    falls back to the member count only when the rollup omits it entirely (an
+    explicit `0` cohort is preserved).
+
+    Response and rollup keys outside the mapped sets are warned about rather
+    than dropped silently. Each member's report stays deliberately narrowed to
+    `migration_failed`: its other fields (`schemaVersion`, `residueAuto`,
+    `syncedUpToHlc`, `reportedAt`, `authoredRemaining`) are not surfaced and
+    never warn.
     """
     source = response if isinstance(response, dict) else {}
     rollup = source.get("rollup")
     rollup = rollup if isinstance(rollup, dict) else {}
     raw_members = source.get("members")
     member_entries = raw_members if isinstance(raw_members, list) else []
+
+    _warn_unmapped_keys(response, _MIGRATION_STATUS_MAPPED_KEYS, "get_migration_status")
+    _warn_unmapped_keys(
+        rollup, _MIGRATION_ROLLUP_MAPPED_KEYS, "get_migration_status.rollup"
+    )
 
     members: list[dict[str, Any]] = []
     member_states: Counter = Counter()

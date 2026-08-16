@@ -609,18 +609,6 @@ accept an optional `requester` (admin key) for admin-guarded groups.
     tier: gold
 ```
 
-### update_group_settings
-
-Update a group's upgrade policy. Fields: `node`, `group_id`, `upgrade_policy`
-(`automatic` or `lazy-on-access`).
-
-```yaml
-- type: update_group_settings
-  node: calimero-node-1
-  group_id: '{{group_id}}'
-  upgrade_policy: automatic
-```
-
 ### detach_context_from_group
 
 Detach a context from its group. Fields: `node`, `group_id`, `context_id`.
