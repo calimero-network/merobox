@@ -83,8 +83,9 @@ steps:
     node: calimero-node-2
     group_id: '{{namespace_id}}'
     event: MigrationStarted
-    # Not fromVersion: merobox installs a bare .wasm and passes no version, so
-    # core stamps "0.0.0". localContextsTotal is node 2's OWN context count.
+    # Not fromVersion: a dev install carries no version, so it arrives as the
+    # empty string - the "0.0.0" is toVersion. localContextsTotal is node 2's OWN
+    # context count.
     match:
       data.localContextsTotal: 1
     timeout_seconds: 120
