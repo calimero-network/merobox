@@ -57,10 +57,9 @@ steps:
       ns_id: namespaceId
 
   # Capture admin key for teardown.
-  - name: Get Namespace Admin Identity
-    type: get_namespace_identity
+  - name: Get Admin Identity
+    type: node_identity
     node: calimero-node-1
-    namespace_id: '{{ns_id}}'
     outputs:
       admin_key: publicKey
 

@@ -50,7 +50,6 @@ from merobox.commands.bootstrap.steps import (
     GetMemberCapabilitiesStep,
     GetMemberMetadataStep,
     GetMigrationStatusStep,
-    GetNamespaceIdentityStep,
     InstallApplicationStep,
     InviteOpenStep,
     JoinContextStep,
@@ -2254,8 +2253,6 @@ class WorkflowExecutor:
             return JoinNamespaceStep(step_config, **common_kwargs)
         elif step_type == "list_namespaces":
             return ListNamespacesStep(step_config, **common_kwargs)
-        elif step_type == "get_namespace_identity":
-            return GetNamespaceIdentityStep(step_config, **common_kwargs)
         elif step_type == "create_group_in_namespace":
             return CreateGroupInNamespaceStep(step_config, **common_kwargs)
         elif step_type == "list_namespace_groups":

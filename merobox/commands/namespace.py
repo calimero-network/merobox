@@ -93,46 +93,6 @@ def list_namespaces(node, verbose):
         console.print(json_lib.dumps(result, indent=2))
 
 
-@namespace.command(name="identity")
-@click.argument("namespace_id")
-@click.option("--node", "-n", required=True, help="Node name")
-@click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def namespace_identity(namespace_id, node, verbose):
-    """Get namespace identity."""
-    manager = DockerManager()
-    rpc_url = get_node_rpc_url(node, manager)
-    console.print(
-        f"[blue]Getting namespace identity for {namespace_id} on node {node}[/blue]"
-    )
-
-    result = run_async_function(
-        call_namespace_api,
-        rpc_url,
-        "get_namespace_identity",
-        namespace_id,
-        node_name=node,
-    )
-    if not result["success"]:
-        console.print(
-            f"[red]✗ Failed to get namespace identity: {result.get('error')}[/red]"
-        )
-        sys.exit(1)
-
-    data = unwrap_api_response(result)
-    table = Table(title="Namespace Identity", box=box.ROUNDED)
-    table.add_column("Property", style="cyan")
-    table.add_column("Value", style="green")
-    table.add_row("Namespace ID", namespace_id)
-    if isinstance(data, dict):
-        for key, value in data.items():
-            table.add_row(str(key), str(value))
-    else:
-        table.add_row("Identity", str(data))
-    console.print(table)
-    if verbose:
-        console.print(json_lib.dumps(result, indent=2))
-
-
 @namespace.command(name="create")
 @click.argument("application_id")
 @click.option("--node", "-n", required=True, help="Node name")

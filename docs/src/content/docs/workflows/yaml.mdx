@@ -428,7 +428,7 @@ Read-only lookups. Each takes `node` plus the id shown.
 | Step | Extra fields | Reads |
 | --- | --- | --- |
 | `list_namespaces` | — | Namespaces on the node. |
-| `get_namespace_identity` | `namespace_id` | The namespace's identity. |
+| `node_identity` | — | Who this node is: `accountId`, `deviceId`, `publicKey`, `accountRootPublicKey`. Takes no namespace — none of it varies by one. |
 | `list_namespace_groups` | `namespace_id` | Subgroups of a namespace. |
 | `list_subgroups` | `group_id` | Subgroups of a group. |
 | `get_group_info` | `group_id` | Full group record. |
@@ -451,7 +451,7 @@ A node has two ids in a namespace and they are not interchangeable.
 Its **signing key** is bs58; its **account** is 64 hex characters, and that is the principal governance rows are keyed by.
 The encodings differ on purpose, so passing one where the other belongs is a `400` rather than a silent no-op.
 
-Read them from `join_namespace` (`memberIdentity` / `memberAccount`) or `get_namespace_identity` (`publicKey` / `account`).
+Read them from `join_namespace` (`memberIdentity` / `memberAccount`) or `node_identity` (`publicKey` / `accountId`).
 
 Use the **account** for `member_id` on every member-addressing step, and for `remove_group_members`.
 Use the **key** for `add_group_members`' `identity` and for any `requester` field.
