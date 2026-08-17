@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-node exit state alongside the logs: `data/container-logs/<name>.state.json`.**
+  Captures Docker's `status`, `exit_code`, `oom_killed`, `error` and start/finish
+  timestamps for every node, written at the same points the logs are. A node killed
+  by a signal writes no final log line — the log just ends — so the exit code is the
+  only evidence of the cause: 137 with `oom_killed` is memory, 139 is a segfault,
+  143 is an ordinary SIGTERM teardown, 0 is a node that chose to exit. Docker keeps
+  this only until the container is removed, so the stop path now reads it in the one
+  window where it exists: after `stop`, before `remove`.
+- **A node that stopped on its own is now announced.** `export_node_logs()` prints a
+  `💀 <node> is not running: <cause>` line naming what the exit code means, so the
+  reason a scenario failed is in the run output rather than only in an artifact
+  nobody downloads. This is what turns a bare
+  `Client error: error sending request for url (...)` — a transport failure, which
+  is what a dead node looks like from the client side — into a diagnosis.
+
+### Fixed
+
+- **`export_node_logs()` no longer skips nodes that have already exited.**
+  `containers.list()` defaults to running-only, so the one node worth looking at
+  when a scenario fails because a node died was precisely the one dropped from the
+  capture. It now lists with `all=True`.
+
 ## [0.6.53] - 2026-08-12
 
 ### Changed
