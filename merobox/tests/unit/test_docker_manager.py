@@ -1,3 +1,4 @@
+import json
 import signal
 import threading
 from unittest.mock import MagicMock, patch
@@ -10,6 +11,7 @@ from merobox.commands.manager import (
     CORS_ALLOWED_HEADERS,
     DEFAULT_CORS_ORIGINS,
     DockerManager,
+    _describe_unexpected_exit,
     _get_node_hostname,
     _validate_cors_origins,
 )
@@ -1306,24 +1308,51 @@ def test_drain_timeout_zero_skips_drain_phase(mock_docker):
 # --- export_node_logs (merobox#207): persist logs without stopping nodes -----
 
 
-def _logging_container(name, log_text):
-    """A MagicMock container whose `.logs()` returns `log_text` as bytes."""
+def _logging_container(name, log_text, state=None):
+    """A MagicMock container whose `.logs()` returns `log_text` as bytes.
+
+    `state` populates the Docker `State` block that the exit-state capture reads;
+    it defaults to a healthy running node.
+    """
     c = MagicMock()
     c.name = name
     c.logs.return_value = log_text.encode("utf-8")
+    c.attrs = {"State": state or _running_state()}
     return c
+
+
+def _running_state():
+    return {
+        "Status": "running",
+        "ExitCode": 0,
+        "OOMKilled": False,
+        "Error": "",
+        "StartedAt": "2026-08-17T08:25:51.7Z",
+        "FinishedAt": "0001-01-01T00:00:00Z",
+    }
+
+
+def _exited_state(exit_code, oom_killed=False, error=""):
+    return {
+        "Status": "exited",
+        "ExitCode": exit_code,
+        "OOMKilled": oom_killed,
+        "Error": error,
+        "StartedAt": "2026-08-17T08:25:51.7Z",
+        "FinishedAt": "2026-08-17T08:25:55.8Z",
+    }
 
 
 @patch("docker.from_env")
 def test_export_node_logs_writes_running_nodes(mock_docker, tmp_path, monkeypatch):
-    """With no explicit names, all running nodes are dumped to data/container-logs/."""
+    """With no explicit names, every node is dumped to data/container-logs/."""
     client = MagicMock()
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
 
     node = _logging_container("calimero-node-1", "hello from node-1")
-    # get_running_nodes() lists running calimero nodes; export then re-fetches
-    # each by name via containers.get().
+    # get_all_nodes() lists calimero nodes (exited ones included); export then
+    # re-fetches each by name via containers.get().
     client.containers.list.return_value = [node]
     client.containers.get.return_value = node
 
@@ -1341,7 +1370,7 @@ def test_export_node_logs_writes_running_nodes(mock_docker, tmp_path, monkeypatc
 
 @patch("docker.from_env")
 def test_export_node_logs_explicit_names(mock_docker, tmp_path, monkeypatch):
-    """Explicit names bypass get_running_nodes and are fetched directly."""
+    """Explicit names bypass node discovery and are fetched directly."""
     client = MagicMock()
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
@@ -1356,7 +1385,7 @@ def test_export_node_logs_explicit_names(mock_docker, tmp_path, monkeypatch):
     assert (
         tmp_path / "data" / "container-logs" / "calimero-node-2.log"
     ).read_text() == "node-2 logs"
-    # No running-node discovery when names are supplied.
+    # No node discovery when names are supplied.
     client.containers.list.assert_not_called()
 
 
@@ -1364,7 +1393,7 @@ def test_export_node_logs_explicit_names(mock_docker, tmp_path, monkeypatch):
 def test_export_node_logs_no_running_nodes_returns_zero(
     mock_docker, tmp_path, monkeypatch
 ):
-    """No running nodes -> nothing written, returns 0, no directory churn."""
+    """No nodes at all -> nothing written, returns 0, no directory churn."""
     client = MagicMock()
     mock_docker.return_value = client
     manager = DockerManager(enable_signal_handlers=False)
@@ -1400,3 +1429,156 @@ def test_export_node_logs_skips_missing_container(mock_docker, tmp_path, monkeyp
     assert not (
         tmp_path / "data" / "container-logs" / "calimero-node-missing.log"
     ).exists()
+
+
+# --- exit-state capture: why a node stopped, not just what it logged ----------
+
+
+@patch("docker.from_env")
+def test_export_node_logs_includes_exited_nodes(mock_docker, tmp_path, monkeypatch):
+    """A node that already died must still be captured.
+
+    `containers.list()` defaults to running-only, which used to drop exactly the
+    node worth looking at: the one whose death made the scenario fail.
+    """
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    dead = _logging_container(
+        "calimero-node-1", "log ends mid-compile", _exited_state(137, oom_killed=True)
+    )
+    client.containers.list.return_value = [dead]
+    client.containers.get.return_value = dead
+
+    monkeypatch.chdir(tmp_path)
+    assert manager.export_node_logs() == 1
+
+    # The listing must ask for exited containers too.
+    _, kwargs = client.containers.list.call_args
+    assert kwargs.get("all") is True
+
+    logs = tmp_path / "data" / "container-logs"
+    assert (logs / "calimero-node-1.log").read_text() == "log ends mid-compile"
+    state = json.loads((logs / "calimero-node-1.state.json").read_text())
+    assert state["status"] == "exited"
+    assert state["exit_code"] == 137
+    assert state["oom_killed"] is True
+
+
+@patch("docker.from_env")
+def test_export_node_logs_records_state_for_running_nodes(
+    mock_docker, tmp_path, monkeypatch
+):
+    """A healthy node gets a state file too, so its absence is never ambiguous."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    node = _logging_container("calimero-node-1", "healthy")
+    client.containers.list.return_value = [node]
+    client.containers.get.return_value = node
+
+    monkeypatch.chdir(tmp_path)
+    assert manager.export_node_logs() == 1
+
+    state = json.loads(
+        (
+            tmp_path / "data" / "container-logs" / "calimero-node-1.state.json"
+        ).read_text()
+    )
+    assert state["status"] == "running"
+    # Reading state must not disturb the node.
+    node.stop.assert_not_called()
+
+
+@patch("docker.from_env")
+def test_export_node_logs_survives_unreadable_state(mock_docker, tmp_path, monkeypatch):
+    """State capture is best-effort: a Docker error must not lose the log."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    node = _logging_container("calimero-node-1", "log survives")
+    node.reload.side_effect = docker.errors.APIError("daemon gone")
+    client.containers.list.return_value = [node]
+    client.containers.get.return_value = node
+
+    monkeypatch.chdir(tmp_path)
+    assert manager.export_node_logs() == 1
+
+    logs = tmp_path / "data" / "container-logs"
+    assert (logs / "calimero-node-1.log").read_text() == "log survives"
+    assert not (logs / "calimero-node-1.state.json").exists()
+
+
+@patch("docker.from_env")
+def test_stop_path_records_exit_state_before_removing(
+    mock_docker, tmp_path, monkeypatch
+):
+    """The stop path must read the exit code between `stop` and `remove`.
+
+    `stop` is what produces the exit code and `remove` is what destroys it, so a
+    capture on either side of that window records nothing useful.
+    """
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+
+    node = _logging_container("calimero-node-1", "bye")
+    calls = []
+    node.stop.side_effect = lambda **kwargs: (
+        calls.append("stop"),
+        node.attrs.__setitem__("State", _exited_state(143)),
+    )
+    node.reload.side_effect = lambda: calls.append("reload")
+    node.remove.side_effect = lambda: calls.append("remove")
+
+    monkeypatch.chdir(tmp_path)
+    success, failed = manager._graceful_stop_containers_batch(
+        [("calimero-node-1", node)], drain_timeout=0, stop_timeout=1
+    )
+
+    assert (success, failed) == (1, [])
+    assert calls == ["stop", "reload", "remove"]
+    state = json.loads(
+        (
+            tmp_path / "data" / "container-logs" / "calimero-node-1.state.json"
+        ).read_text()
+    )
+    assert state["exit_code"] == 143
+
+
+@pytest.mark.parametrize(
+    "state,expected",
+    [
+        (_running_state(), None),
+        (_exited_state(137, oom_killed=True), "out of memory"),
+        (_exited_state(137), "SIGKILL"),
+        (_exited_state(139), "SIGSEGV"),
+        (_exited_state(143), "SIGTERM"),
+        (_exited_state(0), "exited cleanly"),
+        (_exited_state(2), "exited 2"),
+    ],
+)
+def test_describe_unexpected_exit_names_the_cause(state, expected):
+    """The exit code is only evidence if it is translated into a cause."""
+    summary = {
+        "name": "calimero-node-1",
+        "status": state["Status"],
+        "exit_code": state["ExitCode"],
+        "oom_killed": state["OOMKilled"],
+        "error": state["Error"],
+    }
+    detail = _describe_unexpected_exit(summary)
+
+    if expected is None:
+        assert detail is None
+    else:
+        assert expected in detail
+        assert "calimero-node-1" in detail
+
+
+def test_describe_unexpected_exit_ignores_missing_state():
+    """No state captured -> nothing claimed about how the node stopped."""
+    assert _describe_unexpected_exit(None) is None

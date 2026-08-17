@@ -2,6 +2,7 @@
 Calimero Manager - Core functionality for managing Calimero nodes in Docker containers.
 """
 
+import json
 import logging
 import os
 import re
@@ -129,6 +130,79 @@ def _dump_container_log(container, container_name: str, log_dir: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def _dump_container_state(
+    container, container_name: str, log_dir: str
+) -> Optional[dict]:
+    """Write a container's Docker-level exit state to ``<name>.state.json``.
+
+    The log says what the node did; this says how it stopped, and the two answer
+    different questions. A node killed by a signal writes no final line at all —
+    the log simply ends — so the exit code is the only evidence of the cause:
+    137 with ``oom_killed`` is memory, 139 is a segfault, 143 is the SIGTERM of
+    an ordinary teardown, and 0 is a clean exit the node chose. Without it, a
+    node that vanishes mid-scenario is indistinguishable from one that hung, and
+    the scenario failure reads as an application error.
+
+    Docker keeps this only until the container is removed, which is why every
+    capture site sits beside the log capture rather than after teardown.
+
+    Best-effort like the log dump: returns ``None`` rather than raising, so a
+    shutdown path never fails because state could not be read.
+    """
+    try:
+        # The container object may carry attrs cached from creation time, when it
+        # had not exited yet.
+        container.reload()
+        state = container.attrs.get("State") or {}
+        summary = {
+            "name": container_name,
+            "status": state.get("Status"),
+            "exit_code": state.get("ExitCode"),
+            "oom_killed": state.get("OOMKilled"),
+            "error": state.get("Error") or "",
+            "started_at": state.get("StartedAt"),
+            "finished_at": state.get("FinishedAt"),
+        }
+        state_file = os.path.join(log_dir, f"{container_name}.state.json")
+        with open(state_file, "w") as f:
+            json.dump(summary, f, indent=2, sort_keys=True)
+        return summary
+    except Exception:
+        return None
+
+
+def _describe_unexpected_exit(summary: Optional[dict]) -> Optional[str]:
+    """Explain a node that is no longer running, or ``None`` when it is fine.
+
+    Kept separate from the capture so the console line and the JSON never drift,
+    and so the interpretation of the exit code lives in exactly one place.
+    """
+    if not summary or summary.get("status") == "running":
+        return None
+
+    exit_code = summary.get("exit_code")
+    if summary.get("oom_killed"):
+        cause = "out of memory (OOM-killed)"
+    elif exit_code == 137:
+        cause = "killed by SIGKILL — out of memory, or killed from outside"
+    elif exit_code == 139:
+        cause = "killed by SIGSEGV — the process crashed"
+    elif exit_code == 143:
+        cause = "stopped by SIGTERM"
+    elif exit_code == 0:
+        cause = "exited cleanly of its own accord"
+    else:
+        cause = f"exited {exit_code}"
+
+    detail = summary.get("error")
+    suffix = f" ({detail})" if detail else ""
+    return (
+        f"{summary['name']} is not running: {cause}{suffix}. "
+        f"Its log ends where the process died, so the last line is a symptom, "
+        f"not the cause."
+    )
 
 
 class DockerManager(CleanupMixin):
@@ -1868,6 +1942,12 @@ class DockerManager(CleanupMixin):
 
             try:
                 container.stop(timeout=stop_timeout)
+                # Between the stop and the remove is the only moment the exit
+                # code exists to be read: `stop` produces it, `remove` destroys
+                # it. Nothing is announced here — on this path the node stopped
+                # because it was told to. The export path is what flags a node
+                # that stopped on its own.
+                _dump_container_state(container, container_name, log_dir)
                 container.remove()
                 console.print(
                     f"[green]✓ Gracefully stopped and removed {container_name}[/green]"
@@ -2043,24 +2123,42 @@ class DockerManager(CleanupMixin):
         except Exception:
             return []
 
-    def export_node_logs(self, node_names: Optional[list[str]] = None) -> int:
-        """Persist logs for the given (or all running) Calimero nodes.
+    def get_all_nodes(self) -> list[str]:
+        """Return names of all Calimero node containers, exited ones included.
 
-        Writes ``data/container-logs/<name>.log`` for each node without
-        stopping it, so workflows that leave nodes running
+        ``containers.list()`` defaults to running-only, which silently excludes
+        the one node worth looking at when a scenario fails because a node died.
+        """
+        try:
+            containers = self.client.containers.list(
+                all=True, filters={"label": "calimero.node=true"}
+            )
+            return [c.name for c in containers]
+        except Exception:
+            return []
+
+    def export_node_logs(self, node_names: Optional[list[str]] = None) -> int:
+        """Persist logs and exit state for the given (or all) Calimero nodes.
+
+        Writes ``data/container-logs/<name>.log`` and ``<name>.state.json`` for
+        each node without stopping it, so workflows that leave nodes running
         (``stop_all_nodes: false``) still produce collectable log artifacts.
         The stop path captures logs of its own when nodes are torn down; this
         method covers the cases where they are not.
 
+        Nodes that have already exited are included on purpose: a node that died
+        mid-scenario is both the reason the scenario failed and the node a
+        running-only listing drops.
+
         Args:
             node_names: Explicit container names to dump. When ``None``, all
-                currently running Calimero nodes are used.
+                Calimero nodes are used, whether running or exited.
 
         Returns:
             The number of node logs successfully written.
         """
         if node_names is None:
-            node_names = self.get_running_nodes()
+            node_names = self.get_all_nodes()
         if not node_names:
             return 0
 
@@ -2075,6 +2173,14 @@ class DockerManager(CleanupMixin):
                     continue
             if _dump_container_log(container, name, CONTAINER_LOG_DIR):
                 written += 1
+            # Print, not just persist: a dead node explains the failure above it,
+            # and making that visible must not depend on anyone downloading the
+            # log artifact afterwards.
+            detail = _describe_unexpected_exit(
+                _dump_container_state(container, name, CONTAINER_LOG_DIR)
+            )
+            if detail:
+                console.print(f"[red]💀 {detail}[/red]")
         return written
 
     def list_nodes(self) -> None:
