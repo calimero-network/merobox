@@ -92,7 +92,6 @@ from merobox.commands.bootstrap.steps.login import LoginStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.namespace import (
     CreateGroupInNamespaceStep,
-    GetNamespaceIdentityStep,
     ListNamespaceGroupsStep,
     ListNamespacesStep,
 )
@@ -280,8 +279,6 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = JoinSubgroupInheritanceStep
         elif step_type == "list_namespaces":
             step_class = ListNamespacesStep
-        elif step_type == "get_namespace_identity":
-            step_class = GetNamespaceIdentityStep
         elif step_type == "account_create":
             step_class = AccountCreateStep
         elif step_type == "account_pair":

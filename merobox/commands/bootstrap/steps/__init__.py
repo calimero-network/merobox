@@ -91,7 +91,6 @@ from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 from merobox.commands.bootstrap.steps.mesh import CreateMeshStep
 from merobox.commands.bootstrap.steps.namespace import (
     CreateGroupInNamespaceStep,
-    GetNamespaceIdentityStep,
     ListNamespaceGroupsStep,
     ListNamespacesStep,
 )
@@ -140,7 +139,6 @@ __all__ = [
     "CreateGroupInvitationStep",
     "JoinGroupStep",
     "ListNamespacesStep",
-    "GetNamespaceIdentityStep",
     "CreateGroupInNamespaceStep",
     "ListNamespaceGroupsStep",
     "ReparentGroupStep",
