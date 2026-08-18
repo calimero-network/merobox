@@ -786,18 +786,6 @@ class TestBucketBStepSchemas:
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
-    def test_valid_set_member_auto_follow_with_requester(self, config_module):
-        step = {
-            "type": "set_member_auto_follow",
-            "node": "calimero-node-1",
-            "group_id": "{{group_id}}",
-            "member_id": "{{p2_identity}}",
-            "auto_follow_contexts": False,
-            "auto_follow_subgroups": True,
-            "requester": "{{p1_identity}}",
-        }
-        assert config_module.validate_workflow_step(step, 0) == []
-
     def test_invalid_set_member_auto_follow_missing_flag(self, config_module):
         step = {
             "type": "set_member_auto_follow",
@@ -895,37 +883,6 @@ class TestBucketBStepSchemas:
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
-    def test_valid_delete_context_with_requester(self, config_module):
-        step = {
-            "type": "delete_context",
-            "node": "calimero-node-1",
-            "context_id": "{{context_id}}",
-            "requester": "{{admin_key}}",
-        }
-        assert config_module.validate_workflow_step(step, 0) == []
-
-    def test_valid_delete_group_with_requester(self, config_module):
-        step = {
-            "type": "delete_group",
-            "node": "calimero-node-1",
-            "group_id": "{{group_id}}",
-            "requester": "{{admin_key}}",
-        }
-        assert config_module.validate_workflow_step(step, 0) == []
-
-    def test_valid_delete_namespace_with_requester(self, config_module):
-        step = {
-            "type": "delete_namespace",
-            "node": "calimero-node-1",
-            "namespace_id": "{{namespace_id}}",
-            "requester": "{{admin_key}}",
-        }
-        assert config_module.validate_workflow_step(step, 0) == []
-
-
-class TestMetadataStepSchemas:
-    """Schema validation for the *_metadata step types (core #2338)."""
-
     def test_valid_set_group_metadata(self, config_module):
         step = {
             # `name` is the step label; `record_name` is the metadata
@@ -981,7 +938,6 @@ class TestMetadataStepSchemas:
             "group_id": "{{group_id}}",
             "member_id": "{{p2_identity}}",
             "record_name": "Bob",
-            "requester": "{{admin_key}}",
         }
         assert config_module.validate_workflow_step(step, 0) == []
 

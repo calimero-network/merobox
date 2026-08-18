@@ -19,14 +19,14 @@ from merobox.commands.utils import console
 _REQUIRED_CLIENT_VERSION = "0.6.10"
 
 
-def _build_metadata_body(name: Any, data: Any, requester: Any) -> str:
+def _build_metadata_body(name: Any, data: Any) -> str:
     """Build the JSON body for a set-metadata admin API call.
 
-    The server expects ``{"name": <str|null>, "data": {<str>:<str>...},
-    "requester": <pubkey|null>}``. ``requester`` is ``Option<PublicKey>``
-    server-side, so sending ``null`` when it's not provided is fine.
+    The server expects ``{"name": <str|null>, "data": {<str>:<str>...}}``. It
+    used to take a ``requester`` beside them; that field is gone, and the node
+    resolves the acting identity from the authenticated session.
     """
-    return json.dumps({"name": name, "data": data or {}, "requester": requester})
+    return json.dumps({"name": name, "data": data or {}})
 
 
 class _SetMetadataBase(BaseStep):
@@ -69,11 +69,11 @@ class _SetMetadataBase(BaseStep):
                     raise ValueError(
                         f"Step '{step_name}': 'data' must be a dict of string->string"
                     )
-        requester = self.config.get("requester")
-        if requester is not None and not isinstance(requester, str):
-            raise ValueError(
-                f"Step '{step_name}': 'requester' must be a string if provided"
-            )
+        self._reject_removed_field(
+            "requester",
+            "The node resolves the acting identity from the authenticated "
+            "session (calimero-network/core#3492).",
+        )
 
     def _log_target(self, group_id: str, extra_args: list[Any]) -> str:
         """Human-readable target description for the success log line.
@@ -121,13 +121,7 @@ class _SetMetadataBase(BaseStep):
             }
         else:
             data = data_raw
-        requester_raw = self.config.get("requester")
-        requester = (
-            self._resolve_dynamic_value(requester_raw, workflow_results, dynamic_values)
-            if isinstance(requester_raw, str)
-            else requester_raw
-        )
-        body = _build_metadata_body(name, data, requester)
+        body = _build_metadata_body(name, data)
 
         expected_failure = self._is_expected_failure()
 

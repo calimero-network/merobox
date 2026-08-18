@@ -11,7 +11,7 @@ description: >
   are needed to exercise the upgrade path.
 
   This workflow does not exercise register_group_signing_key because the
-  server auto-stores the node-held signing key when the requester is the
+  server auto-stores the node-held signing key when the caller is the
   node's own identity. That step type is still schema-validated and
   dispatched; a future key-rotation workflow can cover it end-to-end.
 
@@ -100,25 +100,20 @@ steps:
     expected_failure: true
 
   # Phase 5: Teardown
-  # Unlocked by calimero-client-py 0.6.2+ (requester field on
-  # delete_context/delete_group/delete_namespace).
   - name: Delete Context
     type: delete_context
     node: calimero-node-1
     context_id: '{{ctx_id}}'
-    requester: '{{p1_admin_key}}'
 
   - name: Delete Subgroup
     type: delete_group
     node: calimero-node-1
     group_id: '{{group_id}}'
-    requester: '{{p1_admin_key}}'
 
   - name: Delete Namespace
     type: delete_namespace
     node: calimero-node-1
     namespace_id: '{{namespace_id}}'
-    requester: '{{p1_admin_key}}'
 
   - name: Uninstall v1
     type: uninstall_application

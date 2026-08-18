@@ -139,6 +139,20 @@ class BaseStep:
     # Use them in subclass _validate_field_types() implementations.
     # =========================================================================
 
+    def _reject_removed_field(self, field: str, reason: str) -> None:
+        """Fail a step that still sets a field the node no longer accepts.
+
+        Step configs allow unknown keys, so a removed field would otherwise be
+        read by nobody and change nothing — and for a field that named who an
+        operation acted as, silently acting as somebody else is worse than
+        stopping. Errors here rather than at execution, so the workflow author
+        sees it before anything runs.
+        """
+        if field in self.config:
+            raise ValueError(
+                f"Step '{self._get_step_name()}': '{field}' was removed. {reason}"
+            )
+
     def _get_step_name(self) -> str:
         """Get the step name for error messages."""
         return self.config.get(
