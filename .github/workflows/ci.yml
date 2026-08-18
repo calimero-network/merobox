@@ -79,8 +79,13 @@ jobs:
       - id: set
         run: |
           # Binary mode: all workflows except fuzzy, auth-related, the
-          # whole fault-injection family, NAT-topology, and the
-          # cascade-namespace workflow.
+          # whole fault-injection family, NAT-topology, ws-event-assertion,
+          # and the cascade-namespace workflow.
+          # ws-event-assertion partitions a node so the subscription is armed
+          # AFTER the announcement is published - that ordering is the whole
+          # assertion. `disconnect_node` short-circuits on is_binary_mode, so
+          # the peer never detaches, folds the op immediately, and the watch
+          # window opens on an event that has already gone by: 0 arrive.
           # The fault primitives are Docker-specific (the steps short-
           # circuit on is_binary_mode) and the paired docker-inspect
           # assertion scripts would fail outright in binary mode where
@@ -140,6 +145,7 @@ jobs:
             grep -v cached-frontends | \
             grep -v fault-injection | \
             grep -v nat-topology | \
+            grep -v ws-event-assertion | \
             grep -v cascade-namespace | \
             grep -v blob-cross-node-download | \
             grep -v group-admin-example | \
