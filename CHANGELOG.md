@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`requester` from every step that accepted it** — `set_member_auto_follow`,
+  `delete_group`, `delete_namespace`, `delete_context`, and the three
+  set-metadata steps. calimero-network/core#3492 deleted the field from the
+  admin request DTOs; the node resolves the acting identity from the
+  authenticated session, so the value had nowhere to go. Step configs allow
+  unknown keys, so leaving it would have meant a workflow that still names a
+  requester quietly acting as somebody else — a step that sets it now fails
+  validation with a message saying so, before anything runs. Requires
+  `calimero-client-py>=0.6.29`, which drops the same keyword
+
 ### Added
 
 - **Per-node exit state alongside the logs: `data/container-logs/<name>.state.json`.**

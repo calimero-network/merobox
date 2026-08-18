@@ -1155,14 +1155,6 @@ class SetMemberAutoFollowStepConfig(BaseStepConfig):
     auto_follow_subgroups: bool = Field(
         ..., description="Self-admit into nested subgroups under this group"
     )
-    requester: Optional[str] = Field(
-        None,
-        description=(
-            "Optional public key of the identity to act on behalf of "
-            "(must be the group admin or the target itself); when omitted "
-            "the server resolves an admin signing key it holds."
-        ),
-    )
 
 
 class SetDefaultCapabilitiesStepConfig(BaseStepConfig):
@@ -1225,10 +1217,6 @@ class DeleteGroupStepConfig(BaseStepConfig):
     type: Literal["delete_group"] = "delete_group"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID to delete")
-    requester: Optional[str] = Field(
-        None,
-        description="Optional admin public key, required when deleting a group with admin-guarded state",
-    )
 
 
 class DeleteNamespaceStepConfig(BaseStepConfig):
@@ -1237,10 +1225,6 @@ class DeleteNamespaceStepConfig(BaseStepConfig):
     type: Literal["delete_namespace"] = "delete_namespace"
     node: str = Field(..., description="Target node")
     namespace_id: str = Field(..., description="Namespace ID to delete")
-    requester: Optional[str] = Field(
-        None,
-        description="Optional admin public key, required when deleting a namespace with admin-guarded state",
-    )
 
 
 class DeleteContextStepConfig(BaseStepConfig):
@@ -1249,10 +1233,6 @@ class DeleteContextStepConfig(BaseStepConfig):
     type: Literal["delete_context"] = "delete_context"
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID to delete")
-    requester: Optional[str] = Field(
-        None,
-        description="Optional admin public key, required when deleting a context registered in a group",
-    )
 
 
 class UninstallApplicationStepConfig(BaseStepConfig):
@@ -1279,10 +1259,6 @@ class SetGroupMetadataStepConfig(BaseStepConfig):
     data: Optional[dict[str, str]] = Field(
         None, description="Arbitrary string->string metadata map"
     )
-    requester: Optional[str] = Field(
-        None,
-        description="Optional admin public key; required when the group is admin-guarded",
-    )
 
 
 class GetGroupMetadataStepConfig(BaseStepConfig):
@@ -1305,10 +1281,6 @@ class SetMemberMetadataStepConfig(BaseStepConfig):
     )
     data: Optional[dict[str, str]] = Field(
         None, description="Arbitrary string->string metadata map"
-    )
-    requester: Optional[str] = Field(
-        None,
-        description="Optional admin public key; required when the group is admin-guarded",
     )
 
 
@@ -1333,10 +1305,6 @@ class SetContextMetadataStepConfig(BaseStepConfig):
     )
     data: Optional[dict[str, str]] = Field(
         None, description="Arbitrary string->string metadata map"
-    )
-    requester: Optional[str] = Field(
-        None,
-        description="Optional admin public key; required when the group is admin-guarded",
     )
 
 
