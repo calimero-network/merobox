@@ -46,7 +46,6 @@ VALID_STEP_TYPES = frozenset(
         "leave_group",
         "leave_namespace",
         "list_namespaces",
-        "get_namespace_identity",
         "account_create",
         "account_pair",
         "account_revoke",
@@ -930,14 +929,6 @@ class ListNamespacesStepConfig(BaseStepConfig):
     node: str = Field(..., description="Target node")
 
 
-class GetNamespaceIdentityStepConfig(BaseStepConfig):
-    """Configuration for get_namespace_identity step."""
-
-    type: Literal["get_namespace_identity"] = "get_namespace_identity"
-    node: str = Field(..., description="Target node")
-    namespace_id: str = Field(..., description="Namespace ID")
-
-
 class NodeExecStepConfig(BaseStepConfig):
     """Configuration for node_exec step."""
 
@@ -1639,7 +1630,6 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "join_subgroup_inheritance": JoinSubgroupInheritanceStepConfig,
     "join_open": JoinStep,
     "list_namespaces": ListNamespacesStepConfig,
-    "get_namespace_identity": GetNamespaceIdentityStepConfig,
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
     "account_revoke": AccountRevokeStepConfig,

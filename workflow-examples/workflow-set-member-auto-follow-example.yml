@@ -41,13 +41,12 @@ steps:
   # Both halves of node 1's identity: `account` names the member being changed,
   # `publicKey` signs for the change. `requester` stayed a key when the member
   # path moved to accounts, so the self-set step below needs one of each.
-  - name: Get Node 1 Namespace Identity
-    type: get_namespace_identity
+  - name: Get Node 1 Identity
+    type: node_identity
     node: calimero-node-1
-    namespace_id: '{{namespace_id}}'
     outputs:
       p1_admin_key: publicKey
-      p1_admin_account: account
+      p1_admin_account: accountId
 
   - name: Create Namespace Invitation
     type: create_namespace_invitation

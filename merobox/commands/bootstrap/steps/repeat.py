@@ -20,7 +20,6 @@ from merobox.commands.bootstrap.steps.join_subgroup_inheritance import (
 )
 from merobox.commands.bootstrap.steps.namespace import (
     CreateGroupInNamespaceStep,
-    GetNamespaceIdentityStep,
     ListNamespaceGroupsStep,
     ListNamespacesStep,
 )
@@ -414,8 +413,6 @@ class RepeatStep(BaseStep):
             return JoinNamespaceStep(step_config, **common_kwargs)
         elif step_type == "list_namespaces":
             return ListNamespacesStep(step_config, **common_kwargs)
-        elif step_type == "get_namespace_identity":
-            return GetNamespaceIdentityStep(step_config, **common_kwargs)
         elif step_type == "create_group_in_namespace":
             return CreateGroupInNamespaceStep(step_config, **common_kwargs)
         elif step_type == "list_namespace_groups":

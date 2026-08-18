@@ -33,10 +33,9 @@ steps:
   # identity for any subgroup created by node 1 inside this namespace,
   # and the admin requester needed by delete_context / delete_group /
   # delete_namespace during teardown.
-  - name: Get Node 1 Namespace Identity
-    type: get_namespace_identity
+  - name: Get Node 1 Identity
+    type: node_identity
     node: calimero-node-1
-    namespace_id: '{{namespace_id}}'
     outputs:
       p1_admin_key: publicKey
 

@@ -771,7 +771,7 @@ class GetGroupUpgradeStatusStep(BaseStep):
         workflow_results[f"upgrade_status_{node_name}"] = result["data"]
         # Only export when the author configured outputs — otherwise the base
         # class prints "No outputs configured" warnings for every caller that
-        # doesn't use outputs. Same guard as GetNamespaceIdentityStep.
+        # doesn't use outputs.
         if "outputs" in self.config:
             self._export_variables(result["data"], node_name, dynamic_values)
         console.print(

@@ -558,7 +558,6 @@ class TestValidStepTypes:
             "join",
             "join_open",
             "list_namespaces",
-            "get_namespace_identity",
             "create_group_in_namespace",
             "list_namespace_groups",
             "reparent_group",
