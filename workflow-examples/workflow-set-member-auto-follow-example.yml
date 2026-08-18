@@ -38,9 +38,8 @@ steps:
     outputs:
       namespace_id: namespaceId
 
-  # Both halves of node 1's identity: `account` names the member being changed,
-  # `publicKey` signs for the change. `requester` stayed a key when the member
-  # path moved to accounts, so the self-set step below needs one of each.
+  # Node 1's account names the member being changed. The node signs for the
+  # change itself, from the authenticated session.
   - name: Get Node 1 Identity
     type: node_identity
     node: calimero-node-1
@@ -141,14 +140,12 @@ steps:
     member_id: '{{p2_account}}'
     auto_follow_contexts: false
     auto_follow_subgroups: false
-    requester: '{{p2_identity}}'
 
   - name: Wait for Self-Set Gossip
     type: wait
     seconds: 5
 
-  # Phase 4: Admin acts on itself (explicit requester = admin identity).
-  # Exercises the optional `requester` field with a non-default value.
+  # Phase 4: Admin acts on itself.
 
   - name: Admin Self-Sets contexts-only on Self
     type: set_member_auto_follow
@@ -157,4 +154,3 @@ steps:
     member_id: '{{p1_admin_account}}'
     auto_follow_contexts: true
     auto_follow_subgroups: false
-    requester: '{{p1_admin_key}}'

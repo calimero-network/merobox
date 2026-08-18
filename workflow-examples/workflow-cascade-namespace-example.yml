@@ -116,13 +116,11 @@ steps:
     type: delete_group
     node: calimero-node-1
     group_id: '{{sub_id}}'
-    requester: '{{admin_key}}'
 
   - name: Delete Namespace
     type: delete_namespace
     node: calimero-node-1
     namespace_id: '{{ns_id}}'
-    requester: '{{admin_key}}'
 
   - name: Uninstall v1
     type: uninstall_application
