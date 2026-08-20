@@ -52,7 +52,6 @@ steps:
     nodes:
       - calimero-node-2
       - calimero-node-3
-    capability: member
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey

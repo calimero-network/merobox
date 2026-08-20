@@ -5,6 +5,7 @@ Configuration management for bootstrap workflows.
 import math
 import os
 import re
+from difflib import get_close_matches
 from typing import Any, Literal, Optional, Union
 
 import yaml
@@ -205,12 +206,27 @@ class RemoteNodeConfig(BaseModel):
 class BaseStepConfig(BaseModel):
     """Base configuration for all workflow steps."""
 
-    model_config = ConfigDict(extra="allow")
+    # A key nothing reads is a step that silently does nothing while the run
+    # goes green, so an unknown one fails before any container starts.
+    model_config = ConfigDict(extra="forbid")
 
     name: Optional[str] = Field(None, description="Name of the step")
     type: str = Field(..., description="Type of the step")
     outputs: Optional[dict[str, Any]] = Field(
         None, description="Output variable mappings"
+    )
+    description: Optional[str] = Field(
+        None, description="Free-form note; the run does not read it"
+    )
+    expected_failure: Optional[bool] = Field(
+        None, description="Treat the call failing as this step's pass condition"
+    )
+    expected_error: Optional[str] = Field(
+        None,
+        description="Substring the failure must carry; needs 'expected_failure: true'",
+    )
+    token: Optional[str] = Field(
+        None, description="JWT to attach instead of the cached one"
     )
 
     @model_validator(mode="after")
@@ -229,8 +245,15 @@ class InstallApplicationStep(BaseStepConfig):
 
     type: Literal["install_application"] = "install_application"
     node: str = Field(..., description="Target node for installation")
-    path: str = Field(..., description="Path to the WASM file")
+    path: Optional[str] = Field(None, description="Path to the WASM file")
+    url: Optional[str] = Field(None, description="URL to install the WASM from")
     dev: Optional[bool] = Field(False, description="Install in dev mode")
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "InstallApplicationStep":
+        if not self.path and not self.url:
+            raise ValueError("either 'path' or 'url' must be specified")
+        return self
 
 
 class CreateContextStep(BaseStepConfig):
@@ -240,6 +263,7 @@ class CreateContextStep(BaseStepConfig):
     node: str = Field(..., description="Target node")
     application_id: str = Field(..., description="Application ID to use")
     group_id: str = Field(..., description="Namespace/group ID for the context")
+    params: Optional[str] = Field(None, description="Initialization params JSON string")
     service_name: Optional[str] = Field(
         None, description="Optional service name for context creation"
     )
@@ -264,6 +288,9 @@ class InviteStep(BaseStepConfig):
     namespace_id: Optional[str] = Field(
         None, description="Namespace ID to create invitation for"
     )
+    group_id: Optional[str] = Field(
+        None, description="Deprecated alias for 'namespace_id'"
+    )
     recursive: Optional[bool] = Field(False, description="Create recursive invitation")
 
     @model_validator(mode="after")
@@ -285,6 +312,9 @@ class JoinStep(BaseStepConfig):
     type: Literal["join", "join_open"] = "join"
     node: str = Field(..., description="Target node")
     namespace_id: Optional[str] = Field(None, description="Namespace ID to join")
+    group_id: Optional[str] = Field(
+        None, description="Deprecated alias for 'namespace_id'"
+    )
     invitation: str = Field(..., description="Namespace invitation data")
 
     @model_validator(mode="after")
@@ -330,6 +360,15 @@ class CallStep(BaseStepConfig):
     context_id: str = Field(..., description="Context ID")
     method: str = Field(..., description="Method to call")
     args: Optional[dict[str, Any]] = Field(None, description="Arguments for the call")
+    exec_type: Optional[str] = Field(
+        None, description="Execution kind; defaults to 'function_call'"
+    )
+    state_retry_attempts: Optional[int] = Field(
+        None, gt=0, description="Attempts before giving up on a state read"
+    )
+    state_retry_delay: Optional[Union[int, float]] = Field(
+        None, ge=0, description="Seconds between state-read attempts"
+    )
     executor_public_key: Optional[str] = Field(
         None, description="Public key of executor"
     )
@@ -484,6 +523,9 @@ class WaitForSyncStep(BaseStepConfig):
     )
     nodes: list[str] = Field(..., description="Nodes to wait for sync")
     timeout: Optional[int] = Field(60, ge=1, description="Timeout in seconds")
+    retry_attempts: Optional[int] = Field(
+        None, gt=0, description="Polls before giving up; unbounded until the timeout"
+    )
     check_interval: Optional[float] = Field(
         2, gt=0, description="Steady-state polling cap in seconds (backoff ceiling)"
     )
@@ -536,6 +578,13 @@ class ParallelStep(BaseStepConfig):
     groups: list[ParallelGroupConfig] = Field(
         ..., description="Groups of steps to run in parallel"
     )
+    mode: Optional[Literal["burst", "sustained", "mixed"]] = Field(
+        None, description="Load shape across the groups; defaults to 'burst'"
+    )
+    failure_mode: Optional[str] = Field(
+        None,
+        description="Whether a failing group stops the rest; defaults to 'fail-slow'",
+    )
 
 
 class ScriptStep(BaseStepConfig):
@@ -544,7 +593,9 @@ class ScriptStep(BaseStepConfig):
     type: Literal["script"] = "script"
     script: str = Field(..., description="Path to the script")
     target: Optional[str] = Field("nodes", description="Target: 'image' or 'nodes'")
-    description: Optional[str] = Field(None, description="Description of the script")
+    args: Optional[list[Any]] = Field(
+        None, description="Arguments passed to the script"
+    )
 
 
 class PauseContainerStepConfig(BaseStepConfig):
@@ -755,6 +806,7 @@ class ListProposalsStep(BaseStepConfig):
     type: Literal["list_proposals"] = "list_proposals"
     node: str = Field(..., description="Target node")
     context_id: str = Field(..., description="Context ID")
+    args: Optional[str] = Field(None, description="Pagination args as a JSON string")
 
 
 class GetProposalApproversStep(BaseStepConfig):
@@ -886,6 +938,9 @@ class CreateNamespaceInvitationStepConfig(BaseStepConfig):
     )
     node: str = Field(..., description="Target node")
     namespace_id: Optional[str] = Field(None, description="Namespace ID to invite to")
+    group_id: Optional[str] = Field(
+        None, description="Deprecated alias for 'namespace_id'"
+    )
     recursive: Optional[bool] = Field(False, description="Create recursive invitation")
 
     @model_validator(mode="after")
@@ -907,6 +962,9 @@ class JoinNamespaceStepConfig(BaseStepConfig):
     type: Literal["join_namespace", "join_group"] = "join_namespace"
     node: str = Field(..., description="Target node")
     namespace_id: Optional[str] = Field(None, description="Namespace ID to join")
+    group_id: Optional[str] = Field(
+        None, description="Deprecated alias for 'namespace_id'"
+    )
     invitation: str = Field(..., description="Namespace invitation data")
 
     @model_validator(mode="after")
@@ -1561,6 +1619,9 @@ class CreateMeshStep(BaseStepConfig):
     application_id: str = Field(..., description="Application ID")
     nodes: list[str] = Field(..., description="List of nodes to include in mesh")
     params: Optional[str] = Field(None, description="Initialization params JSON string")
+    path: Optional[str] = Field(
+        None, description="WASM path to pre-install on the joining nodes"
+    )
 
 
 class FuzzyTestStep(BaseStepConfig):
@@ -1569,6 +1630,15 @@ class FuzzyTestStep(BaseStepConfig):
     type: Literal["fuzzy_test"] = "fuzzy_test"
     duration_minutes: Union[int, float] = Field(
         ..., gt=0, description="Duration in minutes for the fuzzy test"
+    )
+    summary_interval_seconds: Optional[int] = Field(
+        None, gt=0, description="Seconds between progress summaries"
+    )
+    operation_delay_ms: Optional[int] = Field(
+        None, ge=0, description="Pause between operations, in milliseconds"
+    )
+    success_threshold: Optional[Union[int, float]] = Field(
+        None, ge=0, le=100, description="Pass rate percentage the run must reach"
     )
     context_id: str = Field(..., description="Context ID")
     nodes: list[dict[str, Any]] = Field(
@@ -1916,46 +1986,65 @@ class WorkflowConfig(BaseModel):
     )
 
 
-def _format_pydantic_error(error: dict[str, Any]) -> str:
+def _format_pydantic_error(
+    error: dict[str, Any], model_class: Optional[type[BaseModel]] = None
+) -> str:
     """Format a single Pydantic validation error into a readable message."""
     loc = ".".join(str(x) for x in error.get("loc", []))
     msg = error.get("msg", "Unknown error")
+
+    if error.get("type") == "extra_forbidden" and model_class is not None:
+        valid = sorted(model_class.model_fields)
+        near = get_close_matches(loc, valid, n=1, cutoff=0.6)
+        hint = f" Did you mean '{near[0]}'?" if near else ""
+        return (
+            f"unknown field '{loc}' - the step would ignore it.{hint} "
+            f"Valid fields: {', '.join(valid)}"
+        )
 
     if loc:
         return f"{loc}: {msg}"
     return msg
 
 
-def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
+def validate_workflow_step(
+    step: dict[str, Any], step_index: int, unknown_keys_only: bool = False
+) -> list[str]:
     """
     Validate a single workflow step and return a list of validation errors.
 
     Args:
         step: The step configuration dictionary
         step_index: The index of the step (for error messages)
+        unknown_keys_only: Report only unrecognised keys. The `bootstrap
+            validate` CLI runs its own required-field checks and would print
+            every complaint twice otherwise.
 
     Returns:
         List of validation error messages (empty if valid)
     """
     # Guard against non-dict steps (e.g., null or scalar values in YAML)
     if not isinstance(step, dict):
+        if unknown_keys_only:
+            return []
         return [f"Step {step_index}: Expected a mapping but got {type(step).__name__}"]
 
     errors = []
     step_name = step.get("name", f"Step {step_index + 1}")
     step_type = step.get("type")
 
-    if not step_type:
-        errors.append(
-            f"Step '{step_name}' (index {step_index}): Missing required field 'type'"
-        )
-        return errors
-
-    if step_type not in VALID_STEP_TYPES:
-        errors.append(
-            f"Step '{step_name}' (index {step_index}): Invalid step type '{step_type}'. "
-            f"Valid types are: {', '.join(sorted(VALID_STEP_TYPES))}"
-        )
+    if not step_type or step_type not in VALID_STEP_TYPES:
+        if unknown_keys_only:
+            return errors
+        if not step_type:
+            errors.append(
+                f"Step '{step_name}' (index {step_index}): Missing required field 'type'"
+            )
+        else:
+            errors.append(
+                f"Step '{step_name}' (index {step_index}): Invalid step type "
+                f"'{step_type}'. Valid types are: {', '.join(sorted(VALID_STEP_TYPES))}"
+            )
         return errors
 
     # Type-specific validation using module-level mapping
@@ -1966,17 +2055,20 @@ def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
         except ValidationError as e:
             # Use structured error access for reliable parsing
             for err in e.errors():
-                formatted = _format_pydantic_error(err)
+                if unknown_keys_only and err.get("type") != "extra_forbidden":
+                    continue
+                formatted = _format_pydantic_error(err, model_class)
                 errors.append(f"Step '{step_name}' (index {step_index}): {formatted}")
         except Exception as e:
-            errors.append(f"Step '{step_name}' (index {step_index}): {str(e)}")
+            if not unknown_keys_only:
+                errors.append(f"Step '{step_name}' (index {step_index}): {str(e)}")
 
     # Recursively validate nested steps (for repeat and parallel)
     if step_type == "repeat":
         # Use `or []` to handle null values when key exists with no value
         nested_steps = step.get("steps") or []
         for i, nested_step in enumerate(nested_steps):
-            nested_errors = validate_workflow_step(nested_step, i)
+            nested_errors = validate_workflow_step(nested_step, i, unknown_keys_only)
             for err in nested_errors:
                 errors.append(f"Step '{step_name}' (index {step_index}) -> {err}")
 
@@ -1995,7 +2087,9 @@ def validate_workflow_step(step: dict[str, Any], step_index: int) -> list[str]:
             # Use `or []` for nested steps as well
             nested_steps = group.get("steps") or []
             for i, nested_step in enumerate(nested_steps):
-                nested_errors = validate_workflow_step(nested_step, i)
+                nested_errors = validate_workflow_step(
+                    nested_step, i, unknown_keys_only
+                )
                 for err in nested_errors:
                     errors.append(
                         f"Step '{step_name}' (index {step_index}) -> {group_name} -> {err}"

@@ -271,8 +271,7 @@ Create a context bound to an application inside a namespace/group.
 
 ### delete_context
 
-Delete a context. Fields: `node`, `context_id`, optional `requester` (admin
-public key, required for a group-registered context).
+Delete a context. Fields: `node`, `context_id`. The node resolves the acting identity from the authenticated session.
 
 ```yaml
 - type: delete_context
@@ -536,7 +535,6 @@ Toggle a member's auto-follow flags for new contexts and nested subgroups.
 | `member_id` | yes | string | Target member account (64 hex). |
 | `auto_follow_contexts` | yes | bool | Auto-join new contexts in this group. |
 | `auto_follow_subgroups` | yes | bool | Self-admit into nested subgroups. |
-| `requester` | no | string | Admin or self public key to act as. |
 
 ```yaml
 - type: set_member_auto_follow
@@ -587,16 +585,15 @@ from a context, group, or namespace. Each takes `node` plus the relevant id.
 
 ### Metadata setters and getters
 
-Metadata records are string→string maps with an optional record name. Setters
-accept an optional `requester` (admin key) for admin-guarded groups.
+Metadata records are string→string maps with an optional record name. The node resolves the acting identity from the authenticated session.
 
 | Step | Fields |
 | --- | --- |
-| `set_group_metadata` | `node`, `group_id`, `record_name?`, `data?`, `requester?` |
+| `set_group_metadata` | `node`, `group_id`, `record_name?`, `data?` |
 | `get_group_metadata` | `node`, `group_id` |
-| `set_member_metadata` | `node`, `group_id`, `member_id`, `record_name?`, `data?`, `requester?` |
+| `set_member_metadata` | `node`, `group_id`, `member_id`, `record_name?`, `data?` |
 | `get_member_metadata` | `node`, `group_id`, `member_id` |
-| `set_context_metadata` | `node`, `group_id`, `context_id`, `record_name?`, `data?`, `requester?` |
+| `set_context_metadata` | `node`, `group_id`, `context_id`, `record_name?`, `data?` |
 | `get_context_metadata` | `node`, `group_id`, `context_id` |
 
 ```yaml
@@ -650,8 +647,7 @@ key material through git history.
 ### Delete steps
 
 `delete_group` and `delete_namespace` delete a group / namespace. Each takes
-`node`, the id (`group_id` / `namespace_id`), and an optional `requester`
-(admin public key) for admin-guarded state.
+`node` and the id (`group_id` / `namespace_id`). The node resolves the acting identity from the authenticated session.
 
 ```yaml
 - type: delete_namespace
