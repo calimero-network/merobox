@@ -453,8 +453,8 @@ The encodings differ on purpose, so passing one where the other belongs is a `40
 
 Read them from `join_namespace` (`memberIdentity` / `memberAccount`) or `node_identity` (`publicKey` / `accountId`).
 
-Use the **account** for `member_id` on every member-addressing step, and for `remove_group_members`.
-Use the **key** for `add_group_members`' `identity` and for any `requester` field.
+Use the **account** everywhere: `member_id` on every member-addressing step, `remove_group_members`, and `add_group_members`' `identity`.
+That last one also accepts a **key**, for a subject the node holds no account for yet; it is resolved to an account on apply and refused if bound to none.
 
 ### add_group_members
 
@@ -464,14 +464,14 @@ Add members with roles to a group.
 | --- | --- | --- | --- |
 | `node` | yes | string | Target node. |
 | `group_id` | yes | string | Group to add to. |
-| `members` | yes | list of `{identity, role}` | Members and their roles. `identity` is a signing key, not an account. |
+| `members` | yes | list of `{identity, role}` | Members and their roles. `identity` is an account, or a signing key for a subject with no account here yet. |
 
 ```yaml
 - type: add_group_members
   node: calimero-node-1
   group_id: '{{group_id}}'
   members:
-    - identity: '{{member_pub}}'
+    - identity: '{{member_account}}'
       role: Member
 ```
 

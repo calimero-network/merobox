@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`add_group_members` accepts an ACCOUNT in `identity`.** Requires
+  `calimero-client-py>=0.6.30`. Below that the bundled client parsed the field
+  as a bs58 key with `.expect`, so an account - the only id
+  `list_group_members` returns, and what every other member-addressing step
+  takes - panicked the extension module before any request was sent. The step
+  itself passes the value through untouched, so nothing here changed but the
+  floor. Core accepts both encodings as of calimero-network/core#3573; they
+  cannot collide, since an account is 64 hex characters and bs58 over 32 bytes
+  reaches at most 44.
+- The workflow docs said to use a key for `add_group_members` and an account
+  everywhere else. They now say to use an account everywhere, with the key
+  documented as the fallback for a subject the node holds no account for yet.
+- `remove_group_members`' schema description said "member public keys". It has
+  taken accounts since the client started parsing `Vec<AccountId>`.
+
 ### Removed
 
 - **`requester` from every step that accepted it** — `set_member_auto_follow`,
