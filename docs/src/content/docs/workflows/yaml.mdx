@@ -1537,6 +1537,23 @@ step.
 | `params` | no | string | Init params as a JSON string. |
 | `path` | no | string | WASM path to pre-install on joining nodes. |
 
+`outputs:` captures from the context response, plus `namespaceId` folded in:
+
+| Source | Meaning |
+| --- | --- |
+| `contextId` | The context the mesh was built around. |
+| `memberPublicKey` | The context node's member key. |
+| `namespaceId` | The namespace the context lives under - needed by `create_group_in_namespace`. |
+
+The per-node ids the joins produce are set directly, since `outputs:` sees one
+response and there is one join per node:
+
+| Variable | Meaning |
+| --- | --- |
+| `{{namespace_id}}` | Same namespace id, for workflows not using `outputs:`. |
+| `{{member_account_<node>}}` | Account the node's key speaks for - what `list_group_members` returns and what every member-addressing step takes. |
+| `{{member_identity_<node>}}` | The node's member public key. |
+
 ```yaml
 - type: create_mesh
   context_node: calimero-node-1
@@ -1547,6 +1564,20 @@ step.
   outputs:
     context_id: contextId
     member_public_key: memberPublicKey
+    namespace_id: namespaceId
+
+- type: create_group_in_namespace
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  group_name: private-channel
+  outputs:
+    subgroup_id: groupId
+
+- type: update_member_role
+  node: calimero-node-1
+  group_id: '{{subgroup_id}}'
+  member_id: '{{member_account_calimero-node-2}}'
+  role: Member
 ```
 
 ### fuzzy_test
