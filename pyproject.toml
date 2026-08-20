@@ -40,7 +40,7 @@ dependencies = [
     # The old ceiling was `<0.6.26`, because 0.6.26 decodes `join_namespace` into
     # a struct requiring `memberAccount` and no released node sent it. 0.11.0-rc.22
     # does, so the condition that cap was waiting for is met.
-    "calimero-client-py>=0.6.28",
+    "calimero-client-py>=0.6.29",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",

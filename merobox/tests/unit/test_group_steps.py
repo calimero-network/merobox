@@ -463,17 +463,37 @@ class TestMetadataSteps:
                 },
             )
 
-    def test_set_group_metadata_requester_wrong_type_raises(self):
+    def test_set_group_metadata_rejects_requester(self):
+        """`requester` is gone server-side, so setting it must stop the run.
+
+        Step configs allow unknown keys, so without an explicit rejection the
+        field would be read by nobody and the step would quietly act as
+        somebody else than the author asked for.
+        """
         from merobox.commands.bootstrap.steps.group_metadata import SetGroupMetadataStep
 
-        with pytest.raises(ValueError, match="requester"):
+        with pytest.raises(ValueError, match="'requester' was removed"):
             self._make(
                 SetGroupMetadataStep,
                 {
                     "type": "set_group_metadata",
                     "node": "n1",
                     "group_id": "g1",
-                    "requester": 5,
+                    "requester": "{{admin_key}}",
+                },
+            )
+
+    def test_delete_group_rejects_requester(self):
+        from merobox.commands.bootstrap.steps.group_management import DeleteGroupStep
+
+        with pytest.raises(ValueError, match="'requester' was removed"):
+            self._make(
+                DeleteGroupStep,
+                {
+                    "type": "delete_group",
+                    "node": "n1",
+                    "group_id": "g1",
+                    "requester": "{{admin_key}}",
                 },
             )
 

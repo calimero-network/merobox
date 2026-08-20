@@ -30,9 +30,7 @@ steps:
       namespace_id: namespaceId
 
   # Capture node 1's namespace-scoped public key. This is the admin
-  # identity for any subgroup created by node 1 inside this namespace,
-  # and the admin requester needed by delete_context / delete_group /
-  # delete_namespace during teardown.
+  # identity for any subgroup created by node 1 inside this namespace.
   - name: Get Node 1 Identity
     type: node_identity
     node: calimero-node-1
@@ -131,8 +129,8 @@ steps:
     outputs:
       group_meta: data
 
-  # Setting member metadata from node 2: the requester defaults to node 2's
-  # own namespace identity and targets its own account.
+  # Setting member metadata from node 2: the node acts as itself and
+  # targets its own account.
   - name: Set Member Metadata (from node 2)
     type: set_member_metadata
     node: calimero-node-2
@@ -241,29 +239,23 @@ steps:
     seconds: 10
 
   # Phase 7: Teardown
-  # Unlocked by calimero-client-py 0.6.2+, which exposes a `requester` field on
-  # delete_context/delete_group/delete_namespace. The server requires an admin
-  # requester to delete group-registered contexts and admin-guarded groups
-  # (core/crates/context/src/handlers/delete_context.rs:54-68). We pass p1_key,
-  # the public key node 1 holds in this subgroup — node 1 is the group admin
+  # Deleting group-registered contexts and admin-guarded groups is admin-only;
+  # node 1 is the group admin, and the node authorizes from its own session
   # because it created the subgroup.
   - name: Delete First Context
     type: delete_context
     node: calimero-node-1
     context_id: '{{ctx_id}}'
-    requester: '{{p1_admin_key}}'
 
   - name: Delete Subgroup
     type: delete_group
     node: calimero-node-1
     group_id: '{{group_id}}'
-    requester: '{{p1_admin_key}}'
 
   - name: Delete Namespace
     type: delete_namespace
     node: calimero-node-1
     namespace_id: '{{namespace_id}}'
-    requester: '{{p1_admin_key}}'
 
   - name: Uninstall Application
     type: uninstall_application
