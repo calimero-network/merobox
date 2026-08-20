@@ -1,6 +1,7 @@
 import json
 import signal
 import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import docker
@@ -1059,6 +1060,114 @@ def test_wait_for_cluster_peers_false_on_timeout(mock_docker, mock_requests):
         )
         is False
     )
+
+
+def _manager_with_two_nodes():
+    manager = DockerManager(enable_signal_handlers=False)
+    manager.node_rpc_ports = {"calimero-node-1": 2528, "calimero-node-2": 2529}
+    return manager
+
+
+def _response(status_code, payload=None):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = payload
+    return resp
+
+
+@patch.dict("os.environ", {}, clear=True)
+@patch("merobox.commands.manager.requests")
+@patch("docker.from_env")
+def test_wait_for_cluster_peers_does_not_fail_on_401(mock_docker, mock_requests):
+    """An authenticated peers endpoint we cannot open leaves connectivity
+    unverified — it is not evidence that the cluster is disconnected."""
+    mock_docker.return_value = MagicMock()
+    mock_requests.get.return_value = _response(401)
+
+    manager = _manager_with_two_nodes()
+
+    assert (
+        manager.wait_for_cluster_peers(
+            ["calimero-node-1", "calimero-node-2"],
+            expected_peers=1,
+            timeout=5.0,
+            interval=0.01,
+        )
+        is True
+    )
+
+
+@patch.dict("os.environ", {}, clear=True)
+@patch("merobox.commands.manager.requests")
+@patch("docker.from_env")
+def test_wait_for_cluster_peers_returns_early_when_auth_blocked(
+    mock_docker, mock_requests
+):
+    """With no credentials to obtain a token, waiting cannot change the verdict,
+    so the gate must not sit on its timeout."""
+    mock_docker.return_value = MagicMock()
+    mock_requests.get.return_value = _response(403)
+
+    manager = _manager_with_two_nodes()
+
+    started = time.monotonic()
+    assert (
+        manager.wait_for_cluster_peers(
+            ["calimero-node-1"], expected_peers=1, timeout=30.0, interval=5.0
+        )
+        is True
+    )
+    assert time.monotonic() - started < 5.0
+
+
+@patch.dict(
+    "os.environ",
+    {"MERO_AUTH_ADMIN_USER": "dev", "MERO_AUTH_ADMIN_PASSWORD": "dev-password"},
+    clear=True,
+)
+@patch("merobox.commands.manager.fetch_access_token_blocking")
+@patch("merobox.commands.manager.requests")
+@patch("docker.from_env")
+def test_peers_probe_authenticates_then_reads_count(
+    mock_docker, mock_requests, mock_fetch_token
+):
+    """A 401 triggers one login from the forwarded admin credentials, and the
+    retry carries the bearer token."""
+    mock_docker.return_value = MagicMock()
+    mock_fetch_token.return_value = "token-abc"
+    mock_requests.get.side_effect = [_response(401), _response(200, {"count": 3})]
+
+    manager = _manager_with_two_nodes()
+    probe = manager._probe_connected_peers("calimero-node-1")
+
+    assert probe.count == 3
+    assert probe.auth_blocked is False
+    assert mock_requests.get.call_args_list[0].kwargs["headers"] is None
+    assert mock_requests.get.call_args_list[1].kwargs["headers"] == {
+        "Authorization": "Bearer token-abc"
+    }
+    # cached, so a polling gate logs in once rather than once per tick
+    assert manager._peers_probe_tokens["calimero-node-1"] == "token-abc"
+
+
+@patch.dict("os.environ", {}, clear=True)
+@patch("merobox.commands.manager.requests")
+@patch("docker.from_env")
+def test_peers_probe_distinguishes_zero_from_unknown(mock_docker, mock_requests):
+    """`count == 0` is an answer; an unreachable node is not."""
+    mock_docker.return_value = MagicMock()
+    manager = _manager_with_two_nodes()
+
+    mock_requests.get.return_value = _response(200, {"count": 0})
+    assert manager._probe_connected_peers("calimero-node-1").count == 0
+
+    mock_requests.get.side_effect = OSError("connection refused")
+    probe = manager._probe_connected_peers("calimero-node-1")
+    assert probe.count is None
+    assert probe.auth_blocked is False
+
+    # a node with no known RPC port cannot be asked either
+    assert manager._probe_connected_peers("calimero-node-9").count is None
 
 
 @patch.dict("os.environ", {"MEROBOX_LEGACY_CLUSTER_NETWORKING": "1"})

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import aiohttp
+import requests
 from calimero_client_py import get_token_cache_dir, get_token_cache_path
 from rich.console import Console
 
@@ -48,6 +49,78 @@ AUTH_METHOD_NONE = "none"
 
 # Token expiry buffer (refresh if token expires within this many seconds)
 TOKEN_EXPIRY_BUFFER_SECONDS = 60
+
+
+def build_token_request_payload(
+    node_url: str,
+    username: str,
+    password: str,
+    bootstrap_secret: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build the ``POST /auth/token`` body for a username/password login.
+
+    Shared by the async :meth:`AuthManager.authenticate` and the blocking
+    :func:`fetch_access_token_blocking` so the server contract lives in one
+    place. ``bootstrap_secret`` defaults from ``MERO_AUTH_BOOTSTRAP_SECRET`` and
+    is omitted from the payload when unset — logins for existing users never
+    need it.
+    """
+    if bootstrap_secret is None:
+        bootstrap_secret = os.environ.get("MERO_AUTH_BOOTSTRAP_SECRET")
+
+    provider_data = {"username": username, "password": password}
+    if bootstrap_secret:
+        provider_data["bootstrap_secret"] = bootstrap_secret
+
+    return {
+        "auth_method": AUTH_METHOD_USER_PASSWORD,
+        "public_key": username,
+        "client_name": node_url.rstrip("/"),
+        "timestamp": int(time.time()),
+        "provider_data": provider_data,
+    }
+
+
+def extract_access_token(response_data: Any) -> Optional[str]:
+    """Pull the access token out of a wrapped or unwrapped token response."""
+    if not isinstance(response_data, dict):
+        return None
+    data = response_data.get("data")
+    if not isinstance(data, dict):
+        data = response_data
+    token = data.get("access_token") or data.get("accessToken")
+    return token if isinstance(token, str) and token else None
+
+
+def fetch_access_token_blocking(
+    node_url: str,
+    username: str,
+    password: str,
+    timeout: float = DEFAULT_READ_TIMEOUT,
+) -> Optional[str]:
+    """Mint an access token with a blocking ``POST /auth/token``.
+
+    The async :meth:`AuthManager.authenticate` is the normal path. This exists
+    for callers that run outside an event loop — node startup, before any step
+    has executed — where ``asyncio.run`` is not safe to assume. Returns ``None``
+    on any failure; callers are expected to treat that as "could not
+    authenticate", never as "the node said no".
+    """
+    normalized_url = node_url.rstrip("/")
+    try:
+        resp = requests.post(
+            f"{normalized_url}{AUTH_TOKEN_ENDPOINT}",
+            json=build_token_request_payload(normalized_url, username, password),
+            timeout=timeout,
+        )
+    except Exception:
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        return extract_access_token(resp.json())
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -237,21 +310,9 @@ class AuthManager:
         # Normalize node URL (remove trailing slash)
         normalized_url = node_url.rstrip("/")
 
-        if bootstrap_secret is None:
-            bootstrap_secret = os.environ.get("MERO_AUTH_BOOTSTRAP_SECRET")
-
-        provider_data = {"username": username, "password": password}
-        if bootstrap_secret:
-            provider_data["bootstrap_secret"] = bootstrap_secret
-
-        # Build the authentication payload per server contract
-        payload = {
-            "auth_method": AUTH_METHOD_USER_PASSWORD,
-            "public_key": username,
-            "client_name": normalized_url,
-            "timestamp": int(time.time()),
-            "provider_data": provider_data,
-        }
+        payload = build_token_request_payload(
+            normalized_url, username, password, bootstrap_secret
+        )
 
         auth_endpoint = f"{normalized_url}{AUTH_TOKEN_ENDPOINT}"
 

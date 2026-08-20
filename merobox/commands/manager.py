@@ -11,13 +11,14 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import docker
 import requests
 from rich.console import Console
 from rich.table import Table
 
+from merobox.commands.auth import fetch_access_token_blocking
 from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
@@ -205,6 +206,19 @@ def _describe_unexpected_exit(summary: Optional[dict]) -> Optional[str]:
     )
 
 
+class PeersProbe(NamedTuple):
+    """Outcome of asking one node for its connected-peer count.
+
+    ``count`` is ``None`` when the probe could not get an answer. ``auth_blocked``
+    marks the subset of those where the endpoint demanded credentials we do not
+    have: that verdict will not change by waiting, so a caller polling for
+    connectivity can stop early instead of burning its whole timeout.
+    """
+
+    count: Optional[int]
+    auth_blocked: bool = False
+
+
 class DockerManager(CleanupMixin):
     """Manages Calimero nodes in Docker containers."""
 
@@ -218,6 +232,10 @@ class DockerManager(CleanupMixin):
                 signals externally.
         """
         self._init_cleanup_state()
+
+        # node name -> admin-API bearer token, populated lazily by the
+        # connected-peers probe so a polling gate authenticates once per node.
+        self._peers_probe_tokens: dict[str, str] = {}
 
         try:
             self.client = docker.from_env()
@@ -1780,18 +1798,67 @@ class DockerManager(CleanupMixin):
             data = data.get("peers")
         return len(data) if isinstance(data, list) else 0
 
-    def _node_connected_peers(self, node_name: str) -> int:
-        """Best-effort connected-peer count for a node (0 on any error)."""
+    def _mint_peers_probe_token(self, node_name: str, port: int) -> Optional[str]:
+        """Log in for a fresh admin-API token, or ``None`` if we cannot.
+
+        Uses the admin credentials merobox forwards into every node: `merod init`
+        creates that root key before the node listens, so this works even though
+        no workflow step has run yet. The token is cached per node so a polling
+        gate logs in once rather than once per tick; cache invalidation is the
+        caller's business.
+        """
+        username = os.getenv("MERO_AUTH_ADMIN_USER")
+        password = os.getenv("MERO_AUTH_ADMIN_PASSWORD")
+        if not username or not password:
+            return None
+
+        token = fetch_access_token_blocking(
+            f"http://localhost:{port}", username, password
+        )
+        if token:
+            self._peers_probe_tokens[node_name] = token
+        return token
+
+    def _probe_connected_peers(self, node_name: str) -> "PeersProbe":
+        """Ask a node how many peers it is connected to.
+
+        Returns a :class:`PeersProbe` whose ``count`` is ``None`` whenever the
+        question could not be answered — the endpoint is authenticated and we
+        hold no usable token, the node is not listening yet, the request timed
+        out. That is deliberately distinct from a node that answered "0": only
+        the latter is evidence about connectivity.
+        """
         port = self.get_node_rpc_port(node_name)
         if not port:
-            return 0
-        try:
-            resp = requests.get(f"http://localhost:{port}/admin-api/peers", timeout=5)
+            return PeersProbe(None)
+
+        url = f"http://localhost:{port}/admin-api/peers"
+        token = self._peers_probe_tokens.get(node_name)
+        for attempt in range(2):
+            headers = {"Authorization": f"Bearer {token}"} if token else None
+            try:
+                resp = requests.get(url, timeout=5, headers=headers)
+            except Exception:
+                return PeersProbe(None)
+
             if resp.status_code == 200:
-                return self._peers_count_from_response(resp.json())
-        except Exception:
-            pass
-        return 0
+                try:
+                    return PeersProbe(self._peers_count_from_response(resp.json()))
+                except ValueError:
+                    return PeersProbe(None)
+
+            if resp.status_code not in (401, 403):
+                return PeersProbe(None)
+
+            # Authenticated endpoint. Try once to obtain a token; if we cannot,
+            # waiting will not help — say so instead of polling to the deadline.
+            if attempt == 0:
+                self._peers_probe_tokens.pop(node_name, None)
+                token = self._mint_peers_probe_token(node_name, port)
+                if not token:
+                    return PeersProbe(None, auth_blocked=True)
+
+        return PeersProbe(None, auth_blocked=True)
 
     def wait_for_cluster_peers(
         self,
@@ -1802,13 +1869,20 @@ class DockerManager(CleanupMixin):
     ) -> bool:
         """Block until every node reports at least ``expected_peers`` peers.
 
-        This is the merobox-side precondition check for #231: with siblings
-        wired as bootstrap peers before ``merod run`` subscribes to topics, full
-        connectivity is a strong predictor of a non-empty gossipsub mesh. If the
-        cluster never connects, return ``False`` so the caller can fail the run
-        — a deterministic startup failure instead of a half-connected cluster
-        limping through a load test. (Gossipsub mesh peer count is not exposed
-        via the admin API; connected-peer count is the observable proxy.)
+        With siblings wired as bootstrap peers before ``merod run`` subscribes to
+        topics, full connectivity is a strong predictor of a non-empty gossipsub
+        mesh. If the cluster demonstrably never connects, return ``False`` so the
+        caller can fail the run — a deterministic startup failure instead of a
+        half-connected cluster limping through a load test. (Gossipsub mesh peer
+        count is not exposed via the admin API; connected-peer count is the
+        observable proxy.)
+
+        Only a node that *answers* with too few peers counts as a failure. A node
+        we could not question — authenticated endpoint with no usable token, not
+        listening yet, timed out — leaves connectivity unverified, which is
+        reported as a warning and does not fail the run. Conflating the two once
+        made this gate unpassable on every embedded-auth fleet: the 401 scored as
+        "zero peers" for every node while the cluster was in fact fully meshed.
 
         ``timeout`` defaults to :data:`DEFAULT_CLUSTER_PEER_TIMEOUT`, overridable
         via the ``MEROBOX_CLUSTER_PEER_TIMEOUT`` env var.
@@ -1829,23 +1903,54 @@ class DockerManager(CleanupMixin):
         )
         deadline = time.monotonic() + timeout
         while True:
-            short = {
-                name: n
-                for name in node_names
-                if (n := self._node_connected_peers(name)) < expected_peers
-            }
-            if not short:
+            short: dict[str, int] = {}
+            unknown: list[str] = []
+            auth_blocked = False
+            for name in node_names:
+                probe = self._probe_connected_peers(name)
+                if probe.count is None:
+                    unknown.append(name)
+                    auth_blocked = auth_blocked or probe.auth_blocked
+                elif probe.count < expected_peers:
+                    short[name] = probe.count
+
+            if not short and not unknown:
                 console.print("[green]✓ Cluster fully connected[/green]")
                 return True
+
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            # A node that answered with too few peers is real evidence and is
+            # worth waiting on. A node that could not answer is not evidence
+            # either way, and when the reason is missing credentials no amount
+            # of waiting fixes it.
+            nothing_left_to_learn = auth_blocked and not short
+            if remaining > 0 and not nothing_left_to_learn:
+                time.sleep(min(interval, remaining))
+                continue
+
+            if short:
                 detail = ", ".join(f"{name}={n}" for name, n in short.items())
                 console.print(
                     f"[red]✗ Cluster did not reach {expected_peers} peer(s) per "
                     f"node within {int(timeout)}s (short: {detail})[/red]"
                 )
                 return False
-            time.sleep(min(interval, remaining))
+
+            # Nothing contradicted the cluster being connected; we just could
+            # not see it. Say so and let the workflow's own steps be the judge,
+            # rather than failing a run on an unanswered question.
+            reason = (
+                "the peers endpoint requires credentials that are not available"
+                if auth_blocked
+                else "the peers endpoint did not respond"
+            )
+            console.print(
+                f"[yellow]⚠️  Cluster connectivity unverified for "
+                f"{len(unknown)}/{len(node_names)} node(s) — {reason}. "
+                f"Continuing; workflow steps will surface a disconnected "
+                f"cluster.[/yellow]"
+            )
+            return True
 
     def _graceful_stop_container(
         self,
