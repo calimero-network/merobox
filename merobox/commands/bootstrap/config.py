@@ -1067,7 +1067,9 @@ class AddGroupMembersStepConfig(BaseStepConfig):
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID to add members to")
     members: list[dict[str, str]] = Field(
-        ..., description="List of members with identity and role"
+        ...,
+        description="List of members with identity and role. identity is an "
+        "account, or a signing key for a subject with no account here yet",
     )
 
 
@@ -1077,7 +1079,7 @@ class RemoveGroupMembersStepConfig(BaseStepConfig):
     type: Literal["remove_group_members"] = "remove_group_members"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Group ID to remove members from")
-    members: list[str] = Field(..., description="List of member public keys to remove")
+    members: list[str] = Field(..., description="List of member accounts to remove")
 
 
 class ListGroupMembersStepConfig(BaseStepConfig):
