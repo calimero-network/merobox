@@ -42,6 +42,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `containers.list()` defaults to running-only, so the one node worth looking at
   when a scenario fails because a node died was precisely the one dropped from the
   capture. It now lists with `all=True`.
+- **The cluster connectivity gate no longer reads an authenticated peers endpoint
+  as zero peers.** `wait_for_cluster_peers` polled `/admin-api/peers` with no
+  credentials and scored every non-200 as "0 connected peers". On an embedded-auth
+  fleet that endpoint answers 401, so the gate reported 0 for every node however
+  well-connected the cluster was, burned its full timeout, and failed node
+  management — while the node logs showed the fleet fully meshed. A 401/403 now
+  triggers one login from the `MERO_AUTH_ADMIN_*` credentials merobox already
+  forwards into each node (`merod init` mints that root key before the node
+  listens, so this works at gate time, before any `login` step has run) and the
+  retry carries the bearer token.
+
+  The gate also stops treating "could not ask" as "answered zero". An unanswerable
+  probe leaves connectivity *unverified*, which warns and continues; a node that
+  really answers with too few peers still fails the run loudly, as before. When the
+  reason is missing credentials the gate returns immediately rather than polling to
+  a deadline that cannot change the verdict.
+
+  This unblocks `_wire_cluster_bootstrap_peers`, which sits behind the gate and was
+  therefore unreachable on any embedded-auth fleet. That wiring is the only
+  non-mDNS peer discovery the harness has, and with it an 8-node fleet converges
+  with `mdns: false` — see calimero-network/core#3525, where mDNS turned out to be
+  the sole discovery path in 80 of 88 e2e scenarios.
 
 ## [0.6.53] - 2026-08-12
 
