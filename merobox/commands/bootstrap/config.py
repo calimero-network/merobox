@@ -352,6 +352,49 @@ class JoinSubgroupInheritanceStepConfig(BaseStepConfig):
     group_id: str = Field(..., description="Open subgroup ID to join via inheritance")
 
 
+# The three leave steps below had no model at all, so `extra="forbid"` never
+# reached them: a misspelled key on a leave step was dropped in silence, which
+# is the failure `extra="forbid"` exists to prevent. The step classes already
+# declare the same required fields at runtime; these mirror them so the gate
+# fires before any container starts.
+class LeaveContextStepConfig(BaseStepConfig):
+    """Configuration for leave_context step.
+
+    Node-local opt-out from one context: stops sync and disarms
+    auto-follow on this node only, publishes no governance op, and is
+    reversed by `join_context`.
+    """
+
+    type: Literal["leave_context"] = "leave_context"
+    node: str = Field(..., description="Node that leaves the context")
+    context_id: str = Field(..., description="Context ID to leave")
+
+
+class LeaveGroupStepConfig(BaseStepConfig):
+    """Configuration for leave_group step.
+
+    Voluntary self-leave from a subgroup, publishing `MemberLeft`. The
+    caller must be a direct member, not the owner, and not the last
+    admin. Namespace roots are rejected — use `leave_namespace`.
+    """
+
+    type: Literal["leave_group"] = "leave_group"
+    node: str = Field(..., description="Node that leaves the group")
+    group_id: str = Field(..., description="Subgroup ID to leave")
+
+
+class LeaveNamespaceStepConfig(BaseStepConfig):
+    """Configuration for leave_namespace step.
+
+    Voluntary self-leave from a namespace root, cascading through every
+    descendant group the caller holds a direct row in.
+    """
+
+    type: Literal["leave_namespace"] = "leave_namespace"
+    node: str = Field(..., description="Node that leaves the namespace")
+    namespace_id: str = Field(..., description="Namespace ID to leave")
+
+
 class CallStep(BaseStepConfig):
     """Configuration for call step."""
 
@@ -1669,6 +1712,9 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "join_context": JoinContextStepConfig,
     "join_subgroup_inheritance": JoinSubgroupInheritanceStepConfig,
     "join_open": JoinStep,
+    "leave_context": LeaveContextStepConfig,
+    "leave_group": LeaveGroupStepConfig,
+    "leave_namespace": LeaveNamespaceStepConfig,
     "list_namespaces": ListNamespacesStepConfig,
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
