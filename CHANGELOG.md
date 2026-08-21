@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A workflow writing `outputs: { ns: namespaceId }` there got a capture error.
   calimero-network/core#3598 renames it, so both spellings are in the wild;
   the step now accepts either and workflows do not have to know which node
-  they are talking to
+  they are talking to. Requires `calimero-client-py>=0.6.31`: the client
+  deserializes the join response into a struct rather than reading it loosely,
+  so a build made before that release rejects a renamed field outright with
+  `missing field \`groupId\`` and never reaches this step
 
 ### Changed
 
