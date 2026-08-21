@@ -1,0 +1,93 @@
+description: >
+  Pins subgroup birth visibility. `create_group_in_namespace` takes an optional
+  `visibility`, and an absent one means the server default - so a node that
+  stops reading the field, and a change to what the default is, both surface
+  here rather than in whichever scenario happens to lean on them.
+name: Subgroup Birth Visibility Example
+
+force_pull_image: true
+
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: visibility-node
+
+steps:
+  - name: Install Application
+    type: install_application
+    node: visibility-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace
+    type: create_namespace
+    node: visibility-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create a Subgroup Born Open
+    type: create_group_in_namespace
+    node: visibility-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: born-open
+    visibility: open
+    outputs:
+      open_subgroup_id: groupId
+
+  - name: Create a Subgroup Born Restricted
+    type: create_group_in_namespace
+    node: visibility-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: born-restricted
+    visibility: restricted
+    outputs:
+      restricted_subgroup_id: groupId
+
+  # No visibility key at all. Asserting on the result is what catches a change
+  # to the server default, which nothing else here would notice.
+  - name: Create a Subgroup Without Naming a Visibility
+    type: create_group_in_namespace
+    node: visibility-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: born-default
+    outputs:
+      default_subgroup_id: groupId
+
+  - name: Read Back the Open Subgroup
+    type: get_group_info
+    node: visibility-node-1
+    group_id: "{{open_subgroup_id}}"
+    outputs:
+      open_visibility: subgroupVisibility
+
+  - name: Read Back the Restricted Subgroup
+    type: get_group_info
+    node: visibility-node-1
+    group_id: "{{restricted_subgroup_id}}"
+    outputs:
+      restricted_visibility: subgroupVisibility
+
+  - name: Read Back the Default Subgroup
+    type: get_group_info
+    node: visibility-node-1
+    group_id: "{{default_subgroup_id}}"
+    outputs:
+      default_visibility: subgroupVisibility
+
+  - name: Assert Birth Visibility Is What Was Asked For
+    type: assert
+    statements:
+      - "is_set({{namespace_id}})"
+      - "equals({{open_visibility}}, open)"
+      - "equals({{restricted_visibility}}, restricted)"
+      # The default is an absent key collapsing to restricted, so it is read
+      # back rather than assumed.
+      - "equals({{default_visibility}}, restricted)"
+      - "{{open_subgroup_id}} != {{restricted_subgroup_id}}"
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 60

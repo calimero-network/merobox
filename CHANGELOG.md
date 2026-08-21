@@ -56,6 +56,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alongside the context fields, and each join exports
   `member_account_<node>` beside the existing `member_identity_<node>`
 
+### Added
+
+- **`workflow-examples/workflow-subgroup-visibility-example.yml`** — pins
+  subgroup birth visibility against a real node. `create_group_in_namespace`
+  has taken an optional `visibility` since core#2771, but the only shipped
+  workflow exercising it was `tee-r2-open-no-direct-row.yml`, which rides the
+  TEE lane and needs a merod built with `--features mock-attestation`; the two
+  lanes that run on every PR never touched the field. The new workflow creates
+  three subgroups — born `open`, born `restricted`, and one naming no
+  visibility at all — and reads each back with `get_group_info`. `restricted`
+  had never been written explicitly anywhere, and the third case is what
+  catches a change to the server default, which is otherwise only ever assumed.
+  One node, both matrices
+
 ### Removed
 
 - **`requester` from every step that accepted it** — `set_member_auto_follow`,
