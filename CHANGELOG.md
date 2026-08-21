@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   upstream scenario reaches: they all stop after one round trip, which cannot
   tell "rejoin works" from "rejoin works once"
 
+- **`workflow-namespace-context-leave-rejoin-example.yml` — the same round trip
+  at the other place a context can live.** A context attached to the namespace
+  ROOT rejoins down a different branch than one in a subgroup:
+  `join_context` resolves the joiner as `MembershipPath::Direct` and skips the
+  inherited-joiner key pull entirely, so a rejoin proven in a subgroup proves
+  nothing here. Nothing covered this placement — `group-leave-context.yml`
+  upstream and the channel example above both attach to a subgroup. Adds the
+  two scope checks the placement makes possible: while out of the root context
+  the leaver keeps using a subgroup context under the same namespace, AND joins
+  a context created after it left, so a marker consulted too broadly or a
+  namespace-wide unsubscribe fails here instead of looking like slow sync
+
 ### Changed
 
 - **The three leave steps are schema-modelled.** `leave_context`, `leave_group`
