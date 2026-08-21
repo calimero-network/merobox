@@ -45,20 +45,15 @@ setup(
         "Topic :: Utilities",
     ],
     python_requires=">=3.9",
-    install_requires=[
-        "click>=8.0.0",
-        "docker>=6.0.0",
-        "rich>=13.0.0",
-        "PyYAML>=6.0.0",
-        "calimero-client-py>=0.6.28",
-        "aiohttp>=3.8.0",
-        "toml>=0.10.2",
-        "base58>=2.1.0",
-        "ed25519>=1.5",
-        "py-near>=1.1.0",
-        "requests>=2.31.0",
-        "tqdm>=4.65.0",
-    ],
+    # Dependencies are declared ONLY in pyproject.toml.
+    #
+    # This file used to carry a second copy in `install_requires`, which the
+    # build backend ignores (PEP 621: with a [project] table, pyproject wins).
+    # The copy drifted anyway — at the 0.6.41 release it pinned
+    # calimero-client-py>=0.6.11 while pyproject said >=0.6.19, and it still
+    # listed ed25519 and py-near, which nothing imports and no release has
+    # shipped since the move to pyproject. Dead metadata that disagrees with
+    # the real thing is worse than none: it invites a fix to the wrong file.
     extras_require={
         "dev": [
             "build",

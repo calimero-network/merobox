@@ -53,6 +53,29 @@ def fail(
     return result
 
 
+# A response the node ACCEPTED but the client could not parse almost always
+# means calimero-client-py is older than the node's admin API — not that the
+# call itself failed. The raw text ("Client error: error decoding response
+# body") reads like a node or network fault and sends people digging through
+# node logs that show the operation succeeding, so name the usual cause here.
+_DECODE_FAILURE_MARKER = "error decoding response body"
+
+_DECODE_FAILURE_HINT = (
+    "hint: the node answered, but calimero-client-py could not parse the "
+    "response — usually because the client is older than the node's admin API. "
+    "Check the installed version with `pip show calimero-client-py`, then "
+    "upgrade merobox (`pipx upgrade merobox`, or `pip install -U merobox`), "
+    "which raises the client floor with it."
+)
+
+
+def explain_client_error(message: str) -> str:
+    """Append a cause hint to error messages that are opaque on their own."""
+    if _DECODE_FAILURE_MARKER in message:
+        return f"{message}\n{_DECODE_FAILURE_HINT}"
+    return message
+
+
 def format_error(error: Exception) -> dict[str, Any]:
     """Format an exception with type, message, and traceback string.
 
@@ -71,7 +94,7 @@ def format_error(error: Exception) -> dict[str, Any]:
     """
     result = {
         "type": type(error).__name__,
-        "message": str(error),
+        "message": explain_client_error(str(error)),
         "traceback": "".join(
             traceback.format_exception(type(error), error, error.__traceback__)
         ),
