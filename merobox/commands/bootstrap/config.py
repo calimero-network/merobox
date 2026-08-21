@@ -542,6 +542,14 @@ class WaitForSyncStep(BaseStepConfig):
     trigger_sync: Optional[bool] = Field(
         False, description="Trigger sync before waiting"
     )
+    expect: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Read that must return `equals` on every node before sync is declared: "
+            "{method, args, equals}. Gates on state rather than on a hash, which is "
+            "only a claim about state"
+        ),
+    )
 
     @model_validator(mode="after")
     def _at_least_one_id(self) -> "WaitForSyncStep":
@@ -550,6 +558,41 @@ class WaitForSyncStep(BaseStepConfig):
         if self.context_id is None and self.group_id is None:
             raise ValueError(
                 "wait_for_sync: at least one of 'context_id' or 'group_id' must be specified"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _expect_is_well_formed(self) -> "WaitForSyncStep":
+        """Check `expect` at schema-validation time too.
+
+        The step executor validates this as well, but `merobox validate` runs
+        without touching a node, and a typo inside `expect` is exactly the kind
+        of thing that should fail there rather than 60 seconds into a timeout.
+        """
+        if self.expect is None:
+            return self
+        unknown = set(self.expect) - {"method", "args", "equals"}
+        if unknown:
+            raise ValueError(
+                f"wait_for_sync: unknown key(s) in 'expect': {sorted(unknown)} "
+                f"(valid: args, equals, method)"
+            )
+        if not isinstance(self.expect.get("method"), str) or not self.expect["method"]:
+            raise ValueError(
+                "wait_for_sync: 'expect.method' must be a non-empty string"
+            )
+        if "args" in self.expect and not isinstance(self.expect["args"], dict):
+            raise ValueError("wait_for_sync: 'expect.args' must be a mapping")
+        # Presence, not truthiness — `equals: null` is a real expectation.
+        if "equals" not in self.expect:
+            raise ValueError(
+                "wait_for_sync: 'expect.equals' is required — it is the value the "
+                "read must return on every node"
+            )
+        if self.context_id is None:
+            raise ValueError(
+                "wait_for_sync: 'expect' needs 'context_id' — the read is executed "
+                "in that context"
             )
         return self
 
