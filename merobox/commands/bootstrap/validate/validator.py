@@ -5,6 +5,9 @@ This module provides comprehensive validation for workflow configurations
 without requiring full workflow execution.
 """
 
+from merobox.commands.bootstrap.config import (
+    validate_workflow_step as schema_validate_step,
+)
 from merobox.commands.bootstrap.steps.account import (
     AccountCreateStep,
     AccountPairStep,
@@ -207,6 +210,10 @@ def validate_workflow_config(config: dict, verbose: bool = False) -> dict:
                 # Validate step-specific requirements
                 step_errors = validate_step_config(step, step_name, step_type)
                 errors.extend(step_errors)
+
+                # The schema layer owns unknown keys; without this the CLI
+                # passes workflows the runner then rejects.
+                errors.extend(schema_validate_step(step, i, unknown_keys_only=True))
 
     return {"valid": len(errors) == 0, "errors": errors}
 

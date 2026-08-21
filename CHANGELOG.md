@@ -23,6 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented as the fallback for a subject the node holds no account for yet.
 - `remove_group_members`' schema description said "member public keys". It has
   taken accounts since the client started parsing `Vec<AccountId>`.
+- **Step configs reject unknown keys.** `BaseStepConfig` allowed extras, so a
+  misspelled field validated and was then never read - the workflow stated an
+  intent, the harness ignored it, and the run went green. 21 scenarios in
+  calimero-network/core passed `group_alias` to `create_group_in_namespace`
+  (which declares `group_name`) across 27 occurrences, and every subgroup they
+  created was born unnamed. `create_mesh` took a `capability` in 29 more, left
+  over from the invite flow the namespace flow replaced. Both now fail
+  validation before any container starts, with a message naming the key and the
+  nearest valid field, so `group_alias` points at `group_name`. `bootstrap
+  validate` reports the same thing the runner does, instead of passing
+  workflows the runner then rejects. Every field the executors read is now
+  declared, including ones the schema had never listed: `path` on
+  `create_mesh`, `params` on `create_context`, `url` on `install_application`
+  (which was unusable, `path` being required), `args` on `script` and
+  `list_proposals`, `mode` / `failure_mode` on `parallel`, `retry_attempts` on
+  `wait_for_sync`, `exec_type` and the state-retry pair on `call`, the
+  fuzzy-test pacing fields, and the deprecated `group_id` alias the invite and
+  join steps already normalise
+- The workflow docs still described `requester` on the delete and
+  set-metadata steps. The field was removed last release, so following
+  those examples is now a validation failure rather than a silent no-op.
 
 ### Added
 

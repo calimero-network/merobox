@@ -33,7 +33,6 @@ steps:
       - dag-node-3
       - dag-node-4
       - dag-node-5
-    capability: member
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey
