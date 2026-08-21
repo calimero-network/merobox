@@ -5,7 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.60] - 2026-08-21
+
+### Added
+
+- **`topology: { type: bootstrap }` — one bridge, one boot-node, no mDNS.** Every
+  client lands on a single plain bridge with the boot-node and is given exactly
+  one `bootstrap.nodes` entry: the boot-node's. Sibling addresses are withheld and
+  `discovery.mdns` is forced off after any per-node override, so the only way a
+  node learns about another is to ask the boot-node — bootstrap dial, identify,
+  kad, rendezvous register/discover.
+
+  Default cluster mode cannot test that: it writes every sibling's address into
+  each node's config and leaves mDNS on. `type: nat` does test it, but behind a
+  gateway, alongside relay reservations and DCUtR hole-punching, so a discovery
+  regression there presents as a NAT failure and gets triaged as one. This variant
+  is the same discovery shape with the confounds removed. Measured on a 3-node
+  local run: 0 mDNS dials, 6-10 kad `RoutingUpdated` per node, and rendezvous
+  register + discover on every client — a joiner-to-joiner write crossed with no
+  address any client was handed up front.
+
+  `TopologyConfig` is now a discriminated union on `type`, which is the migration
+  the config module previously described as future work. Unknown keys under a
+  `bootstrap` block are rejected rather than ignored, so a `nat_mode` carried over
+  by copy-paste fails validation instead of silently configuring nothing.
 
 ### Changed
 
