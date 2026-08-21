@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`join_namespace` binds `namespaceId` whichever spelling the node sends.**
+  The step has declared a `namespaceId` export since it was written, beside
+  `memberIdentity` and `memberAccount`, which both match. Core's join endpoint
+  returned `groupId` - a namespace is a root group internally, and
+  `create_namespace` was the only namespace endpoint that translated that noun
+  on the way out - so the export captured nothing and the fallback never fired.
+  A workflow writing `outputs: { ns: namespaceId }` there got a capture error.
+  calimero-network/core#3598 renames it, so both spellings are in the wild;
+  the step now accepts either and workflows do not have to know which node
+  they are talking to
+
 ### Changed
 
 - **`add_group_members` accepts an ACCOUNT in `identity`.** Requires

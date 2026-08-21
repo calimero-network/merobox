@@ -47,11 +47,15 @@ steps:
     invitation: '{{invitation}}'
     outputs:
       p2_identity: memberIdentity
+      p2_joined_namespace: namespaceId
 
   - name: Assert Node 2 Joined
     type: assert
     statements:
       - 'is_set({{p2_identity}})'
+      # Equality, not is_set: the join names the id it returns, and the step
+      # binds that whichever spelling the node uses.
+      - 'equals({{p2_joined_namespace}}, {{namespace_id}})'
 
   # Phase 2: Create subgroup and add members
   - name: Create Subgroup in Namespace

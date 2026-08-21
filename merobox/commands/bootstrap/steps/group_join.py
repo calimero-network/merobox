@@ -36,6 +36,9 @@ class JoinNamespaceStep(BaseStep):
 
     def _get_exportable_variables(self):
         return [
+            # A node older than the namespaceId rename calls this `groupId`;
+            # `_with_namespace_id` binds both so a capture does not depend on
+            # which side of that change the node is on.
             (
                 "namespaceId",
                 "namespace_id_{node_name}",
@@ -55,6 +58,21 @@ class JoinNamespaceStep(BaseStep):
                 "Account the joining key speaks for (64 hex characters)",
             ),
         ]
+
+    def _with_namespace_id(self, response_data: Any) -> Any:
+        """Bind `namespaceId` even when the node only sends `groupId`.
+
+        A namespace is a root group internally, and the join endpoint used to
+        leak that noun. The id goes into the unwrapped body, since that is the
+        level the export pass reads.
+        """
+        is_error, body = self._unwrap_response(response_data)
+        if is_error or not isinstance(body, dict) or body.get("namespaceId"):
+            return response_data
+        group_id = body.get("groupId")
+        if not group_id:
+            return response_data
+        return {**body, "namespaceId": group_id}
 
     def _auto_install_app_on_node(
         self, node_name: str, app_path: str, dynamic_values: dict[str, Any]
@@ -207,20 +225,17 @@ class JoinNamespaceStep(BaseStep):
 
             step_key = f"join_namespace_{node_name}"
             workflow_results[step_key] = result["data"]
-            self._export_variables(result["data"], node_name, dynamic_values)
+            export_payload = self._with_namespace_id(result["data"])
+            self._export_variables(export_payload, node_name, dynamic_values)
 
             # Fallback extraction
             if f"namespace_id_{node_name}" not in dynamic_values:
-                raw = result["data"]
-                if isinstance(raw, dict):
-                    nested = raw.get("data", raw)
-                    joined_namespace_id = (
-                        nested.get("namespaceId") if isinstance(nested, dict) else None
-                    )
-                    if joined_namespace_id:
-                        dynamic_values[f"namespace_id_{node_name}"] = (
-                            joined_namespace_id
-                        )
+                _, body = self._unwrap_response(export_payload)
+                joined_namespace_id = (
+                    body.get("namespaceId") if isinstance(body, dict) else None
+                )
+                if joined_namespace_id:
+                    dynamic_values[f"namespace_id_{node_name}"] = joined_namespace_id
 
             # Namespace governance model: no relay needed. The joining node
             # publishes a MemberJoined op directly on the namespace topic.
