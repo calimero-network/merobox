@@ -116,6 +116,73 @@ class TestValidateWorkflowStep:
         errors = config_module.validate_workflow_step(step, 0)
         assert len(errors) == 0
 
+    def test_wait_for_sync_accepts_an_expect_block(self, config_module):
+        """`expect` gates on a read, so the schema has to know the key exists.
+
+        Unknown step keys are fatal, so without this the feature is
+        unreachable from a workflow file at all.
+        """
+        step = {
+            "name": "Wait for Sync",
+            "type": "wait_for_sync",
+            "context_id": "{{context_id}}",
+            "nodes": ["calimero-node-1", "calimero-node-2"],
+            "expect": {
+                "method": "get",
+                "args": {"key": "k"},
+                "equals": {"output": "v"},
+            },
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_wait_for_sync_expect_equals_null_is_valid(self, config_module):
+        """A read that must return nothing is a legitimate expectation."""
+        step = {
+            "name": "Wait for Sync",
+            "type": "wait_for_sync",
+            "context_id": "{{context_id}}",
+            "nodes": ["calimero-node-1", "calimero-node-2"],
+            "expect": {"method": "get", "equals": None},
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    @pytest.mark.parametrize(
+        "expect,fragment",
+        [
+            ({"method": "get"}, "expect.equals"),
+            ({"equals": 1}, "expect.method"),
+            ({"method": "", "equals": 1}, "expect.method"),
+            ({"method": "get", "args": [], "equals": 1}, "expect.args"),
+            ({"method": "get", "equals": 1, "eqauls": 1}, "unknown key"),
+        ],
+    )
+    def test_wait_for_sync_rejects_malformed_expect(
+        self, config_module, expect, fragment
+    ):
+        """Caught at validate time, not 60 seconds into a timeout — a typo like
+        `eqauls` would otherwise read as "the value never arrived"."""
+        step = {
+            "name": "Wait for Sync",
+            "type": "wait_for_sync",
+            "context_id": "{{context_id}}",
+            "nodes": ["calimero-node-1", "calimero-node-2"],
+            "expect": expect,
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any(fragment in e for e in errors), errors
+
+    def test_wait_for_sync_expect_requires_a_context(self, config_module):
+        """The read executes in a context, so a group-only target cannot host it."""
+        step = {
+            "name": "Wait for Sync",
+            "type": "wait_for_sync",
+            "group_id": "{{group_id}}",
+            "nodes": ["calimero-node-1", "calimero-node-2"],
+            "expect": {"method": "get", "equals": 1},
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("needs 'context_id'" in e for e in errors), errors
+
     def test_valid_repeat_step(self, config_module):
         """Test validation of a valid repeat step."""
         step = {

@@ -43,7 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call's `data` payload — the same shape a following `json_assert` sees — so an
   existing assertion moves into `expect` unchanged. The read is only probed once
   the hashes agree, since each probe executes on every node, and a failure
-  prints each node's observed value beside the expected one
+  prints each node's observed value beside the expected one. `expect` is part
+  of the `wait_for_sync` schema, so `merobox bootstrap validate` catches a
+  malformed block — a `eqauls:` typo, a missing `context_id` — before a run
+  spends 60 seconds timing out on it
 
 ### Changed
 
