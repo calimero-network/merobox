@@ -90,7 +90,7 @@ Generate a sample workflow configuration file.
 - **repeat**: Loop through step sequences
 - **parallel**: Execute multiple step groups concurrently (see [Parallel Execution](#parallel-execution))
 - **wait**: Add delays between steps
-- **wait_for_sync**: Wait for nodes to reach consensus (root hash verification)
+- **wait_for_sync**: Wait for nodes to reach consensus (state-hash convergence, plus an optional `expect:` read that must return a given value on every node — gate on that when the scenario cares whether a write is readable, since a hash is a claim about state rather than proof of it)
 - **script**: Execute custom scripts
 
 ## Parallel Execution

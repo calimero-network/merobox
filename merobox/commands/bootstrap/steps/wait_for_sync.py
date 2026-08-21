@@ -1,6 +1,14 @@
 """
 Wait for sync step executor — waits for nodes to converge on context state
-hash, group governance state hash, or both.
+hash, group governance state hash, or both, and optionally on a *read* that
+must return an expected value on every node.
+
+A converged state hash is a claim about state, not proof of it. Two ways it
+misleads, both observed in CI: a node can publish a root hash whose state it
+does not actually hold (calimero-network/core#3595, #3596), and even truthful
+hashes can agree a few milliseconds before a pending delta finishes applying,
+so the read that follows still misses. `expect:` closes both by waiting on the
+value the scenario is about to assert.
 """
 
 import asyncio
@@ -8,6 +16,7 @@ import time
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.call import call_function
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
     SYNC_BACKOFF_FACTOR,
@@ -23,12 +32,27 @@ from merobox.commands.utils import (
 )
 
 
+class _ExpectUnread:
+    """Sentinel: the ``expect`` read could not be performed on a node.
+
+    Distinct from a read that legitimately returned ``None`` — conflating the
+    two would let an unreachable node satisfy an ``equals: null`` expectation.
+    """
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid only
+        return "<unread>"
+
+
+_EXPECT_UNREAD = _ExpectUnread()
+
+
 def _build_success_details(
     targets: list[dict],
     converged_hashes: dict[str, str],
     per_target_state: dict[str, dict[str, str | None]],
     elapsed: float,
     attempt: int,
+    expect_observed: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the success result dict with backwards-compatible top-level keys.
 
@@ -48,6 +72,9 @@ def _build_success_details(
         "attempts": attempt,
         "per_target_node_hashes": per_target_state,
     }
+    if expect_observed is not None:
+        details["expect_satisfied"] = True
+        details["per_node_expect"] = expect_observed
     for target in targets:
         label = f"{target['kind']}={target['id']}"
         hash_val = converged_hashes.get(label)
@@ -184,6 +211,32 @@ class WaitForSyncStep(BaseStep):
         ):
             raise ValueError(f"Step '{step_name}': 'trigger_sync' must be a boolean")
 
+        # Validate the optional `expect` block.
+        if self.config.get("expect") is not None:
+            expect = self.config["expect"]
+            if not isinstance(expect, dict):
+                raise ValueError(f"Step '{step_name}': 'expect' must be a dictionary")
+            if not isinstance(expect.get("method"), str) or not expect["method"]:
+                raise ValueError(
+                    f"Step '{step_name}': 'expect.method' must be a non-empty string"
+                )
+            if "args" in expect and not isinstance(expect["args"], dict):
+                raise ValueError(
+                    f"Step '{step_name}': 'expect.args' must be a dictionary"
+                )
+            # `equals: null` is a legitimate expectation, so presence is what
+            # matters here, not truthiness.
+            if "equals" not in expect:
+                raise ValueError(
+                    f"Step '{step_name}': 'expect.equals' is required — it is the value "
+                    f"the read must return on every node"
+                )
+            if not has_context_id:
+                raise ValueError(
+                    f"Step '{step_name}': 'expect' needs 'context_id' — the read is "
+                    f"executed in that context"
+                )
+
     async def _fetch_hash(
         self,
         target: dict,
@@ -310,6 +363,104 @@ class WaitForSyncStep(BaseStep):
         unique = {h for h in node_hashes.values() if h is not None}
         return len(unique) == 1, node_hashes
 
+    def _resolve_nested(
+        self,
+        value: Any,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> Any:
+        """Resolve ``{{placeholders}}`` anywhere inside a nested structure."""
+        if isinstance(value, dict):
+            return {
+                k: self._resolve_nested(v, workflow_results, dynamic_values)
+                for k, v in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                self._resolve_nested(v, workflow_results, dynamic_values) for v in value
+            ]
+        if isinstance(value, str):
+            return self._resolve_dynamic_value(value, workflow_results, dynamic_values)
+        return value
+
+    async def _read_expect_on_node(
+        self,
+        expect: dict,
+        context_id: str,
+        node_name: str,
+    ) -> tuple[str, Any]:
+        """Run the ``expect`` read on one node.
+
+        Returns ``(node_name, observed)``, where ``observed`` is the call's
+        ``data`` payload — the same shape a following ``json_assert`` sees when
+        an ``execute`` step captures ``outputs: {x: result}``. A failed or
+        errored call yields the ``_EXPECT_UNREAD`` sentinel rather than
+        ``None``, because ``None`` is itself a legitimate observed value and
+        must not be mistaken for "could not read".
+        """
+        try:
+            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
+        except Exception as e:
+            console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
+            return node_name, _EXPECT_UNREAD
+
+        try:
+            result = await call_function(
+                rpc_url,
+                context_id,
+                expect["method"],
+                expect.get("args") or {},
+                node_name=client_node_name,
+            )
+        except (
+            RuntimeError,
+            ValueError,
+            ConnectionError,
+            TimeoutError,
+            OSError,
+        ) as e:
+            vprint(
+                f"[dim]⚠️  expect read failed on {node_name}: {str(e)}[/dim]",
+                level=LOG_LEVEL_VERBOSE,
+            )
+            return node_name, _EXPECT_UNREAD
+
+        if not isinstance(result, dict) or not result.get("success"):
+            return node_name, _EXPECT_UNREAD
+        return node_name, result.get("data")
+
+    async def _check_expect_convergence(
+        self,
+        expect: dict,
+        context_id: str,
+        nodes: list[str],
+    ) -> tuple[bool, dict[str, Any]]:
+        """Run the ``expect`` read on every node.
+
+        Satisfied only when every node returned the expected value. One node
+        still short is the whole point of the gate: it is the node whose read
+        the scenario would otherwise have raced.
+        """
+        results = await asyncio.gather(
+            *(self._read_expect_on_node(expect, context_id, node) for node in nodes)
+        )
+        observed = dict(results)
+        expected = expect["equals"]
+        return all(v == expected for v in observed.values()), observed
+
+    @staticmethod
+    def _render_expect(observed: dict[str, Any], expected: Any) -> list[str]:
+        """One line per node describing how its read compares to ``expected``."""
+        lines = []
+        for node, value in observed.items():
+            if value is _EXPECT_UNREAD:
+                lines.append(f"{node}: <could not read>")
+            elif value == expected:
+                lines.append(f"{node}: matches")
+            else:
+                lines.append(f"{node}: {value!r}")
+        return lines
+
     @staticmethod
     def _target_label(target: dict) -> str:
         """Human-readable label for log lines."""
@@ -325,12 +476,19 @@ class WaitForSyncStep(BaseStep):
         trigger_sync: bool = False,
         initial_check_interval: float = SYNC_INITIAL_CHECK_INTERVAL,
         backoff_factor: float = SYNC_BACKOFF_FACTOR,
+        expect: dict | None = None,
+        expect_context_id: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
         Wait for all targets to converge across all nodes.
 
         A target converges when every node returns the same hash for it.
         All specified targets must converge for the overall result to succeed.
+
+        When ``expect`` is given, every node must additionally return
+        ``expect["equals"]`` from the declared read. That is the only condition
+        here that observes state rather than a claim about it, so a scenario
+        that cares whether a write is readable should declare it.
 
         Polling uses adaptive backoff: the inter-attempt sleep starts at
         ``initial_check_interval`` and grows geometrically by
@@ -358,6 +516,7 @@ class WaitForSyncStep(BaseStep):
         )
 
         last_per_target: dict[str, dict[str, str | None]] = {}
+        last_expect: dict[str, Any] | None = None
 
         # Adaptive backoff: the inter-attempt sleep starts short and grows
         # geometrically, capped at check_interval. Never start above the cap.
@@ -390,12 +549,29 @@ class WaitForSyncStep(BaseStep):
 
             last_per_target = per_target_state
 
+            # Only probe the read once the hashes agree: before that the answer
+            # is known to be "not yet", and each probe is a real execution on
+            # every node.
+            expect_observed = None
+            if expect is not None and all_converged:
+                expect_ok, expect_observed = await self._check_expect_convergence(
+                    expect, expect_context_id, nodes
+                )
+                last_expect = expect_observed
+                if not expect_ok:
+                    all_converged = False
+
             if all_converged:
                 console.print(
                     f"[green]✓ All targets synced after {elapsed:.2f}s ({attempt} attempts)![/green]"
                 )
                 for label, hash_val in converged_hashes.items():
                     console.print(f"[green]  {label}: {hash_val}[/green]")
+                if expect is not None:
+                    console.print(
+                        f"[green]  expect {expect['method']}: observed on all "
+                        f"{len(nodes)} node(s)[/green]"
+                    )
 
                 return True, _build_success_details(
                     targets,
@@ -403,6 +579,7 @@ class WaitForSyncStep(BaseStep):
                     per_target_state,
                     elapsed,
                     attempt,
+                    expect_observed,
                 )
 
             # Report what didn't converge yet. This per-attempt block is the
@@ -439,6 +616,10 @@ class WaitForSyncStep(BaseStep):
                             level=LOG_LEVEL_VERBOSE,
                         )
 
+            if expect is not None and last_expect is not None:
+                for line in self._render_expect(last_expect, expect["equals"]):
+                    vprint(f"[dim]  · expect {line}[/dim]", level=LOG_LEVEL_VERBOSE)
+
             # Sleep the current backoff interval before the next check, with a
             # small jitter folded on top to de-sync parallel node pollers, then
             # grow the interval geometrically toward the check_interval cap.
@@ -467,6 +648,15 @@ class WaitForSyncStep(BaseStep):
                 all_converged = False
         last_per_target = per_target_state
 
+        expect_observed = None
+        if expect is not None and all_converged:
+            expect_ok, expect_observed = await self._check_expect_convergence(
+                expect, expect_context_id, nodes
+            )
+            last_expect = expect_observed
+            if not expect_ok:
+                all_converged = False
+
         if all_converged:
             console.print(
                 f"[green]✓ All targets synced after {elapsed:.2f}s ({attempt} attempts, verified on final check)[/green]"
@@ -479,6 +669,7 @@ class WaitForSyncStep(BaseStep):
                 last_per_target,
                 elapsed,
                 attempt,
+                expect_observed,
             )
 
         console.print(
@@ -489,6 +680,19 @@ class WaitForSyncStep(BaseStep):
             console.print(f"[red]    {label}:[/red]")
             for node, hash_val in node_hashes.items():
                 console.print(f"[red]      {node}: {hash_val or 'N/A'}[/red]")
+        if expect is not None:
+            # Hashes agreeing while this does not is the interesting failure:
+            # it means convergence was claimed but the state is not readable.
+            console.print(
+                f"[red]    expect {expect['method']} (want {expect['equals']!r}):[/red]"
+            )
+            if last_expect is None:
+                console.print(
+                    "[red]      never probed — the state hashes never converged[/red]"
+                )
+            else:
+                for line in self._render_expect(last_expect, expect["equals"]):
+                    console.print(f"[red]      {line}[/red]")
 
         return False, {
             "synced": False,
@@ -501,6 +705,7 @@ class WaitForSyncStep(BaseStep):
             "elapsed_seconds": round(elapsed, 2),
             "attempts": attempt,
             "per_target_node_hashes": last_per_target,
+            "per_node_expect": last_expect,
         }
 
     async def execute(
@@ -533,6 +738,21 @@ class WaitForSyncStep(BaseStep):
         )
         backoff_factor = self.config.get("backoff_factor", SYNC_BACKOFF_FACTOR)
 
+        expect = self.config.get("expect")
+        expect_context_id = None
+        if expect is not None:
+            expect = {
+                "method": expect["method"],
+                "args": self._resolve_nested(
+                    expect.get("args") or {}, workflow_results, dynamic_values
+                ),
+                "equals": self._resolve_nested(
+                    expect["equals"], workflow_results, dynamic_values
+                ),
+            }
+            # Validation guarantees a context target exists when expect is set.
+            expect_context_id = next(t["id"] for t in targets if t["kind"] == "context")
+
         vprint(
             "\n[bold cyan]⏳ Waiting for node synchronization...[/bold cyan]",
             level=LOG_LEVEL_NORMAL,
@@ -547,6 +767,8 @@ class WaitForSyncStep(BaseStep):
             trigger_sync,
             initial_check_interval,
             backoff_factor,
+            expect,
+            expect_context_id,
         )
 
         if "outputs" in self.config:

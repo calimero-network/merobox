@@ -1184,6 +1184,47 @@ outputs:
   seconds: 2 # Allow node to fully sync
 ```
 
+### 2b. Wait on the State You Are About to Assert
+
+`wait_for_sync` converges on a state hash. A hash is a *claim* about state, not
+proof of it, and it can be satisfied while the read you are about to make still
+misses:
+
+- a node can publish a root hash whose state it does not actually hold
+  (calimero-network/core#3595, #3596);
+- even truthful hashes can agree a few milliseconds before a pending delta
+  finishes applying, so the read that follows loses the race.
+
+Both produce the same signature — `✓ All targets synced` immediately, followed
+by an assertion that reads `null`. Declare `expect:` and the step waits for the
+value itself, on every node, rather than for agreement about a hash:
+
+```yaml
+- name: Wait for root context sync
+  type: wait_for_sync
+  context_id: "{{ctx}}"
+  nodes:
+    - node-1
+    - node-2
+  expect:
+    method: get
+    args:
+      key: "ns_root_key"
+    equals:
+      output: "from_node1"
+```
+
+`equals` is compared against the call's `data` payload — the same shape a
+following `json_assert` sees from `outputs: {x: result}`, so an existing
+assertion can be moved into `expect` unchanged. `equals: null` is a valid
+expectation (a read that must return nothing); a node that cannot be read at
+all never satisfies it.
+
+The hash targets still apply: `expect` is an additional condition, and it is
+only probed once the hashes agree, since each probe executes on every node.
+On failure the step prints each node's observed value next to the expected one
+— hashes agreeing while the reads disagree is the diagnosis, not a mystery.
+
 ### 3. Use Assertions to Validate State
 
 ```yaml
