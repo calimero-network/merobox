@@ -344,12 +344,16 @@ class CreateMeshStep(BaseStep):
         step_key = f"context_{context_node}"
         workflow_results[step_key] = context_data
         # The namespace and the context come from two calls; `outputs:` sees one
-        # payload, so the namespace id is folded into the context response.
-        self._export_variables(
-            {**context_data, "namespaceId": namespace_id},
-            context_node,
-            dynamic_values,
+        # payload, so the namespace id is folded into the context response. It
+        # has to go into the unwrapped body: a success payload nests under
+        # `data`, and the export pass reads that level, not the envelope.
+        _, context_body = self._unwrap_response(context_data)
+        export_payload = (
+            {**context_body, "namespaceId": namespace_id}
+            if isinstance(context_body, dict)
+            else context_data
         )
+        self._export_variables(export_payload, context_node, dynamic_values)
         dynamic_values.setdefault(f"namespace_id_{context_node}", namespace_id)
 
         if "outputs" not in self.config:
