@@ -1,0 +1,96 @@
+description: >
+  Pins the ids create_mesh exports. The step runs the whole namespace bootstrap
+  internally, so the namespace id and each joiner's account reach a workflow
+  only through its exports - a capture that quietly returns nothing surfaces as
+  an unresolved placeholder several steps later, or not at all.
+name: Create Mesh Exports Example
+
+force_pull_image: true
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: mesh-exports-node
+
+steps:
+  - name: Install Application on Node 1
+    type: install_application
+    node: mesh-exports-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create Mesh
+    type: create_mesh
+    context_node: mesh-exports-node-1
+    application_id: "{{app_id}}"
+    path: ./workflow-examples/res/kv_store.wasm
+    nodes:
+      - mesh-exports-node-2
+      - mesh-exports-node-3
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+      namespace_id: namespaceId
+
+  - name: Assert the mesh exported its ids
+    type: assert
+    statements:
+      - "is_set({{context_id}})"
+      - "is_set({{namespace_id}})"
+      # 64 hex rather than merely non-empty: an account handed back in the
+      # key's encoding would still be "set" and fail only much later.
+      - "regex({{member_account_mesh-exports-node-2}}, ^[0-9a-f]{64}$)"
+      - "regex({{member_account_mesh-exports-node-3}}, ^[0-9a-f]{64}$)"
+
+  # Nothing below the namespace root is reachable without this id, which is the
+  # whole reason it has to come out of the step.
+  - name: Create a subgroup under the exported namespace
+    type: create_group_in_namespace
+    node: mesh-exports-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: mesh-exports-subgroup
+    outputs:
+      subgroup_id: groupId
+
+  - name: Assert the subgroup was born under the namespace
+    type: assert
+    statements:
+      - "is_set({{subgroup_id}})"
+      - "{{subgroup_id}} != {{namespace_id}}"
+
+  - name: Wait for namespace governance to settle
+    type: wait_for_sync
+    group_id: "{{namespace_id}}"
+    nodes:
+      - mesh-exports-node-1
+      - mesh-exports-node-2
+    timeout: 60
+    check_interval: 2
+
+  # The real test of the account capture: member-addressing endpoints reject a
+  # signing key, so this step only passes if a genuine account was exported.
+  - name: Address node 2 by its exported account
+    type: update_member_role
+    node: mesh-exports-node-1
+    group_id: "{{namespace_id}}"
+    member_id: "{{member_account_mesh-exports-node-2}}"
+    role: Admin
+
+  - name: Read the namespace membership back
+    type: list_group_members
+    node: mesh-exports-node-1
+    group_id: "{{namespace_id}}"
+    outputs:
+      ns_members: members
+
+  - name: Assert membership is keyed by the exported account
+    type: assert
+    statements:
+      - "contains({{ns_members}}, {{member_account_mesh-exports-node-2}})"
+      - "contains({{ns_members}}, {{member_account_mesh-exports-node-3}})"
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 60
