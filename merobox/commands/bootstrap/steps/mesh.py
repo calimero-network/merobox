@@ -81,6 +81,11 @@ class CreateMeshStep(BaseStep):
                 "context_member_public_key_{node_name}",
                 "Public key of the context member",
             ),
+            (
+                "namespaceId",
+                "namespace_id_{node_name}",
+                "Namespace the mesh was created under",
+            ),
         ]
 
     def _is_binary_mode(self) -> bool:
@@ -338,7 +343,18 @@ class CreateMeshStep(BaseStep):
 
         step_key = f"context_{context_node}"
         workflow_results[step_key] = context_data
-        self._export_variables(context_data, context_node, dynamic_values)
+        # The namespace and the context come from two calls; `outputs:` sees one
+        # payload, so the namespace id is folded into the context response. It
+        # has to go into the unwrapped body: a success payload nests under
+        # `data`, and the export pass reads that level, not the envelope.
+        _, context_body = self._unwrap_response(context_data)
+        export_payload = (
+            {**context_body, "namespaceId": namespace_id}
+            if isinstance(context_body, dict)
+            else context_data
+        )
+        self._export_variables(export_payload, context_node, dynamic_values)
+        dynamic_values.setdefault(f"namespace_id_{context_node}", namespace_id)
 
         if "outputs" not in self.config:
             if "context_id" not in dynamic_values:
@@ -542,6 +558,19 @@ class CreateMeshStep(BaseStep):
                 if nodes_to_process_count == 1:
                     dynamic_values["memberIdentity"] = member_identity
                 console.print(f"  [green]✓ Member identity: {member_identity}[/green]")
+
+            # Member-addressing endpoints take the account, not the key: the two
+            # encodings deliberately differ so one cannot stand in for the other.
+            member_account = (
+                join_nested.get("memberAccount")
+                if isinstance(join_nested, dict)
+                else None
+            )
+            if member_account:
+                dynamic_values[f"member_account_{node_name}"] = member_account
+                if nodes_to_process_count == 1:
+                    dynamic_values.setdefault("member_account", member_account)
+                console.print(f"  [green]✓ Member account: {member_account}[/green]")
 
             connected_nodes.append(node_name)
 

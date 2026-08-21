@@ -79,7 +79,6 @@ steps:
     nodes:
       - snapshot-node-2
       - snapshot-node-3
-    capability: member
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey
