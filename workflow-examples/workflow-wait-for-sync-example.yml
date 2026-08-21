@@ -130,6 +130,18 @@ steps:
     timeout: 60
     check_interval: 2
     trigger_sync: true
+    # Converging on a state hash only proves the nodes agree on a claim about
+    # state. `expect` waits for the value itself, on every node, so the reads
+    # below cannot race an apply that has not landed. This runs as a Docker
+    # canary, which is the point: it is the only coverage that exercises the
+    # real client response shape, and two bugs shipped past unit tests that
+    # stubbed it (calimero-network/merobox#359, #361).
+    expect:
+      method: get
+      args:
+        key: demo_key
+      equals:
+        output: demo_value
     outputs:
       operation_sync_hash: root_hash
       operation_sync_time: elapsed_seconds
