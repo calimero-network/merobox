@@ -32,6 +32,27 @@ from merobox.commands.utils import (
 )
 
 
+def _rpc_result(data: Any) -> Any:
+    """Unwrap a JSON-RPC envelope down to its ``result``.
+
+    ``call_function`` hands back the whole envelope —
+    ``{"id": "1", "jsonrpc": "2.0", "result": {"output": "v"}}`` — while an
+    ``execute`` step's ``outputs: {x: result}`` captures only the inner
+    ``result``. `expect.equals` is written to match what a `json_assert` on that
+    capture would compare, so it has to be compared against the same level.
+
+    Comparing the envelope instead is not a near miss: it can never match a
+    hand-written `equals`, so the gate waits out its full timeout and reports
+    "the value never arrived" while every node has in fact returned it.
+
+    Falls back to ``data`` unchanged when there is no ``result`` key, so a
+    method whose response is not enveloped still compares sensibly.
+    """
+    if isinstance(data, dict) and "result" in data:
+        return data["result"]
+    return data
+
+
 class _ExpectUnread:
     """Sentinel: the ``expect`` read could not be performed on a node.
 
@@ -392,8 +413,8 @@ class WaitForSyncStep(BaseStep):
         """Run the ``expect`` read on one node.
 
         Returns ``(node_name, observed)``, where ``observed`` is the call's
-        ``data`` payload — the same shape a following ``json_assert`` sees when
-        an ``execute`` step captures ``outputs: {x: result}``. A failed or
+        JSON-RPC ``result`` — the same shape a following ``json_assert`` sees
+        when an ``execute`` step captures ``outputs: {x: result}``. A failed or
         errored call yields the ``_EXPECT_UNREAD`` sentinel rather than
         ``None``, because ``None`` is itself a legitimate observed value and
         must not be mistaken for "could not read".
@@ -427,7 +448,7 @@ class WaitForSyncStep(BaseStep):
 
         if not isinstance(result, dict) or not result.get("success"):
             return node_name, _EXPECT_UNREAD
-        return node_name, result.get("data")
+        return node_name, _rpc_result(result.get("data"))
 
     async def _check_expect_convergence(
         self,
