@@ -227,6 +227,10 @@ class WorkflowExecutor:
         # and networks at workflow exit. Stays `None` for non-NAT
         # workflows.
         self._nat_state = None
+        # Set instead of `_nat_state` when the workflow asks for
+        # `topology: { type: bootstrap }`; exactly one of the two is
+        # ever populated, and teardown dispatches on which.
+        self._bootstrap_state = None
 
         # Generate unique workflow ID for test isolation (like e2e tests)
         self.workflow_id = str(uuid.uuid4())[:8]
@@ -430,12 +434,12 @@ class WorkflowExecutor:
                 # bridges) on success too. `stop_all_nodes` covers
                 # the client merods that the normal manager knows
                 # about; the topology pieces are merobox-owned.
-                self._teardown_nat_topology_if_present()
+                self._teardown_topology_if_present()
             else:
                 console.print(
                     "\n[bold blue]Step 5: Skipped (no local nodes to stop)[/bold blue]"
                 )
-                self._teardown_nat_topology_if_present()
+                self._teardown_topology_if_present()
 
             # Step 6: Nuke on end if requested
             if nuke_on_end:
@@ -744,7 +748,7 @@ class WorkflowExecutor:
         self._export_node_logs()
         if stop_all_nodes:
             self._stop_nodes_on_failure()
-        self._teardown_nat_topology_if_present()
+        self._teardown_topology_if_present()
 
     def _export_node_logs(self) -> None:
         """Persist logs of all running nodes to ``data/container-logs/``.
@@ -782,15 +786,16 @@ class WorkflowExecutor:
         else:
             console.print("[green]✓ All nodes stopped[/green]")
 
-    def _teardown_nat_topology_if_present(self) -> None:
-        """Stop the NAT-topology containers + networks if any were
-        stood up for this workflow.
+    def _teardown_topology_if_present(self) -> None:
+        """Stop the topology containers + networks if any were stood up
+        for this workflow (NAT or bootstrap — whichever ran).
 
         Safe to call multiple times; the second call is a no-op
         because `self._nat_state` is cleared after the first
         successful teardown.
         """
-        if self._nat_state is None:
+        state = self._nat_state or self._bootstrap_state
+        if state is None:
             return
         # Manager is `Optional` in the executor's constructor —
         # remote-only workflows, dry runs, and binary-mode call
@@ -801,11 +806,12 @@ class WorkflowExecutor:
         # would leak boot-node + gateway + bridges across runs.
         if self.manager is None or getattr(self.manager, "client", None) is None:
             console.print(
-                "[yellow]Skipping NAT topology teardown: manager / docker client "
+                "[yellow]Skipping topology teardown: manager / docker client "
                 "unavailable (likely a binary-mode or remote-only path that should "
                 "have refused `topology:` earlier — investigate)[/yellow]"
             )
             self._nat_state = None
+            self._bootstrap_state = None
             return
         # Stop and remove any client containers tracked in state
         # FIRST, before tearing down the networks they're attached
@@ -818,7 +824,7 @@ class WorkflowExecutor:
         # modes the outer path doesn't run at all), so we have to
         # reap clients here too. Best-effort: a failing stop on one
         # client shouldn't block the rest of teardown.
-        for client_name in list(self._nat_state.client_names):
+        for client_name in list(state.client_names):
             try:
                 container = self.manager.client.containers.get(client_name)
             except Exception:
@@ -828,26 +834,32 @@ class WorkflowExecutor:
                 container.stop(timeout=5)
             except Exception as e:
                 console.print(
-                    f"[yellow]NAT teardown: failed to stop {client_name}: "
+                    f"[yellow]Topology teardown: failed to stop {client_name}: "
                     f"{escape(str(e))}[/yellow]"
                 )
             try:
                 container.remove(force=True)
             except Exception as e:
                 console.print(
-                    f"[yellow]NAT teardown: failed to remove {client_name}: "
+                    f"[yellow]Topology teardown: failed to remove {client_name}: "
                     f"{escape(str(e))}[/yellow]"
                 )
         try:
-            from merobox.topology import teardown_nat_topology
+            if self._bootstrap_state is not None:
+                from merobox.topology import teardown_bootstrap_topology
 
-            teardown_nat_topology(self.manager.client, self._nat_state)
+                teardown_bootstrap_topology(self.manager.client, self._bootstrap_state)
+            else:
+                from merobox.topology import teardown_nat_topology
+
+                teardown_nat_topology(self.manager.client, self._nat_state)
         except Exception as e:
             console.print(
-                f"[yellow]NAT topology teardown raised: {escape(str(e))}[/yellow]"
+                f"[yellow]Topology teardown raised: {escape(str(e))}[/yellow]"
             )
         finally:
             self._nat_state = None
+            self._bootstrap_state = None
             # Drop the manager-side handle in lockstep so a
             # subsequent restart_container step (in a fresh
             # workflow that reuses the same manager) doesn't
@@ -1044,6 +1056,119 @@ class WorkflowExecutor:
             elif key in nodes_config:
                 run_node_kwargs[key] = nodes_config[key]
 
+    async def _start_nodes_bootstrap_topology(
+        self,
+        nodes_config: dict,
+        restart: bool,
+        image: Optional[str],
+    ) -> bool:
+        """Bring up one bridge with a boot-node and spawn N clients on it.
+
+        Called instead of the normal cluster-mode `_start_nodes` body when
+        the workflow declares `topology: { type: bootstrap }`. Each client
+        gets the boot-node as its ONLY bootstrap entry and `mdns=False`, so
+        the sole route to a sibling's address is asking the boot-node. That
+        is what makes a bootstrap/kad/rendezvous regression fail here.
+
+        Sibling wiring is deliberately skipped — `_wire_cluster_bootstrap_peers`
+        hands out exactly the roster this topology withholds. Unlike the NAT
+        path there is no gateway and no route injection, so a client is up as
+        soon as `run_node` returns.
+
+        Returns False on any failure; the caller's exit path tears the
+        topology down via the stored state either way.
+        """
+        from merobox.topology import setup_bootstrap_topology
+        from merobox.topology.bootstrap import bootstrap_multiaddrs
+        from merobox.topology.nat import slugify_workflow_name
+
+        topology_raw = self.topology or {}
+        if hasattr(topology_raw, "model_dump"):
+            topology_cfg = topology_raw.model_dump()
+        else:
+            topology_cfg = topology_raw
+
+        if "count" not in nodes_config:
+            keys = sorted(nodes_config.keys())
+            console.print(
+                "[red]❌ Bootstrap topology requires `nodes:` to use the "
+                f"`count:` form (saw keys: {keys}). Every client is spawned "
+                "with the same image and the same single bootstrap address, "
+                "so the individual-node list form has nothing to vary.[/red]"
+            )
+            return False
+
+        count = nodes_config["count"]
+        prefix = nodes_config.get("prefix", "calimero-node")
+        base_port = nodes_config.get("base_port", DEFAULT_P2P_PORT)
+        base_rpc_port = nodes_config.get("base_rpc_port", DEFAULT_RPC_PORT)
+        use_image_entrypoint = nodes_config.get("use_image_entrypoint", False)
+
+        if restart:
+            console.print(
+                "[yellow]Bootstrap topology ignores `restart: true` — clients "
+                "are always spawned fresh, and a restart would only re-read "
+                "the same single-entry bootstrap config[/yellow]"
+            )
+
+        boot_node_cfg = topology_cfg.get("boot_node") or {}
+        workflow_slug = slugify_workflow_name(
+            self.config.get("name", "merobox-bootstrap")
+        )
+
+        try:
+            self._bootstrap_state = setup_bootstrap_topology(
+                self.manager.client,
+                workflow_name=workflow_slug,
+                boot_node_image_override=boot_node_cfg.get("image"),
+            )
+        except Exception as e:
+            console.print(
+                f"[red]❌ Bootstrap topology setup failed: {escape(str(e))}[/red]"
+            )
+            return False
+
+        client_bootstrap_nodes = bootstrap_multiaddrs(self._bootstrap_state)
+        network_name = self._bootstrap_state.network.name
+
+        for i in range(count):
+            node_name = f"{prefix}-{i + 1}"
+            run_node_kwargs = self._build_run_node_kwargs(
+                node_name,
+                port=base_port + i,
+                rpc_port=base_rpc_port + i,
+                image=image,
+                use_image_entrypoint=use_image_entrypoint,
+            )
+            # Same bridge as the boot-node, so the clients can reach it.
+            run_node_kwargs["network"] = network_name
+            # The boot-node, and nothing else. Overriding the kwargs dict
+            # rather than `self.bootstrap_nodes` keeps the executor reusable
+            # across runs — a mutation would leak these addresses into the
+            # next workflow's config.
+            run_node_kwargs["bootstrap_nodes"] = client_bootstrap_nodes
+            # Fault overrides first, then force mdns off last so no
+            # per-node override can put multicast back and hide a broken
+            # discovery path behind it.
+            self._apply_fault_kwargs(run_node_kwargs, None, nodes_config)
+            run_node_kwargs["mdns"] = False
+
+            if not self.manager.run_node(**run_node_kwargs):
+                # Tear down here rather than leaving it to the caller: the
+                # boot-node, the bridge and any earlier clients are all up.
+                # Teardown is idempotent, so the outer exit path running it
+                # again is safe.
+                self._teardown_topology_if_present()
+                return False
+            self._bootstrap_state.client_names.append(node_name)
+
+        console.print(
+            f"[green]✓ Bootstrap topology: {count} client(s) on "
+            f"{network_name}, each holding one bootstrap address and no "
+            f"mDNS[/green]"
+        )
+        return True
+
     async def _start_nodes_nat_topology(
         self,
         nodes_config: dict,
@@ -1234,7 +1359,7 @@ class WorkflowExecutor:
                 # outer caller's `stop_all_nodes=True` path also
                 # gets called normally — duplicate teardown is
                 # safe.
-                self._teardown_nat_topology_if_present()
+                self._teardown_topology_if_present()
                 return False
             # Track the just-spawned client IMMEDIATELY (before
             # inject + reachability). If either of those later
@@ -1265,7 +1390,7 @@ class WorkflowExecutor:
                     f"[red]❌ Could not route {node_name} through the NAT "
                     f"gateway: {escape(str(e))}[/red]"
                 )
-                self._teardown_nat_topology_if_present()
+                self._teardown_topology_if_present()
                 return False
             # Even with the route installed, the kernel's
             # forwarding path (per-iface state, ARP cache, neighbour
@@ -1285,7 +1410,7 @@ class WorkflowExecutor:
                     f"[red]❌ {node_name} cannot reach the boot-node via "
                     f"the NAT gateway: {escape(str(e))}[/red]"
                 )
-                self._teardown_nat_topology_if_present()
+                self._teardown_topology_if_present()
                 return False
             # client_names was populated immediately after run_node
             # above; nothing left to track at this point — the
@@ -1335,7 +1460,7 @@ class WorkflowExecutor:
                 "is missing the autonat-failure → relay-reservation "
                 "trigger.[/red]"
             )
-            self._teardown_nat_topology_if_present()
+            self._teardown_topology_if_present()
             return False
         return True
 
@@ -1357,8 +1482,20 @@ class WorkflowExecutor:
         if self.topology is not None:
             if self.is_binary_mode:
                 console.print(
-                    "[red]❌ topology: { type: nat } is Docker-mode only "
-                    "(NAT routing needs the docker bridge + iptables container)[/red]"
+                    "[red]❌ `topology:` is Docker-mode only (both variants "
+                    "stand up their own bridges and a boot-node "
+                    "container)[/red]"
+                )
+                return False
+            topology_raw = self.topology
+            if hasattr(topology_raw, "model_dump"):
+                topology_type = topology_raw.model_dump().get("type")
+            else:
+                topology_type = (topology_raw or {}).get("type")
+            if topology_type not in ("nat", "bootstrap"):
+                console.print(
+                    f"[red]❌ Unknown topology type {topology_type!r}; "
+                    f"expected 'nat' or 'bootstrap'[/red]"
                 )
                 return False
             # Match the resolution order used by the normal
@@ -1371,6 +1508,10 @@ class WorkflowExecutor:
             client_image = (
                 self.image if self.image is not None else nodes_config.get("image")
             )
+            if topology_type == "bootstrap":
+                return await self._start_nodes_bootstrap_topology(
+                    nodes_config, restart, image=client_image
+                )
             return await self._start_nodes_nat_topology(
                 nodes_config, restart, image=client_image
             )

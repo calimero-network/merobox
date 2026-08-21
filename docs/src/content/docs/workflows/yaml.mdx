@@ -67,7 +67,7 @@ steps:
 | `e2e_mode` | no | bool (`false`) | Clear merod's default public bootstrap list and assign a private per-workflow rendezvous namespace. |
 | `preserve_default_bootstrap` | no | bool (`false`) | Under `e2e_mode`, keep merod's default boot-node list instead of clearing it. |
 | `bootstrap_nodes` | no | list | Explicit bootstrap peers to connect to. |
-| `topology` | no | object | NAT/relay topology selector (see [Topology](#topology)). |
+| `topology` | no | object | Startup wiring: `bootstrap` (discovery only) or `nat` (relay). See [Topology](#topology). |
 
 ## Node configuration
 
@@ -145,10 +145,32 @@ remote_nodes:
 
 ### Topology
 
-Setting `topology` switches startup from the default single-bridge cluster to a
-multi-bridge NAT layout with a relay boot-node and a NAT gateway — required to
-exercise relay-reservation recovery, where clients cannot dial each other
-directly.
+Setting `topology` replaces the default startup wiring. By default merobox puts
+every node on one bridge, writes all of its siblings into each node's
+`bootstrap.nodes`, and leaves mDNS on — convenient, and unlike any deployment,
+where a node is told about one or two bootstrap peers, has to ask one of them who
+else exists, and has no multicast path to peers on other hosts.
+
+Two variants:
+
+`type: bootstrap` — one plain bridge, one boot-node, mDNS forced off, and a
+single bootstrap address per client. Clients can only learn a sibling's address
+by asking the boot-node, so this exercises bootstrap → identify → kad →
+rendezvous and nothing else. Use it when discovery itself is what you want to
+test: a regression there fails the scenario and means only that.
+
+```yaml
+topology:
+  type: bootstrap
+  boot_node:
+    image: ghcr.io/calimero-network/boot-node:edge   # optional
+```
+
+`type: nat` — a boot-node on a public bridge, a NAT gateway, and clients on an
+`--internal` LAN bridge with no direct path to each other. Required to exercise
+relay-reservation recovery and DCUtR hole-punching. It also exercises the
+discovery path above, which is why a discovery regression can surface here as a
+NAT failure; prefer `bootstrap` when the relay is not the point.
 
 ```yaml
 topology:
@@ -158,6 +180,12 @@ topology:
     image: merobox/boot-node:local   # optional; auto-built when omitted
     keypair: ./boot-node-key.json    # optional; fresh keypair when omitted
 ```
+
+Both variants require Docker mode, force `discovery.mdns = false` on every
+client, and skip the sibling bootstrap wiring. `nodes:` must use the `count:`
+form. Unknown keys under `topology` are rejected rather than ignored, so a
+`nat_mode` left behind on a `bootstrap` block fails validation instead of
+silently doing nothing.
 
 ## Common step keys
 

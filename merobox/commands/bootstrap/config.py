@@ -6,7 +6,7 @@ import math
 import os
 import re
 from difflib import get_close_matches
-from typing import Any, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
@@ -1860,32 +1860,51 @@ class NatTopologyConfig(BaseModel):
     )
 
 
-# `TopologyConfig` is a bare alias today, not a discriminated
-# union. There's only one topology variant (`NatTopologyConfig`),
-# and a single-element Union is idiomatically equivalent + draws
-# type-checker warnings, so we don't pay that cost yet.
-#
-# When the SECOND topology variant lands (e.g. `MeshTopologyConfig`
-# with multiple relays, `WireguardTopologyConfig`, etc.) the
-# migration is NOT just `TopologyConfig = Union[A, B]`. Pydantic
-# needs an explicit `Field(discriminator=...)` so it can pick the
-# right class from the YAML `type:` value — without that, every
-# variant's optional fields would be treated as candidates and
-# parsing errors would be unhelpfully vague. Migration steps:
-#
-# 1. Each variant gets a literal type tag: `type: Literal["nat"]`
-#    on `NatTopologyConfig`, `type: Literal["mesh"]` on the new
-#    `MeshTopologyConfig`, etc. The tag is what Pydantic
-#    dispatches on.
-# 2. Redefine the alias as a discriminated Union:
-#    `TopologyConfig = Annotated[Union[NatTopologyConfig, ...],
-#    Field(discriminator="type")]`
-# 3. Workflow YAMLs already use a `type:` key, so no schema
-#    migration on the operator side.
-#
-# Until that work happens, the bare alias keeps call-sites
-# future-proof in annotation form without paying the lint cost.
-TopologyConfig = NatTopologyConfig
+class BootstrapTopologyConfig(BaseModel):
+    """Single bridge, one boot-node, mDNS off — `type: bootstrap`.
+
+    Every client sits on one plain bridge with the boot-node and knows
+    exactly one address: the boot-node's. Sibling addresses are withheld
+    and multicast is disabled, so the only way a node learns about
+    another is to ask the boot-node — which is the discovery path a
+    deployed node actually uses, and the one the default cluster mode
+    hands out for free.
+
+    Compared with `type: nat`, which exercises the same asking but
+    behind a gateway: no NAT, no relay reservation, no hole-punching, no
+    route injection. A failure here means discovery broke, and nothing
+    else. That specificity is the reason this variant exists rather than
+    leaning on the NAT scenarios.
+    """
+
+    # Strict, unlike most models here: the only keys this topology has
+    # are `type` and `boot_node`, so anything else is a mistake worth
+    # naming — most likely `nat_mode`, carried over from the NAT variant
+    # by someone who copied a workflow. Accepting and ignoring it would
+    # leave a scenario that reads as if it configured a gateway it does
+    # not have (calimero-network/merobox#349 is the general form of this).
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["bootstrap"] = "bootstrap"
+    boot_node: NatBootNodeConfig = Field(
+        default_factory=NatBootNodeConfig,
+        description=(
+            "Configuration for the boot-node container. Shared with the "
+            "NAT topology: same binary in the same role (the rendezvous "
+            "server merod cannot be, shipping only the client behaviour), "
+            "differing only in what sits between it and the clients."
+        ),
+    )
+
+
+# Discriminated on `type`, per the migration this comment block used to
+# describe as future work. Pydantic needs the explicit discriminator:
+# without it every variant's optional fields become candidates and a bad
+# `type:` surfaces as a vague union error rather than "unknown topology".
+TopologyConfig = Annotated[
+    Union[NatTopologyConfig, BootstrapTopologyConfig],
+    Field(discriminator="type"),
+]
 
 
 class WorkflowConfig(BaseModel):
