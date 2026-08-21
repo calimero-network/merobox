@@ -2,19 +2,7 @@ click>=8.0.0
 docker>=6.0.0
 rich>=13.0.0,<14.3.4
 PyYAML>=6.0.0
-# 0.6.24 is the first release that can talk to BOTH sides of two in-flight core
-# changes:
-#   - member ids are decoded as the node writes them rather than parsed as bs58
-#     keys, so a node naming members by account (core#3391) is readable;
-#   - `create_namespace` still sends `upgradePolicy`, which every released node
-#     requires and a master node ignores. 0.6.22 and 0.6.23 omitted it and could
-#     not create a namespace on any released node — which is what turned this
-#     suite red when it was floored at 0.6.23.
-# The <0.6.26 cap was there because 0.6.26 decodes `join_namespace` into a struct
-# requiring `memberAccount`, which no released node sent. 0.11.0-rc.21 sends it
-# (core#3391), so the cap is lifted. The floor is 0.6.28: the first wheel built
-# against a core carrying `revokedIn` on the revoke-device response.
-calimero-client-py>=0.6.30
+calimero-client-py>=0.6.31
 aiohttp>=3.9.0
 toml>=0.10.2
 pydantic>=2.0.0

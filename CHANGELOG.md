@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Requires `calimero-client-py>=0.6.31`.** calimero-network/core#3598 renamed
+  the id `POST admin-api/namespaces/:id/join` returns from `groupId` to
+  `namespaceId`. The client decodes that response into a struct rather than
+  reading it loosely, so a build below 0.6.31 rejects a current node outright
+  with `missing field \`groupId\`` - the join fails before any step sees a
+  response. The same shape as the old `<0.6.26` cap, one rename later. 0.6.31
+  also makes `join_namespace`'s long-declared `namespaceId` export bind for the
+  first time: it named a field the endpoint never sent, so it captured nothing,
+  and nothing failed only because no workflow read it
+
 - **`add_group_members` accepts an ACCOUNT in `identity`.** Requires
   `calimero-client-py>=0.6.30`. Below that the bundled client parsed the field
   as a bs58 key with `.expect`, so an account - the only id

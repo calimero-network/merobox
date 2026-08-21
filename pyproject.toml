@@ -26,21 +26,7 @@ dependencies = [
     "docker>=6.0.0",
     "rich>=13.0.0,<14.3.4",
     "PyYAML>=6.0.0",
-    # 0.6.21 is where `revoke_device` grew its `proof` argument. Below it the
-    # account_revoke step's three-argument call is a TypeError at run time, not a
-    # resolution failure at install time, so the floor has to say so.
-    # 0.6.27 is where `get_node_identity` lands, which the `node_identity` step
-    # calls — below it that step is an AttributeError at run time.
-    #
-    # 0.6.28 is the first wheel built against a core carrying `revokedIn` on the
-    # revoke-device response. Below it the field is absent from what the binding
-    # returns, so a scenario capturing it gets `Export failed: 'revokedIn' not
-    # found` — which is what core's account-facts-cross-namespace hit.
-    #
-    # The old ceiling was `<0.6.26`, because 0.6.26 decodes `join_namespace` into
-    # a struct requiring `memberAccount` and no released node sent it. 0.11.0-rc.22
-    # does, so the condition that cap was waiting for is met.
-    "calimero-client-py>=0.6.30",
+    "calimero-client-py>=0.6.31",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",
