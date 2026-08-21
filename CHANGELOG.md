@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set-metadata steps. The field was removed last release, so following
   those examples is now a validation failure rather than a silent no-op.
 
+### Added
+
+- **`create_mesh` hands back the namespace and per-node accounts it already
+  holds.** The step does the whole bootstrap - namespace, context, invitations,
+  joins - but exported only `contextId` and `memberPublicKey`. Without the
+  namespace id no workflow could create a subgroup under the namespace it had
+  just made; without the account no step could address a member by the id
+  `list_group_members` returns. `namespaceId` is now capturable via `outputs:`
+  alongside the context fields, and each join exports
+  `member_account_<node>` beside the existing `member_identity_<node>`
+
 ### Removed
 
 - **`requester` from every step that accepted it** — `set_member_auto_follow`,
