@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`wait_for_sync`'s `expect` compared the JSON-RPC envelope, not the result.**
+  `call_function` returns the whole envelope
+  (`{"id", "jsonrpc", "result": {...}}`), while an `execute` step's
+  `outputs: {x: result}` captures only the inner `result` — and `equals` is
+  documented as matching that capture. Comparing the envelope could never match
+  a hand-written `equals`, so the gate waited out its full timeout and reported
+  the value as never arriving while every node had in fact returned it: the
+  exact misleading-timeout shape `expect` exists to remove, reintroduced by the
+  thing meant to remove it. `expect` was unusable in 0.6.61
+
 ## [0.6.61] - 2026-08-21
 
 ### Added

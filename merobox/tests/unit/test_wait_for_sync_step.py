@@ -330,3 +330,87 @@ def test_expect_requires_a_context_to_read_in():
                 "expect": EXPECT,
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# What `expect` actually observes.
+#
+# The tests above stub `_check_expect_convergence`, so none of them touch the
+# shape `call_function` really returns. That gap shipped a gate that compared
+# the JSON-RPC envelope against an `equals` written for the inner result: it
+# could never match, so the step waited out its full 60s timeout and reported
+# "the value never arrived" while both nodes had returned it. These pin the
+# level being compared.
+# ---------------------------------------------------------------------------
+
+
+def test_rpc_result_unwraps_the_envelope():
+    from merobox.commands.bootstrap.steps.wait_for_sync import _rpc_result
+
+    envelope = {"id": "1", "jsonrpc": "2.0", "result": {"output": "from_node1"}}
+    assert _rpc_result(envelope) == {"output": "from_node1"}
+
+
+def test_rpc_result_passes_through_a_non_enveloped_payload():
+    """A response with no `result` key compares as-is rather than becoming None."""
+    from merobox.commands.bootstrap.steps.wait_for_sync import _rpc_result
+
+    assert _rpc_result({"output": "v"}) == {"output": "v"}
+    assert _rpc_result(None) is None
+    assert _rpc_result("scalar") == "scalar"
+
+
+def test_expect_read_observes_the_inner_result_not_the_envelope():
+    """The regression test for the 60s-timeout-on-a-present-value bug.
+
+    `call_function` hands back the whole envelope; `equals` is written to match
+    what `outputs: {x: result}` captures, which is the inner `result`.
+    """
+    step = _make_step({"expect": EXPECT})
+    envelope = {"id": "1", "jsonrpc": "2.0", "result": {"output": "v"}}
+
+    async def fake_call(rpc_url, context_id, method, args, node_name=None):
+        return {"success": True, "data": envelope}
+
+    async def run():
+        with (
+            patch.object(
+                step, "_resolve_node_for_client", return_value=("http://x", "n")
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.wait_for_sync.call_function",
+                side_effect=fake_call,
+            ),
+        ):
+            return await step._check_expect_convergence(EXPECT, "ctx-1", NODES)
+
+    satisfied, observed = asyncio.run(run())
+    assert satisfied is True, f"envelope was not unwrapped: {observed}"
+    assert observed == {node: {"output": "v"} for node in NODES}
+
+
+def test_expect_read_marks_a_failed_call_unread_not_null():
+    """`equals: null` must not be satisfiable by a node that cannot be read."""
+    from merobox.commands.bootstrap.steps.wait_for_sync import _EXPECT_UNREAD
+
+    expect = {"method": "get", "args": {}, "equals": None}
+    step = _make_step({"expect": expect})
+
+    async def fake_call(rpc_url, context_id, method, args, node_name=None):
+        return {"success": False, "error": "boom"}
+
+    async def run():
+        with (
+            patch.object(
+                step, "_resolve_node_for_client", return_value=("http://x", "n")
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.wait_for_sync.call_function",
+                side_effect=fake_call,
+            ),
+        ):
+            return await step._check_expect_convergence(expect, "ctx-1", NODES)
+
+    satisfied, observed = asyncio.run(run())
+    assert satisfied is False
+    assert all(v is _EXPECT_UNREAD for v in observed.values())
