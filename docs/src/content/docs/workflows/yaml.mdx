@@ -271,8 +271,7 @@ Create a context bound to an application inside a namespace/group.
 
 ### delete_context
 
-Delete a context. Fields: `node`, `context_id`, optional `requester` (admin
-public key, required for a group-registered context).
+Delete a context. Fields: `node`, `context_id`. The node resolves the acting identity from the authenticated session.
 
 ```yaml
 - type: delete_context
@@ -536,7 +535,6 @@ Toggle a member's auto-follow flags for new contexts and nested subgroups.
 | `member_id` | yes | string | Target member account (64 hex). |
 | `auto_follow_contexts` | yes | bool | Auto-join new contexts in this group. |
 | `auto_follow_subgroups` | yes | bool | Self-admit into nested subgroups. |
-| `requester` | no | string | Admin or self public key to act as. |
 
 ```yaml
 - type: set_member_auto_follow
@@ -587,16 +585,15 @@ from a context, group, or namespace. Each takes `node` plus the relevant id.
 
 ### Metadata setters and getters
 
-Metadata records are string→string maps with an optional record name. Setters
-accept an optional `requester` (admin key) for admin-guarded groups.
+Metadata records are string→string maps with an optional record name. The node resolves the acting identity from the authenticated session.
 
 | Step | Fields |
 | --- | --- |
-| `set_group_metadata` | `node`, `group_id`, `record_name?`, `data?`, `requester?` |
+| `set_group_metadata` | `node`, `group_id`, `record_name?`, `data?` |
 | `get_group_metadata` | `node`, `group_id` |
-| `set_member_metadata` | `node`, `group_id`, `member_id`, `record_name?`, `data?`, `requester?` |
+| `set_member_metadata` | `node`, `group_id`, `member_id`, `record_name?`, `data?` |
 | `get_member_metadata` | `node`, `group_id`, `member_id` |
-| `set_context_metadata` | `node`, `group_id`, `context_id`, `record_name?`, `data?`, `requester?` |
+| `set_context_metadata` | `node`, `group_id`, `context_id`, `record_name?`, `data?` |
 | `get_context_metadata` | `node`, `group_id`, `context_id` |
 
 ```yaml
@@ -650,8 +647,7 @@ key material through git history.
 ### Delete steps
 
 `delete_group` and `delete_namespace` delete a group / namespace. Each takes
-`node`, the id (`group_id` / `namespace_id`), and an optional `requester`
-(admin public key) for admin-guarded state.
+`node` and the id (`group_id` / `namespace_id`). The node resolves the acting identity from the authenticated session.
 
 ```yaml
 - type: delete_namespace
@@ -1537,6 +1533,23 @@ step.
 | `params` | no | string | Init params as a JSON string. |
 | `path` | no | string | WASM path to pre-install on joining nodes. |
 
+`outputs:` captures from the context response, plus `namespaceId` folded in:
+
+| Source | Meaning |
+| --- | --- |
+| `contextId` | The context the mesh was built around. |
+| `memberPublicKey` | The context node's member key. |
+| `namespaceId` | The namespace the context lives under - needed by `create_group_in_namespace`. |
+
+The per-node ids the joins produce are set directly, since `outputs:` sees one
+response and there is one join per node:
+
+| Variable | Meaning |
+| --- | --- |
+| `{{namespace_id}}` | Same namespace id, for workflows not using `outputs:`. |
+| `{{member_account_<node>}}` | Account the node's key speaks for - what `list_group_members` returns and what every member-addressing step takes. |
+| `{{member_identity_<node>}}` | The node's member public key. |
+
 ```yaml
 - type: create_mesh
   context_node: calimero-node-1
@@ -1547,6 +1560,20 @@ step.
   outputs:
     context_id: contextId
     member_public_key: memberPublicKey
+    namespace_id: namespaceId
+
+- type: create_group_in_namespace
+  node: calimero-node-1
+  namespace_id: '{{namespace_id}}'
+  group_name: private-channel
+  outputs:
+    subgroup_id: groupId
+
+- type: update_member_role
+  node: calimero-node-1
+  group_id: '{{subgroup_id}}'
+  member_id: '{{member_account_calimero-node-2}}'
+  role: Member
 ```
 
 ### fuzzy_test

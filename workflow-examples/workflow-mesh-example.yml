@@ -25,10 +25,20 @@ steps:
     nodes:
       - calimero-node-2
       - calimero-node-3
-    capability: member
     outputs:
       context_id: contextId
       member_public_key: memberPublicKey
+      namespace_id: namespaceId
+
+  # The namespace the mesh built. Creating a subgroup under it is what the
+  # export exists for, so the workflow does it rather than only asserting.
+  - name: Create a Subgroup Under the Mesh Namespace
+    type: create_group_in_namespace
+    node: calimero-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: mesh-example-subgroup
+    outputs:
+      subgroup_id: groupId
 
   - name: Execute Contract Call - Set Key-Value from Node 1
     type: call
@@ -111,8 +121,11 @@ steps:
       - "is_set({{member_public_key}})"
       - "is_set({{public_key_calimero-node-2}})"
       - "is_set({{public_key_calimero-node-3}})"
+      - "is_set({{namespace_id}})"
+      - "is_set({{subgroup_id}})"
       - "{{context_id}} != ''"
       - "{{member_public_key}} != ''"
+      - "{{subgroup_id}} != {{namespace_id}}"
 
   - name: Assert Cross-Node Operations
     type: assert
