@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`wait_for_sync` can gate on a read instead of a hash.** An optional
+  `expect: {method, args, equals}` block makes the step wait until that read
+  returns `equals` on *every* node, not merely until the nodes agree on a state
+  hash. A hash is a claim about state, not proof of it: a node can publish a
+  root it does not hold (calimero-network/core#3595, #3596), and even truthful
+  hashes can agree a few milliseconds before a pending delta finishes applying,
+  so the read that follows still misses. Both show up as `✓ All targets synced`
+  followed by an assertion reading `null`. `equals` is compared against the
+  call's `data` payload — the same shape a following `json_assert` sees — so an
+  existing assertion moves into `expect` unchanged. The read is only probed once
+  the hashes agree, since each probe executes on every node, and a failure
+  prints each node's observed value beside the expected one
+
 ### Changed
 
 - **Requires `calimero-client-py>=0.6.31`.** calimero-network/core#3598 renamed
