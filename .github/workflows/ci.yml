@@ -8,6 +8,21 @@ on:
 
 env:
   CALIMERO_CONTRACTS_VERSION: "latest"
+  # An exact pin, not "whatever core released most recently". These lanes drive
+  # a RELEASED core against the client-py pinned in requirements.txt, and those
+  # two ship from different repos on different schedules — so when they briefly
+  # disagree about the wire, every PR here goes red at once and none of them
+  # touched anything related. That happened on 2026-08-21: client-py 0.6.31
+  # landed at 12:55 expecting `namespaceId` on the join response, released core
+  # rc.24 did not send it, and every namespace join died until rc.25 published
+  # at 15:19 and the resolution silently moved on. Two and a half hours of red
+  # CI, no merobox commit involved in either direction — and because the first
+  # red run lands on whatever merged that morning, it reads as that PR's fault.
+  #
+  # Bumping is now a deliberate edit here, and the PR that makes it proves the
+  # new pair works before it becomes everyone's problem. calimero-network/core
+  # pinned merobox for the mirror-image reason (calimero-network/core#3609).
+  CORE_VERSION: "0.11.0-rc.25"
   # Harden crates.io downloads against transient CI network blips that fail the
   # maturin build of calimero-client-py during `pip install` (seen as
   # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,
@@ -214,10 +229,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Get the latest release tag (including pre-releases / RCs)
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          TAG="$CORE_VERSION"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Downloading merod from calimero-network/core release: $TAG"
+          echo "Downloading merod from calimero-network/core release: $TAG (pinned)"
           bash .github/scripts/gh-release-download-retry.sh \
             calimero-network/core "$TAG" \
             "merod_x86_64-unknown-linux-gnu.tar.gz" /tmp/merod.tar.gz
@@ -278,9 +292,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
+          TAG="$CORE_VERSION"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Building merod (mock-attestation) from core release: $TAG"
+          echo "Building merod (mock-attestation) from core release: $TAG (pinned)"
 
       - name: Checkout core at the release tag
         uses: actions/checkout@v4
@@ -526,6 +540,14 @@ jobs:
           # meroctl must be on the host PATH even though merod runs in a container.
           # Here merod is a container image (not a release binary), so there is no
           # release tag to pin against — resolve latest, matching the image's edge.
+          #
+          # Deliberately NOT `$CORE_VERSION`, unlike the release-binary lanes
+          # above. This lane's node is `:edge`, a moving image; pinning meroctl
+          # to a fixed release beside it would introduce the very skew the pin
+          # exists to prevent, just in the other direction. This lane floats on
+          # purpose — it is the one that notices core's wire changes early. If it
+          # starts reddening the way the release lanes did, the answer is to pin
+          # the image and this tag together, not this tag alone.
           TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
           echo "Downloading meroctl from calimero-network/core release: $TAG"
           bash .github/scripts/gh-release-download-retry.sh \
