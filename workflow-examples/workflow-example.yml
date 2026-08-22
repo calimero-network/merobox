@@ -231,5 +231,26 @@ steps:
 
 # Configuration options
 stop_all_nodes: false   # Stop all nodes at the end of workflow
-restart: false          # Don't restart nodes at the beginning of workflow
+# Wires each node's siblings into its `bootstrap.nodes` and then blocks on the
+# connectivity gate until every node actually has its peers — `restart: true` is
+# the only path that reaches either (`run_multiple_nodes`).
+#
+# Without it the nodes start knowing nobody, and the `wait: 5` above is all that
+# stands between that and the namespace join. A fixed sleep asserts nothing about
+# arrival: here it is really "hope mDNS landed", because with no `--e2e-mode` the
+# only other contact is the public devnet boot-node across the internet. When 5s
+# was not enough — which it stops being whenever CI runs the docker-canary matrix
+# alongside the integration job — the join found no reachable mesh peer, got no
+# group key and returned 500, taking all 12 tests in
+# `tests/test_merobox_integration.py` with it, since they share this fixture.
+# That is the only required check on this repo, so an unrelated PR went red and
+# its author went looking in their own diff (#367).
+#
+# The trade: this fixture no longer exercises peer DISCOVERY. Deliberate —
+# discovery has dedicated coverage in calimero-network/core
+# (`discovery-bootstrap-only-*`, `discovery-rendezvous-3node`) instead of being
+# incidentally load-bearing in a plumbing smoke test. A real connectivity
+# failure now names the mesh at startup rather than surfacing as a 500 from the
+# join handler three steps later.
+restart: true
 wait_timeout: 120
