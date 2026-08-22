@@ -741,3 +741,52 @@ class TestReparentGroupStepConfigSchema:
                 node="n1",
                 new_parent_id="def",
             )
+
+
+# =============================================================================
+# JoinNamespaceStep — which application the joiner auto-installs
+# =============================================================================
+
+
+class TestJoinNamespaceAppSelection:
+    """The joiner must get the app its namespace runs, not the earliest install."""
+
+    def _make_step(self) -> JoinNamespaceStep:
+        return JoinNamespaceStep(
+            {
+                "type": "join_namespace",
+                "name": "Join",
+                "node": "node-3",
+                "namespace_id": "ns-chat",
+                "invitation": "{}",
+            }
+        )
+
+    def test_prefers_the_namespace_creators_app(self):
+        # node-1 installed first but owns a different namespace; node-2 owns this one.
+        dynamic_values = {
+            "app_path_node-1": "res/kv.wasm",
+            "namespace_id_node-1": "ns-kv",
+            "app_path_node-2": "res/chat.wasm",
+            "namespace_id_node-2": "ns-chat",
+        }
+        assert (
+            self._make_step()._app_path_for_namespace("ns-chat", dynamic_values)
+            == "res/chat.wasm"
+        )
+
+    def test_single_app_resolves_without_a_creator_entry(self):
+        dynamic_values = {"app_path_node-1": "res/kv.wasm"}
+        assert (
+            self._make_step()._app_path_for_namespace("ns-kv", dynamic_values)
+            == "res/kv.wasm"
+        )
+
+    def test_ambiguous_without_a_creator_declines_to_guess(self):
+        dynamic_values = {
+            "app_path_node-1": "res/kv.wasm",
+            "app_path_node-2": "res/chat.wasm",
+        }
+        assert (
+            self._make_step()._app_path_for_namespace("ns-chat", dynamic_values) is None
+        )
