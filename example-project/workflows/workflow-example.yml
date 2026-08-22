@@ -148,5 +148,26 @@ steps:
           iteration_get_result: result
 
 stop_all_nodes: false
-restart: false
+# Wires each node's siblings into its `bootstrap.nodes` and then blocks on the
+# connectivity gate until both nodes actually have their peer — `restart: true`
+# is the only path that reaches either (`run_multiple_nodes`).
+#
+# This fixture backs every test in `tests/test_merobox_integration.py`, so when
+# its namespace join fails all 12 error together — and
+# `test-merobox-integration` is the only required check on this repo, so an
+# unrelated PR goes red and its author starts searching their own diff.
+#
+# Without wiring, the two `wait` steps above are all that stand between "the
+# nodes know nobody" and the join. A fixed sleep asserts nothing about arrival,
+# and on this workflow it really means "hope mDNS landed": with no
+# `--e2e-mode` the only other contact is the public devnet boot-node across the
+# internet. When the sleep was not enough the join found no reachable mesh
+# peer, got no group key, and returned 500 (#367).
+#
+# The trade is deliberate: this fixture stops exercising peer DISCOVERY, which
+# has dedicated coverage in calimero-network/core
+# (`discovery-bootstrap-only-*`, `discovery-rendezvous-3node`) rather than
+# belonging in a plumbing smoke test. A real connectivity failure now fails at
+# startup naming the mesh, instead of surfacing as a 500 three steps later.
+restart: true
 wait_timeout: 60
