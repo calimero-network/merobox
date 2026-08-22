@@ -17,6 +17,7 @@ nodes:
   count: 2
   image: ghcr.io/calimero-network/merod:edge
   prefix: calimero-node
+  mdns: true
   base_port: 9000
   base_rpc_port: 9100
 
