@@ -108,6 +108,23 @@ class JoinNamespaceStep(BaseStep):
                     pass
         return None
 
+    def _app_path_for_namespace(
+        self, namespace_id: Any, dynamic_values: dict[str, Any]
+    ) -> Optional[str]:
+        """The app to auto-install on a node joining ``namespace_id``.
+
+        Both creation paths record ``namespace_id_<node>``, so the owner is a
+        lookup; a lone install still resolves, several without an owner do not.
+        """
+        for key, value in dynamic_values.items():
+            if key.startswith("namespace_id_") and value == namespace_id:
+                owner = key[len("namespace_id_") :]
+                owner_path = dynamic_values.get(f"app_path_{owner}")
+                if owner_path:
+                    return owner_path
+        candidates = {v for k, v in dynamic_values.items() if k.startswith("app_path_")}
+        return candidates.pop() if len(candidates) == 1 else None
+
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
@@ -162,13 +179,8 @@ class JoinNamespaceStep(BaseStep):
             )
             return False
 
-        # Auto-install application on joining node if not already installed.
-        # Look up the WASM path stored by install_application step.
-        app_path = None
-        for key, val in dynamic_values.items():
-            if key.startswith("app_path_"):
-                app_path = val
-                break
+        # Auto-install the namespace's application if the joiner lacks one.
+        app_path = self._app_path_for_namespace(namespace_id, dynamic_values)
         if app_path and not dynamic_values.get(f"app_path_{node_name}"):
             self._auto_install_app_on_node(node_name, app_path, dynamic_values)
 
