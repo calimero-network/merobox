@@ -307,7 +307,28 @@ def apply_e2e_defaults(
             {
                 # Use unique rendezvous namespace per workflow (like e2e tests)
                 "discovery.rendezvous.namespace": f"calimero/merobox-tests/{workflow_id}",
-                # Keep mDNS as backup (like e2e tests)
+                # Tests opt INTO multicast, deliberately — it is not a backup.
+                # The line above cleared `bootstrap.nodes`, and merod ships no
+                # rendezvous server, so on a single bridge with no sibling
+                # addresses wired there is nothing else for peers to find each
+                # other with: this setting IS the discovery mechanism for a
+                # flat `--e2e-mode` fleet, not a fallback behind one.
+                #
+                # Measured on an 8-node fleet with this set to False and
+                # nothing else changed: 0 kad `RoutingUpdated`, 0 connections,
+                # 0 identify, and the first namespace join dead on
+                # `KeyDelivery timed out`. With it True: 112 multicast dials and
+                # 112 routing updates — the kad table populated as a side
+                # effect of multicast (calimero-network/core#3525).
+                #
+                # Keeping it True is right, because merod now leaves mDNS off
+                # by default and a hosted node should not announce itself; a
+                # test fleet on one Docker bridge is the case where multicast
+                # is the cheap answer. What matters is that the choice is
+                # explicit. A scenario that wants to exercise the discovery
+                # path a real deployment uses overrides it with `mdns: false`
+                # on the `nodes:` block, or asks for
+                # `topology: { type: bootstrap }`.
                 "discovery.mdns": True,
                 # Aggressive sync settings from e2e tests for reliable testing
                 "sync.timeout_ms": 30000,  # 30s timeout (matches production)
