@@ -1,0 +1,543 @@
+name: Namespace-Root Context Leave and Rejoin Example
+description: >
+  The same leave/rejoin round trip as
+  `workflow-channel-leave-rejoin-example.yml`, at the OTHER place a
+  context can live: attached directly to the namespace root instead of to
+  a subgroup.
+
+  Both placements are ordinary — `create_context` takes a `group_id`, and
+  handing it a namespace id is what most single-room apps do — but they
+  are not the same code path on the way back in. `join_context` resolves
+  the joiner's membership before it does anything else:
+
+    * Namespace root → `MembershipPath::Direct`. The joiner holds a
+      member row on the group itself, so the handler skips the
+      inherited-joiner branch entirely: no `MemberJoinedOpen` publish, no
+      direct key pull. Coming back in relies on the namespace key it
+      still holds locally.
+    * Open subgroup → `MembershipPath::Inherited`. The rejoin runs the
+      key-pull path, because an inherited member is a member no admin
+      ever added and therefore no admin ever wrapped a key for.
+
+  So a rejoin that works in one placement proves nothing about the other,
+  and until this file the root placement had no leave/rejoin coverage
+  anywhere: `group-leave-context.yml` upstream and the channel example
+  here both attach their context to a subgroup.
+
+  What this pins, with a subgroup context under the same namespace as the
+  control:
+
+    1. The leave takes effect — a call against the left context fails for
+       want of a signing identity, while the other node keeps writing.
+    2. The opt-out is exactly one context wide. The leaver keeps using
+       the subgroup context throughout, AND joins a context created
+       *after* it left — a leave marker keyed too broadly, or an
+       unsubscribe that took the namespace subscription with it, would
+       leave the node unable to follow anything new under this namespace
+       while looking like nothing more than a slow sync.
+    3. The rejoin restores the away-window writes and the pre-leave
+       history, and the rejoiner can author again for the other node to
+       read.
+
+  Two nodes: node-1 authors while node-2 is away, and reads node-2's post
+  after the rejoin, so both directions are covered without a third node's
+  CI minutes.
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: nsctx-node
+
+steps:
+  - name: Install Application on Node 1
+    type: install_application
+    node: nsctx-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Install Application on Node 2
+    type: install_application
+    node: nsctx-node-2
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+
+  - name: Create Namespace on Node 1
+    type: create_namespace
+    node: nsctx-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Invite Node 2 to the Namespace
+    type: create_namespace_invitation
+    node: nsctx-node-1
+    namespace_id: "{{namespace_id}}"
+    outputs:
+      invitation: invitation
+
+  - name: Wait for Namespace Governance to Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins the Namespace
+    type: join_namespace
+    node: nsctx-node-2
+    namespace_id: "{{namespace_id}}"
+    invitation: "{{invitation}}"
+    outputs:
+      identity_node2: memberIdentity
+
+  # The subject: `group_id` is the NAMESPACE id, so the context hangs off
+  # the root and node-2's membership in it is a direct row.
+  - name: Create the Context on the Namespace Root
+    type: create_context
+    node: nsctx-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
+    outputs:
+      ctx_root: contextId
+      node1_root_key: memberPublicKey
+
+  # The control, one level down, so "the leave was scoped to one context"
+  # is asserted against something that shares the namespace with it.
+  - name: Create a Subgroup Under the Namespace
+    type: create_group_in_namespace
+    node: nsctx-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: side-room
+    visibility: open
+    outputs:
+      subgroup_id: groupId
+
+  - name: Create the Subgroup Context
+    type: create_context
+    node: nsctx-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{subgroup_id}}"
+    outputs:
+      ctx_sub: contextId
+
+  - name: Assert the Two Contexts Are Distinct
+    type: assert
+    statements:
+      - "is_set({{identity_node2}})"
+      - "is_set({{ctx_root}})"
+      - "is_set({{ctx_sub}})"
+      - "{{ctx_root}} != {{ctx_sub}}"
+
+  - name: Wait for Context Registration to Propagate
+    type: wait
+    seconds: 10
+
+  - name: Node 2 Joins the Root Context
+    type: join_context
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    outputs:
+      node2_root_key: memberPublicKey
+
+  - name: Node 2 Self-Joins the Subgroup
+    type: join_subgroup_inheritance
+    node: nsctx-node-2
+    group_id: "{{subgroup_id}}"
+
+  - name: Node 2 Joins the Subgroup Context
+    type: join_context
+    node: nsctx-node-2
+    context_id: "{{ctx_sub}}"
+    outputs:
+      node2_sub_key: memberPublicKey
+
+  # ── Baseline: both directions on the root context ──────────────────
+  - name: Node 1 Writes Pre-Leave History
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_root}}"
+    method: set
+    args:
+      key: root_1
+      value: node1-before-the-leave
+    executor_public_key: "{{node1_root_key}}"
+
+  - name: Sync the Pre-Leave Write
+    type: wait_for_sync
+    context_id: "{{ctx_root}}"
+    nodes:
+      - nsctx-node-1
+      - nsctx-node-2
+    timeout: 60
+    trigger_sync: true
+
+  - name: Node 2 Reads the Pre-Leave Write
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_1
+    outputs:
+      read_root_1: result
+
+  - name: Assert Node 2 Sees the Pre-Leave Write
+    type: json_assert
+    statements:
+      - 'json_equal({{read_root_1}}, {"output": "node1-before-the-leave"})'
+
+  - name: Node 2 Writes Before Leaving
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: set
+    args:
+      key: root_2
+      value: node2-before-the-leave
+    executor_public_key: "{{node2_root_key}}"
+
+  - name: Sync Node 2's Pre-Leave Write
+    type: wait_for_sync
+    context_id: "{{ctx_root}}"
+    nodes:
+      - nsctx-node-1
+      - nsctx-node-2
+    timeout: 60
+    trigger_sync: true
+
+  - name: Node 1 Reads Node 2's Pre-Leave Write
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_2
+    outputs:
+      read_root_2: result
+
+  - name: Assert the Root Context Works Both Ways Before the Leave
+    type: json_assert
+    statements:
+      - 'json_equal({{read_root_2}}, {"output": "node2-before-the-leave"})'
+
+  # Control-channel baseline, so a later failure there is attributable to
+  # the leave rather than to the subgroup context never having worked.
+  - name: Node 2 Writes in the Subgroup Context
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_sub}}"
+    method: set
+    args:
+      key: side_1
+      value: node2-in-side-room-baseline
+    executor_public_key: "{{node2_sub_key}}"
+
+  - name: Sync the Subgroup Context
+    type: wait_for_sync
+    context_id: "{{ctx_sub}}"
+    nodes:
+      - nsctx-node-1
+      - nsctx-node-2
+    timeout: 60
+    trigger_sync: true
+
+  - name: Node 1 Reads the Subgroup Context
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_sub}}"
+    method: get
+    args:
+      key: side_1
+    outputs:
+      read_side_1: result
+
+  - name: Assert the Control Context Works
+    type: json_assert
+    statements:
+      - 'json_equal({{read_side_1}}, {"output": "node2-in-side-room-baseline"})'
+
+  # ── The leave ──────────────────────────────────────────────────────
+  - name: Node 2 Leaves the Root Context
+    type: leave_context
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+
+  - name: Node 1 Writes While Node 2 Is Away
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_root}}"
+    method: set
+    args:
+      key: root_3
+      value: written-while-node2-away
+    executor_public_key: "{{node1_root_key}}"
+
+  - name: Node 1 Writes a Second Away-Window Value
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_root}}"
+    method: set
+    args:
+      key: root_4
+      value: also-written-while-node2-away
+    executor_public_key: "{{node1_root_key}}"
+
+  # `expected_failure` on a `call` only warns when the call succeeds anyway —
+  # `call` is deliberately lenient so workflows can use it as a soft probe. The
+  # exported error is what asserts: populated on a real failure, None when the
+  # call went through, so `is_set` is what makes a leave that did nothing red.
+  # `error` and not `error_message`, because `error` is seeded in every failure
+  # branch while `error_message` stays None for a JSON-RPC error carrying
+  # neither `message` nor `data` — a false red on a leave that worked.
+  - name: Node 2 Cannot Read the Root Context It Left
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_1
+    expected_failure: true
+    outputs:
+      root_left_read_error: error
+
+  - name: Assert the Left Root Context Actually Refused Node 2
+    type: assert
+    statements:
+      - statement: "is_set({{root_left_read_error}})"
+        message: >
+          The left root context must refuse node 2 — and this placement is where
+          it is easiest to get wrong, since the namespace key is still held
+          locally, so a leave that fails to delete the local identity leaves the
+          node able to decrypt and serve the read.
+
+  # Scope check 1: the sibling context under the same namespace is
+  # untouched. `leave_context` unsubscribes from ONE context topic; taking
+  # the namespace subscription with it would surface here.
+  - name: Node 2 Still Writes in the Subgroup Context While Out of the Root
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_sub}}"
+    method: set
+    args:
+      key: side_2
+      value: node2-in-side-room-while-out-of-root
+    executor_public_key: "{{node2_sub_key}}"
+
+  - name: Sync the Subgroup Context During the Away Window
+    type: wait_for_sync
+    context_id: "{{ctx_sub}}"
+    nodes:
+      - nsctx-node-1
+      - nsctx-node-2
+    timeout: 60
+    trigger_sync: true
+
+  - name: Node 1 Reads the Subgroup Context During the Away Window
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_sub}}"
+    method: get
+    args:
+      key: side_2
+    outputs:
+      read_side_2: result
+
+  - name: Assert the Sibling Context Survived the Leave
+    type: json_assert
+    statements:
+      - 'json_equal({{read_side_2}}, {"output": "node2-in-side-room-while-out-of-root"})'
+
+  # Scope check 2: a context created AFTER the leave is still joinable.
+  # The leave marker is keyed by `(context, identity)`, so nothing about
+  # it should reach a context that did not exist when it was written — but
+  # a marker consulted too broadly, or a namespace-wide unsubscribe,
+  # would fail here and look like an unrelated sync problem.
+  - name: Node 1 Creates a New Subgroup Context After the Leave
+    type: create_context
+    node: nsctx-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{subgroup_id}}"
+    outputs:
+      ctx_late: contextId
+      node1_late_key: memberPublicKey
+
+  - name: Wait for the Late Context to Register
+    type: wait
+    seconds: 10
+
+  - name: Node 2 Joins the Late Context While Still Out of the Root
+    type: join_context
+    node: nsctx-node-2
+    context_id: "{{ctx_late}}"
+
+  - name: Node 1 Writes in the Late Context
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_late}}"
+    method: set
+    args:
+      key: late_1
+      value: created-after-node2-left-the-root
+    executor_public_key: "{{node1_late_key}}"
+
+  - name: Sync the Late Context
+    type: wait_for_sync
+    context_id: "{{ctx_late}}"
+    nodes:
+      - nsctx-node-1
+      - nsctx-node-2
+    timeout: 90
+    trigger_sync: true
+
+  - name: Node 2 Reads the Late Context
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_late}}"
+    method: get
+    args:
+      key: late_1
+    outputs:
+      read_late_1: result
+
+  - name: Assert the Leave Did Not Cost Node 2 the Namespace
+    type: json_assert
+    statements:
+      - 'json_equal({{read_late_1}}, {"output": "created-after-node2-left-the-root"})'
+
+  # ── The rejoin ─────────────────────────────────────────────────────
+  # Re-captured rather than reused: the identity row is written fresh, so
+  # the key this reports is the one the executor must name from here on.
+  - name: Node 2 Rejoins the Root Context
+    type: join_context
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    outputs:
+      node2_root_key_rejoin: memberPublicKey
+
+  - name: Let the Gossipsub Mesh Re-Form After the Rejoin
+    type: wait
+    seconds: 5
+
+  - name: Node 1 Writes After the Rejoin
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_root}}"
+    method: set
+    args:
+      key: root_5
+      value: written-after-node2-rejoined
+    executor_public_key: "{{node1_root_key}}"
+
+  # Generous timeout on purpose: a genuine convergence failure fails even
+  # with a long wait, while a slow catch-up converges — so the two are
+  # told apart rather than collapsed into one flaky step.
+  - name: Sync After the Rejoin
+    type: wait_for_sync
+    context_id: "{{ctx_root}}"
+    nodes:
+      - nsctx-node-1
+      - nsctx-node-2
+    timeout: 90
+    trigger_sync: true
+
+  - name: Node 2 Reads the Post-Rejoin Write
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_5
+    outputs:
+      read_root_5: result
+
+  - name: Assert the Rejoiner Sees New Traffic
+    type: json_assert
+    statements:
+      - 'json_equal({{read_root_5}}, {"output": "written-after-node2-rejoined"})'
+
+  - name: Node 2 Reads the First Away-Window Write
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_3
+    outputs:
+      read_root_3: result
+
+  - name: Node 2 Reads the Second Away-Window Write
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_4
+    outputs:
+      read_root_4: result
+
+  - name: Node 2 Reads Its Own Pre-Leave Write
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_2
+    outputs:
+      read_root_2_after: result
+
+  - name: Node 2 Reads the Earliest Write
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_1
+    outputs:
+      read_root_1_after: result
+
+  - name: Assert the Rejoin Restored the Whole Context
+    type: json_assert
+    statements:
+      - 'json_equal({{read_root_3}}, {"output": "written-while-node2-away"})'
+      - 'json_equal({{read_root_4}}, {"output": "also-written-while-node2-away"})'
+      - 'json_equal({{read_root_2_after}}, {"output": "node2-before-the-leave"})'
+      - 'json_equal({{read_root_1_after}}, {"output": "node1-before-the-leave"})'
+
+  - name: Node 2 Writes After Rejoining
+    type: call
+    node: nsctx-node-2
+    context_id: "{{ctx_root}}"
+    method: set
+    args:
+      key: root_6
+      value: node2-writing-after-the-rejoin
+    executor_public_key: "{{node2_root_key_rejoin}}"
+
+  - name: Sync the Rejoiner's Write
+    type: wait_for_sync
+    context_id: "{{ctx_root}}"
+    nodes:
+      - nsctx-node-1
+      - nsctx-node-2
+    timeout: 90
+    trigger_sync: true
+
+  - name: Node 1 Reads the Rejoiner's Write
+    type: call
+    node: nsctx-node-1
+    context_id: "{{ctx_root}}"
+    method: get
+    args:
+      key: root_6
+    outputs:
+      read_root_6: result
+
+  - name: Assert the Rejoiner Can Author Again
+    type: json_assert
+    statements:
+      - 'json_equal({{read_root_6}}, {"output": "node2-writing-after-the-rejoin"})'
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 120

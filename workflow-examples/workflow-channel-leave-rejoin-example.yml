@@ -1,0 +1,803 @@
+name: Channel Leave and Rejoin Cycle Example
+description: >
+  A public channel, used the way a chat app uses one: join it, leave it,
+  join it again — twice — and read the history each time.
+
+  This is the flow a Slack-style client needs and the one nothing here
+  covered: across 66 shipped workflows, not one `leave_context`,
+  `leave_group` or `leave_namespace` step appeared, so every leave path
+  merobox can drive was exercised only by scenarios living in
+  calimero-network/core.
+
+  Modelled on mero-chat, where a channel is a context inside an `Open`
+  subgroup and "Leave channel" is a `leave_context` — a node-local
+  opt-out that publishes no governance op, so the leaver keeps its
+  subgroup membership and can let itself back in with `join_context`.
+  That distinction is the reason this flow uses `leave_context` and not
+  `leave_group`: `MemberLeft` writes a re-entry block (only a fresh
+  invitation or an admin re-add lifts it), so a channel wired to
+  `leave_group` strands the user outside a public channel they are still
+  entitled to be in. Nothing about the block is broken — it is what makes
+  a kick stick — it is simply not the semantics a "leave channel" button
+  wants.
+
+  Three properties, asserted on every cycle:
+
+    1. **The leave takes effect.** A call against the left context fails:
+       `leave_context` deletes the local `ContextIdentity`, so there is no
+       signing identity to execute with. Meanwhile the channel carries on
+       for everyone else.
+    2. **The rejoin restores history.** After `join_context` the rejoiner
+       reads what was written while it was away, what was written after it
+       came back, AND what it had already seen before it left. A rejoin
+       that yields an empty or gap-ridden channel is the failure this
+       exists to catch: the leaver's identity rows are recreated keyless
+       and its group key re-pulled per epoch, and if either half misses,
+       the deltas from the away window stay undecryptable forever.
+    3. **The rejoiner can author again.** It writes and a third node reads
+       it — the joiner-as-author direction that
+       `core#2351` (`fix(context): trigger KeyDelivery for self-join of
+       Open subgroups`) had to fix once already.
+
+  Two cycles, not one. Every leave/rejoin scenario upstream stops after
+  the first round trip, which cannot distinguish "rejoin works" from
+  "rejoin works once" — and a chat user leaves and rejoins a channel
+  whenever they feel like it. The second cycle re-enters a context whose
+  identity rows were already deleted and recreated once.
+
+  A second channel (`random`) runs alongside as a control. Both nodes stay
+  in it throughout, and it is read and written while node-2 is out of
+  `general` — because leaving one channel must not disturb another under
+  the same namespace, which is exactly what a shared namespace gossipsub
+  subscription makes easy to get wrong. `leave_context` unsubscribes from
+  ONE context topic; a leave that took the namespace subscription with it
+  would show up here and nowhere else.
+
+  Membership comes entirely from inheritance: both channels are born
+  `Open`, so a namespace member with `CAN_JOIN_OPEN_SUBGROUPS` joins by
+  self-service (`join_subgroup_inheritance` + `join_context`) with no
+  admin in the loop — the model a public channel needs, and the same
+  reason this workflow calls no member-addressing step at all.
+
+force_pull_image: true
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: channel-node
+
+steps:
+  # ── Bootstrap: the app on every node, one namespace ────────────────
+  # Installed on all three: each node executes the context locally, so
+  # each needs the bytecode. Only node-1's application id is captured —
+  # the same wasm installs to the same id everywhere.
+  - name: Install Application on Node 1
+    type: install_application
+    node: channel-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Install Application on Node 2
+    type: install_application
+    node: channel-node-2
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+
+  - name: Install Application on Node 3
+    type: install_application
+    node: channel-node-3
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+
+  - name: Create the Workspace Namespace on Node 1
+    type: create_namespace
+    node: channel-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Invite Node 2 to the Workspace
+    type: create_namespace_invitation
+    node: channel-node-1
+    namespace_id: "{{namespace_id}}"
+    outputs:
+      invite_node2: invitation
+
+  - name: Invite Node 3 to the Workspace
+    type: create_namespace_invitation
+    node: channel-node-1
+    namespace_id: "{{namespace_id}}"
+    outputs:
+      invite_node3: invitation
+
+  - name: Wait for Namespace Governance to Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins the Workspace
+    type: join_namespace
+    node: channel-node-2
+    namespace_id: "{{namespace_id}}"
+    invitation: "{{invite_node2}}"
+    outputs:
+      identity_node2: memberIdentity
+
+  - name: Node 3 Joins the Workspace
+    type: join_namespace
+    node: channel-node-3
+    namespace_id: "{{namespace_id}}"
+    invitation: "{{invite_node3}}"
+    outputs:
+      identity_node3: memberIdentity
+
+  - name: Assert Both Nodes Joined the Workspace
+    type: assert
+    statements:
+      - "is_set({{identity_node2}})"
+      - "is_set({{identity_node3}})"
+      - "{{identity_node2}} != {{identity_node3}}"
+
+  # ── Two public channels ────────────────────────────────────────────
+  # Born Open (`visibility: open`) rather than created-then-flipped, so
+  # there is no window in which the subgroup is Restricted and the
+  # inheritance path below would be refused.
+  - name: Create the general Channel (Born Open)
+    type: create_group_in_namespace
+    node: channel-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: general
+    visibility: open
+    outputs:
+      general_id: groupId
+
+  - name: Create the random Channel (Born Open)
+    type: create_group_in_namespace
+    node: channel-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: random
+    visibility: open
+    outputs:
+      random_id: groupId
+
+  - name: Create the general Channel Context
+    type: create_context
+    node: channel-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{general_id}}"
+    outputs:
+      ctx_general: contextId
+      node1_general_key: memberPublicKey
+
+  - name: Create the random Channel Context
+    type: create_context
+    node: channel-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{random_id}}"
+    outputs:
+      ctx_random: contextId
+
+  - name: Assert Both Channels Exist and Differ
+    type: assert
+    statements:
+      - "is_set({{ctx_general}})"
+      - "is_set({{ctx_random}})"
+      - "{{general_id}} != {{random_id}}"
+
+  - name: Wait for Subgroup and Context Registration to Propagate
+    type: wait
+    seconds: 10
+
+  # ── Everyone joins both channels, self-service ─────────────────────
+  # `join_subgroup_inheritance` materialises the inherited Open-subgroup
+  # membership and lands the subgroup key locally; `join_context` then
+  # follows the context and is what exports the member key used as the
+  # executor below. No `outputs` on the inheritance steps: the key they
+  # would report is the one the following `join_context` captures.
+  - name: Node 2 Self-Joins the general Subgroup
+    type: join_subgroup_inheritance
+    node: channel-node-2
+    group_id: "{{general_id}}"
+
+  - name: Node 2 Joins the general Channel
+    type: join_context
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    outputs:
+      node2_general_key: memberPublicKey
+
+  - name: Node 3 Self-Joins the general Subgroup
+    type: join_subgroup_inheritance
+    node: channel-node-3
+    group_id: "{{general_id}}"
+
+  - name: Node 3 Joins the general Channel
+    type: join_context
+    node: channel-node-3
+    context_id: "{{ctx_general}}"
+
+  - name: Node 2 Self-Joins the random Subgroup
+    type: join_subgroup_inheritance
+    node: channel-node-2
+    group_id: "{{random_id}}"
+
+  - name: Node 2 Joins the random Channel
+    type: join_context
+    node: channel-node-2
+    context_id: "{{ctx_random}}"
+    outputs:
+      node2_random_key: memberPublicKey
+
+  - name: Node 3 Self-Joins the random Subgroup
+    type: join_subgroup_inheritance
+    node: channel-node-3
+    group_id: "{{random_id}}"
+
+  - name: Node 3 Joins the random Channel
+    type: join_context
+    node: channel-node-3
+    context_id: "{{ctx_random}}"
+
+  - name: Settle Both Channels Before the First Message
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 60
+    trigger_sync: true
+
+  # ── Baseline: the channel works in both directions ─────────────────
+  - name: Node 1 Posts the First Message in general
+    type: call
+    node: channel-node-1
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_1
+      value: node1-before-any-leave
+    executor_public_key: "{{node1_general_key}}"
+
+  - name: Sync the First Message
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 60
+    trigger_sync: true
+
+  - name: Node 2 Reads the First Message
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_1
+    outputs:
+      read_msg_1: result
+
+  - name: Assert Node 2 Sees the First Message
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_1}}, {"output": "node1-before-any-leave"})'
+
+  # The joiner-as-author direction: an inherited self-joiner's writes have
+  # to reach the others, which is the half core#2351 had to repair.
+  - name: Node 2 Posts in general
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_2
+      value: node2-before-any-leave
+    executor_public_key: "{{node2_general_key}}"
+
+  - name: Sync Node 2's Message
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 60
+    trigger_sync: true
+
+  - name: Node 3 Reads Node 2's Message
+    type: call
+    node: channel-node-3
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_2
+    outputs:
+      read_msg_2: result
+
+  - name: Assert Node 2's Message Reached Node 3
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_2}}, {"output": "node2-before-any-leave"})'
+
+  # Control channel baseline, so a later failure there is attributable to
+  # the leave rather than to `random` never having worked.
+  - name: Node 2 Posts in random
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_random}}"
+    method: set
+    args:
+      key: random_1
+      value: node2-in-random-baseline
+    executor_public_key: "{{node2_random_key}}"
+
+  - name: Sync the random Channel
+    type: wait_for_sync
+    context_id: "{{ctx_random}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 60
+    trigger_sync: true
+
+  - name: Node 3 Reads random
+    type: call
+    node: channel-node-3
+    context_id: "{{ctx_random}}"
+    method: get
+    args:
+      key: random_1
+    outputs:
+      read_random_1: result
+
+  - name: Assert the Control Channel Works
+    type: json_assert
+    statements:
+      - 'json_equal({{read_random_1}}, {"output": "node2-in-random-baseline"})'
+
+  # ══ Cycle 1 ════════════════════════════════════════════════════════
+  - name: Cycle 1 - Node 2 Leaves the general Channel
+    type: leave_context
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+
+  - name: Cycle 1 - Node 1 Posts While Node 2 Is Away
+    type: call
+    node: channel-node-1
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_3
+      value: posted-while-node2-away-1
+    executor_public_key: "{{node1_general_key}}"
+
+  - name: Cycle 1 - Sync the Away-Window Message Between the Remaining Nodes
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-3
+    timeout: 60
+    trigger_sync: true
+
+  - name: Cycle 1 - Node 3 Reads the Away-Window Message
+    type: call
+    node: channel-node-3
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_3
+    outputs:
+      read_msg_3_node3: result
+
+  - name: Cycle 1 - Assert the Channel Carries On Without Node 2
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_3_node3}}, {"output": "posted-while-node2-away-1"})'
+
+  # The opt-out has to actually opt out. `leave_context` deletes the local
+  # `ContextIdentity`, so there is no identity left to execute with and the
+  # call is refused rather than quietly served from a stale local state.
+  #
+  # `expected_failure` on a `call` does NOT fail the run on its own: alone
+  # among the step types, `call` only warns when the call succeeds anyway
+  # (workflows use it as a soft "may not have propagated yet" probe and
+  # `workflow-negative-testing-example.yml` pins that leniency on purpose).
+  # So the error export is what asserts here, and the `is_set` below is what
+  # turns "the leave did nothing" into a red run.
+  #
+  # Captured field is `error`, not `error_message`: `error` is seeded in every
+  # failure branch of `_extract_error_info` (the whole rpc error object, or the
+  # transport error string), while `error_message` is left None by a JSON-RPC
+  # error carrying neither `message` nor `data` — which would read as "the leave
+  # did not take effect" on a leave that worked. On an unexpected success every
+  # error field, `error` included, is exported as None.
+  - name: Cycle 1 - Node 2 Cannot Read the Channel It Left
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_1
+    expected_failure: true
+    outputs:
+      c1_left_read_error: error
+
+  - name: Cycle 1 - Assert the Left Channel Actually Refused Node 2
+    type: assert
+    statements:
+      - statement: "is_set({{c1_left_read_error}})"
+        message: >
+          The left channel must refuse node 2 — a read served anyway means
+          `leave_context` left the local identity in place, or answered from
+          stale local state.
+
+  # Leaving `general` must not touch `random`. Both live under one
+  # namespace and share its governance subscription, so an over-broad
+  # unsubscribe would surface exactly here.
+  - name: Cycle 1 - Node 2 Still Posts in random While Out of general
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_random}}"
+    method: set
+    args:
+      key: random_2
+      value: node2-in-random-while-out-of-general
+    executor_public_key: "{{node2_random_key}}"
+
+  - name: Cycle 1 - Sync the Control Channel
+    type: wait_for_sync
+    context_id: "{{ctx_random}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 60
+    trigger_sync: true
+
+  - name: Cycle 1 - Node 3 Reads the Control Channel
+    type: call
+    node: channel-node-3
+    context_id: "{{ctx_random}}"
+    method: get
+    args:
+      key: random_2
+    outputs:
+      read_random_2: result
+
+  - name: Cycle 1 - Assert the Other Channel Was Untouched by the Leave
+    type: json_assert
+    statements:
+      - 'json_equal({{read_random_2}}, {"output": "node2-in-random-while-out-of-general"})'
+
+  # `join_context` recreates the identity row and clears the leave marker.
+  # Re-captured, not reused: the row is written fresh, so the key the
+  # rejoin reports is the one the executor must name from here on.
+  - name: Cycle 1 - Node 2 Rejoins the general Channel
+    type: join_context
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    outputs:
+      node2_general_key_c1: memberPublicKey
+
+  - name: Cycle 1 - Let the Gossipsub Mesh Re-Form After the Rejoin
+    type: wait
+    seconds: 5
+
+  - name: Cycle 1 - Node 1 Posts After the Rejoin
+    type: call
+    node: channel-node-1
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_4
+      value: posted-after-node2-rejoined-1
+    executor_public_key: "{{node1_general_key}}"
+
+  # Generous timeout on purpose: a genuine convergence failure fails even
+  # with a long wait, while a slow key re-pull converges — so the two are
+  # told apart rather than conflated into one flaky step.
+  - name: Cycle 1 - Sync After the Rejoin
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 90
+    trigger_sync: true
+
+  - name: Cycle 1 - Node 2 Reads the Message Posted After It Rejoined
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_4
+    outputs:
+      read_msg_4: result
+
+  - name: Cycle 1 - Assert the Rejoiner Sees New Traffic
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_4}}, {"output": "posted-after-node2-rejoined-1"})'
+
+  # The one a chat client lives or dies on: the messages sent while you
+  # were gone are there when you come back.
+  - name: Cycle 1 - Node 2 Reads the Message It Missed While Away
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_3
+    outputs:
+      read_msg_3_node2: result
+
+  - name: Cycle 1 - Assert the Rejoin Delivered the Away-Window Message
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_3_node2}}, {"output": "posted-while-node2-away-1"})'
+
+  - name: Cycle 1 - Node 2 Reads History From Before It Left
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_1
+    outputs:
+      read_msg_1_after_c1: result
+
+  - name: Cycle 1 - Assert Pre-Leave History Survived the Round Trip
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_1_after_c1}}, {"output": "node1-before-any-leave"})'
+
+  - name: Cycle 1 - Node 2 Posts After Rejoining
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_5
+      value: node2-posting-after-rejoin-1
+    executor_public_key: "{{node2_general_key_c1}}"
+
+  - name: Cycle 1 - Sync the Rejoiner's Post
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 90
+    trigger_sync: true
+
+  - name: Cycle 1 - Node 3 Reads the Rejoiner's Post
+    type: call
+    node: channel-node-3
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_5
+    outputs:
+      read_msg_5: result
+
+  - name: Cycle 1 - Assert the Rejoiner Can Author Again
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_5}}, {"output": "node2-posting-after-rejoin-1"})'
+
+  # ══ Cycle 2 ════════════════════════════════════════════════════════
+  # Same round trip on a context whose identity rows have already been
+  # deleted and recreated once. Every upstream leave/rejoin scenario stops
+  # before this point, so "works once" and "works" are indistinguishable
+  # without it.
+  - name: Cycle 2 - Node 2 Leaves the general Channel Again
+    type: leave_context
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+
+  - name: Cycle 2 - Node 1 Posts While Node 2 Is Away
+    type: call
+    node: channel-node-1
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_6
+      value: posted-while-node2-away-2
+    executor_public_key: "{{node1_general_key}}"
+
+  - name: Cycle 2 - Sync the Away-Window Message Between the Remaining Nodes
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-3
+    timeout: 60
+    trigger_sync: true
+
+  - name: Cycle 2 - Node 3 Reads the Away-Window Message
+    type: call
+    node: channel-node-3
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_6
+    outputs:
+      read_msg_6_node3: result
+
+  - name: Cycle 2 - Assert the Channel Carries On Without Node 2
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_6_node3}}, {"output": "posted-while-node2-away-2"})'
+
+  # Asserted the same way as cycle 1 — the `expected_failure` warning does
+  # not fail a run, the `is_set` on the exported error does.
+  - name: Cycle 2 - Node 2 Cannot Read the Channel It Left
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_1
+    expected_failure: true
+    outputs:
+      c2_left_read_error: error
+
+  - name: Cycle 2 - Assert the Left Channel Actually Refused Node 2
+    type: assert
+    statements:
+      - statement: "is_set({{c2_left_read_error}})"
+        message: >
+          The left channel must refuse node 2 on the second cycle too — a read
+          served here means the leave stopped taking effect once the identity
+          rows had been deleted and recreated once.
+
+  - name: Cycle 2 - Node 2 Rejoins the general Channel
+    type: join_context
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    outputs:
+      node2_general_key_c2: memberPublicKey
+
+  - name: Cycle 2 - Let the Gossipsub Mesh Re-Form After the Rejoin
+    type: wait
+    seconds: 5
+
+  - name: Cycle 2 - Node 1 Posts After the Rejoin
+    type: call
+    node: channel-node-1
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_7
+      value: posted-after-node2-rejoined-2
+    executor_public_key: "{{node1_general_key}}"
+
+  - name: Cycle 2 - Sync After the Rejoin
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 90
+    trigger_sync: true
+
+  - name: Cycle 2 - Node 2 Reads the Message Posted After It Rejoined
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_7
+    outputs:
+      read_msg_7: result
+
+  - name: Cycle 2 - Assert the Rejoiner Sees New Traffic
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_7}}, {"output": "posted-after-node2-rejoined-2"})'
+
+  - name: Cycle 2 - Node 2 Reads the Message It Missed While Away
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_6
+    outputs:
+      read_msg_6_node2: result
+
+  - name: Cycle 2 - Assert the Second Rejoin Delivered the Away-Window Message
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_6_node2}}, {"output": "posted-while-node2-away-2"})'
+
+  - name: Cycle 2 - Node 2 Posts After Rejoining
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: set
+    args:
+      key: msg_8
+      value: node2-posting-after-rejoin-2
+    executor_public_key: "{{node2_general_key_c2}}"
+
+  - name: Cycle 2 - Sync the Rejoiner's Post
+    type: wait_for_sync
+    context_id: "{{ctx_general}}"
+    nodes:
+      - channel-node-1
+      - channel-node-2
+      - channel-node-3
+    timeout: 90
+    trigger_sync: true
+
+  - name: Cycle 2 - Node 3 Reads the Rejoiner's Post
+    type: call
+    node: channel-node-3
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_8
+    outputs:
+      read_msg_8: result
+
+  - name: Cycle 2 - Assert the Rejoiner Can Author Again
+    type: json_assert
+    statements:
+      - 'json_equal({{read_msg_8}}, {"output": "node2-posting-after-rejoin-2"})'
+
+  # ── Whole-history read-back ────────────────────────────────────────
+  # Two leave/rejoin cycles later, the channel a client would render must
+  # still be complete: the earliest message, the rejoiner's own first
+  # post, and the post it made between the two cycles. A per-epoch key
+  # that failed to come back leaves a hole in exactly one of these while
+  # the newest message reads fine.
+  - name: Final - Node 2 Re-Reads the Earliest Message
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_1
+    outputs:
+      final_msg_1: result
+
+  - name: Final - Node 2 Re-Reads Its Own Pre-Leave Post
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_2
+    outputs:
+      final_msg_2: result
+
+  - name: Final - Node 2 Re-Reads Its Between-Cycles Post
+    type: call
+    node: channel-node-2
+    context_id: "{{ctx_general}}"
+    method: get
+    args:
+      key: msg_5
+    outputs:
+      final_msg_5: result
+
+  - name: Final - Assert the Full Channel History Is Intact
+    type: json_assert
+    statements:
+      - 'json_equal({{final_msg_1}}, {"output": "node1-before-any-leave"})'
+      - 'json_equal({{final_msg_2}}, {"output": "node2-before-any-leave"})'
+      - 'json_equal({{final_msg_5}}, {"output": "node2-posting-after-rejoin-1"})'
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 120
