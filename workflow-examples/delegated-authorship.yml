@@ -44,7 +44,13 @@ description: >
   a NODE and never hands the secret out. A real holder keeps their own key off the
   machine that runs the relay — which is the whole reason the warrant exists.
 
-  RUN IN CI, in both the docker and binary matrices. It was excluded while
+  RUN IN CI, in the DOCKER matrix only. Binary mode downloads a merod RELEASE,
+  which predates the intents endpoint, so the run reaches the relay step and takes
+  a 404 — the version string does not give this away, since both report
+  0.11.0-rc.25 and only the build hash differs. Re-add it to the binary matrix
+  once a core release carries the endpoint.
+
+  It was excluded from both while
   core#3636 and calimero-client-py#97 were unmerged; both have landed, client-py
   0.6.32 carries the bindings, and this scenario has been executed end to end
   against real nodes on `merod:edge` (build 5cc9668) — the delegated write reached
