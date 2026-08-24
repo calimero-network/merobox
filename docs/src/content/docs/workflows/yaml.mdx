@@ -915,6 +915,121 @@ ahead of its advisory output), `stderr`, `exit_code`.
   node: calimero-node-2
 ```
 
+## Delegated authorship steps
+
+A member that holds **no node** can still author its own writes: it signs a
+*warrant* naming one method, one operator and one nonce; a relay runs the method;
+the result is attributed to the member. This is the case a thin client is in — a
+device with only a signing key can neither run the application (the runtime is a
+JIT) nor decrypt the state (it never received a scope key).
+
+Three things a scenario must do first, and none is implied by the others:
+
+1. **Add the author's ACCOUNT as a member** of the group owning the context. Its
+   device joins nothing — it is in no group's binding rows and never will be, so
+   a key-based membership check would refuse every delegated write.
+2. **Grant the relay `CAN_AUTHOR_ON_BEHALF`** on that group. Not implied by
+   membership, and not implied by admin. Without it the intent is refused before
+   anything executes.
+3. **Mint a warrant** with `sign_warrant`, then spend it with `perform_intent`.
+
+A warrant is single-use. Re-presenting a spent one is refused, and that is the
+point of the nonce ledger rather than a limitation: the signature stays valid
+forever, so replay is not forgery and the envelope check cannot be what stops it.
+
+### sign_warrant
+
+Sign a member's consent for one delegated write. **Contacts nothing** — no `node`
+field, and that is deliberate rather than an omission: the key that signs a
+warrant must never reach the node that runs the request, or that node could forge
+writes in the member's name.
+
+The key material comes from the scenario. merobox cannot mint it and should not:
+`account_pair` binds a device to a *node* and never hands the secret out. Supply
+either a fixed test credential or one minted out-of-band with
+`merod account sign-cert`.
+
+Note the encodings, which are core's and are not interchangeable: `context_id` is
+base58, `executor` is hex. The author's account is read out of `credential`
+rather than configured, so it cannot disagree with the key that signs.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `context_id` | yes | string | Context the intent runs in, base58. |
+| `executor` | yes | string | Account allowed to spend it, hex — the relay's, from `node_identity`. |
+| `method` | yes | string | Method the warrant authorises. |
+| `args` | no | mapping | Arguments it commits to. Placeholders resolve. |
+| `device_secret` | yes | string | The author's device signing secret, 64 hex chars. Never sent. |
+| `credential` | yes | string | Hex device credential proving that key belongs to the author's account. |
+| `nonce` | no | int | Monotonic per author device. Default `1`. |
+| `valid_for` | no | int | Seconds the relay will still spend it for. Default `300`. |
+
+Outputs: `warrant`, `authorAccount`, `authorDeviceKey`, `intentHash`, `notAfter`.
+
+Only `H(method, args)` is committed to, never the plaintext — the envelope this
+rides in is readable by anything subscribed to the context's topic, so the method
+and its arguments stay sealed and only their hash travels in the clear.
+
+```yaml
+- type: sign_warrant
+  context_id: '{{context_id}}'
+  executor: '{{identity_account_id_calimero-node-1}}'
+  method: set
+  args:
+    key: delegated
+    value: from-a-member-with-no-node
+  device_secret: '{{author_secret}}'
+  credential: '{{author_credential}}'
+  nonce: 1
+  outputs:
+    warrant: warrant
+    author: authorAccount
+```
+
+### perform_intent
+
+Have a node run one method on a member's behalf. The relay executes and signs the
+envelope with its own key; the change is attributed to the **author**, and both
+halves travel together so every peer re-checks that the member consented rather
+than taking the relay's word.
+
+Only the author's half is sent. The node attaches its own credential, so a
+scenario never learns which of the node's processes runs the intent, and a re-key
+on its side does not void a warrant already minted.
+
+`rootHash` is exported because it is the node's own claim that the run changed
+something. Assert on it rather than on the status: an accepted intent that
+advanced no state is a real failure mode, and it is far cheaper to catch here
+than several steps later on a value that was never written.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | The relay: the node that runs the method. |
+| `context_id` | yes | string | Context to run in. |
+| `method` | yes | string | Method to run — must match the warrant. |
+| `args` | no | mapping | Arguments — must match what the warrant committed to. |
+| `warrant` | yes | string | Hex warrant, from a `sign_warrant` step. |
+| `author_proof` | yes | string | The author's hex device credential, the same one the warrant was signed against. |
+
+Outputs: `rootHash`, `returns`.
+
+```yaml
+- type: perform_intent
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  method: set
+  args:
+    key: delegated
+    value: from-a-member-with-no-node
+  warrant: '{{warrant}}'
+  author_proof: '{{author_credential}}'
+  outputs:
+    root: rootHash
+```
+
+Both steps need a `calimero-client-py` carrying the `sign_warrant` and
+`perform_intent` bindings, and a node whose core has the warrant types.
+
 ## Call & auth steps
 
 ### call

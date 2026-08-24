@@ -51,6 +51,8 @@ VALID_STEP_TYPES = frozenset(
         "account_pair",
         "account_revoke",
         "node_identity",
+        "sign_warrant",
+        "perform_intent",
         "node_exec",
         "create_group_in_namespace",
         "list_namespace_groups",
@@ -1148,6 +1150,63 @@ class AccountRevokeStepConfig(BaseStepConfig):
     )
 
 
+class SignWarrantStepConfig(BaseStepConfig):
+    """Configuration for sign_warrant step."""
+
+    type: Literal["sign_warrant"] = "sign_warrant"
+    context_id: str = Field(
+        ..., description="Context the intent runs in, base58 (not hex)"
+    )
+    executor: str = Field(
+        ...,
+        description="Account allowed to spend this warrant, hex — the relay's, "
+        "from node_identity's accountId output",
+    )
+    method: str = Field(..., description="The method the warrant authorises")
+    args: Optional[dict] = Field(
+        None, description="Arguments the warrant commits to, as a mapping"
+    )
+    device_secret: str = Field(
+        ...,
+        description="The author's device signing secret, 64 hex chars. Signs the "
+        "warrant and is never sent anywhere",
+    )
+    credential: str = Field(
+        ...,
+        description="Hex device credential proving that key belongs to the "
+        "author's account (`merod account sign-cert`)",
+    )
+    nonce: Optional[int] = Field(
+        1, description="Monotonic per author device; a warrant is single-use"
+    )
+    valid_for: Optional[int] = Field(
+        300, description="Seconds the relay will still spend it for"
+    )
+
+    # No `node`: minting contacts nothing, and the signing key must never reach
+    # a node. See the step's docstring.
+
+
+class PerformIntentStepConfig(BaseStepConfig):
+    """Configuration for perform_intent step."""
+
+    type: Literal["perform_intent"] = "perform_intent"
+    node: str = Field(..., description="The relay: the node that runs the method")
+    context_id: str = Field(..., description="Context to run in")
+    method: str = Field(..., description="Method to run — must match the warrant")
+    args: Optional[dict] = Field(
+        None, description="Arguments — must match what the warrant committed to"
+    )
+    warrant: str = Field(
+        ..., description="Hex warrant, from a sign_warrant step's output"
+    )
+    author_proof: str = Field(
+        ...,
+        description="The author's hex device credential — the same one the "
+        "warrant was signed against",
+    )
+
+
 class NodeIdentityStepConfig(BaseStepConfig):
     """Configuration for node_identity step."""
 
@@ -1759,6 +1818,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
     "account_revoke": AccountRevokeStepConfig,
+    "sign_warrant": SignWarrantStepConfig,
+    "perform_intent": PerformIntentStepConfig,
     "node_identity": NodeIdentityStepConfig,
     "node_exec": NodeExecStepConfig,
     "create_group_in_namespace": CreateGroupInNamespaceStepConfig,

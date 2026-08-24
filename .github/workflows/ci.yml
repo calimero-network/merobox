@@ -137,8 +137,17 @@ jobs:
           # satisfies both lanes; docker mode (merod:edge) keeps full coverage.
           # Re-add here once a core release carries the account rename —
           # 0.11.0-rc.20 and the pending rc.21 both predate it.
+          # delegated-authorship exercises sign_warrant + perform_intent, which need
+          # a calimero-client-py carrying those bindings
+          # (calimero-network/calimero-client-py#97) and a merod carrying the warrant
+          # types (calimero-network/core#3636). Both are green and unmerged, so the
+          # released client-py installed here has no sign_warrant and the endpoint
+          # does not exist. Re-add to the docker matrix once merod:edge has the
+          # endpoint and a released client-py has the bindings; binary mode needs the
+          # same client-py, so it can be re-added at the same time.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
+            grep -v delegated-authorship | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
@@ -162,6 +171,7 @@ jobs:
           # (see the binary-mode note above).
           DOCKER=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
+            grep -v delegated-authorship | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
