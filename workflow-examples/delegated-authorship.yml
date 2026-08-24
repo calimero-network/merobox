@@ -44,13 +44,12 @@ description: >
   a NODE and never hands the secret out. A real holder keeps their own key off the
   machine that runs the relay — which is the whole reason the warrant exists.
 
-  NOT RUN IN CI YET, and excluded from both matrices on purpose. `sign_warrant`
-  and `perform_intent` need a `calimero-client-py` carrying those bindings
-  (calimero-network/calimero-client-py#97, unmerged) and a merod carrying the
-  warrant types (calimero-network/core#3636, green but unmerged). Re-add it to the
-  docker matrix once merod:edge has the endpoint and a released client-py has the
-  bindings. Until then this file documents the shape and has been validated
-  against the schema loader, but has never been executed end to end.
+  RUN IN CI, in both the docker and binary matrices. It was excluded while
+  core#3636 and calimero-client-py#97 were unmerged; both have landed, client-py
+  0.6.32 carries the bindings, and this scenario has been executed end to end
+  against real nodes on `merod:edge` (build 5cc9668) — the delegated write reached
+  the second node and read back there, which is the assertion a relay cannot
+  satisfy on its own.
 
   The equivalent flow IS covered end to end today, in core's own
   `delegated-authorship` scenario — which drives the same endpoints through a
@@ -60,6 +59,10 @@ description: >
 nodes:
   count: 2
   prefix: delegated-demo
+  # Pinned, like every other example here. Without it merobox defaults to
+  # `merod:prerelease`, which carries no intents endpoint until a release does —
+  # and the failure reads as a broken scenario rather than a wrong image.
+  image: ghcr.io/calimero-network/merod:edge
 
 steps:
   # ── Phase 1: namespace, membership, context ────────────────────────
@@ -67,7 +70,7 @@ steps:
   - name: Install the app on node-1
     type: install_application
     node: delegated-demo-1
-    path: ./res/kv_store.wasm
+    path: ./workflow-examples/res/kv_store.wasm
     dev: true
     outputs:
       app_id: applicationId
@@ -75,7 +78,7 @@ steps:
   - name: Install the app on node-2
     type: install_application
     node: delegated-demo-2
-    path: ./res/kv_store.wasm
+    path: ./workflow-examples/res/kv_store.wasm
     dev: true
 
   - name: Node-1 creates the namespace
