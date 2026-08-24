@@ -2082,6 +2082,10 @@ class WorkflowConfig(BaseModel):
     nuke_on_end: Optional[bool] = Field(
         False, description="Nuke all data after workflow"
     )
+    fail_on_panic: Optional[bool] = Field(
+        True,
+        description="Fail the workflow if any node logged a panic (default true)",
+    )
     stop_all_nodes: Optional[bool] = Field(
         False, description="Stop all nodes at the end"
     )

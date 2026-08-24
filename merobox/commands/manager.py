@@ -133,6 +133,37 @@ def _dump_container_log(container, container_name: str, log_dir: str) -> bool:
         return False
 
 
+# merod's panic hook logs the message, thread and location as fields under
+# "Application panic occurred", then chains to the default hook, so a panic also
+# leaves Rust's own line. Match either: the structured one is absent for a panic
+# raised before the hook is installed, the default one is what any other process
+# leaves. Matching these two shapes rather than the bare word keeps prose out.
+_PANIC_LINE = re.compile(r"Application panic occurred|thread '[^']*' panicked at")
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_PANIC_MESSAGE = re.compile(r"panic\.message=(?P<msg>.*?)(?= panic\.\w+=|$)")
+_RUST_PANIC = re.compile(r"thread '[^']*' panicked at [^\s,]+")
+
+
+def panic_messages(log_text: str) -> list[str]:
+    """The panic messages in one node's log, most useful form first.
+
+    ANSI escapes are stripped before matching: they sit between a field name and
+    its ``=`` in node logs, so the raw pattern would never match a coloured line.
+    """
+    found = []
+    for line in log_text.splitlines():
+        clean = _ANSI.sub("", line)
+        if not _PANIC_LINE.search(clean):
+            continue
+        m = _PANIC_MESSAGE.search(clean)
+        if m:
+            found.append(m.group("msg").strip())
+            continue
+        m = _RUST_PANIC.search(clean)
+        found.append(m.group(0) if m else clean.strip())
+    return found
+
+
 def _dump_container_state(
     container, container_name: str, log_dir: str
 ) -> Optional[dict]:
@@ -2287,6 +2318,29 @@ class DockerManager(CleanupMixin):
             if detail:
                 console.print(f"[red]💀 {detail}[/red]")
         return written
+
+    def scan_nodes_for_panics(self) -> dict[str, list[str]]:
+        """Panic messages per node, for nodes that logged one.
+
+        Reads the containers directly rather than the exported files so the
+        answer does not depend on which teardown path ran.
+        """
+        found: dict[str, list[str]] = {}
+        for name in self.get_all_nodes():
+            container = self.nodes.get(name)
+            if container is None:
+                try:
+                    container = self.client.containers.get(name)
+                except Exception:
+                    continue
+            try:
+                log = container.logs().decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            msgs = panic_messages(log)
+            if msgs:
+                found[name] = msgs
+        return found
 
     def list_nodes(self) -> None:
         """List all running Calimero nodes and infrastructure."""
