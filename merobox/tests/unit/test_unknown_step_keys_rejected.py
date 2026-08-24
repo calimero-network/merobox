@@ -91,7 +91,6 @@ class TestKeysTheExecutorsActuallyRead:
                 "context_node": "n1",
                 "application_id": "app",
                 "nodes": ["n1", "n2"],
-                "path": "res/app.wasm",
             },
             {
                 "type": "create_context",
