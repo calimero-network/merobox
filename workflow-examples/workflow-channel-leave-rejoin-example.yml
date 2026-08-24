@@ -432,8 +432,9 @@ steps:
     statements:
       - statement: "is_set({{c1_left_read_error}})"
         message: >
-          Node 2 read the channel it left. `leave_context` did not remove the
-          local identity, or the read was served from stale local state.
+          The left channel must refuse node 2 — a read served anyway means
+          `leave_context` left the local identity in place, or answered from
+          stale local state.
 
   # Leaving `general` must not touch `random`. Both live under one
   # namespace and share its governance subscription, so an over-broad
@@ -654,8 +655,9 @@ steps:
     statements:
       - statement: "is_set({{c2_left_read_error}})"
         message: >
-          Node 2 read the channel it left on the second cycle. The leave stopped
-          taking effect once the identity rows had been recreated.
+          The left channel must refuse node 2 on the second cycle too — a read
+          served here means the leave stopped taking effect once the identity
+          rows had been deleted and recreated once.
 
   - name: Cycle 2 - Node 2 Rejoins the general Channel
     type: join_context

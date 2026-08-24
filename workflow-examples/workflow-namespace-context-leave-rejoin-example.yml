@@ -306,9 +306,10 @@ steps:
     statements:
       - statement: "is_set({{root_left_read_error}})"
         message: >
-          Node 2 read the namespace-root context it left. On this placement the
-          namespace key is still held locally, so a leave that fails to delete
-          the local identity leaves the node able to decrypt and serve the read.
+          The left root context must refuse node 2 — and this placement is where
+          it is easiest to get wrong, since the namespace key is still held
+          locally, so a leave that fails to delete the local identity leaves the
+          node able to decrypt and serve the read.
 
   # Scope check 1: the sibling context under the same namespace is
   # untouched. `leave_context` unsubscribes from ONE context topic; taking
