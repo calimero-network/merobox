@@ -1,0 +1,289 @@
+name: Delegated authorship — a member with no node writes through a relay
+description: >
+  A worked example of `sign_warrant` and `perform_intent`. The author here is
+  deliberately NOT a node: it is a device holding only a signing key, which is the
+  case delegated authorship exists for. It never joins the group, never receives a
+  scope key, and could not execute the application if it wanted to — the runtime is
+  a JIT compiler. What makes the write its own is a warrant it signs, which travels
+  with the change so every peer can verify it consented.
+
+  Phases, and what each is for:
+
+    1. Namespace and a context, with node-1 as admin and node-2 as a member. The
+       second node is what makes the last phase meaningful: everything before it
+       happens on the relay alone.
+
+    2. The author's ACCOUNT is added as a member. Its device joins nothing and is
+       in no group's binding rows — that is precisely the case a certificate
+       covers, and a key-based membership check would refuse every write below.
+
+    3. The relay is granted `CAN_AUTHOR_ON_BEHALF` (bit 9, so 512 on its own).
+       Authoring for others is not implied by membership and not implied by
+       admin, which is why it has to be granted explicitly here.
+
+    4. `sign_warrant` mints the author's consent. No `node:` field, and that is
+       the point rather than an omission: minting contacts nothing, and the key
+       that signs must never reach the node that runs the request.
+
+    5. `perform_intent` has the relay run the method. `rootHash` comes back and
+       is asserted, because an accepted intent that advanced no state is a real
+       failure mode — cheaper to catch here than several steps later on a value
+       that was never written.
+
+    6. The write is read back from the SECOND node. This is the half a relay
+       cannot fake: it proves a peer verified an envelope whose author is not its
+       signer, authorized it, spent the nonce and applied it. A relay could
+       satisfy every step above locally and still be producing deltas the network
+       drops.
+
+  Where the key material comes from. The author's device secret and credential are
+  a FIXED test pair below, captured from `merod account sign-cert --generate`
+  against the well-known "legal winner thank year…" phrase, so the account is the
+  same on every run and this file is self-contained. It owns nothing anywhere.
+  merobox cannot mint such a pair and should not: `account_pair` binds a device to
+  a NODE and never hands the secret out. A real holder keeps their own key off the
+  machine that runs the relay — which is the whole reason the warrant exists.
+
+  NOT RUN IN CI YET, and excluded from both matrices on purpose. `sign_warrant`
+  and `perform_intent` need a `calimero-client-py` carrying those bindings
+  (calimero-network/calimero-client-py#97, unmerged) and a merod carrying the
+  warrant types (calimero-network/core#3636, green but unmerged). Re-add it to the
+  docker matrix once merod:edge has the endpoint and a released client-py has the
+  bindings. Until then this file documents the shape and has been validated
+  against the schema loader, but has never been executed end to end.
+
+  The equivalent flow IS covered end to end today, in core's own
+  `delegated-authorship` scenario — which drives the same endpoints through a
+  shell script because these steps did not exist yet. Replacing that script is
+  what this file is for.
+
+nodes:
+  count: 2
+  prefix: delegated-demo
+
+steps:
+  # ── Phase 1: namespace, membership, context ────────────────────────
+
+  - name: Install the app on node-1
+    type: install_application
+    node: delegated-demo-1
+    path: ./res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Install the app on node-2
+    type: install_application
+    node: delegated-demo-2
+    path: ./res/kv_store.wasm
+    dev: true
+
+  - name: Node-1 creates the namespace
+    type: create_namespace
+    node: delegated-demo-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Invite node-2
+    type: create_namespace_invitation
+    node: delegated-demo-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - name: Node-2 joins the namespace
+    type: join_namespace
+    node: delegated-demo-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - name: Node-1 creates the context
+    type: create_context
+    node: delegated-demo-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+
+  - name: Node-2 joins the context
+    type: join_context
+    node: delegated-demo-2
+    context_id: '{{context_id}}'
+
+  - name: Settle before anything is delegated
+    type: wait_for_sync
+    nodes:
+      - delegated-demo-1
+      - delegated-demo-2
+    context_id: '{{context_id}}'
+
+  # ── Phase 2: the author's ACCOUNT becomes a member ─────────────────
+  #
+  # By account, not by key. The author's device is in no group's binding rows and
+  # never will be, which is exactly what a device certificate exists to cover.
+
+  - name: Add the author's account as a member
+    type: add_group_members
+    node: delegated-demo-1
+    group_id: '{{namespace_id}}'
+    members:
+      - identity: '0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30'
+        role: Member
+
+  # ── Phase 3: the relay is granted authorship ──────────────────────
+  #
+  # Read the relay's own account first: the warrant has to name the account that
+  # will actually spend it, and a scenario guessing that would mint warrants
+  # nothing can use.
+
+  - name: Who is the relay
+    type: node_identity
+    node: delegated-demo-1
+    outputs:
+      relay_account: accountId
+
+  # CAN_AUTHOR_ON_BEHALF is bit 9, so 512 on its own — granting authorship and
+  # nothing else, which is the posture the capability exists to make possible.
+  - name: Grant the relay CAN_AUTHOR_ON_BEHALF
+    type: set_member_capabilities
+    node: delegated-demo-1
+    group_id: '{{namespace_id}}'
+    member_id: '{{relay_account}}'
+    capabilities: 512
+
+  - name: Settle after the grant
+    type: wait_for_sync
+    nodes:
+      - delegated-demo-1
+      - delegated-demo-2
+    context_id: '{{context_id}}'
+
+  # ── Phase 4: the author signs its consent ─────────────────────────
+  #
+  # Offline. No `node:` field, because there is nothing for one to do: this signs
+  # with the device secret and returns bytes. Only H(method, args) is committed
+  # to, never the plaintext — the envelope it rides in is readable by anything
+  # subscribed to the context's topic.
+
+  - name: The author mints a warrant
+    type: sign_warrant
+    context_id: '{{context_id}}'
+    executor: '{{relay_account}}'
+    method: set
+    args:
+      key: delegated
+      value: from-a-member-with-no-node
+    device_secret: '4987ccd0fb7ef36bf7f61e8f99fd150d33e6adac47649f23bfd7109c2e36a3ba'
+    credential: '02b2a942ff4c98718bed76e255987f6d59b1a72d3b2cd2510003e6170ac63a9ffb000000000e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e304d0774b93e8028899a745dbe03d7727fa31fc2f060945b5789cb36c23cba380366245580f7aa816a35d1ff324a714355995ef44a72bcd2341e21d9587d16efce973135e50bc7280f06bb32a53a566983cf0f0c8428be4b461df54264f07319540000000000000000e0c3743677508f5cfbe245f043f2d7bc3ba6c88c001464cae581e2e9ec8cb63780f1f5c2a393521a0038b357fffe63092403fa6e0e2ec12da5e96d50692d400f'
+    nonce: 1
+    outputs:
+      warrant: warrant
+      author_account: authorAccount
+
+  # The account the warrant names must be the one added as a member in phase 2.
+  # Asserted rather than assumed: the account is derived from the credential, so
+  # if the two ever drift the write is refused at the cut and the failure shows up
+  # as a missing value rather than as a mismatch.
+  - name: Assert the warrant speaks for the member that was added
+    type: assert
+    statements:
+      - "{{author_account}} == 0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30"
+
+  # ── Phase 5: the relay runs it on the member's behalf ─────────────
+  #
+  # `args` must match what the warrant committed to. Both sides re-serialize, so
+  # the mapping's spelling does not matter — but the values do.
+
+  - name: The relay performs the intent
+    type: perform_intent
+    node: delegated-demo-1
+    context_id: '{{context_id}}'
+    method: set
+    args:
+      key: delegated
+      value: from-a-member-with-no-node
+    warrant: '{{warrant}}'
+    author_proof: '02b2a942ff4c98718bed76e255987f6d59b1a72d3b2cd2510003e6170ac63a9ffb000000000e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e304d0774b93e8028899a745dbe03d7727fa31fc2f060945b5789cb36c23cba380366245580f7aa816a35d1ff324a714355995ef44a72bcd2341e21d9587d16efce973135e50bc7280f06bb32a53a566983cf0f0c8428be4b461df54264f07319540000000000000000e0c3743677508f5cfbe245f043f2d7bc3ba6c88c001464cae581e2e9ec8cb63780f1f5c2a393521a0038b357fffe63092403fa6e0e2ec12da5e96d50692d400f'
+    outputs:
+      intent_root: rootHash
+
+  # A 2xx is not enough. The node's own claim that state advanced is the root
+  # hash, and an intent that changed nothing is a failure this catches at the
+  # step rather than three steps later on a value that was never written.
+  - name: Assert the intent advanced state
+    type: assert
+    statements:
+      - "is_set({{intent_root}})"
+
+  # ── Phase 6: the half a relay cannot fake ─────────────────────────
+
+  - name: Wait for the delegated write to reach node-2
+    type: wait_for_sync
+    nodes:
+      - delegated-demo-1
+      - delegated-demo-2
+    context_id: '{{context_id}}'
+    expect:
+      method: get
+      args:
+        key: 'delegated'
+      equals:
+        output: 'from-a-member-with-no-node'
+
+  - name: Node-2 reads back what the member wrote
+    type: call
+    node: delegated-demo-2
+    context_id: '{{context_id}}'
+    method: get
+    args:
+      key: delegated
+    outputs:
+      delegated_value: result
+
+  # The ENVELOPE, not the value: `outputs: <name>: result` captures merobox's
+  # whole result object, so the captured value is `{"output": ...}` and comparing
+  # it to a bare string never matches.
+  - name: Assert the member's write is present on the peer
+    type: json_assert
+    statements:
+      - 'json_equal({{delegated_value}}, {"output": "from-a-member-with-no-node"})'
+
+  # A self-authored write still works alongside it. The delegated path must not
+  # have disturbed the ordinary one — they share every surface it touches.
+  - name: Node-2 writes as itself
+    type: call
+    node: delegated-demo-2
+    context_id: '{{context_id}}'
+    method: set
+    args:
+      key: self-authored
+      value: still-works
+
+  - name: Wait for the self-authored write
+    type: wait_for_sync
+    nodes:
+      - delegated-demo-1
+      - delegated-demo-2
+    context_id: '{{context_id}}'
+    expect:
+      method: get
+      args:
+        key: 'self-authored'
+      equals:
+        output: 'still-works'
+
+  - name: Node-1 reads the self-authored write
+    type: call
+    node: delegated-demo-1
+    context_id: '{{context_id}}'
+    method: get
+    args:
+      key: self-authored
+    outputs:
+      self_value: result
+
+  - name: Assert the self-authored path is unaffected
+    type: json_assert
+    statements:
+      - 'json_equal({{self_value}}, {"output": "still-works"})'
