@@ -2260,12 +2260,16 @@ class WorkflowExecutor:
             "account_pair",
             "account_revoke",
             "node_identity",
+            "sign_warrant",
+            "perform_intent",
         ):
             from merobox.commands.bootstrap.steps.account import (
                 AccountCreateStep,
                 AccountPairStep,
                 AccountRevokeStep,
                 NodeIdentityStep,
+                PerformIntentStep,
+                SignWarrantStep,
             )
 
             return {
@@ -2273,6 +2277,8 @@ class WorkflowExecutor:
                 "account_pair": AccountPairStep,
                 "account_revoke": AccountRevokeStep,
                 "node_identity": NodeIdentityStep,
+                "sign_warrant": SignWarrantStep,
+                "perform_intent": PerformIntentStep,
             }[step_type](step_config, **common_kwargs)
         if step_type == "node_exec":
             from merobox.commands.bootstrap.steps.node_exec import NodeExecStep

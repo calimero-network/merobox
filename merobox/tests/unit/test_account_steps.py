@@ -16,7 +16,8 @@ loop, per this repo's convention.
 """
 
 import asyncio
-from unittest.mock import MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -25,6 +26,8 @@ from merobox.commands.bootstrap.steps.account import (
     AccountPairStep,
     AccountRevokeStep,
     NodeIdentityStep,
+    PerformIntentStep,
+    SignWarrantStep,
 )
 
 NAMESPACE = "ab" * 32
@@ -530,3 +533,223 @@ class TestOutputsAreActuallyExported:
         assert dynamic_values["acct"] == "aa" * 32
         assert dynamic_values["dev"] == "cc" * 32
         assert dynamic_values["root"] == "bb" * 32
+
+
+# =============================================================================
+# SignWarrantStep
+# =============================================================================
+
+#: A device certified by a fixed test account, captured from
+#: `merod account sign-cert --generate` against the well-known
+#: "legal winner thank year…" phrase. It owns nothing.
+#:
+#: Frozen rather than generated because it has to certify exactly the key
+#: WARRANT_SECRET holds; generating a consistent pair here would mean
+#: reimplementing the certification, and the test would exercise the fixture.
+WARRANT_CREDENTIAL = (
+    "02b2a942ff4c98718bed76e255987f6d59b1a72d3b2cd2510003e6170ac63a9ffb00000000"
+    "0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e304d0774b93e"
+    "8028899a745dbe03d7727fa31fc2f060945b5789cb36c23cba380366245580f7aa816a35d1"
+    "ff324a714355995ef44a72bcd2341e21d9587d16efce973135e50bc7280f06bb32a53a5669"
+    "83cf0f0c8428be4b461df54264f073195400000000000000"
+    "00e0c3743677508f5cfbe245f043f2d7bc3ba6c88c001464cae581e2e9ec8cb63780f1f5c2"
+    "a393521a0038b357fffe63092403fa6e0e2ec12da5e96d50692d400f"
+)
+WARRANT_SECRET = "4987ccd0fb7ef36bf7f61e8f99fd150d33e6adac47649f23bfd7109c2e36a3ba"
+WARRANT_ACCOUNT = "0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30"
+#: Base58, because a context id is one. An account id, above, is hex.
+WARRANT_CONTEXT = "1thX6LZfHDZZKUs92febYZhYRcXddmzfzF2NvTkPNE"
+
+
+class TestSignWarrantStep:
+    """Plumbing only, deliberately.
+
+    `conftest.py` replaces `calimero_client_py` with a MagicMock for every test in
+    this suite, so unit tests never need the native extension built. That is the
+    right call and it decides the split: what belongs here is that the step
+    resolves its fields, hands the binding the arguments it should, and exports
+    what comes back.
+
+    The properties that actually matter cryptographically — that reformatting an
+    intent's arguments cannot change what the signature commits to, that a
+    credential must certify the signing key, that a context is base58 and an
+    account hex — are asserted in calimero-client-py, in Rust and in pytest,
+    where the real binding runs. Re-asserting them against a mock here would
+    prove only that the mock agrees with itself.
+    """
+
+    def setup_method(self):
+        self.config = {
+            "type": "sign_warrant",
+            "name": "Mint",
+            "context_id": WARRANT_CONTEXT,
+            "executor": WARRANT_ACCOUNT,
+            "method": "set",
+            "args": {"key": "k", "value": "v"},
+            "device_secret": WARRANT_SECRET,
+            "credential": WARRANT_CREDENTIAL,
+        }
+        self.payload = {
+            "warrant": "ab" * 8,
+            "authorAccount": WARRANT_ACCOUNT,
+            "authorDeviceKey": "7siiiCkqazZTrJidZ8QxERkBt8gCmXu25H5AqnXurpB7",
+            "intentHash": "cd" * 32,
+            "nonce": 1,
+            "notAfter": 1787588328,
+        }
+
+    def _patched(self, **overrides):
+        """The step, with the module-level binding it imports stood in for."""
+        minter = MagicMock(return_value=self.payload)
+        module = MagicMock()
+        module.sign_warrant = minter
+        patcher = patch.dict(sys.modules, {"calimero_client_py": module})
+        return SignWarrantStep({**self.config, **overrides}), minter, patcher
+
+    def test_valid_config_passes_validation(self):
+        SignWarrantStep(self.config)
+
+    @pytest.mark.parametrize(
+        "field", ["context_id", "executor", "method", "device_secret", "credential"]
+    )
+    def test_missing_required_field_raises(self, field):
+        config = {**self.config}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            SignWarrantStep(config)
+
+    def test_args_must_be_a_mapping(self):
+        """A list is valid JSON of the wrong shape.
+
+        Left to the binding it would mint a warrant committing to it, and the node
+        would refuse the intent as a mismatch — a long way from the line at fault.
+        """
+        with pytest.raises(ValueError, match="args"):
+            SignWarrantStep({**self.config, "args": ["k", "v"]})
+
+    def test_it_mints_with_the_configured_fields_and_exports_the_result(self):
+        step, minter, patcher = self._patched()
+        results = {}
+        with patcher:
+            assert _run(step.execute(results, {})) is True
+
+        # `args` reaches the binding as a JSON *string*: that is its signature,
+        # and both sides re-serialize so the committed bytes cannot depend on how
+        # a scenario spelled the mapping.
+        minter.assert_called_once_with(
+            context_id=WARRANT_CONTEXT,
+            executor=WARRANT_ACCOUNT,
+            method="set",
+            args='{"key": "k", "value": "v"}',
+            nonce=1,
+            device_secret=WARRANT_SECRET,
+            credential=WARRANT_CREDENTIAL,
+            valid_for=300,
+        )
+        # Keyed on the executor, not a node: this step has no node, and two
+        # warrants in one scenario are told apart by who may spend them.
+        assert results[f"signed_warrant_{WARRANT_ACCOUNT}"] == self.payload
+
+    def test_nonce_and_validity_are_passed_through_as_numbers(self):
+        step, minter, patcher = self._patched(nonce=7, valid_for=60)
+        with patcher:
+            assert _run(step.execute({}, {})) is True
+        kwargs = minter.call_args.kwargs
+        assert kwargs["nonce"] == 7
+        assert kwargs["valid_for"] == 60
+
+    def test_placeholders_inside_args_are_resolved(self):
+        """`args` carries scenario values, so it has to resolve like every field.
+
+        Leaving them literal would commit the warrant to the text `{{key}}` and
+        the node would refuse the intent — correctly, and unhelpfully.
+        """
+        step, minter, patcher = self._patched(args={"key": "{{captured_key}}"})
+        with patcher:
+            assert _run(step.execute({}, {"captured_key": "resolved"})) is True
+        assert minter.call_args.kwargs["args"] == '{"key": "resolved"}'
+
+    def test_a_refused_mint_fails_the_step(self):
+        """A bad credential or a mismatched key is refused by the binding.
+
+        It has to fail the step rather than pass with nothing, or the scenario
+        would carry an empty warrant to a perform_intent step and fail there.
+        """
+        module = MagicMock()
+        module.sign_warrant = MagicMock(
+            side_effect=ValueError("this credential certifies a different key")
+        )
+        step = SignWarrantStep(self.config)
+        with patch.dict(sys.modules, {"calimero_client_py": module}):
+            assert _run(step.execute({}, {})) is False
+
+
+# =============================================================================
+# PerformIntentStep
+# =============================================================================
+
+
+class TestPerformIntentStep:
+    def setup_method(self):
+        self.config = {
+            "type": "perform_intent",
+            "name": "Delegate",
+            "node": "calimero-node-1",
+            "context_id": WARRANT_CONTEXT,
+            "method": "set",
+            "args": {"key": "k", "value": "v"},
+            "warrant": "aa" * 8,
+            "author_proof": WARRANT_CREDENTIAL,
+        }
+
+    def test_valid_config_passes_validation(self):
+        _step(PerformIntentStep, self.config)
+
+    @pytest.mark.parametrize(
+        "field", ["node", "context_id", "method", "warrant", "author_proof"]
+    )
+    def test_missing_required_field_raises(self, field):
+        config = {**self.config}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            PerformIntentStep(config)
+
+    def test_it_sends_the_authors_half_and_records_the_root(self):
+        """Only the author's half goes out.
+
+        The node attaches its own credential, so a scenario never has to learn
+        which of the node's processes runs the intent — and a re-key on its side
+        does not void a warrant already minted.
+        """
+        payload = {
+            "rootHash": "5Q7DHnKrk4U1Qt6VPSxBiNeQvK4qpEZS6QbNDiPNQFjV",
+            "returns": None,
+        }
+        client = MagicMock()
+        client.perform_intent.return_value = _envelope(payload)
+        step = _step(PerformIntentStep, self.config, client)
+
+        results = {}
+        assert _run(step.execute(results, {})) is True
+
+        client.perform_intent.assert_called_once_with(
+            WARRANT_CONTEXT,
+            "set",
+            '{"key": "k", "value": "v"}',
+            "aa" * 8,
+            WARRANT_CREDENTIAL,
+        )
+        assert results["performed_intent_calimero-node-1"] == payload
+
+    def test_a_refused_intent_fails_the_step(self):
+        """A refusal is the normal answer to a spent warrant or a missing grant.
+
+        It has to fail the step rather than pass quietly, or a scenario asserting
+        a delegated write would go green on a write that never happened.
+        """
+        client = MagicMock()
+        client.perform_intent.side_effect = RuntimeError(
+            "the executor holds no CAN_AUTHOR_ON_BEHALF grant"
+        )
+        step = _step(PerformIntentStep, self.config, client)
+        assert _run(step.execute({}, {})) is False
