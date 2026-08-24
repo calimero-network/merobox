@@ -1662,9 +1662,6 @@ class CreateMeshStep(BaseStepConfig):
     application_id: str = Field(..., description="Application ID")
     nodes: list[str] = Field(..., description="List of nodes to include in mesh")
     params: Optional[str] = Field(None, description="Initialization params JSON string")
-    path: Optional[str] = Field(
-        None, description="WASM path to pre-install on the joining nodes"
-    )
 
 
 class FuzzyTestStep(BaseStepConfig):

@@ -4,21 +4,17 @@ Create mesh step executor - Creates a context and connects multiple nodes to it.
 The mesh step uses the namespace governance flow:
 1. Create namespace on the context_node
 2. Create context in that namespace
-3. Pre-install the application on joining nodes (if path is provided)
-4. For each joining node: create namespace invitation, join namespace
-5. Contexts are joined automatically via namespace/group auto_join
+3. For each joining node: create namespace invitation, join namespace
+4. Contexts are joined automatically via namespace/group auto_join
 """
 
 import json as json_lib
-import os
-import shutil
-from typing import Any, Optional
+from typing import Any
 
 from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
 from merobox.commands.identity import (
     create_namespace_invitation_via_admin_api,
     generate_identity_via_admin_api,
@@ -87,108 +83,6 @@ class CreateMeshStep(BaseStep):
                 "Namespace the mesh was created under",
             ),
         ]
-
-    def _is_binary_mode(self) -> bool:
-        manager = getattr(self, "manager", None)
-        if manager is None:
-            return False
-        return hasattr(manager, "binary_path") and manager.binary_path is not None
-
-    def _resolve_application_path(self, path: str) -> str:
-        expanded_path = os.path.expanduser(path)
-        return os.path.abspath(expanded_path)
-
-    def _prepare_container_path(
-        self, node_name: str, source_path: str
-    ) -> Optional[str]:
-        container_data_dir: Optional[str] = None
-
-        for pattern in CONTAINER_DATA_DIR_PATTERNS:
-            if "{node_name}" in pattern:
-                candidate = pattern.format(node_name=node_name)
-            else:
-                candidate = None
-
-            if candidate and os.path.exists(candidate):
-                container_data_dir = candidate
-                break
-
-        if not container_data_dir or not os.path.exists(container_data_dir):
-            console.print(
-                f"[red]Container data directory not found for {node_name}[/red]"
-            )
-            return None
-        try:
-            abs_container_data_dir = os.path.abspath(container_data_dir)
-            abs_source_path = os.path.abspath(source_path)
-            if (
-                os.path.commonpath([abs_source_path, abs_container_data_dir])
-                == abs_container_data_dir
-            ):
-                filename = os.path.basename(source_path)
-                return f"/app/data/{filename}"
-        except ValueError:
-            pass
-
-        filename = os.path.basename(source_path)
-        try:
-            os.makedirs(container_data_dir, exist_ok=True)
-            container_file_path = os.path.join(container_data_dir, filename)
-            shutil.copy2(source_path, container_file_path)
-            console.print(
-                f"[blue]Copied file to container data directory: {container_file_path}[/blue]"
-            )
-            return f"/app/data/{filename}"
-        except (OSError, shutil.Error) as error:
-            console.print(
-                f"[red]Failed to copy file to container data directory: {error}[/red]"
-            )
-            return None
-
-    def _install_application_on_node(
-        self, node_name: str, application_path: str
-    ) -> bool:
-        """Install the application WASM on a single node.
-
-        Returns True on success, False on failure.
-        """
-        try:
-            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
-            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
-
-            if self._is_binary_mode():
-                api_result = client.install_dev_application(
-                    path=application_path, metadata=DEFAULT_METADATA
-                )
-            else:
-                container_path = self._prepare_container_path(
-                    node_name, application_path
-                )
-                if not container_path:
-                    console.print(
-                        f"[red]Unable to prepare application file for {node_name}[/red]"
-                    )
-                    return False
-                api_result = client.install_dev_application(
-                    path=container_path, metadata=DEFAULT_METADATA
-                )
-
-            if isinstance(api_result, dict) and "error" in api_result:
-                console.print(
-                    f"[yellow]Warning: install_dev_application returned error for {node_name}: {api_result['error']}[/yellow]"
-                )
-                return False
-
-            console.print(
-                f"  [green]\u2713 Pre-installed application on {node_name}[/green]"
-            )
-            return True
-        except Exception as e:
-            console.print(
-                f"  [yellow]\u26a0\ufe0f Failed to pre-install app on {node_name}: "
-                f"{escape(str(e))}[/yellow]"
-            )
-            return False
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -365,30 +259,6 @@ class CreateMeshStep(BaseStep):
                 dynamic_values["group_id"] = namespace_id
 
         connected_nodes = [context_node]
-
-        # Pre-install application on all joining nodes so context state sync works.
-        # The core join protocol no longer transfers application blobs.
-        # If path not specified, auto-resolve from install_application step.
-        raw_application_path = self.config.get("path")
-        if not raw_application_path:
-            raw_application_path = dynamic_values.get(f"app_path_{context_node}")
-        if raw_application_path:
-            application_path = self._resolve_application_path(raw_application_path)
-            if not os.path.isfile(application_path):
-                console.print(
-                    f"[red]Application path not found or not a file: {application_path}[/red]"
-                )
-                return False
-
-            console.print("\n[bold]Pre-installing application on joining nodes[/bold]")
-            for node_name in nodes:
-                if node_name == context_node:
-                    continue
-                if not self._install_application_on_node(node_name, application_path):
-                    console.print(
-                        f"[red]Failed to pre-install application on {node_name}[/red]"
-                    )
-                    return False
 
         for node_name in nodes:
             if node_name == context_node:
