@@ -402,6 +402,20 @@ steps:
   # The opt-out has to actually opt out. `leave_context` deletes the local
   # `ContextIdentity`, so there is no identity left to execute with and the
   # call is refused rather than quietly served from a stale local state.
+  #
+  # `expected_failure` on a `call` does NOT fail the run on its own: alone
+  # among the step types, `call` only warns when the call succeeds anyway
+  # (workflows use it as a soft "may not have propagated yet" probe and
+  # `workflow-negative-testing-example.yml` pins that leniency on purpose).
+  # So the error export is what asserts here, and the `is_set` below is what
+  # turns "the leave did nothing" into a red run.
+  #
+  # Captured field is `error`, not `error_message`: `error` is seeded in every
+  # failure branch of `_extract_error_info` (the whole rpc error object, or the
+  # transport error string), while `error_message` is left None by a JSON-RPC
+  # error carrying neither `message` nor `data` — which would read as "the leave
+  # did not take effect" on a leave that worked. On an unexpected success every
+  # error field, `error` included, is exported as None.
   - name: Cycle 1 - Node 2 Cannot Read the Channel It Left
     type: call
     node: channel-node-2
@@ -410,6 +424,16 @@ steps:
     args:
       key: msg_1
     expected_failure: true
+    outputs:
+      c1_left_read_error: error
+
+  - name: Cycle 1 - Assert the Left Channel Actually Refused Node 2
+    type: assert
+    statements:
+      - statement: "is_set({{c1_left_read_error}})"
+        message: >
+          Node 2 read the channel it left. `leave_context` did not remove the
+          local identity, or the read was served from stale local state.
 
   # Leaving `general` must not touch `random`. Both live under one
   # namespace and share its governance subscription, so an over-broad
@@ -612,6 +636,8 @@ steps:
     statements:
       - 'json_equal({{read_msg_6_node3}}, {"output": "posted-while-node2-away-2"})'
 
+  # Asserted the same way as cycle 1 — the `expected_failure` warning does
+  # not fail a run, the `is_set` on the exported error does.
   - name: Cycle 2 - Node 2 Cannot Read the Channel It Left
     type: call
     node: channel-node-2
@@ -620,6 +646,16 @@ steps:
     args:
       key: msg_1
     expected_failure: true
+    outputs:
+      c2_left_read_error: error
+
+  - name: Cycle 2 - Assert the Left Channel Actually Refused Node 2
+    type: assert
+    statements:
+      - statement: "is_set({{c2_left_read_error}})"
+        message: >
+          Node 2 read the channel it left on the second cycle. The leave stopped
+          taking effect once the identity rows had been recreated.
 
   - name: Cycle 2 - Node 2 Rejoins the general Channel
     type: join_context

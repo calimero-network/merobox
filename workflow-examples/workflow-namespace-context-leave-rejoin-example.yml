@@ -283,6 +283,13 @@ steps:
       value: also-written-while-node2-away
     executor_public_key: "{{node1_root_key}}"
 
+  # `expected_failure` on a `call` only warns when the call succeeds anyway —
+  # `call` is deliberately lenient so workflows can use it as a soft probe. The
+  # exported error is what asserts: populated on a real failure, None when the
+  # call went through, so `is_set` is what makes a leave that did nothing red.
+  # `error` and not `error_message`, because `error` is seeded in every failure
+  # branch while `error_message` stays None for a JSON-RPC error carrying
+  # neither `message` nor `data` — a false red on a leave that worked.
   - name: Node 2 Cannot Read the Root Context It Left
     type: call
     node: nsctx-node-2
@@ -291,6 +298,17 @@ steps:
     args:
       key: root_1
     expected_failure: true
+    outputs:
+      root_left_read_error: error
+
+  - name: Assert the Left Root Context Actually Refused Node 2
+    type: assert
+    statements:
+      - statement: "is_set({{root_left_read_error}})"
+        message: >
+          Node 2 read the namespace-root context it left. On this placement the
+          namespace key is still held locally, so a leave that fails to delete
+          the local identity leaves the node able to decrypt and serve the read.
 
   # Scope check 1: the sibling context under the same namespace is
   # untouched. `leave_context` unsubscribes from ONE context topic; taking

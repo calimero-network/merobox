@@ -79,7 +79,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `leave_context` unsubscribes from one context topic and an over-broad
   unsubscribe would show up nowhere else. The second cycle is the part no
   upstream scenario reaches: they all stop after one round trip, which cannot
-  tell "rejoin works" from "rejoin works once"
+  tell "rejoin works" from "rejoin works once".
+
+  The leave assertion reads the exported error, not the step verdict:
+  `expected_failure: true` on a `call` does not fail a run when the call
+  succeeds anyway — alone among the step types `call` only warns, deliberately,
+  because workflows use it as a soft "may not have propagated yet" probe and
+  `workflow-negative-testing-example.yml` pins that leniency. So the step
+  captures `error_message` (the message on a real failure, `None` when the call
+  went through) and an `assert` step's `is_set` on it is what turns a leave that
+  did nothing into a red run. Written the obvious way, the one property this
+  scenario exists to pin would never have failed
 
 - **`workflow-namespace-context-leave-rejoin-example.yml` — the same round trip
   at the other place a context can live.** A context attached to the namespace
