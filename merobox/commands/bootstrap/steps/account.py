@@ -570,12 +570,22 @@ class SignWarrantStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"signing the warrant failed: {e}", error=e)
 
+        # Minting refuses too — a credential that certifies a different key than
+        # `device_secret` holds, most usefully — and that refusal is worth
+        # asserting rather than only surviving.
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]Failed to sign a warrant for {method} in {context_id}: "
                 f"{escape(str(result.get('error')))}[/red]"
             )
             return False
+
+        if expected_failure:
+            return self._report_unexpected_success()
 
         data = result["data"]
         console.print(
@@ -665,12 +675,28 @@ class PerformIntentStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"performing the intent failed: {e}", error=e)
 
+        # A refusal is a first-class outcome here, not just an error. The three
+        # things this endpoint refuses — a relay holding no authorship grant, a
+        # warrant that does not cover the intent, and a warrant already spent —
+        # are each worth asserting positively, and a scenario that can only
+        # assert acceptance cannot show that the grant is load-bearing.
+        #
+        # Pair it with `expected_error` in anything that matters: without one,
+        # an unreachable node satisfies the same assertion as the refusal under
+        # test.
+        expected_failure = self._is_expected_failure()
+
         if not result["success"]:
+            if expected_failure:
+                return self._report_expected_failure(self._failure_detail(result))
             console.print(
                 f"[red]{node_name} could not perform {method} in {context_id}: "
                 f"{escape(str(result.get('error')))}[/red]"
             )
             return False
+
+        if expected_failure:
+            return self._report_unexpected_success()
 
         data = result["data"]
         console.print(
