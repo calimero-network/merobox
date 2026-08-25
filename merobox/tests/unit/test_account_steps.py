@@ -753,3 +753,93 @@ class TestPerformIntentStep:
         )
         step = _step(PerformIntentStep, self.config, client)
         assert _run(step.execute({}, {})) is False
+
+
+class TestPerformIntentExpectedFailure:
+    """A refusal is a first-class outcome, and the RIGHT refusal at that.
+
+    The endpoint refuses three things worth asserting positively — a relay with
+    no authorship grant, a warrant that does not cover the intent, and one
+    already spent. A scenario that can only assert acceptance cannot show the
+    grant is load-bearing, which is the whole point of granting it.
+    """
+
+    def setup_method(self):
+        self.config = {
+            "type": "perform_intent",
+            "name": "Delegate",
+            "node": "calimero-node-1",
+            "context_id": WARRANT_CONTEXT,
+            "method": "set",
+            "args": {"key": "k"},
+            "warrant": "aa" * 8,
+            "author_proof": WARRANT_CREDENTIAL,
+            "expected_failure": True,
+        }
+
+    def _refusing(self, message):
+        client = MagicMock()
+        client.perform_intent.side_effect = RuntimeError(message)
+        return client
+
+    def test_a_refusal_passes_when_it_is_expected(self):
+        step = _step(
+            PerformIntentStep,
+            self.config,
+            self._refusing("the executor holds no CAN_AUTHOR_ON_BEHALF grant"),
+        )
+        assert _run(step.execute({}, {})) is True
+
+    def test_the_expected_error_must_actually_match(self):
+        """Otherwise an unreachable node satisfies the refusal under test.
+
+        This is the assertion that makes `expected_failure` worth having rather
+        than merely permissive: a connection error and a `403` are both failures,
+        and only one of them is evidence.
+        """
+        step = _step(
+            PerformIntentStep,
+            {**self.config, "expected_error": "CAN_AUTHOR_ON_BEHALF"},
+            self._refusing("connection refused"),
+        )
+        assert _run(step.execute({}, {})) is False
+
+        step = _step(
+            PerformIntentStep,
+            {**self.config, "expected_error": "CAN_AUTHOR_ON_BEHALF"},
+            self._refusing("the executor holds no CAN_AUTHOR_ON_BEHALF grant"),
+        )
+        assert _run(step.execute({}, {})) is True
+
+    def test_an_unexpected_success_fails_the_step(self):
+        """A warrant that should have been refused and was not is the worst
+        outcome of the three, so it must not read as a pass."""
+        client = MagicMock()
+        client.perform_intent.return_value = _envelope(
+            {"rootHash": "abc", "returns": None}
+        )
+        step = _step(PerformIntentStep, self.config, client)
+        assert _run(step.execute({}, {})) is False
+
+
+class TestSignWarrantExpectedFailure:
+    def test_a_refused_mint_passes_when_expected(self):
+        module = MagicMock()
+        module.sign_warrant = MagicMock(
+            side_effect=ValueError("this credential certifies a different key")
+        )
+        step = SignWarrantStep(
+            {
+                "type": "sign_warrant",
+                "name": "Mint",
+                "context_id": WARRANT_CONTEXT,
+                "executor": WARRANT_ACCOUNT,
+                "method": "set",
+                "device_secret": WARRANT_SECRET,
+                "credential": WARRANT_CREDENTIAL,
+                "expected_failure": True,
+                "expected_error": "certifies a different key",
+            }
+        )
+        with patch.dict(sys.modules, {"calimero_client_py": module}):
+            assert _run(step.execute({}, {})) is True
