@@ -91,7 +91,6 @@ class TestKeysTheExecutorsActuallyRead:
                 "context_node": "n1",
                 "application_id": "app",
                 "nodes": ["n1", "n2"],
-                "path": "res/app.wasm",
             },
             {
                 "type": "create_context",
@@ -204,3 +203,53 @@ def test_every_step_model_forbids_extras():
         if model.model_config.get("extra") != "forbid"
     ]
     assert permissive == []
+
+
+class TestLeaveStepsAreModelled:
+    """The three leave steps had no entry in `STEP_TYPE_MODELS`, so the
+    unknown-key gate skipped them entirely — `model_class` came back None and
+    `validate_workflow_step` returned no errors for any spelling at all. A step
+    type that opts out of the gate is the same silent-drop hole under a
+    different name."""
+
+    @pytest.mark.parametrize(
+        "step",
+        [
+            {"type": "leave_context", "node": "n1", "context_id": "c"},
+            {"type": "leave_group", "node": "n1", "group_id": "g"},
+            {"type": "leave_namespace", "node": "n1", "namespace_id": "ns"},
+        ],
+    )
+    def test_the_documented_form_validates(self, step):
+        assert _errors(step) == []
+
+    @pytest.mark.parametrize(
+        ("step", "typo"),
+        [
+            ({"type": "leave_context", "node": "n1", "contex_id": "c"}, "contex_id"),
+            ({"type": "leave_group", "node": "n1", "grup_id": "g"}, "grup_id"),
+            (
+                {"type": "leave_namespace", "node": "n1", "namespace": "ns"},
+                "namespace",
+            ),
+        ],
+    )
+    def test_a_misspelled_id_is_rejected(self, step, typo):
+        errors = _errors(step)
+        assert any(f"unknown field '{typo}'" in e for e in errors), errors
+
+    def test_leaving_a_group_by_context_id_is_not_silently_accepted(self):
+        """The ids are not interchangeable — `leave_group` on a context id
+        would target nothing, and the key naming it must fail rather than be
+        dropped."""
+        errors = _errors(
+            {"type": "leave_group", "node": "n1", "context_id": "c", "group_id": "g"}
+        )
+        assert any("unknown field 'context_id'" in e for e in errors), errors
+
+
+def test_every_valid_step_type_that_has_a_model_is_reachable():
+    """A step type absent from `STEP_TYPE_MODELS` silently bypasses the gate,
+    so the leave family staying modelled is worth pinning."""
+    for step_type in ("leave_context", "leave_group", "leave_namespace"):
+        assert step_type in STEP_TYPE_MODELS

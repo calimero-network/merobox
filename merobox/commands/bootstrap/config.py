@@ -51,6 +51,8 @@ VALID_STEP_TYPES = frozenset(
         "account_pair",
         "account_revoke",
         "node_identity",
+        "sign_warrant",
+        "perform_intent",
         "node_exec",
         "create_group_in_namespace",
         "list_namespace_groups",
@@ -350,6 +352,49 @@ class JoinSubgroupInheritanceStepConfig(BaseStepConfig):
     type: Literal["join_subgroup_inheritance"] = "join_subgroup_inheritance"
     node: str = Field(..., description="Target node")
     group_id: str = Field(..., description="Open subgroup ID to join via inheritance")
+
+
+# The three leave steps below had no model at all, so `extra="forbid"` never
+# reached them: a misspelled key on a leave step was dropped in silence, which
+# is the failure `extra="forbid"` exists to prevent. The step classes already
+# declare the same required fields at runtime; these mirror them so the gate
+# fires before any container starts.
+class LeaveContextStepConfig(BaseStepConfig):
+    """Configuration for leave_context step.
+
+    Node-local opt-out from one context: stops sync and disarms
+    auto-follow on this node only, publishes no governance op, and is
+    reversed by `join_context`.
+    """
+
+    type: Literal["leave_context"] = "leave_context"
+    node: str = Field(..., description="Node that leaves the context")
+    context_id: str = Field(..., description="Context ID to leave")
+
+
+class LeaveGroupStepConfig(BaseStepConfig):
+    """Configuration for leave_group step.
+
+    Voluntary self-leave from a subgroup, publishing `MemberLeft`. The
+    caller must be a direct member, not the owner, and not the last
+    admin. Namespace roots are rejected — use `leave_namespace`.
+    """
+
+    type: Literal["leave_group"] = "leave_group"
+    node: str = Field(..., description="Node that leaves the group")
+    group_id: str = Field(..., description="Subgroup ID to leave")
+
+
+class LeaveNamespaceStepConfig(BaseStepConfig):
+    """Configuration for leave_namespace step.
+
+    Voluntary self-leave from a namespace root, cascading through every
+    descendant group the caller holds a direct row in.
+    """
+
+    type: Literal["leave_namespace"] = "leave_namespace"
+    node: str = Field(..., description="Node that leaves the namespace")
+    namespace_id: str = Field(..., description="Namespace ID to leave")
 
 
 class CallStep(BaseStepConfig):
@@ -1105,6 +1150,63 @@ class AccountRevokeStepConfig(BaseStepConfig):
     )
 
 
+class SignWarrantStepConfig(BaseStepConfig):
+    """Configuration for sign_warrant step."""
+
+    type: Literal["sign_warrant"] = "sign_warrant"
+    context_id: str = Field(
+        ..., description="Context the intent runs in, base58 (not hex)"
+    )
+    executor: str = Field(
+        ...,
+        description="Account allowed to spend this warrant, hex — the relay's, "
+        "from node_identity's accountId output",
+    )
+    method: str = Field(..., description="The method the warrant authorises")
+    args: Optional[dict] = Field(
+        None, description="Arguments the warrant commits to, as a mapping"
+    )
+    device_secret: str = Field(
+        ...,
+        description="The author's device signing secret, 64 hex chars. Signs the "
+        "warrant and is never sent anywhere",
+    )
+    credential: str = Field(
+        ...,
+        description="Hex device credential proving that key belongs to the "
+        "author's account (`merod account sign-cert`)",
+    )
+    nonce: Optional[int] = Field(
+        1, description="Monotonic per author device; a warrant is single-use"
+    )
+    valid_for: Optional[int] = Field(
+        300, description="Seconds the relay will still spend it for"
+    )
+
+    # No `node`: minting contacts nothing, and the signing key must never reach
+    # a node. See the step's docstring.
+
+
+class PerformIntentStepConfig(BaseStepConfig):
+    """Configuration for perform_intent step."""
+
+    type: Literal["perform_intent"] = "perform_intent"
+    node: str = Field(..., description="The relay: the node that runs the method")
+    context_id: str = Field(..., description="Context to run in")
+    method: str = Field(..., description="Method to run — must match the warrant")
+    args: Optional[dict] = Field(
+        None, description="Arguments — must match what the warrant committed to"
+    )
+    warrant: str = Field(
+        ..., description="Hex warrant, from a sign_warrant step's output"
+    )
+    author_proof: str = Field(
+        ...,
+        description="The author's hex device credential — the same one the "
+        "warrant was signed against",
+    )
+
+
 class NodeIdentityStepConfig(BaseStepConfig):
     """Configuration for node_identity step."""
 
@@ -1662,9 +1764,6 @@ class CreateMeshStep(BaseStepConfig):
     application_id: str = Field(..., description="Application ID")
     nodes: list[str] = Field(..., description="List of nodes to include in mesh")
     params: Optional[str] = Field(None, description="Initialization params JSON string")
-    path: Optional[str] = Field(
-        None, description="WASM path to pre-install on the joining nodes"
-    )
 
 
 class FuzzyTestStep(BaseStepConfig):
@@ -1712,10 +1811,15 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "join_context": JoinContextStepConfig,
     "join_subgroup_inheritance": JoinSubgroupInheritanceStepConfig,
     "join_open": JoinStep,
+    "leave_context": LeaveContextStepConfig,
+    "leave_group": LeaveGroupStepConfig,
+    "leave_namespace": LeaveNamespaceStepConfig,
     "list_namespaces": ListNamespacesStepConfig,
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
     "account_revoke": AccountRevokeStepConfig,
+    "sign_warrant": SignWarrantStepConfig,
+    "perform_intent": PerformIntentStepConfig,
     "node_identity": NodeIdentityStepConfig,
     "node_exec": NodeExecStepConfig,
     "create_group_in_namespace": CreateGroupInNamespaceStepConfig,
@@ -1977,6 +2081,10 @@ class WorkflowConfig(BaseModel):
     )
     nuke_on_end: Optional[bool] = Field(
         False, description="Nuke all data after workflow"
+    )
+    fail_on_panic: Optional[bool] = Field(
+        True,
+        description="Fail the workflow if any node logged a panic (default true)",
     )
     stop_all_nodes: Optional[bool] = Field(
         False, description="Stop all nodes at the end"

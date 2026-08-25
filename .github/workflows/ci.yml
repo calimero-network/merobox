@@ -152,8 +152,16 @@ jobs:
           # satisfies both lanes; docker mode (merod:edge) keeps full coverage.
           # Re-add here once a core release carries the account rename —
           # 0.11.0-rc.20 and the pending rc.21 both predate it.
+          # delegated-authorship needs a merod carrying POST
+          # /admin-api/contexts/:context_id/intents. The docker lane gets it from
+          # merod:edge; binary mode downloads a RELEASE, which predates it — the
+          # run reaches the relay step and takes a 404. Note the version string
+          # does not distinguish them: both report 0.11.0-rc.25, and only the
+          # build hash differs (edge 5cc9668 vs release d630815). Re-add here once
+          # a core release carries the endpoint.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
+            grep -v delegated-authorship | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \

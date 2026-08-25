@@ -19,6 +19,7 @@ calimero-client-py 0.6.20. Going through the client keeps the token cache, the
 error mapping and the connection handling this layer exists to provide.
 """
 
+import json
 from typing import Any
 
 from rich.markup import escape
@@ -59,6 +60,49 @@ class _AccountStepBase(BaseStep):
     def _resolved(self, key: str, dynamic_values: dict[str, Any]) -> str:
         """Resolve a placeholder-bearing field to a plain string."""
         return str(self._resolve_dynamic_value(self.config[key], {}, dynamic_values))
+
+    def _resolved_args(self, dynamic_values: dict[str, Any]) -> str:
+        """The step's `args:` mapping as the JSON string the client takes.
+
+        A JSON *string* rather than a dict because that is `calimero-client-py`'s
+        signature, and because the warrant commits to `H(method, args)`: both this
+        side and the node parse and re-serialize, so the bytes agree regardless of
+        how a scenario spelled the mapping. Passing the text through untouched
+        would make a re-indented but identical `args:` mint a warrant that
+        verifies nowhere.
+        """
+        args = self.config.get("args", {})
+        resolved = self._resolve_args_recursively(args, dynamic_values)
+        return json.dumps(resolved)
+
+    def _resolve_args_recursively(self, value: Any, dynamic_values: dict[str, Any]):
+        """Resolve `{{placeholders}}` anywhere inside a nested args structure."""
+        if isinstance(value, dict):
+            return {
+                key: self._resolve_args_recursively(item, dynamic_values)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                self._resolve_args_recursively(item, dynamic_values) for item in value
+            ]
+        if isinstance(value, str):
+            return self._resolve_dynamic_value(value, {}, dynamic_values)
+        return value
+
+    def _require_args_mapping(self) -> None:
+        """`args:` is optional, but when present it must be a mapping.
+
+        Checked here rather than left to the client: a list or a bare string would
+        reach `sign_warrant` as valid JSON of the wrong shape, mint a warrant
+        committing to it, and be refused by the node as an intent mismatch — a
+        long way from the line that caused it.
+        """
+        if "args" in self.config and not isinstance(self.config["args"], dict):
+            step_name = self.config.get(
+                "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+            )
+            raise ValueError(f"Step '{step_name}': 'args' must be a dictionary")
 
     def _finish(
         self,
@@ -416,4 +460,249 @@ class NodeIdentityStep(_AccountStepBase):
         )
         return self._finish(
             node_name, "identity", data, workflow_results, dynamic_values
+        )
+
+
+class SignWarrantStep(_AccountStepBase):
+    """Mint a warrant: a member's signed consent for one delegated write.
+
+    Delegated authorship exists for a holder that has **no node** — a device with
+    only a signing key, which can neither run the application (the runtime is a
+    JIT) nor decrypt the state (it never received a scope key). What makes such a
+    member the author of its own writes is a warrant it signs, which travels with
+    the change so every peer can check it consented.
+
+    This step contacts nothing. It signs with `device_secret` and returns bytes,
+    and that is the whole point rather than a convenience: a node that held the
+    signing key could forge writes in the member's name, so the key must never
+    reach the node that runs the request. No `node:` field, for the same reason —
+    there is nothing for one to do here.
+
+    **The key material comes from the scenario, deliberately.** merobox cannot
+    mint it: `account_pair` binds a device to a *node* and never hands the secret
+    out, which is correct. A scenario supplies either a fixed test credential (a
+    fixture, as core's own delegated-authorship scenario does) or one minted
+    out-of-band by `merod account sign-cert`. Providing the step without
+    providing the keys is the right split — merobox is the channel, not the
+    holder.
+
+    Note the encodings, which are core's and are not interchangeable:
+    `context_id` is base58 and `executor` is hex. The author's account is read
+    out of `credential` rather than configured, because a scenario that states it
+    separately is one that can state it inconsistently.
+
+    Requires calimero-client-py with the `sign_warrant` binding, and core with
+    the warrant types.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["context_id", "executor", "method", "device_secret", "credential"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(
+            ("context_id", "executor", "method", "device_secret", "credential")
+        )
+        self._require_args_mapping()
+
+    def _get_exportable_variables(self):
+        return [
+            (
+                "warrant",
+                "warrant_{node_name}",
+                "Hex-encoded warrant, ready for a perform_intent step",
+            ),
+            (
+                "authorAccount",
+                "warrant_author_account_{node_name}",
+                "Account the write will be attributed to — add it as a member first",
+            ),
+            (
+                "authorDeviceKey",
+                "warrant_author_device_{node_name}",
+                "The author's device key: the CRDT replica the change lands under",
+            ),
+            (
+                "intentHash",
+                "warrant_intent_hash_{node_name}",
+                "H(method, args) — what the signature commits to, not the plaintext",
+            ),
+            (
+                "notAfter",
+                "warrant_not_after_{node_name}",
+                "Unix seconds after which a relay refuses to spend it",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        context_id = self._resolved("context_id", dynamic_values)
+        executor = self._resolved("executor", dynamic_values)
+        method = self._resolved("method", dynamic_values)
+        device_secret = self._resolved("device_secret", dynamic_values)
+        credential = self._resolved("credential", dynamic_values)
+        args = self._resolved_args(dynamic_values)
+        nonce = int(self.config.get("nonce", 1))
+        valid_for = int(self.config.get("valid_for", 300))
+
+        try:
+            from calimero_client_py import sign_warrant
+
+            data = self._data(
+                sign_warrant(
+                    context_id=context_id,
+                    executor=executor,
+                    method=method,
+                    args=args,
+                    nonce=nonce,
+                    device_secret=device_secret,
+                    credential=credential,
+                    valid_for=valid_for,
+                )
+            )
+            result = ok(data)
+        except ImportError as e:
+            result = fail(
+                "this calimero-client-py has no sign_warrant binding; "
+                f"upgrade it to mint warrants: {e}",
+                error=e,
+            )
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"signing the warrant failed: {e}", error=e)
+
+        # Minting refuses too — a credential that certifies a different key than
+        # `device_secret` holds, most usefully — and that refusal is worth
+        # asserting rather than only surviving.
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                return self._report_expected_failure(self._failure_detail(result))
+            console.print(
+                f"[red]Failed to sign a warrant for {method} in {context_id}: "
+                f"{escape(str(result.get('error')))}[/red]"
+            )
+            return False
+
+        if expected_failure:
+            return self._report_unexpected_success()
+
+        data = result["data"]
+        console.print(
+            f"[green]✓[/green] warrant signed for {method} in {context_id} "
+            f"by {data.get('authorAccount')} (nonce {nonce}), "
+            f"spendable by {executor}"
+        )
+        # Keyed on the executor rather than a node: this step has no node, and
+        # two warrants in one scenario are told apart by who may spend them.
+        return self._finish(
+            executor, "signed_warrant", data, workflow_results, dynamic_values
+        )
+
+
+class PerformIntentStep(_AccountStepBase):
+    """Have a node run one method on a member's behalf, under their warrant.
+
+    The relay executes and signs the envelope with its own key; the change is
+    attributed to the **author**. Both halves are on the wire, so every peer
+    re-checks that the member consented rather than taking the relay's word.
+
+    Only the author's half is sent — the warrant and the proof its signing key is
+    a device of the account it names. The node attaches its own credential, so a
+    scenario never has to learn which of the node's processes runs the intent,
+    and the node re-keying does not void a warrant already minted.
+
+    Two things a scenario has to get right first, because neither is implied:
+
+    * the author's **account** must be a member of the group owning the context
+      (`add_group_members` takes an account, and the author's device joins
+      nothing — it is in no group's binding rows and never will be);
+    * the relay must hold `CAN_AUTHOR_ON_BEHALF` on that group. It is not implied
+      by membership and not implied by admin, and without it this is refused
+      before anything executes.
+
+    A warrant is single-use. Presenting a spent one is refused, which is the
+    point of the nonce ledger: the signature stays valid forever, so replay is
+    not forgery and the envelope check cannot be what stops it.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "context_id", "method", "warrant", "author_proof"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(
+            ("node", "context_id", "method", "warrant", "author_proof")
+        )
+        self._require_args_mapping()
+
+    def _get_exportable_variables(self):
+        return [
+            (
+                "rootHash",
+                "intent_root_hash_{node_name}",
+                "The context's scope root after the run — how a scenario sees it wrote",
+            ),
+            (
+                "returns",
+                "intent_returns_{node_name}",
+                "The method's own return value",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+        context_id = self._resolved("context_id", dynamic_values)
+        method = self._resolved("method", dynamic_values)
+        warrant = self._resolved("warrant", dynamic_values)
+        author_proof = self._resolved("author_proof", dynamic_values)
+        args = self._resolved_args(dynamic_values)
+
+        try:
+            data = self._data(
+                self._client(node_name).perform_intent(
+                    context_id, method, args, warrant, author_proof
+                )
+            )
+            result = ok(data)
+        except AttributeError as e:
+            result = fail(
+                "this calimero-client-py has no perform_intent binding; "
+                f"upgrade it to run delegated intents: {e}",
+                error=e,
+            )
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"performing the intent failed: {e}", error=e)
+
+        # A refusal is a first-class outcome here, not just an error. The three
+        # things this endpoint refuses — a relay holding no authorship grant, a
+        # warrant that does not cover the intent, and a warrant already spent —
+        # are each worth asserting positively, and a scenario that can only
+        # assert acceptance cannot show that the grant is load-bearing.
+        #
+        # Pair it with `expected_error` in anything that matters: without one,
+        # an unreachable node satisfies the same assertion as the refusal under
+        # test.
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                return self._report_expected_failure(self._failure_detail(result))
+            console.print(
+                f"[red]{node_name} could not perform {method} in {context_id}: "
+                f"{escape(str(result.get('error')))}[/red]"
+            )
+            return False
+
+        if expected_failure:
+            return self._report_unexpected_success()
+
+        data = result["data"]
+        console.print(
+            f"[green]✓[/green] {node_name} performed {method} in {context_id} "
+            f"on a member's behalf (root {data.get('rootHash')})"
+        )
+        return self._finish(
+            node_name, "performed_intent", data, workflow_results, dynamic_values
         )

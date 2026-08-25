@@ -64,7 +64,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bootstrap` block are rejected rather than ignored, so a `nat_mode` carried over
   by copy-paste fails validation instead of silently configuring nothing.
 
+### Added
+
+- **`workflow-channel-leave-rejoin-example.yml` — the leave/rejoin cycle a chat
+  app actually performs.** No shipped workflow used `leave_context`,
+  `leave_group` or `leave_namespace` at all, so every leave path merobox can
+  drive was covered only by scenarios living in calimero-network/core. This one
+  joins a born-Open channel by inheritance, leaves it with `leave_context`,
+  rejoins with `join_context`, and does it TWICE — asserting on each cycle that
+  the leave takes effect (a call against the left context fails), that the
+  rejoin delivers both the away-window messages and the pre-leave history, and
+  that the rejoiner can author again. A second channel under the same namespace
+  runs alongside as a control, written and read while the first is left, because
+  `leave_context` unsubscribes from one context topic and an over-broad
+  unsubscribe would show up nowhere else. The second cycle is the part no
+  upstream scenario reaches: they all stop after one round trip, which cannot
+  tell "rejoin works" from "rejoin works once".
+
+  The leave assertion reads the exported error, not the step verdict:
+  `expected_failure: true` on a `call` does not fail a run when the call
+  succeeds anyway — alone among the step types `call` only warns, deliberately,
+  because workflows use it as a soft "may not have propagated yet" probe and
+  `workflow-negative-testing-example.yml` pins that leniency. So the step
+  captures `error_message` (the message on a real failure, `None` when the call
+  went through) and an `assert` step's `is_set` on it is what turns a leave that
+  did nothing into a red run. Written the obvious way, the one property this
+  scenario exists to pin would never have failed
+
+- **`workflow-namespace-context-leave-rejoin-example.yml` — the same round trip
+  at the other place a context can live.** A context attached to the namespace
+  ROOT rejoins down a different branch than one in a subgroup:
+  `join_context` resolves the joiner as `MembershipPath::Direct` and skips the
+  inherited-joiner key pull entirely, so a rejoin proven in a subgroup proves
+  nothing here. Nothing covered this placement — `group-leave-context.yml`
+  upstream and the channel example above both attach to a subgroup. Adds the
+  two scope checks the placement makes possible: while out of the root context
+  the leaver keeps using a subgroup context under the same namespace, AND joins
+  a context created after it left, so a marker consulted too broadly or a
+  namespace-wide unsubscribe fails here instead of looking like slow sync
+
 ### Changed
+
+- **The three leave steps are schema-modelled.** `leave_context`, `leave_group`
+  and `leave_namespace` were valid step types with no entry in
+  `STEP_TYPE_MODELS`, so the `extra="forbid"` gate never reached them: a
+  misspelled `contex_id` was dropped in silence and the run went green having
+  left nothing. They now validate their own fields like every other step. Six
+  types are still unmodelled (`start_node`, `stop_node`, `tee_fleet_join`,
+  `set_tee_admission_policy`, `assert_tee_member`, `assert_not_member`) and have
+  the same hole
 
 - **Requires `calimero-client-py>=0.6.31`.** calimero-network/core#3598 renamed
   the id `POST admin-api/namespaces/:id/join` returns from `groupId` to

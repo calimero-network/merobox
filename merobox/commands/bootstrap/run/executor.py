@@ -408,6 +408,14 @@ class WorkflowExecutor:
                 self._handle_failure_exit(stop_all_nodes)
                 return False
 
+            # A node that panicked is a bug even when every step passed, and
+            # nothing else in the run looks: assertions read RPC responses, not
+            # logs. Checked before teardown so it does not depend on which stop
+            # path runs, and on the success path only - a failing workflow has
+            # already reported a cause worth more than this one.
+            if not self._assert_no_node_panicked():
+                return False
+
             # Step 5: Stop all nodes if requested (at end) - only if we have local nodes
             if has_local_nodes:
                 if stop_all_nodes:
@@ -749,6 +757,34 @@ class WorkflowExecutor:
         if stop_all_nodes:
             self._stop_nodes_on_failure()
         self._teardown_topology_if_present()
+
+    def _assert_no_node_panicked(self) -> bool:
+        """False when a node logged a panic and the workflow opted into the check.
+
+        Default on: a scenario that means to panic a node says `fail_on_panic:
+        false`, which is visible in review, where a silently missing check is not.
+        """
+        if not self.config.get("fail_on_panic", True):
+            return True
+        if self.manager is None or getattr(self.manager, "client", None) is None:
+            return True
+        try:
+            panics = self.manager.scan_nodes_for_panics()
+        except Exception as e:
+            console.print(f"[yellow]⚠️  Could not scan for panics: {str(e)}[/yellow]")
+            return True
+        # Count first, and fail only on a positive one: the gate must never
+        # fail a run for any reason other than a panic it can name.
+        total = sum(len(v) for v in panics.values()) if isinstance(panics, dict) else 0
+        if not total:
+            return True
+        console.print(
+            f"\n[bold red]❌ {total} panic(s) across {len(panics)} node(s)[/bold red]"
+        )
+        for node, msgs in panics.items():
+            for m in msgs:
+                console.print(f"  [red]{node}: {escape(m)}[/red]")
+        return False
 
     def _export_node_logs(self) -> None:
         """Persist logs of all running nodes to ``data/container-logs/``.
@@ -2260,12 +2296,16 @@ class WorkflowExecutor:
             "account_pair",
             "account_revoke",
             "node_identity",
+            "sign_warrant",
+            "perform_intent",
         ):
             from merobox.commands.bootstrap.steps.account import (
                 AccountCreateStep,
                 AccountPairStep,
                 AccountRevokeStep,
                 NodeIdentityStep,
+                PerformIntentStep,
+                SignWarrantStep,
             )
 
             return {
@@ -2273,6 +2313,8 @@ class WorkflowExecutor:
                 "account_pair": AccountPairStep,
                 "account_revoke": AccountRevokeStep,
                 "node_identity": NodeIdentityStep,
+                "sign_warrant": SignWarrantStep,
+                "perform_intent": PerformIntentStep,
             }[step_type](step_config, **common_kwargs)
         if step_type == "node_exec":
             from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
