@@ -436,3 +436,104 @@ class TestNodeExecUsesTheRecordedDataDir:
         )
         assert _run(step.execute({}, {})) is False
         manager.client.containers.create.assert_not_called()
+
+
+#: What `merod account sign-cert --generate` prints: the credential first, then
+#: the three values it minted. Two of them are needed together, which is the
+#: whole reason `capture` exists — `stdout_first_line` reaches only the first.
+SIGN_CERT_STDOUT = """02b2a942ff4c98718bed76e2559
+Account: 0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30
+Device:  4d0774b93e8028899a745dbe03d7727fa31fc2f060945b5789cb36c23cba3803
+Secret:  4987ccd0fb7ef36bf7f61e8f99fd150d33e6adac47649f23bfd7109c2e36a3ba
+
+Hand this to the device it names.
+"""
+
+
+class TestNodeExecCaptureValidation:
+    def setup_method(self):
+        self.config = {
+            "type": "node_exec",
+            "name": "Mint",
+            "node": "calimero-node-2",
+            "args": ["account", "sign-cert", "--generate"],
+        }
+
+    def test_capture_must_be_a_mapping(self):
+        with pytest.raises(ValueError, match="capture"):
+            NodeExecStep({**self.config, "capture": ["Secret: (.*)"]})
+
+    def test_an_invalid_regex_is_refused_up_front(self):
+        with pytest.raises(ValueError, match="not a valid regex"):
+            NodeExecStep({**self.config, "capture": {"secret": "Secret: ("}})
+
+    @pytest.mark.parametrize("pattern", ["^Secret: +[0-9a-f]+$", "^(S)(ecret): (.+)$"])
+    def test_exactly_one_group_is_required(self, pattern):
+        """Zero groups can never yield a value; two is ambiguous.
+
+        Checked before the command runs, so the scenario fails on the step that
+        is wrong rather than after a container has done real work.
+        """
+        with pytest.raises(ValueError, match="one capturing group"):
+            NodeExecStep({**self.config, "capture": {"secret": pattern}})
+
+
+class TestNodeExecCapture:
+    def setup_method(self):
+        self.config = {
+            "type": "node_exec",
+            "name": "Mint",
+            "node": "calimero-node-2",
+            "args": ["account", "sign-cert", "--generate"],
+            "capture": {
+                "credential": r"^([0-9a-f]{20,})$",
+                "author_secret": r"^Secret: +([0-9a-f]{64})$",
+                "author_account": r"^Account: +([0-9a-f]{64})$",
+            },
+        }
+
+    def _step(self, manager, config=None):
+        return NodeExecStep(config or self.config, manager=manager)
+
+    def test_it_pulls_every_named_field_out_of_stdout(self, tmp_path):
+        manager = _manager(tmp_path)
+        stub = _stub_container(stdout=SIGN_CERT_STDOUT)
+        with patch.object(manager.client.containers, "create", return_value=stub):
+            results = {}
+            assert _run(self._step(manager).execute(results, {})) is True
+
+        data = results["exec_calimero-node-2"]
+        assert data["credential"] == "02b2a942ff4c98718bed76e2559"
+        assert (
+            data["author_secret"]
+            == "4987ccd0fb7ef36bf7f61e8f99fd150d33e6adac47649f23bfd7109c2e36a3ba"
+        )
+        assert (
+            data["author_account"]
+            == "0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30"
+        )
+        # The built-ins still work alongside it.
+        assert data["stdout_first_line"] == "02b2a942ff4c98718bed76e2559"
+
+    def test_a_pattern_that_matches_nothing_fails_the_step(self, tmp_path):
+        """Not an empty export.
+
+        Exporting `''` would carry an unresolved value into whatever consumed it
+        and fail somewhere else — a literal `{{author_secret}}` reaching an API
+        three steps later, which is how this class of bug gets diagnosed by
+        inference instead of by reading.
+        """
+        manager = _manager(tmp_path)
+        stub = _stub_container(stdout="Account: abc\n")
+        config = {**self.config, "capture": {"author_secret": r"^Secret: +(.+)$"}}
+        with patch.object(manager.client.containers, "create", return_value=stub):
+            assert _run(self._step(manager, config).execute({}, {})) is False
+
+    def test_no_capture_is_unchanged(self, tmp_path):
+        manager = _manager(tmp_path)
+        stub = _stub_container(stdout=SIGN_CERT_STDOUT)
+        config = {k: v for k, v in self.config.items() if k != "capture"}
+        with patch.object(manager.client.containers, "create", return_value=stub):
+            results = {}
+            assert _run(self._step(manager, config).execute(results, {})) is True
+        assert "author_secret" not in results["exec_calimero-node-2"]
