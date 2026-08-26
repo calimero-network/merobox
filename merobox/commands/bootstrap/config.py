@@ -1088,6 +1088,13 @@ class NodeExecStepConfig(BaseStepConfig):
         description="Files to write under /app/data before running, "
         "as container path -> contents",
     )
+    capture: Optional[dict[str, str]] = Field(
+        None,
+        description="Named fields to pull out of stdout, as name -> regex with "
+        "exactly one capturing group. For commands printing several values, "
+        "where `stdout_first_line` reaches only the first. A pattern that "
+        "matches nothing fails the step rather than exporting an empty value",
+    )
     allow_running: Optional[bool] = Field(
         None,
         description="Run even if the node is up. Unsafe for anything that opens "

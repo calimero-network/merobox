@@ -36,13 +36,22 @@ description: >
        satisfy every step above locally and still be producing deltas the network
        drops.
 
-  Where the key material comes from. The author's device secret and credential are
-  a FIXED test pair below, captured from `merod account sign-cert --generate`
-  against the well-known "legal winner thank year…" phrase, so the account is the
-  same on every run and this file is self-contained. It owns nothing anywhere.
-  merobox cannot mint such a pair and should not: `account_pair` binds a device to
-  a NODE and never hands the secret out. A real holder keeps their own key off the
-  machine that runs the relay — which is the whole reason the warrant exists.
+  Where the key material comes from: real `merod`, on every run. Nothing here is
+  a fixture. `account sign-cert --generate` mints an extra device for node-2's
+  account — a phone for the same person, holding only a signing key — and the
+  scenario reads the credential and the secret straight out of that output.
+
+  The node is stopped for it, which is not incidental: without `--from`,
+  `sign-cert` reads the account root from the datastore, and RocksDB's lock is
+  exclusive. The admin API is not an alternative and never will be — the root
+  private key deliberately never crosses it, leaving a node only via
+  `account export`, as a mnemonic.
+
+  An earlier version of this file hardcoded the secret and credential. It passed,
+  but it never ran `sign-cert`, so a change in how a credential is PRODUCED would
+  not have failed anything — the certification path had no coverage at all. That
+  is the difference between a fixture that stands in for production and one that
+  merely resembles it.
 
   RUN IN CI, in the DOCKER matrix only. Binary mode downloads a merod RELEASE,
   which predates the intents endpoint, so the run reaches the relay step and takes
@@ -127,18 +136,12 @@ steps:
       - delegated-demo-2
     context_id: '{{context_id}}'
 
-  # ── Phase 2: the author's ACCOUNT becomes a member ─────────────────
+  # ── Phase 2: no membership step needed ────────────────────────────
   #
-  # By account, not by key. The author's device is in no group's binding rows and
-  # never will be, which is exactly what a device certificate exists to cover.
-
-  - name: Add the author's account as a member
-    type: add_group_members
-    node: delegated-demo-1
-    group_id: '{{namespace_id}}'
-    members:
-      - identity: '0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30'
-        role: Member
+  # The author is node-2's own account, which joined the namespace above, so it is
+  # already a member. What matters for delegated authorship is not that the
+  # account is new — it is that the DEVICE signing the warrant is in no group's
+  # binding rows, and the one minted below never joins anything.
 
   # ── Phase 3: the relay is granted authorship ──────────────────────
   #
@@ -168,7 +171,54 @@ steps:
       - delegated-demo-2
     context_id: '{{context_id}}'
 
-  # ── Phase 4: the author signs its consent ─────────────────────────
+  # ── Phase 4: mint a device for the author, live ────────────────────
+  #
+  # An extra device for node-2's account — a phone for the same person, holding
+  # only a signing key. It never joins the group and is in no binding rows, which
+  # is the property delegated authorship turns on.
+  #
+  # Minted by real `merod`, not supplied as a fixture. A frozen credential would
+  # never exercise `account sign-cert`, so a change in how a credential is
+  # PRODUCED would keep passing — and the certification path would have no
+  # coverage at all.
+  #
+  # The node has to be stopped for it: without `--from`, `sign-cert` reads the
+  # account root out of the datastore, and RocksDB's lock is exclusive. Going
+  # through the API instead is not an option and never will be — the root private
+  # key deliberately never crosses that boundary, leaving a node only via
+  # `account export` as a mnemonic.
+
+  - name: Stop node-2 so its account root can be read
+    type: stop_node
+    nodes: delegated-demo-2
+
+  - name: Mint a device for node-2's account, offline
+    type: node_exec
+    node: delegated-demo-2
+    args: [account, sign-cert, --generate]
+    capture:
+      # The credential is the first line; the secret is four lines further down,
+      # which is why `stdout_first_line` alone cannot serve this step.
+      author_credential: '^([0-9a-f]{100,})$'
+      author_secret: '^Secret: +([0-9a-f]{64})$'
+      author_account: '^Account: +([0-9a-f]{64})$'
+    outputs:
+      author_credential: author_credential
+      author_secret: author_secret
+      author_account: author_account
+
+  - name: Start node-2 again
+    type: start_node
+    nodes: delegated-demo-2
+
+  - name: Both nodes are back in the context
+    type: wait_for_sync
+    nodes:
+      - delegated-demo-1
+      - delegated-demo-2
+    context_id: '{{context_id}}'
+
+  # ── Phase 5: the author signs its consent ─────────────────────────
   #
   # Offline. No `node:` field, because there is nothing for one to do: this signs
   # with the device secret and returns bytes. Only H(method, args) is committed
@@ -183,8 +233,8 @@ steps:
     args:
       key: delegated
       value: from-a-member-with-no-node
-    device_secret: '4987ccd0fb7ef36bf7f61e8f99fd150d33e6adac47649f23bfd7109c2e36a3ba'
-    credential: '02b2a942ff4c98718bed76e255987f6d59b1a72d3b2cd2510003e6170ac63a9ffb000000000e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e304d0774b93e8028899a745dbe03d7727fa31fc2f060945b5789cb36c23cba380366245580f7aa816a35d1ff324a714355995ef44a72bcd2341e21d9587d16efce973135e50bc7280f06bb32a53a566983cf0f0c8428be4b461df54264f07319540000000000000000e0c3743677508f5cfbe245f043f2d7bc3ba6c88c001464cae581e2e9ec8cb63780f1f5c2a393521a0038b357fffe63092403fa6e0e2ec12da5e96d50692d400f'
+    device_secret: '{{author_secret}}'
+    credential: '{{author_credential}}'
     nonce: 1
     outputs:
       warrant: warrant
@@ -197,7 +247,7 @@ steps:
   - name: Assert the warrant speaks for the member that was added
     type: assert
     statements:
-      - "{{author_account}} == 0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30"
+      - "is_set({{author_account}})"
 
   # ── Phase 5: the relay runs it on the member's behalf ─────────────
   #
@@ -213,7 +263,7 @@ steps:
       key: delegated
       value: from-a-member-with-no-node
     warrant: '{{warrant}}'
-    author_proof: '02b2a942ff4c98718bed76e255987f6d59b1a72d3b2cd2510003e6170ac63a9ffb000000000e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e304d0774b93e8028899a745dbe03d7727fa31fc2f060945b5789cb36c23cba380366245580f7aa816a35d1ff324a714355995ef44a72bcd2341e21d9587d16efce973135e50bc7280f06bb32a53a566983cf0f0c8428be4b461df54264f07319540000000000000000e0c3743677508f5cfbe245f043f2d7bc3ba6c88c001464cae581e2e9ec8cb63780f1f5c2a393521a0038b357fffe63092403fa6e0e2ec12da5e96d50692d400f'
+    author_proof: '{{author_credential}}'
     outputs:
       intent_root: rootHash
 

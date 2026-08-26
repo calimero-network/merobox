@@ -24,6 +24,7 @@ disagree with how the node was actually started.
 """
 
 import os
+import re
 from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -45,6 +46,10 @@ class NodeExecStep(BaseStep):
     lock is exclusive. Running against a live node is refused rather than
     attempted, because the failure otherwise surfaces as an opaque lock error
     several layers down.
+
+    `capture:` maps names to regexes, each with one capturing group, pulled out
+    of stdout — for commands that print several values where
+    `stdout_first_line` reaches only one.
 
     Exports `stdout`, `stdout_first_line` (what a single-value command like
     `account export` actually produces, ahead of its advisory output), `stderr`
@@ -83,6 +88,34 @@ class NodeExecStep(BaseStep):
             value = self.config.get(flag)
             if value is not None and not isinstance(value, bool):
                 raise ValueError(f"Step '{step_name}': '{flag}' must be a bool")
+        capture = self.config.get("capture")
+        if capture is not None:
+            if not isinstance(capture, dict):
+                raise ValueError(
+                    f"Step '{step_name}': 'capture' must be a mapping of "
+                    "name -> regex with one capturing group"
+                )
+            for name, pattern in capture.items():
+                if not isinstance(name, str) or not isinstance(pattern, str):
+                    raise ValueError(
+                        f"Step '{step_name}': 'capture' names and patterns must "
+                        "both be strings"
+                    )
+                try:
+                    compiled = re.compile(pattern)
+                except re.error as err:
+                    raise ValueError(
+                        f"Step '{step_name}': capture '{name}' is not a valid "
+                        f"regex: {err}"
+                    ) from err
+                # Refused up front rather than at run time: a pattern with no
+                # group cannot yield a value, and the step would otherwise fail
+                # only once the command had run and only for that one field.
+                if compiled.groups != 1:
+                    raise ValueError(
+                        f"Step '{step_name}': capture '{name}' must have exactly "
+                        f"one capturing group, found {compiled.groups}"
+                    )
 
     def _get_exportable_variables(self):
         return [
@@ -95,6 +128,44 @@ class NodeExecStep(BaseStep):
             ("stderr", "exec_stderr_{node_name}", "Anything on stderr"),
             ("exit_code", "exec_exit_code_{node_name}", "The command's exit status"),
         ]
+
+    def _captured(self, stdout: str) -> dict[str, str]:
+        """Named fields pulled out of stdout by regex.
+
+        `stdout_first_line` reaches exactly one value, which is enough for a
+        command like `account export` that prints a single thing. It is not
+        enough for one that prints several: `account sign-cert --generate` emits
+        a credential, an account, a device and a secret, and a scenario needs
+        both the credential and the secret. Reordering the output only changes
+        which one is stranded.
+
+        A missing match is a failure, not an empty export. The alternative is a
+        scenario carrying `''` into whatever consumed it and failing somewhere
+        else — which is how an unresolved placeholder reaching an API as a
+        literal `{{secret}}` gets diagnosed three steps downstream.
+
+        Each pattern is searched per line and must have exactly one group, which
+        `_validate_field_types` checks before the command runs.
+        """
+        capture = self.config.get("capture") or {}
+        if not capture:
+            return {}
+
+        lines = stdout.splitlines()
+        found: dict[str, str] = {}
+        for name, pattern in capture.items():
+            compiled = re.compile(pattern)
+            for line in lines:
+                match = compiled.search(line)
+                if match:
+                    found[name] = match.group(1)
+                    break
+            else:
+                raise RuntimeError(
+                    f"capture '{name}' matched nothing in the command's output "
+                    f"(pattern {pattern!r})"
+                )
+        return found
 
     def _container_spec(self, node_name: str) -> tuple[str, str]:
         """The node's image and the HOST path backing its `/app/data` mount.
@@ -267,14 +338,14 @@ class NodeExecStep(BaseStep):
             first_line = next(
                 (line for line in stdout.splitlines() if line.strip()), ""
             )
-            result = ok(
-                {
-                    "stdout": stdout,
-                    "stdout_first_line": first_line.strip(),
-                    "stderr": stderr,
-                    "exit_code": exit_code,
-                }
-            )
+            payload = {
+                "stdout": stdout,
+                "stdout_first_line": first_line.strip(),
+                "stderr": stderr,
+                "exit_code": exit_code,
+            }
+            payload.update(self._captured(stdout))
+            result = ok(payload)
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"node_exec failed: {e}", error=e)
 
