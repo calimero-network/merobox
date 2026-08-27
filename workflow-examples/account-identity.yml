@@ -168,6 +168,35 @@ steps:
     statements:
       - 'json_equal({{key_delivered}}, true)'
 
+  # The account-level listings, which a paired device can reach and a namespace
+  # summary cannot: it is a member of nothing, so `list_namespaces` tells it
+  # nothing about the applications its account speaks in.
+
+  - name: The holder lists the devices of its account
+    type: account_devices
+    node: account-demo-2
+    outputs:
+      account_devices: devices
+
+  - name: The paired device sees the same account from its own side
+    type: account_devices
+    node: account-demo-3
+
+  - name: The applications this account speaks in
+    type: account_applications
+    node: account-demo-2
+
+  # Repairs the phone against the namespaces this holder takes part in NOW.
+  # Naming no application widens nothing, which is what an operator asks for
+  # when healing drift rather than granting reach.
+
+  - name: Repair the phone's bindings without widening its scope
+    type: account_relink
+    node: account-demo-2
+    device_id: '{{phone_device}}'
+    outputs:
+      phone_scope: applications
+
   # ── Phase 4: one account, two devices ─────────────────────────────
 
   - name: What the laptop speaks for
