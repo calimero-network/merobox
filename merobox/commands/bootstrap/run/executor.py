@@ -1066,6 +1066,14 @@ class WorkflowExecutor:
         }
         if self.auth_mode:
             kwargs["auth_mode"] = self.auth_mode
+        # Per-node init flags. Looked up by node name rather than index, because
+        # the index a node gets is an implementation detail of how this loop
+        # counts and the name is what the rest of the workflow already refers to.
+        nodes_cfg = self.config.get("nodes") or {}
+        if isinstance(nodes_cfg, dict):
+            per_node = nodes_cfg.get("init_args") or {}
+            if isinstance(per_node, dict) and node_name in per_node:
+                kwargs["init_args"] = list(per_node[node_name])
         if self.is_binary_mode:
             if self.merod_args:
                 kwargs["merod_args"] = self.merod_args

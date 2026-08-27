@@ -495,6 +495,7 @@ class DockerManager(CleanupMixin):
         preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
         mock_tee: bool = False,  # launch with `merod run --mock-tee` (mock TEE attestation)
         auth_mode: str = None,  # merod auth mode ('embedded' mounts the auth router in-node)
+        init_args: list[str] = None,  # extra `merod init` flags for THIS node
     ) -> bool:
         """Run a Calimero node container."""
         try:
@@ -847,6 +848,10 @@ class DockerManager(CleanupMixin):
                     ]
                     if auth_mode:
                         init_config["command"].extend(["--auth-mode", auth_mode])
+                    # Last, so a workflow can add flags but never displace the
+                    # ports and host bindings merobox depends on.
+                    if init_args:
+                        init_config["command"].extend(init_args)
                     # Note: Don't set entrypoint - use image default
                 else:
                     # Original behavior - bypass entrypoint for direct merod control
@@ -867,6 +872,8 @@ class DockerManager(CleanupMixin):
                     ]
                     if auth_mode:
                         init_config["command"].extend(["--auth-mode", auth_mode])
+                    if init_args:
+                        init_config["command"].extend(init_args)
                 init_config["detach"] = False
 
                 try:
