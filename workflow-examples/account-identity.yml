@@ -20,7 +20,8 @@ description: >
        halves of the exchange, because the ordering is forced: node-3 cannot mint
        its DeviceId without the account, and node-2 cannot certify that device
        without the id and both keys. The step also compares the confirmation code
-       both sides derive, which is the check a human is meant to make.
+       both sides derive, which is the check a human is meant to make. It scopes
+       the link to the one application, so the device listing has a scope to assert.
 
     4. `node_identity` on both nodes proves the payoff: same account, different
        devices. One person, two replicas. It takes no namespace, because none of
@@ -148,6 +149,8 @@ steps:
     holder: account-demo-2
     namespaces:
       - '{{namespace_id}}'
+    applications:
+      - '{{app_id}}'
     root_key: '{{root_key}}'
     outputs:
       phone_device: deviceId
@@ -178,6 +181,20 @@ steps:
     outputs:
       account_devices: devices
 
+  # A list body addressed by identity. `match` takes dotted paths, so without
+  # `where` the phone's row could only be named by its position in a store scan.
+  - name: The phone's row on the holder, picked by device id
+    type: assert_api_response
+    node: account-demo-2
+    path: /admin-api/account/devices
+    where:
+      deviceId: '{{phone_device}}'
+    match:
+      isSelf: false
+      revoked: false
+      applications.0: '{{app_id}}'
+      namespaces.0: '{{namespace_id}}'
+
   - name: The paired device sees the same account from its own side
     type: account_devices
     node: account-demo-3
@@ -185,6 +202,19 @@ steps:
   - name: The applications this account speaks in
     type: account_applications
     node: account-demo-2
+
+  # Retried rather than barriered: the phone is a member of no namespace, so
+  # `wait_for_sync` has no group state to read from it.
+  - name: The phone learns the application its account speaks in
+    type: assert_api_response
+    node: account-demo-3
+    path: /admin-api/account/applications
+    where:
+      applicationId: '{{app_id}}'
+    match:
+      namespaces.0: '{{namespace_id}}'
+    retries: 30
+    interval: 2
 
   # Repairs the phone against the namespaces this holder takes part in NOW.
   # Naming no application widens nothing, which is what an operator asks for

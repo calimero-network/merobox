@@ -23,6 +23,12 @@ from merobox.commands.utils import console
 # Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
+# Shared by the account steps, whose refusals core gives a typed HTTP status.
+EXPECT_STATUS_DESCRIPTION = (
+    "HTTP status the call must be refused with, e.g. 403. The step passes only "
+    "on that status, so unlike 'expected_failure' a 500 cannot satisfy it"
+)
+
 # Valid step types for workflow validation (using frozenset for O(1) lookups)
 VALID_STEP_TYPES = frozenset(
     {
@@ -1154,6 +1160,7 @@ class AccountCreateStepConfig(BaseStepConfig):
     type: Literal["account_create"] = "account_create"
     node: str = Field(..., description="Node that enrols the account")
     namespace_id: str = Field(..., description="Namespace to enrol in")
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class AccountPairStepConfig(BaseStepConfig):
@@ -1175,6 +1182,7 @@ class AccountPairStepConfig(BaseStepConfig):
         description="Applications the holder scopes the link to. Empty means "
         "every namespace this holder takes part in",
     )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class AccountRelinkStepConfig(BaseStepConfig):
@@ -1188,6 +1196,7 @@ class AccountRelinkStepConfig(BaseStepConfig):
         description="Applications to ADD to the stored scope. Empty repairs "
         "without widening, and is not overloaded to mean every application",
     )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class AccountDevicesStepConfig(BaseStepConfig):
@@ -1219,6 +1228,7 @@ class AccountRevokeStepConfig(BaseStepConfig):
         "revoke-proof`). With it the node needs no authority of its own and only "
         "publishes; without it the node must be an admin or hold the account",
     )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class SignWarrantStepConfig(BaseStepConfig):

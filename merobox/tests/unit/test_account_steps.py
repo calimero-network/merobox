@@ -49,6 +49,12 @@ def _envelope(payload):
     return {"data": payload}
 
 
+def _client_error(status, body="device is linked to another account"):
+    """What calimero-client-py raises for a non-2xx answer, verbatim: a plain
+    RuntimeError whose message is the only place the status appears."""
+    return RuntimeError(f"Client error: HTTP {status}: {body}")
+
+
 def _step(cls, config, client=None):
     """A step whose `_client` hands back `client` (a fresh MagicMock by default)."""
     step = cls(config)
@@ -304,6 +310,7 @@ class TestAccountPairStep:
 
     def _init_payload(self, code="0011223344556677"):
         return {
+            "accountId": "aa" * 32,
             "deviceId": "ee" * 32,
             "kemPublicKey": "11" * 32,
             "signPublicKey": "22" * 32,
@@ -311,16 +318,22 @@ class TestAccountPairStep:
             "confirmationCode": code,
         }
 
-    def _paired(self, init, code=None):
-        """A step wired to two clients: the new device's, and the holder's."""
+    def _paired(self, init, code=None, **complete):
+        """A step wired to two clients: the new device's, and the holder's.
+
+        Both endpoints really answer with `accountId` and `deviceId`, so complete
+        echoes init's unless a test overrides one to model a disagreement.
+        """
         new_device = MagicMock()
         new_device.pair_device_init.return_value = _envelope(init)
         holder = MagicMock()
         holder.pair_device_complete.return_value = _envelope(
             {
-                "accountId": "aa" * 32,
+                "accountId": init.get("accountId"),
+                "deviceId": init.get("deviceId"),
                 "keyDelivered": True,
                 "confirmationCode": code or init.get("confirmationCode"),
+                **complete,
             }
         )
         step = AccountPairStep(self.config)
@@ -369,9 +382,27 @@ class TestAccountPairStep:
         step, _new_device, _holder = self._paired(init, code="ffffffffffffffff")
         assert _run(step.execute({}, {})) is False
 
+    @pytest.mark.parametrize("field", ["accountId", "deviceId"])
+    def test_complete_certifying_something_else_fails_the_step(self, field):
+        """pair-complete has to have certified the device pair-init minted.
+
+        Taking init's value over complete's would export a device id the holder
+        never linked, and hide a link made to another account entirely.
+        """
+        init = self._init_payload()
+        step, _new_device, _holder = self._paired(init, **{field: "99" * 32})
+        assert _run(step.execute({}, {})) is False
+
     @pytest.mark.parametrize(
         "omit",
-        ["deviceId", "kemPublicKey", "signPublicKey", "statement", "confirmationCode"],
+        [
+            "accountId",
+            "deviceId",
+            "kemPublicKey",
+            "signPublicKey",
+            "statement",
+            "confirmationCode",
+        ],
     )
     def test_an_incomplete_init_fails_before_certifying(self, omit):
         """Fail at init rather than sending a half-formed pair-complete.
@@ -587,6 +618,7 @@ class TestOutputsAreActuallyExported:
     def test_account_pair_exports_the_paired_device(self):
         new_device = MagicMock()
         init = {
+            "accountId": "aa" * 32,
             "deviceId": "ee" * 32,
             "kemPublicKey": "11" * 32,
             "signPublicKey": "22" * 32,
@@ -597,7 +629,8 @@ class TestOutputsAreActuallyExported:
         holder = MagicMock()
         holder.pair_device_complete.return_value = _envelope(
             {
-                "accountId": "aa" * 32,
+                "accountId": init["accountId"],
+                "deviceId": init["deviceId"],
                 "keyDelivered": True,
                 "confirmationCode": init["confirmationCode"],
             }
@@ -988,3 +1021,218 @@ class TestSignWarrantExpectedFailure:
         )
         with patch.dict(sys.modules, {"calimero_client_py": module}):
             assert _run(step.execute({}, {})) is True
+
+
+# =============================================================================
+# expect_status
+# =============================================================================
+
+
+class TestExpectStatus:
+    """Assert WHICH refusal happened, not merely that one did.
+
+    `expected_failure` passes on a 500 and on an unreachable node, which are the
+    answers core's typed statuses exist to tell apart from a real refusal.
+    """
+
+    RELINK = {
+        "type": "account_relink",
+        "name": "Relink",
+        "node": "calimero-node-1",
+        "device_id": DEVICE,
+    }
+
+    # Every account step that takes the field, with the binding it refuses on and
+    # what that binding answers when it does not.
+    STEPS = [
+        (
+            AccountCreateStep,
+            {
+                "type": "account_create",
+                "name": "Create",
+                "node": "calimero-node-1",
+                "namespace_id": NAMESPACE,
+            },
+            "create_account",
+            {"accountId": "aa" * 32, "deviceId": DEVICE},
+        ),
+        (
+            AccountRevokeStep,
+            {
+                "type": "account_revoke",
+                "name": "Revoke",
+                "node": "calimero-node-1",
+                "namespace_id": NAMESPACE,
+                "device_id": DEVICE,
+            },
+            "revoke_device",
+            {"keyRotated": True},
+        ),
+        (
+            AccountRelinkStep,
+            RELINK,
+            "relink_device",
+            {"applications": [APP_ONE], "outcomes": []},
+        ),
+    ]
+
+    def _relink(self, expect_status, side_effect=None, **extra):
+        client = MagicMock()
+        if side_effect is not None:
+            client.relink_device.side_effect = side_effect
+        else:
+            client.relink_device.return_value = _envelope(
+                {"applications": [APP_ONE], "outcomes": []}
+            )
+        return _step(
+            AccountRelinkStep,
+            {**self.RELINK, "expect_status": expect_status, **extra},
+            client,
+        )
+
+    def test_the_expected_status_passes_the_step(self):
+        step = self._relink(403, side_effect=_client_error(403))
+        assert _run(step.execute({}, {})) is True
+
+    def test_another_status_fails_the_step(self):
+        """The whole point: a 500 is not the refusal under test."""
+        step = self._relink(403, side_effect=_client_error(500))
+        assert _run(step.execute({}, {})) is False
+
+    def test_succeeding_fails_the_step(self):
+        step = self._relink(403)
+        assert _run(step.execute({}, {})) is False
+
+    def test_a_failure_carrying_no_status_fails_the_step(self):
+        """An unreachable node has no status, and must not stand in for one."""
+        step = self._relink(
+            403,
+            side_effect=RuntimeError(
+                "Client error: error sending request for url (http://127.0.0.1:1/x)"
+            ),
+        )
+        assert _run(step.execute({}, {})) is False
+
+    def test_the_status_is_the_transport_s_not_the_body_s(self):
+        step = self._relink(403, side_effect=_client_error(409, "not HTTP 403: no"))
+        assert _run(step.execute({}, {})) is False
+
+    def test_a_status_merely_quoted_elsewhere_is_not_read_as_one(self):
+        """Read off the message's front rather than searched for, so a transport
+        failure carrying the digits somewhere is not mistaken for a refusal."""
+        step = self._relink(
+            403,
+            side_effect=RuntimeError(
+                "Client error: error sending request for url "
+                "(http://node/admin-api/HTTP 403)"
+            ),
+        )
+        assert _run(step.execute({}, {})) is False
+
+    @pytest.mark.parametrize("value", ["403", True, 40.3, None])
+    def test_a_non_integer_status_is_rejected_at_validation(self, value):
+        config = {**self.RELINK, "expect_status": value}
+        if value is None:
+            # Absent and null both mean "assert nothing", so neither may raise.
+            AccountRelinkStep(config)
+            return
+        with pytest.raises(ValueError, match="expect_status"):
+            AccountRelinkStep(config)
+
+    @pytest.mark.parametrize("status", [400, 403, 404, 409])
+    def test_each_status_core_types_is_matched_exactly(self, status):
+        assert _run(
+            self._relink(status, side_effect=_client_error(status)).execute({}, {})
+        )
+        other = 409 if status != 409 else 400
+        assert not _run(
+            self._relink(status, side_effect=_client_error(other)).execute({}, {})
+        )
+
+    @pytest.mark.parametrize("cls,config,binding,_payload", STEPS)
+    def test_every_step_taking_it_matches_the_status(
+        self, cls, config, binding, _payload
+    ):
+        client = MagicMock()
+        getattr(client, binding).side_effect = _client_error(404)
+        step = _step(cls, {**config, "expect_status": 404}, client)
+        assert _run(step.execute({}, {})) is True
+
+        client = MagicMock()
+        getattr(client, binding).side_effect = _client_error(500)
+        step = _step(cls, {**config, "expect_status": 404}, client)
+        assert _run(step.execute({}, {})) is False
+
+    @pytest.mark.parametrize("cls,config,binding,payload", STEPS)
+    def test_every_step_taking_it_fails_when_the_call_succeeds(
+        self, cls, config, binding, payload
+    ):
+        """Each step wires the branch itself, so a step that forgot it would let
+        the refusal it was asserting go through unnoticed."""
+        client = MagicMock()
+        getattr(client, binding).return_value = _envelope(payload)
+        step = _step(cls, {**config, "expect_status": 404}, client)
+        assert _run(step.execute({}, {})) is False
+
+    def _pair(self, expect_status, complete_side_effect=None, **complete):
+        init = {
+            "accountId": "aa" * 32,
+            "deviceId": "ee" * 32,
+            "kemPublicKey": "11" * 32,
+            "signPublicKey": "22" * 32,
+            "statement": "33" * 64,
+            "confirmationCode": "0011223344556677",
+        }
+        new_device = MagicMock()
+        new_device.pair_device_init.return_value = _envelope(init)
+        holder = MagicMock()
+        if complete_side_effect is not None:
+            holder.pair_device_complete.side_effect = complete_side_effect
+        else:
+            holder.pair_device_complete.return_value = _envelope(
+                {**init, "keyDelivered": True, **complete}
+            )
+        step = AccountPairStep(
+            {
+                "type": "account_pair",
+                "name": "Pair",
+                "node": "calimero-node-3",
+                "holder": "calimero-node-2",
+                "namespaces": [NAMESPACE],
+                "root_key": "cc" * 32,
+                "expect_status": expect_status,
+            }
+        )
+        step._client = MagicMock(  # noqa: SLF001
+            side_effect=lambda name: (
+                new_device if name == "calimero-node-3" else holder
+            )
+        )
+        return step
+
+    def test_pair_asserts_the_status_of_the_holder_s_refusal(self):
+        """Pairing's refusals come from pair-complete, on the OTHER node, so the
+        assertion has to survive the two-call shape of the step."""
+        step = self._pair(400, complete_side_effect=_client_error(400))
+        assert _run(step.execute({}, {})) is True
+
+    def test_pair_fails_when_the_pairing_goes_through(self):
+        step = self._pair(400)
+        assert _run(step.execute({}, {})) is False
+
+    def test_a_cross_check_failure_is_not_a_status_refusal(self):
+        """A mismatch merobox itself raised carries no HTTP status, so it fails
+        closed rather than passing for the refusal the scenario asked about."""
+        step = self._pair(403, deviceId="99" * 32)
+        assert _run(step.execute({}, {})) is False
+
+    def test_an_expected_status_records_nothing_and_exports_nothing(self):
+        """A refused call has no payload, so a scenario must not be able to read
+        one out of it and carry a stale value forward."""
+        step = self._relink(
+            403, side_effect=_client_error(403), outputs={"scope": "applications"}
+        )
+        results, dynamic_values = {}, {}
+        assert _run(step.execute(results, dynamic_values)) is True
+        assert results == {}
+        assert dynamic_values == {}
