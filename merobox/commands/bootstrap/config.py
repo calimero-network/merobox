@@ -549,6 +549,22 @@ class AssertApiResponseStepConfig(BaseStepConfig):
     token: Optional[str] = Field(
         None, description="Explicit JWT to attach (overrides the cached token)"
     )
+    where: Optional[dict[str, Any]] = Field(
+        None,
+        description="Field equalities picking ONE element out of a list in the "
+        "body, so a device or application is asserted by identity rather than "
+        "by position",
+    )
+    retries: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Re-issue the request until the assertions pass. For states "
+        "no barrier can wait on: an install writes no DAG state, and a paired "
+        "device is a member of nothing so wait_for_sync cannot read it",
+    )
+    interval: Optional[float] = Field(
+        None, gt=0, description="Seconds between retries (default 1)"
+    )
 
 
 class WaitStep(BaseStepConfig):
