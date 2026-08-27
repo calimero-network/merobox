@@ -61,6 +61,31 @@ class _AccountStepBase(BaseStep):
         """Resolve a placeholder-bearing field to a plain string."""
         return str(self._resolve_dynamic_value(self.config[key], {}, dynamic_values))
 
+    def _require_string_lists(self, fields: tuple[str, ...]) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in fields:
+            value = self.config.get(field)
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) for item in value
+            ):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be a list of strings"
+                )
+
+    def _resolved_list(self, key: str, dynamic_values: dict[str, Any]) -> list[str]:
+        """Resolve each entry of a list field. Absent is an empty list.
+
+        A list rather than one comma-joined string because merobox resolves ONE
+        placeholder per value, so `{{a}},{{b}}` reads as a single placeholder
+        named `a}},{{b` and passes through verbatim.
+        """
+        return [
+            str(self._resolve_dynamic_value(item, {}, dynamic_values))
+            for item in self.config.get(key, [])
+        ]
+
     def _resolved_args(self, dynamic_values: dict[str, Any]) -> str:
         """The step's `args:` mapping as the JSON string the client takes.
 
@@ -206,10 +231,13 @@ class AccountPairStep(_AccountStepBase):
     """
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "holder", "namespace_id", "root_key", "nonce"]
+        return ["node", "holder", "namespaces", "root_key"]
 
     def _validate_field_types(self) -> None:
-        self._require_strings(("node", "holder", "namespace_id", "root_key", "nonce"))
+        self._require_strings(("node", "holder", "root_key"))
+        self._require_string_lists(("namespaces",))
+        if "applications" in self.config:
+            self._require_string_lists(("applications",))
 
     def _get_exportable_variables(self):
         return [
@@ -235,13 +263,13 @@ class AccountPairStep(_AccountStepBase):
     ) -> bool:
         node_name = self._resolved("node", dynamic_values)
         holder = self._resolved("holder", dynamic_values)
-        namespace_id = self._resolved("namespace_id", dynamic_values)
+        namespaces = self._resolved_list("namespaces", dynamic_values)
         root_key = self._resolved("root_key", dynamic_values)
-        nonce = self._resolved("nonce", dynamic_values)
+        applications = self._resolved_list("applications", dynamic_values)
 
         try:
             init = self._data(
-                self._client(node_name).pair_device_init(namespace_id, root_key, nonce)
+                self._client(node_name).pair_device_init(root_key, namespaces)
             )
             missing = [
                 field
@@ -259,12 +287,12 @@ class AccountPairStep(_AccountStepBase):
 
             complete = self._data(
                 self._client(holder).pair_device_complete(
-                    namespace_id,
                     init["deviceId"],
                     init["kemPublicKey"],
                     init["signPublicKey"],
                     init["statement"],
                     init["confirmationCode"],
+                    applications or None,
                 )
             )
             # The check a human is supposed to make. Both sides derive it over
@@ -382,6 +410,162 @@ class AccountRevokeStep(_AccountStepBase):
             f"{', via supplied proof' if proof else ''})"
         )
         return self._finish(node_name, "revoke", data, workflow_results, dynamic_values)
+
+
+class AccountRelinkStep(_AccountStepBase):
+    """Repair or widen a device this account already certified.
+
+    Re-runs pairing's fan-out against the namespaces this node takes part in
+    now, so a namespace gained after pairing binds the device without a second
+    ceremony. Naming no application repairs WITHOUT widening: unlike
+    `account_pair`, an empty list here is not "every application".
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "device_id"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(("node", "device_id"))
+        if "applications" in self.config:
+            self._require_string_lists(("applications",))
+
+    def _get_exportable_variables(self):
+        return [
+            (
+                "applications",
+                "relink_applications_{node_name}",
+                "The device's scope after the repair",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+        device_id = self._resolved("device_id", dynamic_values)
+        applications = self._resolved_list("applications", dynamic_values)
+
+        try:
+            client = self._client(node_name)
+            result = ok(
+                self._data(client.relink_device(device_id, applications or None))
+            )
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"account relink failed: {e}", error=e)
+
+        if not result["success"]:
+            console.print(
+                f"[red]Failed to relink {device_id} via {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
+            )
+            return False
+
+        data = result["data"]
+        outcomes = data.get("outcomes") or []
+        console.print(
+            f"[green]✓[/green] {node_name} relinked device {device_id} "
+            f"across {len(outcomes)} namespace(s)"
+        )
+        return self._finish(node_name, "relink", data, workflow_results, dynamic_values)
+
+
+class AccountDevicesStep(_AccountStepBase):
+    """List every device of this node's account.
+
+    Joined from the node-local certificate cache and the live bindings of every
+    namespace this node takes part in, so it reports devices this node never
+    certified as well as the ones it did.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(("node",))
+
+    def _get_exportable_variables(self):
+        return [
+            (
+                "devices",
+                "account_devices_{node_name}",
+                "Every device of this account, with scope and bindings",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+
+        try:
+            result = ok(self._data(self._client(node_name).list_account_devices()))
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"account devices failed: {e}", error=e)
+
+        if not result["success"]:
+            console.print(
+                f"[red]Failed to list devices on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
+            )
+            return False
+
+        data = result["data"]
+        console.print(
+            f"[green]✓[/green] {node_name} reports "
+            f"{len(data.get('devices') or [])} device(s) on its account"
+        )
+        return self._finish(
+            node_name, "devices", data, workflow_results, dynamic_values
+        )
+
+
+class AccountApplicationsStep(_AccountStepBase):
+    """List the applications this node's account speaks in.
+
+    The only route by which a paired device can learn them: it is a member of
+    nothing, and a namespace summary is withheld from non-members.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(("node",))
+
+    def _get_exportable_variables(self):
+        return [
+            (
+                "applications",
+                "account_applications_{node_name}",
+                "The applications this account speaks in",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+
+        try:
+            result = ok(self._data(self._client(node_name).list_account_applications()))
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"account applications failed: {e}", error=e)
+
+        if not result["success"]:
+            console.print(
+                f"[red]Failed to list applications on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
+            )
+            return False
+
+        data = result["data"]
+        console.print(
+            f"[green]✓[/green] {node_name} speaks in "
+            f"{len(data.get('applications') or [])} application(s)"
+        )
+        return self._finish(
+            node_name, "applications", data, workflow_results, dynamic_values
+        )
 
 
 class NodeIdentityStep(_AccountStepBase):

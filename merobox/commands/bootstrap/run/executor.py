@@ -2308,8 +2308,11 @@ class WorkflowExecutor:
             "perform_intent",
         ):
             from merobox.commands.bootstrap.steps.account import (
+                AccountApplicationsStep,
                 AccountCreateStep,
+                AccountDevicesStep,
                 AccountPairStep,
+                AccountRelinkStep,
                 AccountRevokeStep,
                 NodeIdentityStep,
                 PerformIntentStep,
@@ -2319,6 +2322,9 @@ class WorkflowExecutor:
             return {
                 "account_create": AccountCreateStep,
                 "account_pair": AccountPairStep,
+                "account_relink": AccountRelinkStep,
+                "account_devices": AccountDevicesStep,
+                "account_applications": AccountApplicationsStep,
                 "account_revoke": AccountRevokeStep,
                 "node_identity": NodeIdentityStep,
                 "sign_warrant": SignWarrantStep,
