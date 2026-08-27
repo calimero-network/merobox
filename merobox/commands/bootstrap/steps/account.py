@@ -433,6 +433,12 @@ class NodeIdentityStep(_AccountStepBase):
                 "identity_account_root_{node_name}",
                 "Public half of the account root — what a second device pairs against",
             ),
+            (
+                "deviceAgreementKey",
+                "identity_agreement_key_{node_name}",
+                "The device's X25519 key, the third input `merod account sign-cert` "
+                "needs alongside the device id and the signing key",
+            ),
         ]
 
     async def execute(
