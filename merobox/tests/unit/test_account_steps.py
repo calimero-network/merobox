@@ -22,8 +22,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from merobox.commands.bootstrap.steps.account import (
+    AccountApplicationsStep,
     AccountCreateStep,
+    AccountDevicesStep,
     AccountPairStep,
+    AccountRelinkStep,
     AccountRevokeStep,
     NodeIdentityStep,
     PerformIntentStep,
@@ -51,6 +54,154 @@ def _step(cls, config, client=None):
     step = cls(config)
     step._client = MagicMock(return_value=client or MagicMock())  # noqa: SLF001
     return step
+
+
+DEVICE = "ee" * 32
+APP_ONE = "1" * 44
+APP_TWO = "2" * 44
+
+
+# =============================================================================
+# AccountRelinkStep
+# =============================================================================
+
+
+class TestAccountRelinkStep:
+    def setup_method(self):
+        self.config = {
+            "type": "account_relink",
+            "name": "Relink",
+            "node": "calimero-node-1",
+            "device_id": DEVICE,
+        }
+
+    @pytest.mark.parametrize("field", ["node", "device_id"])
+    def test_missing_required_field_raises(self, field):
+        config = {**self.config}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            AccountRelinkStep(config)
+
+    def test_applications_must_be_a_list_of_strings(self):
+        with pytest.raises(ValueError, match="applications"):
+            AccountRelinkStep({**self.config, "applications": APP_ONE})
+
+    def test_naming_no_application_repairs_without_widening(self):
+        """Empty means "do not widen" here, the opposite of `account_pair`.
+
+        Passing `[]` through as a list would read server-side as a widening to
+        nothing; `None` is what asks for a repair against the stored scope.
+        """
+        client = MagicMock()
+        client.relink_device.return_value = _envelope(
+            {"applications": [APP_ONE], "outcomes": []}
+        )
+        step = _step(AccountRelinkStep, self.config, client)
+
+        assert _run(step.execute({}, {})) is True
+        client.relink_device.assert_called_once_with(DEVICE, None)
+
+    def test_naming_applications_passes_them_through(self):
+        client = MagicMock()
+        client.relink_device.return_value = _envelope(
+            {"applications": [APP_ONE, APP_TWO], "outcomes": []}
+        )
+        step = _step(
+            AccountRelinkStep,
+            {**self.config, "applications": [APP_TWO]},
+            client,
+        )
+
+        assert _run(step.execute({}, {})) is True
+        client.relink_device.assert_called_once_with(DEVICE, [APP_TWO])
+
+    def test_a_failing_relink_fails_the_step(self):
+        client = MagicMock()
+        client.relink_device.side_effect = RuntimeError("revoked")
+        step = _step(AccountRelinkStep, self.config, client)
+        assert _run(step.execute({}, {})) is False
+
+    def test_exports_the_scope_after_the_repair(self):
+        client = MagicMock()
+        client.relink_device.return_value = _envelope(
+            {"applications": [APP_ONE], "outcomes": []}
+        )
+        step = _step(
+            AccountRelinkStep,
+            {**self.config, "outputs": {"scope": "applications"}},
+            client,
+        )
+
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values["scope"] == [APP_ONE]
+
+
+# =============================================================================
+# AccountDevicesStep and AccountApplicationsStep
+# =============================================================================
+
+
+class TestAccountListingSteps:
+    def test_devices_requires_a_node(self):
+        with pytest.raises(ValueError, match="node"):
+            AccountDevicesStep({"type": "account_devices", "name": "Devices"})
+
+    def test_devices_lists_and_exports(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = _envelope(
+            {"devices": [{"deviceId": DEVICE, "applications": [APP_ONE]}]}
+        )
+        step = _step(
+            AccountDevicesStep,
+            {
+                "type": "account_devices",
+                "name": "Devices",
+                "node": "calimero-node-1",
+                "outputs": {"devices": "devices"},
+            },
+            client,
+        )
+
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        client.list_account_devices.assert_called_once_with()
+        assert dynamic_values["devices"][0]["deviceId"] == DEVICE
+
+    def test_applications_requires_a_node(self):
+        with pytest.raises(ValueError, match="node"):
+            AccountApplicationsStep({"type": "account_applications", "name": "Apps"})
+
+    def test_applications_lists_and_exports(self):
+        client = MagicMock()
+        client.list_account_applications.return_value = _envelope(
+            {"applications": [{"applicationId": APP_ONE, "namespaces": [NAMESPACE]}]}
+        )
+        step = _step(
+            AccountApplicationsStep,
+            {
+                "type": "account_applications",
+                "name": "Apps",
+                "node": "calimero-node-1",
+                "outputs": {"apps": "applications"},
+            },
+            client,
+        )
+
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        client.list_account_applications.assert_called_once_with()
+        assert dynamic_values["apps"][0]["applicationId"] == APP_ONE
+
+    def test_a_failing_listing_fails_the_step(self):
+        client = MagicMock()
+        client.list_account_devices.side_effect = RuntimeError("no account")
+        step = _step(
+            AccountDevicesStep,
+            {"type": "account_devices", "name": "Devices", "node": "calimero-node-1"},
+            client,
+        )
+        assert _run(step.execute({}, {})) is False
 
 
 # =============================================================================
@@ -137,17 +288,14 @@ class TestAccountPairStep:
             "name": "Pair",
             "node": "calimero-node-3",
             "holder": "calimero-node-2",
-            "namespace_id": NAMESPACE,
+            "namespaces": [NAMESPACE],
             "root_key": "cc" * 32,
-            "nonce": "dd" * 16,
         }
 
     def test_valid_config_passes_validation(self):
         _step(AccountPairStep, self.config)
 
-    @pytest.mark.parametrize(
-        "field", ["node", "holder", "namespace_id", "root_key", "nonce"]
-    )
+    @pytest.mark.parametrize("field", ["node", "holder", "namespaces", "root_key"])
     def test_missing_required_field_raises(self, field):
         config = {**self.config}
         del config[field]
@@ -196,18 +344,16 @@ class TestAccountPairStep:
         results = {}
         assert _run(step.execute(results, {})) is True
 
-        new_device.pair_device_init.assert_called_once_with(
-            NAMESPACE, "cc" * 32, "dd" * 16
-        )
+        new_device.pair_device_init.assert_called_once_with("cc" * 32, [NAMESPACE])
         # Everything init minted has to reach complete verbatim; a dropped field
         # would be a pairing that certifies key material nobody committed to.
         holder.pair_device_complete.assert_called_once_with(
-            NAMESPACE,
             init["deviceId"],
             init["kemPublicKey"],
             init["signPublicKey"],
             init["statement"],
             init["confirmationCode"],
+            None,
         )
         assert results["paired_account_calimero-node-3"]["deviceId"] == init["deviceId"]
 
@@ -462,9 +608,8 @@ class TestOutputsAreActuallyExported:
                 "name": "Pair",
                 "node": "calimero-node-3",
                 "holder": "calimero-node-2",
-                "namespace_id": NAMESPACE,
+                "namespaces": [NAMESPACE],
                 "root_key": "cc" * 32,
-                "nonce": "dd" * 16,
                 "outputs": {"paired_device": "deviceId", "delivered": "keyDelivered"},
             }
         )

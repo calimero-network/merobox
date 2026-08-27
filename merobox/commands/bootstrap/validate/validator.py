@@ -9,8 +9,11 @@ from merobox.commands.bootstrap.config import (
     validate_workflow_step as schema_validate_step,
 )
 from merobox.commands.bootstrap.steps.account import (
+    AccountApplicationsStep,
     AccountCreateStep,
+    AccountDevicesStep,
     AccountPairStep,
+    AccountRelinkStep,
     AccountRevokeStep,
     NodeIdentityStep,
     PerformIntentStep,
@@ -292,6 +295,12 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = AccountCreateStep
         elif step_type == "account_pair":
             step_class = AccountPairStep
+        elif step_type == "account_relink":
+            step_class = AccountRelinkStep
+        elif step_type == "account_devices":
+            step_class = AccountDevicesStep
+        elif step_type == "account_applications":
+            step_class = AccountApplicationsStep
         elif step_type == "account_revoke":
             step_class = AccountRevokeStep
         elif step_type == "node_identity":

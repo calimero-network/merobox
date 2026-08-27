@@ -49,6 +49,9 @@ VALID_STEP_TYPES = frozenset(
         "list_namespaces",
         "account_create",
         "account_pair",
+        "account_relink",
+        "account_devices",
+        "account_applications",
         "account_revoke",
         "node_identity",
         "sign_warrant",
@@ -1143,13 +1146,46 @@ class AccountPairStepConfig(BaseStepConfig):
     type: Literal["account_pair"] = "account_pair"
     node: str = Field(..., description="The NEW device's node")
     holder: str = Field(..., description="Node that already holds the account root")
-    namespace_id: str = Field(..., description="Namespace the account lives in")
+    namespaces: list[str] = Field(
+        ...,
+        description="Namespaces the NEW device listens on. A member of nothing "
+        "can neither read its account's namespaces off a DAG nor derive them",
+    )
     root_key: str = Field(
         ..., description="Account genesis root key, from account_create's output"
     )
-    nonce: str = Field(
-        ..., description="Account genesis nonce, from account_create's output"
+    applications: list[str] = Field(
+        default_factory=list,
+        description="Applications the holder scopes the link to. Empty means "
+        "every namespace this holder takes part in",
     )
+
+
+class AccountRelinkStepConfig(BaseStepConfig):
+    """Configuration for account_relink step."""
+
+    type: Literal["account_relink"] = "account_relink"
+    node: str = Field(..., description="Node holding the account root")
+    device_id: str = Field(..., description="Device to repair or widen")
+    applications: list[str] = Field(
+        default_factory=list,
+        description="Applications to ADD to the stored scope. Empty repairs "
+        "without widening, and is not overloaded to mean every application",
+    )
+
+
+class AccountDevicesStepConfig(BaseStepConfig):
+    """Configuration for account_devices step."""
+
+    type: Literal["account_devices"] = "account_devices"
+    node: str = Field(..., description="Node whose account is listed")
+
+
+class AccountApplicationsStepConfig(BaseStepConfig):
+    """Configuration for account_applications step."""
+
+    type: Literal["account_applications"] = "account_applications"
+    node: str = Field(..., description="Node whose account is listed")
 
 
 class AccountRevokeStepConfig(BaseStepConfig):
@@ -1836,6 +1872,9 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "list_namespaces": ListNamespacesStepConfig,
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
+    "account_relink": AccountRelinkStepConfig,
+    "account_devices": AccountDevicesStepConfig,
+    "account_applications": AccountApplicationsStepConfig,
     "account_revoke": AccountRevokeStepConfig,
     "sign_warrant": SignWarrantStepConfig,
     "perform_intent": PerformIntentStepConfig,

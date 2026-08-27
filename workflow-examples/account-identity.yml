@@ -146,9 +146,9 @@ steps:
     type: account_pair
     node: account-demo-3
     holder: account-demo-2
-    namespace_id: '{{namespace_id}}'
+    namespaces:
+      - '{{namespace_id}}'
     root_key: '{{root_key}}'
-    nonce: '{{nonce}}'
     outputs:
       phone_device: deviceId
       key_delivered: keyDelivered
