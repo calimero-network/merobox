@@ -177,6 +177,18 @@ class NodesConfig(BaseModel):
             "inject_network_fault works out of the box; set false to opt out."
         ),
     )
+    init_args: Optional[dict[str, list[str]]] = Field(
+        None,
+        description=(
+            "Extra `merod init` flags, keyed by node name. The rest of this "
+            "block configures every node identically, so a posture that only "
+            "one node should have -- `--no-account-root`, for instance -- had "
+            "no way to be expressed. Node names are the full names merobox "
+            "assigns, i.e. `<prefix>-<n>`. Flags are appended after the ones "
+            "merobox always passes, so a node named here still gets its ports "
+            "and host bindings."
+        ),
+    )
 
 
 class RemoteNodeAuth(BaseModel):

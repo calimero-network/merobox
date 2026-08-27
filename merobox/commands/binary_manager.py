@@ -206,6 +206,7 @@ class BinaryManager(CleanupMixin):
         config_path: Optional[str] = None,  # custom config.toml path
         bootstrap_nodes: list[str] = None,  # bootstrap nodes to connect to
         auth_mode: Optional[str] = None,  # Authentication mode (embedded, proxy)
+        init_args: Optional[list[str]] = None,  # extra `merod init` flags for THIS node
         merod_args: Optional[str] = None,  # Additional arguments to pass to merod run
         preserve_default_bootstrap: bool = False,  # keep merod-init bootstrap.nodes in e2e mode
         mock_tee: bool = False,  # launch with `merod run --mock-tee` (mock TEE attestation)
@@ -330,6 +331,10 @@ class BinaryManager(CleanupMixin):
                     # Add auth mode to init command if specified
                     if auth_mode:
                         init_cmd.extend(["--auth-mode", auth_mode])
+                    # Last, so a workflow can add flags but never displace the
+                    # ports merobox assigned.
+                    if init_args:
+                        init_cmd.extend(init_args)
                     with open(log_file, "a", encoding="utf-8") as log_f:
                         try:
                             subprocess.run(
