@@ -737,7 +737,7 @@ class TestSignWarrantStep:
         self.payload = {
             "warrant": "ab" * 8,
             "authorAccount": WARRANT_ACCOUNT,
-            "authorDeviceKey": "7siiiCkqazZTrJidZ8QxERkBt8gCmXu25H5AqnXurpB7",
+            "authorDeviceKey": "66245580f7aa816a35d1ff324a714355995ef44a72bcd2341e21d9587d16efce",
             "intentHash": "cd" * 32,
             "nonce": 1,
             "notAfter": 1787588328,
@@ -867,7 +867,7 @@ class TestPerformIntentStep:
         does not void a warrant already minted.
         """
         payload = {
-            "rootHash": "5Q7DHnKrk4U1Qt6VPSxBiNeQvK4qpEZS6QbNDiPNQFjV",
+            "rootHash": "415a214f379558acccf0c2d59ad5e5eb18e61d4a7d1d215f45034cf162666480",
             "returns": None,
         }
         client = MagicMock()

@@ -108,10 +108,15 @@ steps:
   # ── Negative controls ──────────────────────────────────────────────────
   # A blob id that was never uploaded must fail. Without this, a step that
   # silently returned empty bytes would look like a pass everywhere above.
+  #
+  # Well-formed on purpose. This was base58 until core made every id hex, and a
+  # base58 id now fails at the parser — which keeps this step green while
+  # quietly changing what it proves, from "this blob is unknown" to "this string
+  # is not an id". A valid 64-hex id nobody uploaded tests the former.
   - name: Downloading an unknown blob id fails
     type: download_blob
     node: calimero-node-1
-    blob_id: "2Bp3xKmVn9QsRtUvWxYzAbCdEfGhJkLmNpQrStUvWxYz"
+    blob_id: "dead00000000000000000000000000000000000000000000000000000000beef"
     expected_failure: true
 
   # NB: there is deliberately no "wrong expected_size + expected_failure" step
