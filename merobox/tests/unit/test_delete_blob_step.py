@@ -3,7 +3,7 @@ Unit tests for the `delete_blob_on_disk` workflow step.
 
 Covers `DeleteBlobOnDiskStep` validation + execute (present/absent/missing_ok,
 rm failure, survive-after-rm guard, container-not-found, binary-mode rejection,
-unsafe-name / non-base58 guards, expected_failure, outputs export). The Docker
+unsafe-name / non-hex guards, expected_failure, outputs export). The Docker
 container is a MagicMock whose `exec_run` is scripted per call; the module's
 `is_binary_mode` / `resolve_container` helpers are patched.
 """
@@ -17,8 +17,8 @@ from merobox.commands.bootstrap.steps.delete_blob import DeleteBlobOnDiskStep
 
 _MODULE = "merobox.commands.bootstrap.steps.delete_blob"
 
-# Valid base58 (no 0 O I l) and a deterministic expected on-disk path.
-_BLOB = "Bk8aZ2x9Qm"
+# A valid 64-hex blob id and a deterministic expected on-disk path.
+_BLOB = "abababababababababababababababababababababababababababababababab"
 _PATH = f"/app/data/node-1/blobs/{_BLOB}"
 
 
@@ -144,7 +144,7 @@ class TestDeleteBlobExecute:
         with p1, p2:
             result = _run(step.execute(workflow_results, {}))
         assert result is True
-        # rm targeted the exact base58 path
+        # rm targeted the exact hex path
         container.exec_run.assert_any_call(["rm", "-f", _PATH])
         stored = workflow_results["delete_blob_on_disk_node-1"]
         assert stored["removed"] is True
@@ -209,8 +209,11 @@ class TestDeleteBlobExecute:
         result = _run(step.execute({}, {}))
         assert result is False
 
-    def test_non_base58_blob_id_fails(self):
-        step = _step(blob_id="blob_0/x")  # '_', '0', '/' are not base58
+    def test_non_hex_blob_id_fails(self):
+        # '_' and '/' are not hex, and the length is wrong besides. `0` used to
+        # be the interesting character here — it is the one hex digit base58
+        # lacks, so the old guard rejected legitimate ids containing it.
+        step = _step(blob_id="blob_0/x")
         result = _run(step.execute({}, {}))
         assert result is False
 

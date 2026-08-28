@@ -42,10 +42,15 @@ _DEFAULT_BLOBS_SUBDIR = "blobs"
 # Node/container names: same restriction merobox's manager applies, so an
 # interpolated value can't path-traverse out of the data dir in the exec path.
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-# A blob id is a base58-encoded 32-byte hash (bitcoin alphabet — no 0 O I l).
-# Validated so the id can't smuggle a path separator / shell metachar into the
-# exec target even though we already pass argv as a list (defence in depth).
-_BASE58_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]+$")
+# A blob id is a hex-encoded 32-byte hash: 64 characters of [0-9a-f]. Validated
+# so the id can't smuggle a path separator / shell metachar into the exec target
+# even though we already pass argv as a list (defence in depth).
+#
+# This was the base58 alphabet until core made every id hex, and the two overlap
+# in everything but `0` — so it accepted most hex ids and rejected exactly those
+# containing a zero. A validator that passes on all but one digit is worse than
+# one that fails outright, because nothing points at it.
+_HEX_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class DeleteBlobOnDiskStep(BaseStep):
@@ -53,7 +58,7 @@ class DeleteBlobOnDiskStep(BaseStep):
 
     Fields:
       node:       target node (== container name).
-      blob_id:    base58 blob id to delete (e.g. from list_application_versions).
+      blob_id:    hex blob id to delete (e.g. from list_application_versions).
       data_dir:   optional CALIMERO_HOME inside the container (default /app/data).
       blobs_subdir: optional blob-store subdir under <data_dir>/<node>
                   (default `blobs`).
@@ -130,7 +135,7 @@ class DeleteBlobOnDiskStep(BaseStep):
         # free; argv is a list so there's no shell-injection surface either.
         if not _SAFE_NAME_RE.match(str(node_name)):
             return self._fail(f"unsafe node name {node_name!r}", expected_failure)
-        if not _BASE58_RE.match(str(blob_id)):
+        if not _HEX_ID_RE.match(str(blob_id)):
             return self._fail(
                 f"blob_id {blob_id!r} is not a base58 blob id", expected_failure
             )
