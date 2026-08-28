@@ -17,7 +17,7 @@ from merobox.commands.bootstrap.steps.delete_blob import DeleteBlobStep
 
 _MODULE = "merobox.commands.bootstrap.steps.delete_blob"
 
-_BLOB = "Bk8aZ2x9Qm"
+_BLOB = "abababababababababababababababababababababababababababababababab"
 # client-py `delete_blob` returns the flat snake_case BlobDeleteResponse.
 _RESPONSE = {"blob_id": _BLOB, "deleted": True}
 

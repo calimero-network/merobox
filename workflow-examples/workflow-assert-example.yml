@@ -74,7 +74,7 @@ steps:
     statements:
       - "contains({{get_result}}, 'assert_value')"
       - "not_contains({{member_public_key}}, 'invalid')"
-      - "regex({{member_public_key}}, ^[1-9A-HJ-NP-Za-km-z]+$)"
+      - "regex({{member_public_key}}, ^[0-9a-f]{64}$)"
 
   - name: Assert numeric comparisons
     type: assert
