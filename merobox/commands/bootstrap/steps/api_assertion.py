@@ -15,6 +15,7 @@ from typing import Any
 
 import requests
 
+from merobox.commands.bootstrap.steps import body_assert
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
@@ -26,26 +27,8 @@ from merobox.commands.utils import console
 
 # Core marks optional fields `skip_serializing_if = "Option::is_none"`, so an
 # absent key is the observable difference between None and a value.
-_MISSING = object()
-
-
-def _lookup(payload: Any, path: str) -> Any:
-    """Value at a dotted path, or ``_MISSING`` if the path does not exist.
-
-    Unlike ``BaseStep._get_value`` this neither re-parses JSON on the way down
-    nor collapses a missing path to None, so the assertion sees the body verbatim.
-    """
-    current = payload
-    for segment in path.split("."):
-        if isinstance(current, list) and segment.isdigit():
-            if (index := int(segment)) >= len(current):
-                return _MISSING
-            current = current[index]
-        elif isinstance(current, dict) and segment in current:
-            current = current[segment]
-        else:
-            return _MISSING
-    return current
+_MISSING = body_assert.MISSING
+_lookup = body_assert.lookup
 
 
 class AssertApiResponseStep(BaseStep):
@@ -54,6 +37,12 @@ class AssertApiResponseStep(BaseStep):
     ``expected_failure`` / ``expected_error`` govern the request outcome only.
     A missed assertion always fails the step, or a typo'd path would read as a
     green negative test.
+
+    ``where`` picks one element out of a list before the assertions run, which is
+    what lets a body like ``{"devices": [...]}`` be asserted by device rather than
+    by position. ``retries`` re-issues the whole request until it passes, for the
+    states no barrier can wait on: an install writes no DAG state, and a paired
+    device is a member of nothing so `wait_for_sync` has nothing to compare.
     """
 
     strict_placeholders = True
@@ -68,6 +57,17 @@ class AssertApiResponseStep(BaseStep):
         self._validate_dict_field("match", required=False)
         self._validate_list_field("present", required=False, element_type=str)
         self._validate_list_field("absent", required=False, element_type=str)
+        self._validate_dict_field("where", required=False)
+        self._validate_dict_field("not_match", required=False)
+        self._validate_dict_field("contains", required=False)
+        for field in ("retries", "interval"):
+            value = self.config.get(field)
+            if value is not None and (
+                not isinstance(value, (int, float)) or value <= 0
+            ):
+                raise ValueError(
+                    f"Step '{self._get_step_name()}': '{field}' must be a positive number"
+                )
         for field in ("match", "present", "absent"):
             for path in self.config.get(field) or []:
                 if not isinstance(path, str) or not path.strip():
@@ -83,9 +83,7 @@ class AssertApiResponseStep(BaseStep):
             )
 
     def _assertion_count(self) -> int:
-        return sum(
-            len(self.config.get(f) or []) for f in ("match", "present", "absent")
-        )
+        return body_assert.count(self.config)
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -93,7 +91,17 @@ class AssertApiResponseStep(BaseStep):
         # A placeholder that never bound is this step's own verdict, not a
         # crash. `path` and `match` resolve at different depths, so wrap both.
         try:
-            return await self._assert(workflow_results, dynamic_values)
+            attempts = int(self.config.get("retries") or 1)
+            interval = float(self.config.get("interval") or 1)
+            for attempt in range(1, attempts + 1):
+                # Quiet until the budget runs out: a body that has not converged
+                # yet is the expected state, not something to report each time.
+                last = attempt == attempts
+                if await self._assert(workflow_results, dynamic_values, quiet=not last):
+                    return True
+                if not last:
+                    await asyncio.sleep(interval)
+            return False
         except UnresolvedPlaceholderError as e:
             console.print(
                 f"✗ assert_api_response on {self.config['node']}: {e.message}",
@@ -103,7 +111,10 @@ class AssertApiResponseStep(BaseStep):
             return False
 
     async def _assert(
-        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+        self,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+        quiet: bool = False,
     ) -> bool:
         node_name = self.config["node"]
         path = self._resolve_dynamic_value(
@@ -152,6 +163,8 @@ class AssertApiResponseStep(BaseStep):
             detail = self._failure_detail(result)
             if expected_failure:
                 return self._report_expected_failure(detail)
+            if quiet:
+                return False
             # markup=False so a response body containing brackets survives Rich.
             console.print(
                 f"✗ assert_api_response: {detail}",
@@ -163,8 +176,27 @@ class AssertApiResponseStep(BaseStep):
         payload = result["data"]
         workflow_results[f"api_response_{node_name}"] = payload
 
+        selected = self._select(payload, workflow_results, dynamic_values)
+        if selected is _MISSING:
+            if not quiet:
+                console.print(
+                    f"✗ assert_api_response on {node_name}: GET {path} returned no "
+                    f"element matching {self.config.get('where')!r}",
+                    style="red",
+                    markup=False,
+                )
+                console.print(
+                    f"  body: {json.dumps(payload, sort_keys=True)}",
+                    style="red",
+                    markup=False,
+                )
+            return False
+        payload = selected
+
         failures = self._assertion_failures(payload, workflow_results, dynamic_values)
         if failures:
+            if quiet:
+                return False
             console.print(
                 f"✗ assert_api_response on {node_name}: GET {path} missed "
                 f"{len(failures)} of {self._assertion_count()} assertion(s)",
@@ -189,36 +221,30 @@ class AssertApiResponseStep(BaseStep):
         )
         return True
 
+    def _select(
+        self,
+        payload: Any,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> Any:
+        return body_assert.select(
+            payload,
+            self.config.get("where"),
+            lambda v: self._resolve_dynamic_value(v, workflow_results, dynamic_values),
+        )
+
     def _assertion_failures(
         self,
         payload: Any,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
     ) -> list[str]:
-        """Per-path verdicts; empty means the body satisfied every assertion."""
-        failures = []
-
-        for path, expected in (self.config.get("match") or {}).items():
-            if isinstance(expected, str):
-                expected = self._resolve_dynamic_value(
-                    expected, workflow_results, dynamic_values
-                )
-            actual = _lookup(payload, path)
-            if actual is _MISSING:
-                failures.append(f"{path}: expected {expected!r}, but the key is absent")
-            elif actual != expected:
-                failures.append(f"{path}: expected {expected!r}, got {actual!r}")
-
-        for path in self.config.get("present") or []:
-            if _lookup(payload, path) is _MISSING:
-                failures.append(f"{path}: expected the key to be present, it is absent")
-
-        for path in self.config.get("absent") or []:
-            actual = _lookup(payload, path)
-            if actual is not _MISSING:
-                failures.append(
-                    f"{path}: expected the key to be absent, it is present "
-                    f"with {actual!r}"
-                )
-
-        return failures
+        return body_assert.failures(
+            payload,
+            self.config.get("match"),
+            self.config.get("present"),
+            self.config.get("absent"),
+            lambda v: self._resolve_dynamic_value(v, workflow_results, dynamic_values),
+            self.config.get("not_match"),
+            self.config.get("contains"),
+        )
