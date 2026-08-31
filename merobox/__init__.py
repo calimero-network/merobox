@@ -2,6 +2,6 @@
 Merobox - A Python CLI tool for managing Calimero nodes in Docker containers.
 """
 
-__version__ = "0.6.71"
+__version__ = "0.6.72"
 __author__ = "Calimero Ltd."
 __email__ = "engineering@calimero.network"
