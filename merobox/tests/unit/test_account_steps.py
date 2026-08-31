@@ -148,6 +148,133 @@ class TestAccountRelinkStep:
 # =============================================================================
 
 
+class TestListingAssertions:
+    """A listing is fetched once and checked in place.
+
+    Before this the scenario called the endpoint twice: the step to read it, then
+    `assert_api_response` on the same path to say anything about what came back.
+    """
+
+    def _devices(self, **overrides):
+        row = {
+            "deviceId": DEVICE,
+            "isSelf": False,
+            "revoked": False,
+            "applications": [APP_ONE],
+            "namespaces": ["ns-a1"],
+        }
+        row.update(overrides)
+        return _envelope({"devices": [row, {"deviceId": "cc" * 32, "isSelf": True}]})
+
+    def _step_with(self, client, **extra):
+        return _step(
+            AccountDevicesStep,
+            {
+                "type": "account_devices",
+                "name": "Devices",
+                "node": "calimero-node-1",
+                **extra,
+            },
+            client,
+        )
+
+    def test_where_and_match_pass_on_the_named_row(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(
+            client,
+            where={"deviceId": DEVICE},
+            match={"isSelf": False, "applications.0": APP_ONE},
+        )
+        assert _run(step.execute({}, {})) is True
+        client.list_account_devices.assert_called_once_with()
+
+    def test_a_missed_assertion_fails_the_step(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(
+            client, where={"deviceId": DEVICE}, match={"applications.0": APP_TWO}
+        )
+        assert _run(step.execute({}, {})) is False
+
+    def test_the_wrong_row_is_not_asserted_against(self):
+        # The sibling row IS isSelf, so a `where` that did nothing would pass this.
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(
+            client, where={"deviceId": DEVICE}, match={"isSelf": True}
+        )
+        assert _run(step.execute({}, {})) is False
+
+    def test_no_matching_row_fails(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(client, where={"deviceId": "zz" * 32}, match={})
+        assert _run(step.execute({}, {})) is False
+
+    def test_without_assertions_it_is_still_a_plain_read(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(client)
+        assert _run(step.execute({}, {})) is True
+
+    def test_it_rereads_until_the_assertion_holds(self):
+        """The paired-device case: a member of nothing cannot be barriered on."""
+        client = MagicMock()
+        client.list_account_devices.side_effect = [
+            self._devices(applications=[]),
+            self._devices(applications=[]),
+            self._devices(),
+        ]
+        step = self._step_with(
+            client,
+            where={"deviceId": DEVICE},
+            match={"applications.0": APP_ONE},
+            retries=3,
+            interval=0.01,
+        )
+        assert _run(step.execute({}, {})) is True
+        assert client.list_account_devices.call_count == 3
+
+    def test_it_stops_rereading_once_satisfied(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(
+            client,
+            where={"deviceId": DEVICE},
+            match={"applications.0": APP_ONE},
+            retries=5,
+            interval=0.01,
+        )
+        assert _run(step.execute({}, {})) is True
+        assert client.list_account_devices.call_count == 1
+
+    def test_it_gives_up_after_the_budget(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices(applications=[])
+        step = self._step_with(
+            client,
+            where={"deviceId": DEVICE},
+            match={"applications.0": APP_ONE},
+            retries=3,
+            interval=0.01,
+        )
+        assert _run(step.execute({}, {})) is False
+        assert client.list_account_devices.call_count == 3
+
+    @pytest.mark.parametrize("field", ["retries", "interval"])
+    def test_a_non_positive_budget_is_a_scenario_bug(self, field):
+        with pytest.raises(ValueError, match=field):
+            AccountDevicesStep(
+                {
+                    "type": "account_devices",
+                    "name": "Devices",
+                    "node": "calimero-node-1",
+                    field: 0,
+                }
+            )
+
+
 class TestAccountListingSteps:
     def test_devices_requires_a_node(self):
         with pytest.raises(ValueError, match="node"):

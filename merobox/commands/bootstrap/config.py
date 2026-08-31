@@ -1204,6 +1204,20 @@ class AccountDevicesStepConfig(BaseStepConfig):
 
     type: Literal["account_devices"] = "account_devices"
     node: str = Field(..., description="Node whose account is listed")
+    where: Optional[dict[str, Any]] = Field(
+        None, description="Field equalities picking ONE row out of the listing"
+    )
+    match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths into that row mapped to expected values"
+    )
+    retries: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Re-read until the assertions pass, for a node no barrier can wait on",
+    )
+    interval: Optional[float] = Field(
+        None, gt=0, description="Seconds between reads (default 1)"
+    )
 
 
 class AccountApplicationsStepConfig(BaseStepConfig):
@@ -1211,6 +1225,20 @@ class AccountApplicationsStepConfig(BaseStepConfig):
 
     type: Literal["account_applications"] = "account_applications"
     node: str = Field(..., description="Node whose account is listed")
+    where: Optional[dict[str, Any]] = Field(
+        None, description="Field equalities picking ONE row out of the listing"
+    )
+    match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths into that row mapped to expected values"
+    )
+    retries: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Re-read until the assertions pass, for a node no barrier can wait on",
+    )
+    interval: Optional[float] = Field(
+        None, gt=0, description="Seconds between reads (default 1)"
+    )
 
 
 class AccountRevokeStepConfig(BaseStepConfig):

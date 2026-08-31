@@ -175,18 +175,11 @@ steps:
   # summary cannot: it is a member of nothing, so `list_namespaces` tells it
   # nothing about the applications its account speaks in.
 
-  - name: The holder lists the devices of its account
+  # `where` names the phone's row by its device id. Without it a row could only
+  # be reached by position, which comes from a key-ordered scan.
+  - name: The holder's record of the phone it certified
     type: account_devices
     node: account-demo-2
-    outputs:
-      account_devices: devices
-
-  # A list body addressed by identity. `match` takes dotted paths, so without
-  # `where` the phone's row could only be named by its position in a store scan.
-  - name: The phone's row on the holder, picked by device id
-    type: assert_api_response
-    node: account-demo-2
-    path: /admin-api/account/devices
     where:
       deviceId: '{{phone_device}}'
     match:
@@ -194,6 +187,8 @@ steps:
       revoked: false
       applications.0: '{{app_id}}'
       namespaces.0: '{{namespace_id}}'
+    outputs:
+      account_devices: devices
 
   - name: The paired device sees the same account from its own side
     type: account_devices
@@ -203,12 +198,11 @@ steps:
     type: account_applications
     node: account-demo-2
 
-  # Retried rather than barriered: the phone is a member of no namespace, so
+  # Re-read rather than barriered: the phone is a member of no namespace, so
   # `wait_for_sync` has no group state to read from it.
   - name: The phone learns the application its account speaks in
-    type: assert_api_response
+    type: account_applications
     node: account-demo-3
-    path: /admin-api/account/applications
     where:
       applicationId: '{{app_id}}'
     match:

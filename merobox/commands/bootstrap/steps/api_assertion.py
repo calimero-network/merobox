@@ -15,6 +15,7 @@ from typing import Any
 
 import requests
 
+from merobox.commands.bootstrap.steps import body_assert
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
@@ -26,38 +27,8 @@ from merobox.commands.utils import console
 
 # Core marks optional fields `skip_serializing_if = "Option::is_none"`, so an
 # absent key is the observable difference between None and a value.
-_MISSING = object()
-
-
-def _lookup(payload: Any, path: str) -> Any:
-    """Value at a dotted path, or ``_MISSING`` if the path does not exist.
-
-    Unlike ``BaseStep._get_value`` this neither re-parses JSON on the way down
-    nor collapses a missing path to None, so the assertion sees the body verbatim.
-    """
-    current = payload
-    for segment in path.split("."):
-        if isinstance(current, list) and segment.isdigit():
-            if (index := int(segment)) >= len(current):
-                return _MISSING
-            current = current[index]
-        elif isinstance(current, dict) and segment in current:
-            current = current[segment]
-        else:
-            return _MISSING
-    return current
-
-
-def _walk_lists(value: Any):
-    """Every dict inside any list in the body, at any depth."""
-    if isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict):
-                yield item
-            yield from _walk_lists(item)
-    elif isinstance(value, dict):
-        for item in value.values():
-            yield from _walk_lists(item)
+_MISSING = body_assert.MISSING
+_lookup = body_assert.lookup
 
 
 class AssertApiResponseStep(BaseStep):
@@ -256,29 +227,11 @@ class AssertApiResponseStep(BaseStep):
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
     ) -> Any:
-        """The one element `where` names, or the whole body when it is absent.
-
-        Searches every list in the body rather than taking a path to it, because
-        the caller already identifies the element by its own fields and a second
-        way to say where it lives is a second thing to keep in step with the API.
-        """
-        where = self.config.get("where")
-        if not where:
-            return payload
-        wanted = {
-            key: (
-                self._resolve_dynamic_value(value, workflow_results, dynamic_values)
-                if isinstance(value, str)
-                else value
-            )
-            for key, value in where.items()
-        }
-        for candidate in _walk_lists(payload):
-            if isinstance(candidate, dict) and all(
-                candidate.get(k) == v for k, v in wanted.items()
-            ):
-                return candidate
-        return _MISSING
+        return body_assert.select(
+            payload,
+            self.config.get("where"),
+            lambda v: self._resolve_dynamic_value(v, workflow_results, dynamic_values),
+        )
 
     def _assertion_failures(
         self,
@@ -286,30 +239,10 @@ class AssertApiResponseStep(BaseStep):
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
     ) -> list[str]:
-        """Per-path verdicts; empty means the body satisfied every assertion."""
-        failures = []
-
-        for path, expected in (self.config.get("match") or {}).items():
-            if isinstance(expected, str):
-                expected = self._resolve_dynamic_value(
-                    expected, workflow_results, dynamic_values
-                )
-            actual = _lookup(payload, path)
-            if actual is _MISSING:
-                failures.append(f"{path}: expected {expected!r}, but the key is absent")
-            elif actual != expected:
-                failures.append(f"{path}: expected {expected!r}, got {actual!r}")
-
-        for path in self.config.get("present") or []:
-            if _lookup(payload, path) is _MISSING:
-                failures.append(f"{path}: expected the key to be present, it is absent")
-
-        for path in self.config.get("absent") or []:
-            actual = _lookup(payload, path)
-            if actual is not _MISSING:
-                failures.append(
-                    f"{path}: expected the key to be absent, it is present "
-                    f"with {actual!r}"
-                )
-
-        return failures
+        return body_assert.failures(
+            payload,
+            self.config.get("match"),
+            self.config.get("present"),
+            self.config.get("absent"),
+            lambda v: self._resolve_dynamic_value(v, workflow_results, dynamic_values),
+        )

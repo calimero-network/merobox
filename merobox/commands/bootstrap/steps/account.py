@@ -19,12 +19,14 @@ calimero-client-py 0.6.20. Going through the client keeps the token cache, the
 error mapping and the connection handling this layer exists to provide.
 """
 
+import asyncio
 import json
 import re
 from typing import Any
 
 from rich.markup import escape
 
+from merobox.commands.bootstrap.steps import body_assert
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -197,6 +199,45 @@ class _AccountStepBase(BaseStep):
             f"[red]✗ expect_status: {expected} was set but the call succeeded[/red]"
         )
         return False
+
+    def _assert_body(
+        self,
+        node_name: str,
+        data: dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> bool:
+        """Apply this step's `where`/`match` to what the read returned.
+
+        Here rather than in a second `assert_api_response` on the same path, so a
+        listing is fetched once and checked in place.
+        """
+        resolve = lambda value: self._resolve_dynamic_value(  # noqa: E731
+            value, workflow_results, dynamic_values
+        )
+        selected = body_assert.select(data, self.config.get("where"), resolve)
+        if selected is body_assert.MISSING:
+            console.print(
+                f"[red]✗ {node_name}: no element matching "
+                f"{self.config.get('where')!r} in {json.dumps(data, sort_keys=True)}[/red]"
+            )
+            return False
+        misses = body_assert.failures(
+            selected,
+            self.config.get("match"),
+            self.config.get("present"),
+            self.config.get("absent"),
+            resolve,
+        )
+        for miss in misses:
+            console.print(f"[red]    {miss}[/red]")
+        return not misses
+
+    def _read_budget(self) -> tuple[int, float]:
+        """Attempts and spacing. One attempt unless the scenario asks for more."""
+        return int(self.config.get("retries") or 1), float(
+            self.config.get("interval") or 1
+        )
 
     def _finish(
         self,
@@ -594,6 +635,7 @@ class AccountDevicesStep(_AccountStepBase):
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node",))
+        body_assert.validate(self.config, self._get_step_name())
 
     def _get_exportable_variables(self):
         return [
@@ -609,10 +651,25 @@ class AccountDevicesStep(_AccountStepBase):
     ) -> bool:
         node_name = self._resolved("node", dynamic_values)
 
-        try:
-            result = ok(self._data(self._client(node_name).list_account_devices()))
-        except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail(f"account devices failed: {e}", error=e)
+        attempts, interval = self._read_budget()
+        for attempt in range(1, attempts + 1):
+            last = attempt == attempts
+            try:
+                result = ok(self._data(self._client(node_name).list_account_devices()))
+            except Exception as e:  # noqa: BLE001 - reported, not swallowed
+                result = fail(f"account devices failed: {e}", error=e)
+            if result["success"] and self._assert_body(
+                node_name, result["data"], workflow_results, dynamic_values
+            ):
+                break
+            if last:
+                if result["success"]:
+                    console.print(
+                        f"[red]✗ {node_name}'s devices did not satisfy this step[/red]"
+                    )
+                    return False
+                break
+            await asyncio.sleep(interval)
 
         if not result["success"]:
             console.print(
@@ -643,6 +700,7 @@ class AccountApplicationsStep(_AccountStepBase):
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node",))
+        body_assert.validate(self.config, self._get_step_name())
 
     def _get_exportable_variables(self):
         return [
@@ -658,10 +716,27 @@ class AccountApplicationsStep(_AccountStepBase):
     ) -> bool:
         node_name = self._resolved("node", dynamic_values)
 
-        try:
-            result = ok(self._data(self._client(node_name).list_account_applications()))
-        except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail(f"account applications failed: {e}", error=e)
+        attempts, interval = self._read_budget()
+        for attempt in range(1, attempts + 1):
+            last = attempt == attempts
+            try:
+                result = ok(
+                    self._data(self._client(node_name).list_account_applications())
+                )
+            except Exception as e:  # noqa: BLE001 - reported, not swallowed
+                result = fail(f"account applications failed: {e}", error=e)
+            if result["success"] and self._assert_body(
+                node_name, result["data"], workflow_results, dynamic_values
+            ):
+                break
+            if last:
+                if result["success"]:
+                    console.print(
+                        f"[red]✗ {node_name}'s applications did not satisfy this step[/red]"
+                    )
+                    return False
+                break
+            await asyncio.sleep(interval)
 
         if not result["success"]:
             console.print(
