@@ -109,6 +109,182 @@ def _execute(
         return _run(step.execute(results, dynamic or {})), get, results
 
 
+_DEVICES = {
+    "data": {
+        "devices": [
+            {"deviceId": "aa", "applications": ["app-a"], "namespaces": ["ns-a1"]},
+            {"deviceId": "bb", "applications": [], "namespaces": ["ns-a1", "ns-b1"]},
+        ]
+    }
+}
+
+
+class TestWhereSelector:
+    """`where` picks an element by identity, which is what a list body needs.
+
+    Without it a device can only be reached by position, and position is decided
+    by a key-ordered store scan rather than by anything a scenario controls.
+    """
+
+    def test_asserts_against_the_element_it_names(self):
+        step = _step(where={"deviceId": "bb"}, match={"namespaces.1": "ns-b1"})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is True
+
+    def test_the_wrong_element_does_not_satisfy_it(self):
+        # `aa` is bound in one namespace, `bb` in two. Asserting bb's shape
+        # against aa has to fail, or `where` is decorative.
+        step = _step(where={"deviceId": "aa"}, match={"namespaces.1": "ns-b1"})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_no_matching_element_fails_rather_than_asserting_on_the_body(self):
+        step = _step(where={"deviceId": "zz"}, match={"deviceId": "zz"})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_a_placeholder_in_where_resolves(self):
+        step = _step(
+            where={"deviceId": "{{device}}"}, match={"applications.0": "app-a"}
+        )
+        result, _get, _results = _execute(step, _DEVICES, dynamic={"device": "aa"})
+        assert result is True
+
+    def test_without_where_the_whole_body_is_asserted(self):
+        step = _step(match={"data.rollup.total": 3})
+        result, _get, _results = _execute(step, _body())
+        assert result is True
+
+
+class TestNotMatchAndContains:
+    """The two shapes core's revoke and relink assertions need.
+
+    A revoked device is checked by what it is NOT - the spent id, and the holder's
+    account - and a relink's scope is a set the node builds by scan order, so
+    asserting a position would fail on a reordering that changed nothing.
+    """
+
+    _IDENTITY = {"data": {"accountId": "own-account", "deviceId": "fresh-device"}}
+
+    def test_not_match_passes_when_the_value_differs(self):
+        step = _step(
+            not_match={"data.deviceId": "spent-device", "data.accountId": "holder"}
+        )
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is True
+
+    def test_not_match_fails_when_the_value_is_the_forbidden_one(self):
+        step = _step(not_match={"data.deviceId": "fresh-device"})
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is False
+
+    def test_not_match_fails_when_the_key_is_absent(self):
+        # Absent is not "different": a renamed field would otherwise read as a
+        # passing negative assertion forever.
+        step = _step(not_match={"data.nope": "anything"})
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is False
+
+    def test_contains_ignores_order(self):
+        body = {"data": {"applications": ["app-b", "app-a"]}}
+        step = _step(contains={"data.applications": ["app-a", "app-b"]})
+        result, _get, _results = _execute(step, body)
+        assert result is True
+
+    def test_contains_fails_on_a_missing_entry(self):
+        body = {"data": {"applications": ["app-a"]}}
+        step = _step(contains={"data.applications": ["app-a", "app-b"]})
+        result, _get, _results = _execute(step, body)
+        assert result is False
+
+    def test_contains_refuses_a_non_list(self):
+        step = _step(contains={"data.accountId": ["own-account"]})
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is False
+
+    def test_they_count_as_assertions(self):
+        # Without this the "you asserted nothing" guard would reject a step whose
+        # only assertion is a negative one.
+        _step(not_match={"data.deviceId": "x"})
+        _step(contains={"data.applications": ["a"]})
+
+
+class TestRetries:
+    """Retry covers the states no barrier can wait on.
+
+    An application install writes no DAG state, so no hash moves when it lands;
+    and a paired device is a member of nothing, so `wait_for_sync` has no group
+    state to read from it. Both are "ask again until it is true".
+    """
+
+    def _responses(self, bodies):
+        made = []
+        for body in bodies:
+            response = MagicMock()
+            response.status_code = 200
+            response.content = json.dumps(body).encode()
+            response.text = json.dumps(body)
+            made.append(response)
+        return made
+
+    def _run_with(self, step, bodies):
+        auth = MagicMock()
+        auth.get_cached_token.return_value = None
+        with (
+            patch(
+                "merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.api_assertion.requests.get",
+                side_effect=self._responses(bodies),
+            ) as get,
+        ):
+            return _run(step.execute({}, {})), get
+
+    def test_passes_on_a_later_attempt(self):
+        stub = {"data": {"apps": [{"id": "app-a", "size": 0}]}}
+        installed = {"data": {"apps": [{"id": "app-a", "size": 782803}]}}
+        step = _step(
+            where={"id": "app-a"},
+            match={"size": 782803},
+            retries=3,
+            interval=0.01,
+        )
+        result, get = self._run_with(step, [stub, stub, installed])
+        assert result is True
+        assert get.call_count == 3
+
+    def test_stops_at_the_first_success(self):
+        installed = {"data": {"apps": [{"id": "app-a", "size": 782803}]}}
+        step = _step(
+            where={"id": "app-a"}, match={"size": 782803}, retries=5, interval=0.01
+        )
+        result, get = self._run_with(step, [installed, installed, installed])
+        assert result is True
+        assert get.call_count == 1
+
+    def test_gives_up_after_the_budget(self):
+        stub = {"data": {"apps": [{"id": "app-a", "size": 0}]}}
+        step = _step(
+            where={"id": "app-a"}, match={"size": 782803}, retries=3, interval=0.01
+        )
+        result, get = self._run_with(step, [stub, stub, stub])
+        assert result is False
+        assert get.call_count == 3
+
+    def test_a_single_attempt_is_the_default(self):
+        stub = {"data": {"apps": [{"id": "app-a", "size": 0}]}}
+        step = _step(where={"id": "app-a"}, match={"size": 782803})
+        result, get = self._run_with(step, [stub])
+        assert result is False
+        assert get.call_count == 1
+
+    @pytest.mark.parametrize("field", ["retries", "interval"])
+    def test_a_non_positive_budget_is_a_scenario_bug(self, field):
+        with pytest.raises(ValueError, match=field):
+            _step(present=["data"], **{field: 0})
+
+
 class TestConcurrency:
     def test_the_request_does_not_block_the_event_loop(self):
         # `requests` is synchronous, so without the thread hand-off a

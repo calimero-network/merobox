@@ -23,6 +23,12 @@ from merobox.commands.utils import console
 # Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
+# Shared by the account steps, whose refusals core gives a typed HTTP status.
+EXPECT_STATUS_DESCRIPTION = (
+    "HTTP status the call must be refused with, e.g. 403. The step passes only "
+    "on that status, so unlike 'expected_failure' a 500 cannot satisfy it"
+)
+
 # Valid step types for workflow validation (using frozenset for O(1) lookups)
 VALID_STEP_TYPES = frozenset(
     {
@@ -540,6 +546,14 @@ class AssertApiResponseStepConfig(BaseStepConfig):
         None,
         description="Dotted paths into the response body mapped to expected values",
     )
+    not_match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths that must NOT hold these values"
+    )
+    contains: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths to lists that must contain these entries, "
+        "order-insensitive",
+    )
     present: Optional[list[str]] = Field(
         None, description="Dotted paths that must exist, whatever their value"
     )
@@ -548,6 +562,22 @@ class AssertApiResponseStepConfig(BaseStepConfig):
     )
     token: Optional[str] = Field(
         None, description="Explicit JWT to attach (overrides the cached token)"
+    )
+    where: Optional[dict[str, Any]] = Field(
+        None,
+        description="Field equalities picking ONE element out of a list in the "
+        "body, so a device or application is asserted by identity rather than "
+        "by position",
+    )
+    retries: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Re-issue the request until the assertions pass. For states "
+        "no barrier can wait on: an install writes no DAG state, and a paired "
+        "device is a member of nothing so wait_for_sync cannot read it",
+    )
+    interval: Optional[float] = Field(
+        None, gt=0, description="Seconds between retries (default 1)"
     )
 
 
@@ -1138,6 +1168,7 @@ class AccountCreateStepConfig(BaseStepConfig):
     type: Literal["account_create"] = "account_create"
     node: str = Field(..., description="Node that enrols the account")
     namespace_id: str = Field(..., description="Namespace to enrol in")
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class AccountPairStepConfig(BaseStepConfig):
@@ -1159,6 +1190,7 @@ class AccountPairStepConfig(BaseStepConfig):
         description="Applications the holder scopes the link to. Empty means "
         "every namespace this holder takes part in",
     )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class AccountRelinkStepConfig(BaseStepConfig):
@@ -1172,6 +1204,7 @@ class AccountRelinkStepConfig(BaseStepConfig):
         description="Applications to ADD to the stored scope. Empty repairs "
         "without widening, and is not overloaded to mean every application",
     )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class AccountDevicesStepConfig(BaseStepConfig):
@@ -1179,6 +1212,28 @@ class AccountDevicesStepConfig(BaseStepConfig):
 
     type: Literal["account_devices"] = "account_devices"
     node: str = Field(..., description="Node whose account is listed")
+    where: Optional[dict[str, Any]] = Field(
+        None, description="Field equalities picking ONE row out of the listing"
+    )
+    match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths into that row mapped to expected values"
+    )
+    not_match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths that must NOT hold these values"
+    )
+    contains: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths to lists that must contain these entries, "
+        "order-insensitive",
+    )
+    retries: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Re-read until the assertions pass, for a node no barrier can wait on",
+    )
+    interval: Optional[float] = Field(
+        None, gt=0, description="Seconds between reads (default 1)"
+    )
 
 
 class AccountApplicationsStepConfig(BaseStepConfig):
@@ -1186,6 +1241,28 @@ class AccountApplicationsStepConfig(BaseStepConfig):
 
     type: Literal["account_applications"] = "account_applications"
     node: str = Field(..., description="Node whose account is listed")
+    where: Optional[dict[str, Any]] = Field(
+        None, description="Field equalities picking ONE row out of the listing"
+    )
+    match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths into that row mapped to expected values"
+    )
+    not_match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths that must NOT hold these values"
+    )
+    contains: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths to lists that must contain these entries, "
+        "order-insensitive",
+    )
+    retries: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Re-read until the assertions pass, for a node no barrier can wait on",
+    )
+    interval: Optional[float] = Field(
+        None, gt=0, description="Seconds between reads (default 1)"
+    )
 
 
 class AccountRevokeStepConfig(BaseStepConfig):
@@ -1203,6 +1280,7 @@ class AccountRevokeStepConfig(BaseStepConfig):
         "revoke-proof`). With it the node needs no authority of its own and only "
         "publishes; without it the node must be an admin or hold the account",
     )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class SignWarrantStepConfig(BaseStepConfig):

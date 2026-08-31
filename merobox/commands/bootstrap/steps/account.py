@@ -19,15 +19,21 @@ calimero-client-py 0.6.20. Going through the client keeps the token cache, the
 error mapping and the connection handling this layer exists to provide.
 """
 
+import asyncio
 import json
+import re
 from typing import Any
 
 from rich.markup import escape
 
+from merobox.commands.bootstrap.steps import body_assert
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
+
+_CLIENT_ERROR_PREFIX = "Client error: "  # calimero-client-py wraps every failed call
+_HTTP_STATUS = re.compile(r"HTTP (\d{3})\b")  # what it puts first for a non-2xx answer
 
 
 class _AccountStepBase(BaseStep):
@@ -129,6 +135,112 @@ class _AccountStepBase(BaseStep):
             )
             raise ValueError(f"Step '{step_name}': 'args' must be a dictionary")
 
+    def _expect_status(self) -> int | None:
+        """`expect_status:` as an int, or None when the step asserts no refusal.
+
+        Validated here rather than at use, so a bad value stops the run before
+        any node is contacted.
+        """
+        value = self.config.get("expect_status")
+        if value is None:
+            return None
+        # bool is an int in Python, so `expect_status: true` would pass as 1.
+        if isinstance(value, bool) or not isinstance(value, int):
+            step_name = self.config.get(
+                "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+            )
+            raise ValueError(
+                f"Step '{step_name}': 'expect_status' must be an integer HTTP status"
+            )
+        return value
+
+    @staticmethod
+    def _failure_status(result: dict[str, Any]) -> int | None:
+        """The status out of `Client error: HTTP <status>: <body>`, else None.
+
+        Anchored on that shape rather than searched for, so a refusal quoting a
+        status in its body cannot stand in for the one the node actually sent.
+        """
+        exception = result.get("exception")
+        message = exception.get("message") if isinstance(exception, dict) else None
+        if not isinstance(message, str):
+            return None
+        match = _HTTP_STATUS.match(message.removeprefix(_CLIENT_ERROR_PREFIX))
+        return int(match.group(1)) if match else None
+
+    def _report_expect_status(self, expected: int, result: dict[str, Any]) -> bool:
+        """Pass only if the call was refused with exactly `expected`.
+
+        A status merobox cannot read fails closed: typed refusals exist so that a
+        500, or an unreachable node, cannot satisfy the assertion under test.
+        """
+        detail = self._failure_detail(result)
+        actual = self._failure_status(result)
+        if actual != expected:
+            got = f"HTTP {actual}" if actual is not None else "no recoverable status"
+            # markup=False so an error body containing brackets survives Rich.
+            console.print(
+                f"✗ expected the call to fail with HTTP {expected}, "
+                f"but it failed with {got}: {detail}",
+                style="red",
+                markup=False,
+                highlight=False,
+            )
+            return False
+        console.print(
+            f"[yellow]✓ Refused with HTTP {expected} as expected: "
+            f"{escape(detail)}[/yellow]"
+        )
+        return True
+
+    def _report_unexpected_status_success(self, expected: int) -> bool:
+        """A refusal test whose call succeeds has been disproven, so it fails."""
+        console.print(
+            f"[red]✗ expect_status: {expected} was set but the call succeeded[/red]"
+        )
+        return False
+
+    def _assert_body(
+        self,
+        node_name: str,
+        data: dict[str, Any],
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> bool:
+        """Apply this step's `where`/`match` to what the read returned.
+
+        Here rather than in a second `assert_api_response` on the same path, so a
+        listing is fetched once and checked in place.
+        """
+        resolve = lambda value: self._resolve_dynamic_value(  # noqa: E731
+            value, workflow_results, dynamic_values
+        )
+        selected = body_assert.select(data, self.config.get("where"), resolve)
+        if selected is body_assert.MISSING:
+            console.print(
+                f"[red]✗ {node_name}: no element matching "
+                f"{self.config.get('where')!r} in {json.dumps(data, sort_keys=True)}[/red]"
+            )
+            return False
+        misses = body_assert.failures(
+            selected,
+            self.config.get("match"),
+            self.config.get("present"),
+            self.config.get("absent"),
+            resolve,
+            self.config.get("not_match"),
+            self.config.get("contains"),
+        )
+        for miss in misses:
+            console.print(f"[red]    {miss}[/red]")
+        return not misses
+
+    def _read_budget(self) -> tuple[int, float]:
+        """Attempts and spacing. One attempt unless the scenario asks for more."""
+        return int(self.config.get("retries") or 1), float(
+            self.config.get("interval") or 1
+        )
+
     def _finish(
         self,
         node_name: str,
@@ -167,6 +279,7 @@ class AccountCreateStep(_AccountStepBase):
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node", "namespace_id"))
+        self._expect_status()
 
     def _get_exportable_variables(self):
         return [
@@ -195,12 +308,19 @@ class AccountCreateStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account create failed: {e}", error=e)
 
+        expect_status = self._expect_status()
+
         if not result["success"]:
+            if expect_status is not None:
+                return self._report_expect_status(expect_status, result)
             console.print(
                 f"[red]Failed to enrol an account on {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
             )
             return False
+
+        if expect_status is not None:
+            return self._report_unexpected_status_success(expect_status)
 
         data = result["data"]
         if not data.get("accountId"):
@@ -238,6 +358,7 @@ class AccountPairStep(_AccountStepBase):
         self._require_string_lists(("namespaces",))
         if "applications" in self.config:
             self._require_string_lists(("applications",))
+        self._expect_status()
 
     def _get_exportable_variables(self):
         return [
@@ -274,6 +395,7 @@ class AccountPairStep(_AccountStepBase):
             missing = [
                 field
                 for field in (
+                    "accountId",
                     "deviceId",
                     "kemPublicKey",
                     "signPublicKey",
@@ -305,16 +427,33 @@ class AccountPairStep(_AccountStepBase):
                     f"({init['confirmationCode']} vs {complete.get('confirmationCode')})"
                     " — the payload did not arrive as it was minted"
                 )
-            result = ok({**complete, "deviceId": init["deviceId"]})
+            # What was certified has to be what was minted. Taking init's values
+            # over complete's would hide a link to another device or account.
+            for field in ("accountId", "deviceId"):
+                if complete.get(field) != init[field]:
+                    raise RuntimeError(
+                        f"pair-complete certified a different {field} than "
+                        f"pair-init minted ({init[field]} vs "
+                        f"{complete.get(field)}) - the device now linked is not "
+                        "the one that asked"
+                    )
+            result = ok(complete)
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account pair failed: {e}", error=e)
 
+        expect_status = self._expect_status()
+
         if not result["success"]:
+            if expect_status is not None:
+                return self._report_expect_status(expect_status, result)
             console.print(
                 f"[red]Failed to pair {node_name} onto the account held by "
                 f"{holder}: {escape(str(result.get('error')))}[/red]"
             )
             return False
+
+        if expect_status is not None:
+            return self._report_unexpected_status_success(expect_status)
 
         data = result["data"]
         console.print(
@@ -364,6 +503,7 @@ class AccountRevokeStep(_AccountStepBase):
                     f"Step '{step_name}': 'proof' is empty — omit the field entirely "
                     "if this node revokes on its own authority"
                 )
+        self._expect_status()
 
     def _get_exportable_variables(self):
         return [
@@ -396,12 +536,19 @@ class AccountRevokeStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account revoke failed: {e}", error=e)
 
+        expect_status = self._expect_status()
+
         if not result["success"]:
+            if expect_status is not None:
+                return self._report_expect_status(expect_status, result)
             console.print(
                 f"[red]Failed to revoke {device_id} via {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
             )
             return False
+
+        if expect_status is not None:
+            return self._report_unexpected_status_success(expect_status)
 
         data = result["data"]
         console.print(
@@ -428,6 +575,7 @@ class AccountRelinkStep(_AccountStepBase):
         self._require_strings(("node", "device_id"))
         if "applications" in self.config:
             self._require_string_lists(("applications",))
+        self._expect_status()
 
     def _get_exportable_variables(self):
         return [
@@ -453,12 +601,19 @@ class AccountRelinkStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account relink failed: {e}", error=e)
 
+        expect_status = self._expect_status()
+
         if not result["success"]:
+            if expect_status is not None:
+                return self._report_expect_status(expect_status, result)
             console.print(
                 f"[red]Failed to relink {device_id} via {node_name}: "
                 f"{escape(str(result.get('error')))}[/red]"
             )
             return False
+
+        if expect_status is not None:
+            return self._report_unexpected_status_success(expect_status)
 
         data = result["data"]
         outcomes = data.get("outcomes") or []
@@ -482,6 +637,7 @@ class AccountDevicesStep(_AccountStepBase):
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node",))
+        body_assert.validate(self.config, self._get_step_name())
 
     def _get_exportable_variables(self):
         return [
@@ -497,10 +653,25 @@ class AccountDevicesStep(_AccountStepBase):
     ) -> bool:
         node_name = self._resolved("node", dynamic_values)
 
-        try:
-            result = ok(self._data(self._client(node_name).list_account_devices()))
-        except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail(f"account devices failed: {e}", error=e)
+        attempts, interval = self._read_budget()
+        for attempt in range(1, attempts + 1):
+            last = attempt == attempts
+            try:
+                result = ok(self._data(self._client(node_name).list_account_devices()))
+            except Exception as e:  # noqa: BLE001 - reported, not swallowed
+                result = fail(f"account devices failed: {e}", error=e)
+            if result["success"] and self._assert_body(
+                node_name, result["data"], workflow_results, dynamic_values
+            ):
+                break
+            if last:
+                if result["success"]:
+                    console.print(
+                        f"[red]✗ {node_name}'s devices did not satisfy this step[/red]"
+                    )
+                    return False
+                break
+            await asyncio.sleep(interval)
 
         if not result["success"]:
             console.print(
@@ -531,6 +702,7 @@ class AccountApplicationsStep(_AccountStepBase):
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node",))
+        body_assert.validate(self.config, self._get_step_name())
 
     def _get_exportable_variables(self):
         return [
@@ -546,10 +718,27 @@ class AccountApplicationsStep(_AccountStepBase):
     ) -> bool:
         node_name = self._resolved("node", dynamic_values)
 
-        try:
-            result = ok(self._data(self._client(node_name).list_account_applications()))
-        except Exception as e:  # noqa: BLE001 - reported, not swallowed
-            result = fail(f"account applications failed: {e}", error=e)
+        attempts, interval = self._read_budget()
+        for attempt in range(1, attempts + 1):
+            last = attempt == attempts
+            try:
+                result = ok(
+                    self._data(self._client(node_name).list_account_applications())
+                )
+            except Exception as e:  # noqa: BLE001 - reported, not swallowed
+                result = fail(f"account applications failed: {e}", error=e)
+            if result["success"] and self._assert_body(
+                node_name, result["data"], workflow_results, dynamic_values
+            ):
+                break
+            if last:
+                if result["success"]:
+                    console.print(
+                        f"[red]✗ {node_name}'s applications did not satisfy this step[/red]"
+                    )
+                    return False
+                break
+            await asyncio.sleep(interval)
 
         if not result["success"]:
             console.print(
