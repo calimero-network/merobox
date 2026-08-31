@@ -135,6 +135,21 @@ from merobox.commands.utils import (
 # Compiled regex pattern for extracting {{variable}} references
 _VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
+# Step types served by `steps.account`, mapped to their class NAMES so the guard
+# and the lookup cannot drift: a type listed here is dispatchable by
+# construction. Imported lazily, hence names rather than the classes.
+_ACCOUNT_STEP_CLASSES = {
+    "account_create": "AccountCreateStep",
+    "account_pair": "AccountPairStep",
+    "account_relink": "AccountRelinkStep",
+    "account_devices": "AccountDevicesStep",
+    "account_applications": "AccountApplicationsStep",
+    "account_revoke": "AccountRevokeStep",
+    "node_identity": "NodeIdentityStep",
+    "sign_warrant": "SignWarrantStep",
+    "perform_intent": "PerformIntentStep",
+}
+
 
 class WorkflowExecutor:
     """Executes Calimero workflows based on YAML configuration."""
@@ -2299,37 +2314,11 @@ class WorkflowExecutor:
             "auth_mode": self.auth_mode,
         }
 
-        if step_type in (
-            "account_create",
-            "account_pair",
-            "account_revoke",
-            "node_identity",
-            "sign_warrant",
-            "perform_intent",
-        ):
-            from merobox.commands.bootstrap.steps.account import (
-                AccountApplicationsStep,
-                AccountCreateStep,
-                AccountDevicesStep,
-                AccountPairStep,
-                AccountRelinkStep,
-                AccountRevokeStep,
-                NodeIdentityStep,
-                PerformIntentStep,
-                SignWarrantStep,
-            )
+        if step_type in _ACCOUNT_STEP_CLASSES:
+            from merobox.commands.bootstrap.steps import account
 
-            return {
-                "account_create": AccountCreateStep,
-                "account_pair": AccountPairStep,
-                "account_relink": AccountRelinkStep,
-                "account_devices": AccountDevicesStep,
-                "account_applications": AccountApplicationsStep,
-                "account_revoke": AccountRevokeStep,
-                "node_identity": NodeIdentityStep,
-                "sign_warrant": SignWarrantStep,
-                "perform_intent": PerformIntentStep,
-            }[step_type](step_config, **common_kwargs)
+            step_class = getattr(account, _ACCOUNT_STEP_CLASSES[step_type])
+            return step_class(step_config, **common_kwargs)
         if step_type == "node_exec":
             from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
 
