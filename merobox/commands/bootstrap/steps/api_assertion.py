@@ -58,6 +58,8 @@ class AssertApiResponseStep(BaseStep):
         self._validate_list_field("present", required=False, element_type=str)
         self._validate_list_field("absent", required=False, element_type=str)
         self._validate_dict_field("where", required=False)
+        self._validate_dict_field("not_match", required=False)
+        self._validate_dict_field("contains", required=False)
         for field in ("retries", "interval"):
             value = self.config.get(field)
             if value is not None and (
@@ -81,9 +83,7 @@ class AssertApiResponseStep(BaseStep):
             )
 
     def _assertion_count(self) -> int:
-        return sum(
-            len(self.config.get(f) or []) for f in ("match", "present", "absent")
-        )
+        return body_assert.count(self.config)
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -245,4 +245,6 @@ class AssertApiResponseStep(BaseStep):
             self.config.get("present"),
             self.config.get("absent"),
             lambda v: self._resolve_dynamic_value(v, workflow_results, dynamic_values),
+            self.config.get("not_match"),
+            self.config.get("contains"),
         )

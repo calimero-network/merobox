@@ -228,6 +228,8 @@ class _AccountStepBase(BaseStep):
             self.config.get("present"),
             self.config.get("absent"),
             resolve,
+            self.config.get("not_match"),
+            self.config.get("contains"),
         )
         for miss in misses:
             console.print(f"[red]    {miss}[/red]")

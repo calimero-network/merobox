@@ -156,6 +156,59 @@ class TestWhereSelector:
         assert result is True
 
 
+class TestNotMatchAndContains:
+    """The two shapes core's revoke and relink assertions need.
+
+    A revoked device is checked by what it is NOT - the spent id, and the holder's
+    account - and a relink's scope is a set the node builds by scan order, so
+    asserting a position would fail on a reordering that changed nothing.
+    """
+
+    _IDENTITY = {"data": {"accountId": "own-account", "deviceId": "fresh-device"}}
+
+    def test_not_match_passes_when_the_value_differs(self):
+        step = _step(
+            not_match={"data.deviceId": "spent-device", "data.accountId": "holder"}
+        )
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is True
+
+    def test_not_match_fails_when_the_value_is_the_forbidden_one(self):
+        step = _step(not_match={"data.deviceId": "fresh-device"})
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is False
+
+    def test_not_match_fails_when_the_key_is_absent(self):
+        # Absent is not "different": a renamed field would otherwise read as a
+        # passing negative assertion forever.
+        step = _step(not_match={"data.nope": "anything"})
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is False
+
+    def test_contains_ignores_order(self):
+        body = {"data": {"applications": ["app-b", "app-a"]}}
+        step = _step(contains={"data.applications": ["app-a", "app-b"]})
+        result, _get, _results = _execute(step, body)
+        assert result is True
+
+    def test_contains_fails_on_a_missing_entry(self):
+        body = {"data": {"applications": ["app-a"]}}
+        step = _step(contains={"data.applications": ["app-a", "app-b"]})
+        result, _get, _results = _execute(step, body)
+        assert result is False
+
+    def test_contains_refuses_a_non_list(self):
+        step = _step(contains={"data.accountId": ["own-account"]})
+        result, _get, _results = _execute(step, self._IDENTITY)
+        assert result is False
+
+    def test_they_count_as_assertions(self):
+        # Without this the "you asserted nothing" guard would reject a step whose
+        # only assertion is a negative one.
+        _step(not_match={"data.deviceId": "x"})
+        _step(contains={"data.applications": ["a"]})
+
+
 class TestRetries:
     """Retry covers the states no barrier can wait on.
 

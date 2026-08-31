@@ -546,6 +546,14 @@ class AssertApiResponseStepConfig(BaseStepConfig):
         None,
         description="Dotted paths into the response body mapped to expected values",
     )
+    not_match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths that must NOT hold these values"
+    )
+    contains: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths to lists that must contain these entries, "
+        "order-insensitive",
+    )
     present: Optional[list[str]] = Field(
         None, description="Dotted paths that must exist, whatever their value"
     )
@@ -1210,6 +1218,14 @@ class AccountDevicesStepConfig(BaseStepConfig):
     match: Optional[dict[str, Any]] = Field(
         None, description="Dotted paths into that row mapped to expected values"
     )
+    not_match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths that must NOT hold these values"
+    )
+    contains: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths to lists that must contain these entries, "
+        "order-insensitive",
+    )
     retries: Optional[int] = Field(
         None,
         gt=0,
@@ -1230,6 +1246,14 @@ class AccountApplicationsStepConfig(BaseStepConfig):
     )
     match: Optional[dict[str, Any]] = Field(
         None, description="Dotted paths into that row mapped to expected values"
+    )
+    not_match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths that must NOT hold these values"
+    )
+    contains: Optional[dict[str, Any]] = Field(
+        None,
+        description="Dotted paths to lists that must contain these entries, "
+        "order-insensitive",
     )
     retries: Optional[int] = Field(
         None,

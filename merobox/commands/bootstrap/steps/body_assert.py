@@ -69,6 +69,8 @@ def failures(
     present: list[str] | None,
     absent: list[str] | None,
     resolve: Resolve,
+    not_match: dict[str, Any] | None = None,
+    contains: dict[str, Any] | None = None,
 ) -> list[str]:
     """Per-path verdicts; empty means the body satisfied every assertion."""
     found = []
@@ -81,6 +83,35 @@ def failures(
             found.append(f"{path}: expected {expected!r}, but the key is absent")
         elif actual != expected:
             found.append(f"{path}: expected {expected!r}, got {actual!r}")
+
+    for path, unwanted in (not_match or {}).items():
+        if isinstance(unwanted, str):
+            unwanted = resolve(unwanted)
+        actual = lookup(payload, path)
+        if actual is MISSING:
+            found.append(
+                f"{path}: expected something other than {unwanted!r}, but the key is absent"
+            )
+        elif actual == unwanted:
+            found.append(f"{path}: expected anything but {unwanted!r}, got it")
+
+    # Order-insensitive: a list the node builds by scan order is not a sequence
+    # the scenario chose, so asserting position would fail on a reordering that
+    # changed nothing.
+    for path, wanted in (contains or {}).items():
+        actual = lookup(payload, path)
+        if actual is MISSING:
+            found.append(
+                f"{path}: expected to contain {wanted!r}, but the key is absent"
+            )
+            continue
+        if not isinstance(actual, list):
+            found.append(f"{path}: expected a list to search, got {actual!r}")
+            continue
+        items = [resolve(i) if isinstance(i, str) else i for i in wanted]
+        for item in items:
+            if item not in actual:
+                found.append(f"{path}: expected to contain {item!r}, got {actual!r}")
 
     for path in present or []:
         if lookup(payload, path) is MISSING:
@@ -98,7 +129,10 @@ def failures(
 
 def count(config: dict[str, Any]) -> int:
     """How many assertions a step config carries."""
-    return sum(len(config.get(field) or []) for field in ("match", "present", "absent"))
+    return sum(
+        len(config.get(field) or [])
+        for field in ("match", "not_match", "contains", "present", "absent")
+    )
 
 
 def validate(config: dict[str, Any], step_name: str) -> None:
@@ -110,7 +144,7 @@ def validate(config: dict[str, Any], step_name: str) -> None:
         value = config.get(field)
         if value is not None and (not isinstance(value, (int, float)) or value <= 0):
             raise ValueError(f"Step '{step_name}': '{field}' must be a positive number")
-    for field in ("match",):
+    for field in ("match", "not_match", "contains"):
         value = config.get(field)
         if value is not None and not isinstance(value, dict):
             raise ValueError(f"Step '{step_name}': '{field}' must be a mapping")
