@@ -35,7 +35,90 @@ from merobox.commands.constants import (
 # is sent to a batch of native processes. Mirrors DockerManager's drain phase.
 BINARY_DRAIN_TIMEOUT = 2
 
+IS_WINDOWS = os.name == "nt"
+
+# CREATE_NO_WINDOW from winbase.h. Windows opens a console window for every
+# console child a process spawns; a workflow starting five nodes would put five
+# black windows on screen.
+_CREATE_NO_WINDOW = 0x08000000
+
 console = Console()
+
+
+def _is_pid_alive(pid: int) -> bool:
+    """Whether `pid` is a live process.
+
+    `os.kill(pid, 0)` is the unix idiom and does not carry over: on Windows it
+    raises rather than reporting, so the caller would read every live node as
+    dead and skip stopping it.
+    """
+    if IS_WINDOWS:
+        try:
+            out = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                creationflags=_CREATE_NO_WINDOW,
+            )
+        except OSError:
+            return False
+        # tasklist exits 0 with an "INFO: No tasks..." line when nothing matches,
+        # so the exit code says nothing; the pid appearing in the row does.
+        return str(pid) in out.stdout
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _request_stop(process: subprocess.Popen) -> None:
+    """Ask a node we started to shut down, by the only means its platform has.
+
+    Windows has no `SIGTERM`, and `Popen.terminate()` there is `TerminateProcess`
+    — it runs no code, so the node never drains or flushes its store. What it
+    does have is `merod run --exit-on-stdin-close`: the node treats EOF on stdin
+    as the request to stop, which is why nodes are spawned with a stdin pipe on
+    that platform. Closing our end is the whole signal.
+    """
+    if IS_WINDOWS:
+        stdin = process.stdin
+        if stdin is not None and not stdin.closed:
+            try:
+                stdin.close()
+            except OSError:
+                pass
+        return
+    process.terminate()
+
+
+def _request_stop_pid(pid: int) -> None:
+    """[`_request_stop`] for a node this session did not start.
+
+    On Windows there is nothing graceful to do: we hold no pipe to that
+    process's stdin, and `taskkill` without `/F` posts `WM_CLOSE` to windows a
+    console process does not have. So this is a hard kill and the node will not
+    flush. Nodes started in this session go through `_request_stop` and do.
+    """
+    if IS_WINDOWS:
+        _force_kill_pid(pid)
+        return
+    os.kill(pid, signal.SIGTERM)
+
+
+def _force_kill_pid(pid: int) -> None:
+    """Stop `pid` without asking. `signal.SIGKILL` does not exist on Windows."""
+    if IS_WINDOWS:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"],
+                capture_output=True,
+                creationflags=_CREATE_NO_WINDOW,
+            )
+        except OSError:
+            pass
+        return
+    os.kill(pid, signal.SIGKILL)
 
 
 class BinaryManager(CleanupMixin):
@@ -95,7 +178,7 @@ class BinaryManager(CleanupMixin):
             for node_name in list(self.processes.keys()):
                 try:
                     process = self.processes[node_name]
-                    process.terminate()
+                    _request_stop(process)
                     try:
                         process.wait(timeout=stop_timeout)
                     except subprocess.TimeoutExpired:
@@ -181,11 +264,7 @@ class BinaryManager(CleanupMixin):
 
     def _is_process_running(self, pid: int) -> bool:
         """Check if a process with given PID is running."""
-        try:
-            os.kill(pid, 0)  # Signal 0 checks if process exists
-            return True
-        except (OSError, ProcessLookupError):
-            return False
+        return _is_pid_alive(pid)
 
     def run_node(
         self,
@@ -384,6 +463,12 @@ class BinaryManager(CleanupMixin):
                 "run",
             ]
 
+            # The only graceful stop Windows has. Paired with the stdin pipe
+            # opened below: without the flag merod ignores EOF and the pipe
+            # close does nothing, leaving a hard kill as the only way out.
+            if IS_WINDOWS:
+                cmd.append("--exit-on-stdin-close")
+
             # Mock TEE attestation for local testing (`merod run --mock-tee`)
             if mock_tee:
                 cmd.append("--mock-tee")
@@ -426,13 +511,22 @@ class BinaryManager(CleanupMixin):
                 with open(log_file, "a", encoding="utf-8") as log_f:
                     popen_kwargs = {
                         "env": env,
-                        "stdin": subprocess.DEVNULL,
+                        # Windows keeps the write end so it can be closed to ask
+                        # for a graceful stop; everywhere else stdin is unused
+                        # and a pipe nobody drains is a way to wedge a node.
+                        "stdin": subprocess.PIPE if IS_WINDOWS else subprocess.DEVNULL,
                         "stdout": log_f,
                         "stderr": subprocess.STDOUT,
                     }
-                    # Only create new session if NOT in e2e mode
-                    # E2E tests work better when process is in same process group
-                    if not e2e_mode:
+                    if IS_WINDOWS:
+                        # `start_new_session` is a POSIX-only kwarg. The reason
+                        # it exists here — surviving parent death — is not
+                        # wanted on Windows anyway, where the stdin pipe is
+                        # precisely what ties node lifetime to ours.
+                        popen_kwargs["creationflags"] = _CREATE_NO_WINDOW
+                    elif not e2e_mode:
+                        # Only create new session if NOT in e2e mode
+                        # E2E tests work better when process is in same process group
                         popen_kwargs["start_new_session"] = True
 
                     process = subprocess.Popen(cmd, **popen_kwargs)
@@ -512,7 +606,7 @@ class BinaryManager(CleanupMixin):
             if node_name in self.processes:
                 process = self.processes[node_name]
                 try:
-                    process.terminate()
+                    _request_stop(process)
                     process.wait(timeout=stop_timeout)
                     console.print(f"[green]✓ Stopped node {node_name}[/green]")
                 except subprocess.TimeoutExpired:
@@ -527,13 +621,13 @@ class BinaryManager(CleanupMixin):
             # Try loading PID from file
             pid = self._load_pid(node_name)
             if pid and self._is_process_running(pid):
-                os.kill(pid, signal.SIGTERM)
+                _request_stop_pid(pid)
                 time.sleep(drain_timeout)
 
                 # Check if still running
                 if self._is_process_running(pid):
                     console.print(f"[yellow]Force killing node {node_name}...[/yellow]")
-                    os.kill(pid, signal.SIGKILL)
+                    _force_kill_pid(pid)
 
                 self._remove_pid_file(node_name)
                 self.node_rpc_ports.pop(node_name, None)
@@ -603,11 +697,11 @@ class BinaryManager(CleanupMixin):
         for node_name in running_nodes:
             try:
                 if node_name in self.processes:
-                    self.processes[node_name].terminate()
+                    _request_stop(self.processes[node_name])
                 else:
                     pid = self._load_pid(node_name)
                     if pid and self._is_process_running(pid):
-                        os.kill(pid, signal.SIGTERM)
+                        _request_stop_pid(pid)
             except Exception:
                 pass
 
@@ -637,11 +731,11 @@ class BinaryManager(CleanupMixin):
                 else:
                     pid = self._load_pid(node_name)
                     if pid and self._is_process_running(pid):
-                        # SIGTERM already sent in Phase 1, force-kill if needed
+                        # stop already requested in Phase 1, force-kill if needed
                         console.print(
                             f"[yellow]Force killing node {node_name}...[/yellow]"
                         )
-                        os.kill(pid, signal.SIGKILL)
+                        _force_kill_pid(pid)
 
                         console.print(f"[green]✓ Stopped node {node_name}[/green]")
                     else:
