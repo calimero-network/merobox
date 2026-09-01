@@ -144,8 +144,15 @@ jobs:
           # does not distinguish them: both report 0.11.0-rc.25, and only the
           # build hash differs (edge 5cc9668 vs release d630815). Re-add here once
           # a core release carries the endpoint.
+          # non-admin-delete-vs-leave is out for the same account-rename
+          # reason as the three above: it captures `memberAccount` from
+          # join_namespace and hands it to add_group_members, so on a released
+          # merod the capture binds nothing and the member never gets the
+          # direct row the whole leave_group half of the workflow needs.
+          # Docker mode (merod:edge) keeps full coverage.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
+            grep -v non-admin-delete-vs-leave | \
             grep -v delegated-authorship | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
