@@ -26,11 +26,21 @@ description: >
               "identity {id} is not an admin of group {group}"
          delete_group     → NOT require_admin. Admits the subgroup's owner,
               an admin of the namespace root, or a member holding
-              CAN_DELETE_SUBGROUP, so it refuses with
-              "requester lacks permission to delete subgroup"
+              CAN_DELETE_SUBGROUP. It refuses with
+              `CapabilitiesError::Unauthorized`, which `parse_api_error`
+              classifies nowhere — so the client gets a bare
+              "HTTP 500: Internal server error" and the reason stays in the
+              node log. The status is all that can be pinned.
 
-       Each is pinned with `expected_error`, so an unreachable node or an
-       unrelated 500 cannot stand in for the refusal under test.
+       Each is pinned with `expected_error`, so an unreachable node cannot
+       stand in for the refusal under test.
+
+       Note this differs BY MEROD VERSION. The two 403s above come from
+       `membership_refusal_status`, which core master added and 0.11.0-rc.28
+       does not have — on rc.28 all three refusals are the reason-stripped
+       500. A client that only recognises the message therefore recognises
+       nothing on a released node, which is exactly the bug this workflow
+       found in calimero-network/tauri-app#209.
 
     2. **Leave works for that same member, at every level.** `leave_context`
        is a node-local opt-out (no governance op), `leave_group` publishes
@@ -247,14 +257,27 @@ steps:
     expected_failure: true
     expected_error: "is not an admin of group"
 
-  # Different gate, different wording: the owner / root-admin /
-  # CAN_DELETE_SUBGROUP path, not require_admin.
+  # Different gate, and — MEASURED, not assumed — a refusal the client cannot
+  # read. `delete_group` refuses with `CapabilitiesError::Unauthorized`, which
+  # `parse_api_error` classifies nowhere, so it falls through to the generic
+  # arm that deliberately does NOT echo an unclassified message back (it can
+  # carry store paths or key material). The client sees `500 Internal server
+  # error` and nothing else; the reason exists only in the node log.
+  #
+  # So the status is all there is to pin. That still separates a refusal from
+  # the failures that would otherwise satisfy `expected_failure` for the wrong
+  # reason — an unreachable node, a 404 on a bad id, a 403 from the
+  # `MembershipError` family the two steps above assert.
+  #
+  # Tighten this to "lacks permission to delete subgroup" once core classifies
+  # `CapabilitiesError` the way master's `membership_refusal_status` now
+  # classifies `MembershipError`.
   - name: Non-Admin Cannot Delete a Subgroup
     type: delete_group
     node: perm-node-2
     group_id: "{{direct_room_id}}"
     expected_failure: true
-    expected_error: "lacks permission to delete subgroup"
+    expected_error: "HTTP 500"
 
   - name: Non-Admin Cannot Delete the Namespace
     type: delete_namespace
