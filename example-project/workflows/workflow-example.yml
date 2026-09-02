@@ -5,6 +5,30 @@ name: Sample Calimero Workflow
 # stamped to point at, and a pull would replace that image with an unstamped one.
 force_pull_image: false
 
+# Isolate the cluster from the public network, and wire the nodes to each other.
+#
+# Without this the nodes keep whatever `merod init` wrote into
+# `bootstrap.nodes` — the public dev boot node — so both dial out to it, join
+# that network, and reserve relay circuits on it. Rendezvous then publishes
+# each node's EXTERNAL addresses, which are those circuits, so a node learns
+# its sibling only as `/ip4/<public relay>/.../p2p-circuit/p2p/<sibling>` and
+# never as the docker-bridge address it can actually reach. `identify` cannot
+# close the gap, because it only reports listen addresses over an established
+# connection — the very thing missing.
+#
+# That leaves mDNS as the only path to a directly dialable sibling address, and
+# mDNS is not dependable enough to be the only one: on a busy bridge its
+# packets fail to parse ("rdata length too large for remaining bytes"), the
+# join finds no reachable peer, gets no group key, and returns HTTP 500 —
+# taking every test that shares the session fixture with it. This is the flake
+# investigated in calimero-network/core#3801.
+#
+# `e2e_mode` clears `bootstrap.nodes` and lets the cluster wiring supply the
+# siblings' bridge addresses instead, which is what core's own e2e jobs get
+# from `merobox bootstrap run --e2e-mode`. Set here rather than passed on the
+# command line so running this workflow by hand behaves the same way CI does.
+e2e_mode: true
+
 # Step ordering mirrors workflow-examples/workflow-groups-example.yml,
 # the known-good namespace + explicit join_context flow against
 # merod:edge. The only deliberate divergence is `base_port` /
