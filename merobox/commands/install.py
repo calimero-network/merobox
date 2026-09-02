@@ -14,7 +14,6 @@ from merobox.commands.bootstrap.steps.install import install_by_coords
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
     CONTAINER_DATA_DIR_PATTERNS,
-    DEFAULT_METADATA,
     INSTALL_TIMEOUT,
 )
 from merobox.commands.manager import DockerManager
@@ -121,14 +120,13 @@ def validate_installation_source(
 @click.option(
     "--dev", is_flag=True, help="Accepted and ignored; a --path install is local"
 )
-@click.option("--metadata", help="Application metadata (optional)")
 @click.option(
     "--timeout",
     default=INSTALL_TIMEOUT,
     help=f"Timeout in seconds for installation (default: {INSTALL_TIMEOUT})",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def install(node, package, version, path, dev, metadata, timeout, verbose):
+def install(node, package, version, path, dev, timeout, verbose):
     """Install applications on Calimero nodes."""
     manager = DockerManager()
 
@@ -140,15 +138,6 @@ def install(node, package, version, path, dev, metadata, timeout, verbose):
     if not is_valid:
         console.print(f"[red]✗ {error_msg}[/red]")
         sys.exit(1)
-
-    # Parse metadata if provided
-    metadata_bytes = DEFAULT_METADATA
-    if metadata:
-        try:
-            metadata_bytes = metadata.encode("utf-8")
-        except (UnicodeEncodeError, AttributeError) as e:
-            console.print(f"[red]✗ Failed to encode metadata: {str(e)}[/red]")
-            sys.exit(1)
 
     # Get admin API URL
     rpc_url = get_node_rpc_url(node, manager)
@@ -171,9 +160,7 @@ def install(node, package, version, path, dev, metadata, timeout, verbose):
                 )
                 sys.exit(1)
 
-            api_result = client.install_dev_application(
-                path=container_path, metadata=metadata_bytes
-            )
+            api_result = client.install_dev_application(path=container_path)
         else:
             api_result = install_by_coords(rpc_url, package, version)
 

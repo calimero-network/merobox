@@ -14,7 +14,6 @@ from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
     CONTAINER_DATA_DIR_PATTERNS,
     DEFAULT_CONNECTION_TIMEOUT,
-    DEFAULT_METADATA,
 )
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
@@ -210,9 +209,7 @@ class InstallApplicationStep(BaseStep):
                     console.print(
                         f"[cyan]Installing dev application from host filesystem path: {application_path}[/cyan]"
                     )
-                    api_result = client.install_dev_application(
-                        path=application_path, metadata=DEFAULT_METADATA
-                    )
+                    api_result = client.install_dev_application(path=application_path)
                 else:
                     container_path = self._prepare_container_path(
                         node_name, application_path
@@ -228,9 +225,7 @@ class InstallApplicationStep(BaseStep):
                     console.print(
                         f"[cyan]Installing dev application using container path: {container_path}[/cyan]"
                     )
-                    api_result = client.install_dev_application(
-                        path=container_path, metadata=DEFAULT_METADATA
-                    )
+                    api_result = client.install_dev_application(path=container_path)
             else:
                 console.print(
                     f"[cyan]Installing {package}@{version} from the node's "
