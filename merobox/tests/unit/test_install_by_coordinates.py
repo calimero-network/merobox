@@ -82,7 +82,7 @@ class TestExecutorFieldValidation:
 
 
 class TestCoordinateInstall:
-    def _exec(self, step, status_code=200, body=None, text=""):
+    def _exec(self, step, install_side_effect=None):
         with (
             patch.object(
                 step,
@@ -90,67 +90,63 @@ class TestCoordinateInstall:
                 return_value=("http://localhost:7180", "n1"),
             ),
             patch(
-                "merobox.commands.bootstrap.steps.install.requests.post"
-            ) as mock_post,
-            patch(
                 "merobox.commands.bootstrap.steps.install.get_client_for_rpc_url"
             ) as mock_get_client,
             patch.object(step, "_print_node_logs_on_failure"),
         ):
-            mock_resp = MagicMock()
-            mock_resp.status_code = status_code
-            mock_resp.text = text
-            mock_resp.json.return_value = body or {"data": {"applicationId": "app-hex"}}
-            mock_post.return_value = mock_resp
-            mock_get_client.return_value = MagicMock()
+            client = MagicMock()
+            client.install_application.return_value = {
+                "data": {"applicationId": "app-hex"}
+            }
+            client.install_dev_application.return_value = {
+                "data": {"applicationId": "app-hex"}
+            }
+            if install_side_effect is not None:
+                client.install_application.side_effect = install_side_effect
+            mock_get_client.return_value = client
 
             dynamic_values = {}
             result = _run(step.execute({}, dynamic_values))
-            return result, mock_post, mock_get_client, dynamic_values
+            return result, client, dynamic_values
 
-    def test_posts_the_coordinate_and_exports_the_app_id(self):
+    def test_passes_the_coordinate_and_exports_the_app_id(self):
         step = InstallApplicationStep(
             _config(package="com.example.app", version="1.0.0")
         )
-        result, mock_post, mock_get_client, dynamic_values = self._exec(step)
+        result, client, dynamic_values = self._exec(step)
 
         assert result is True
-        assert (
-            mock_post.call_args[0][0]
-            == "http://localhost:7180/admin-api/install-application"
+        client.install_application.assert_called_once_with(
+            package="com.example.app", version="1.0.0"
         )
-        assert mock_post.call_args[1]["json"] == {
-            "package": "com.example.app",
-            "version": "1.0.0",
-        }
-        # A URL body is what the node now refuses; never send one.
-        assert "url" not in mock_post.call_args[1]["json"]
-        mock_get_client.assert_not_called()
+        # The dev endpoint is the one that takes a path; coordinates never use it.
+        client.install_dev_application.assert_not_called()
         assert dynamic_values["app_id_n1"] == "app-hex"
 
     def test_the_servers_refusal_reaches_the_report(self):
         step = InstallApplicationStep(
             _config(package="com.example.app", version="9.9.9")
         )
-        result, _, _, _ = self._exec(
+        result, _, _ = self._exec(
             step,
-            status_code=502,
-            text="the configured Dht source has no application published at "
-            "com.example.app@9.9.9",
+            install_side_effect=RuntimeError(
+                "Client error: the configured Dht source has no application "
+                "published at com.example.app@9.9.9"
+            ),
         )
         assert result is False
 
-    def test_a_path_install_still_uses_the_client(self, tmp_path):
+    def test_a_path_install_uses_the_dev_endpoint(self, tmp_path):
         bundle = tmp_path / "app.mpk"
         bundle.write_bytes(b"\0asm")
         step = InstallApplicationStep(_config(path=str(bundle)))
 
         with patch.object(step, "_is_binary_mode", return_value=True):
-            result, mock_post, mock_get_client, _ = self._exec(step)
+            result, client, _ = self._exec(step)
 
         assert result is True
-        mock_post.assert_not_called()
-        mock_get_client.return_value.install_dev_application.assert_called_once()
+        client.install_application.assert_not_called()
+        client.install_dev_application.assert_called_once_with(path=str(bundle))
 
 
 class TestCliSourceValidation:

@@ -10,7 +10,6 @@ from typing import Optional
 import click
 import docker
 
-from merobox.commands.bootstrap.steps.install import install_by_coords
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
     CONTAINER_DATA_DIR_PATTERNS,
@@ -144,8 +143,9 @@ def install(node, package, version, path, dev, timeout, verbose):
 
     # Execute installation using calimero-client-py
     try:
+        client = get_client_for_rpc_url(rpc_url, node_name=node)
+
         if path:
-            client = get_client_for_rpc_url(rpc_url, node_name=node)
             application_path = os.path.abspath(os.path.expanduser(path))
             if not os.path.isfile(application_path):
                 console.print(
@@ -162,7 +162,7 @@ def install(node, package, version, path, dev, timeout, verbose):
 
             api_result = client.install_dev_application(path=container_path)
         else:
-            api_result = install_by_coords(rpc_url, package, version)
+            api_result = client.install_application(package=package, version=version)
 
         result = ok(api_result)
     except Exception as e:

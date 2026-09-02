@@ -6,36 +6,13 @@ import os
 import shutil
 from typing import Any, Optional
 
-import requests
 from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import (
-    CONTAINER_DATA_DIR_PATTERNS,
-    DEFAULT_CONNECTION_TIMEOUT,
-)
+from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
-
-COORDS_READ_TIMEOUT = 120.0  # a registry install fetches a bundle before replying
-
-
-def install_by_coords(rpc_url: str, package: str, version: str) -> dict[str, Any]:
-    """Install by registry coordinates over the raw admin API.
-
-    The compiled client still sends the removed `url` body, which the node now
-    rejects; no Authorization header, matching the harness's other raw helpers.
-    """
-    resp = requests.post(
-        f"{rpc_url.rstrip('/')}/admin-api/install-application",
-        json={"package": package, "version": version},
-        timeout=(DEFAULT_CONNECTION_TIMEOUT, COORDS_READ_TIMEOUT),
-    )
-    if resp.status_code != 200:
-        # raise_for_status would drop the server's reason for refusing.
-        raise RuntimeError(f"install_application HTTP {resp.status_code}: {resp.text}")
-    return resp.json()
 
 
 class InstallApplicationStep(BaseStep):
@@ -196,9 +173,9 @@ class InstallApplicationStep(BaseStep):
             console.print(
                 f"[cyan]Connecting to {rpc_url} (node: {node_name})...[/cyan]"
             )
-            if application_path:
-                client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
+            if application_path:
                 if not os.path.isfile(application_path):
                     console.print(
                         f"[red]Application path not found or not a file: {application_path}[/red]"
@@ -231,7 +208,9 @@ class InstallApplicationStep(BaseStep):
                     f"[cyan]Installing {package}@{version} from the node's "
                     f"configured registry[/cyan]"
                 )
-                api_result = install_by_coords(rpc_url, package, version)
+                api_result = client.install_application(
+                    package=package, version=version
+                )
 
             result = ok(api_result)
         except Exception as e:
