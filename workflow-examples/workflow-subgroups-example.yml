@@ -5,8 +5,11 @@ description: >
   of the subgroup, creates a context inside the subgroup, and verifies
   both nodes can sync state through the subgroup context.
 
-force_pull_image: true
+# A pull would replace the image the registry stamp produced.
+force_pull_image: false
 
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 nodes:
   count: 2
   image: ghcr.io/calimero-network/merod:edge
@@ -17,8 +20,8 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId
 

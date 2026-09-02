@@ -55,15 +55,18 @@ merobox bootstrap run my-first-workflow.yml
 
 ## Step 1 — install the application
 
-A context runs a WASM application, so the first step installs one. We use the
-bundled `kv_store` app (a simple key/value store) that ships under
-`workflow-examples/res/`.
+A context runs a Wasm application packaged as a signed `.mpk` bundle, so the
+first step installs one. We use the `kv-store` app (a simple key/value store),
+built into `workflow-examples/res/` by running
+`workflow-examples/scripts/build_res_bundles.sh` once from the repo root —
+`res/` holds no committed artifacts, so this script is what puts the bundle
+there.
 
 ```yaml
 - name: Install Application on Node 1
   type: install_application
   node: calimero-node-1
-  path: workflow-examples/res/kv_store.wasm
+  path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
   dev: true
   outputs:
     app_id: applicationId
@@ -302,7 +305,7 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId

@@ -56,7 +56,7 @@ steps:
   - name: Install the app on node-1
     type: install_application
     node: account-demo-1
-    path: ./res/kv_store.wasm
+    path: ./res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId
@@ -64,13 +64,13 @@ steps:
   - name: Install the app on node-2
     type: install_application
     node: account-demo-2
-    path: ./res/kv_store.wasm
+    path: ./res/com.calimero.kv-store-1.0.0.mpk
     dev: true
 
   - name: Install the app on node-3
     type: install_application
     node: account-demo-3
-    path: ./res/kv_store.wasm
+    path: ./res/com.calimero.kv-store-1.0.0.mpk
     dev: true
 
   - name: Node-1 creates the namespace

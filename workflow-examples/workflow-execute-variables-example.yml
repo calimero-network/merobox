@@ -11,7 +11,7 @@ steps:
   - name: Install KV Store App
     type: install_application
     node: calimero-node-1
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId
@@ -70,7 +70,7 @@ steps:
     type: script
     target: local
     script: ./workflow-examples/scripts/echo-exported-value.sh
-    args: 
+    args:
       - "{{read_value}}"
 
 # Optional workflow-level configuration

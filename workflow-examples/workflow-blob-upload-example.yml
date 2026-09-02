@@ -1,9 +1,11 @@
 name: Blob API Example Workflow
 description: A workflow demonstrating the Calimero blob API for file sharing
 
-# Force pull Docker images even if they exist locally
-force_pull_image: true
+# A pull would replace the image the registry stamp produced.
+force_pull_image: false
 
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 nodes:
   count: 2
   image: ghcr.io/calimero-network/merod:edge
@@ -14,8 +16,8 @@ steps:
   - name: Install Blobs Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/blobs.wasm
-    dev: true
+    package: com.calimero.blobs
+    version: 1.0.0
     outputs:
       app_id: applicationId
 

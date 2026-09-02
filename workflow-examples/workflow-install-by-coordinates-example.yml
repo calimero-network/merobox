@@ -1,0 +1,75 @@
+description: Install an application by registry coordinates instead of a local bundle path
+name: Install By Coordinates Example
+
+# The node resolves `package@version` against its own configured registry, so
+# this needs one serving the bundles. From the repo root, before running:
+#
+#   ./workflow-examples/scripts/build_res_bundles.sh
+#   url=$(./workflow-examples/scripts/fixture-registry.sh)
+#   printf 'FROM ghcr.io/calimero-network/merod:edge\nENV CALIMERO_REGISTRY_MODE=http\nENV CALIMERO_REGISTRY_URL=%s\n' "$url" \
+#     | docker build -t ghcr.io/calimero-network/merod:edge -
+#
+# No force_pull_image: a pull would replace the image the stamp above produced.
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: calimero-node
+  base_port: 9002
+  base_rpc_port: 9102
+
+steps:
+  - name: Install Application By Coordinates
+    type: install_application
+    node: calimero-node-1
+    package: com.calimero.kv-store
+    version: 1.0.0
+    outputs:
+      app_id: applicationId
+
+  - name: Create Namespace
+    type: create_namespace
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create Context
+    type: create_context
+    node: calimero-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+
+  # The install alone only proves the bundle downloaded; a call proves the
+  # bytecode the registry served is the one the node actually runs.
+  - name: Set Key-Value
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    method: set
+    args:
+      key: coordinate_key
+      value: coordinate_value
+    outputs:
+      set_result: result
+
+  - name: Get Key-Value
+    type: call
+    node: calimero-node-1
+    context_id: '{{context_id}}'
+    method: get
+    args:
+      key: coordinate_key
+    outputs:
+      get_result: result
+
+  - name: Assert The Fetched Application Ran
+    type: assert
+    statements:
+      - "is_set({{app_id}})"
+      - "contains({{get_result}}, 'coordinate_value')"
+
+stop_all_nodes: true
+restart: false
+wait_timeout: 60

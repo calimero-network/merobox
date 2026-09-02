@@ -6,17 +6,12 @@ import os
 import shutil
 import sys
 from typing import Optional
-from urllib.parse import urlparse
 
 import click
 import docker
 
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import (
-    CONTAINER_DATA_DIR_PATTERNS,
-    DEFAULT_METADATA,
-    INSTALL_TIMEOUT,
-)
+from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import (
@@ -97,66 +92,33 @@ def _prepare_container_path(
 
 
 def validate_installation_source(
-    url: str = None, path: str = None, is_dev: bool = False
-) -> tuple[bool, str]:
-    """Validate that either URL or path is provided based on installation type."""
-    if is_dev:
-        if not path:
-            return False, "Development installation requires --path parameter"
-        if not os.path.exists(path):
-            return False, f"File not found: {path}"
+    package: str = None, version: str = None, path: str = None
+) -> None:
+    """Raise unless either a local bundle path or registry coordinates are named."""
+    if path:
         if not os.path.isfile(path):
-            return False, f"Path is not a file: {path}"
-        return True, ""
-    else:
-        if not url:
-            return False, "Remote installation requires --url parameter"
-        try:
-            parsed = urlparse(url)
-            if not parsed.scheme or not parsed.netloc:
-                return False, f"Invalid URL format: {url}"
-            return True, ""
-        except (ValueError, AttributeError):
-            return False, f"Invalid URL: {url}"
+            raise click.BadParameter(f"not a file: {path}", param_hint="--path")
+        return
+    if not package or not version:
+        raise click.BadParameter("give --path, or --package and --version")
 
 
 @click.command()
 @click.option(
     "--node", "-n", required=True, help="Node name to install the application on"
 )
-@click.option("--url", help="URL to install the application from")
-@click.option("--path", help="Local path for dev installation")
-@click.option(
-    "--dev", is_flag=True, help="Install as development application from local path"
-)
-@click.option("--metadata", help="Application metadata (optional)")
-@click.option(
-    "--timeout",
-    default=INSTALL_TIMEOUT,
-    help=f"Timeout in seconds for installation (default: {INSTALL_TIMEOUT})",
-)
+@click.option("--package", help="Registry package to install")
+@click.option("--version", help="Version of that package")
+@click.option("--path", help="Local path to an application bundle")
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def install(node, url, path, dev, metadata, timeout, verbose):
+def install(node, package, version, path, verbose):
     """Install applications on Calimero nodes."""
     manager = DockerManager()
 
     # Check if node is running
     check_node_running(node, manager)
 
-    # Validate installation source
-    is_valid, error_msg = validate_installation_source(url, path, dev)
-    if not is_valid:
-        console.print(f"[red]✗ {error_msg}[/red]")
-        sys.exit(1)
-
-    # Parse metadata if provided
-    metadata_bytes = DEFAULT_METADATA
-    if metadata:
-        try:
-            metadata_bytes = metadata.encode("utf-8")
-        except (UnicodeEncodeError, AttributeError) as e:
-            console.print(f"[red]✗ Failed to encode metadata: {str(e)}[/red]")
-            sys.exit(1)
+    validate_installation_source(package, version, path)
 
     # Get admin API URL
     rpc_url = get_node_rpc_url(node, manager)
@@ -165,7 +127,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
     try:
         client = get_client_for_rpc_url(rpc_url, node_name=node)
 
-        if dev and path:
+        if path:
             application_path = os.path.abspath(os.path.expanduser(path))
             if not os.path.isfile(application_path):
                 console.print(
@@ -180,11 +142,9 @@ def install(node, url, path, dev, metadata, timeout, verbose):
                 )
                 sys.exit(1)
 
-            api_result = client.install_dev_application(
-                path=container_path, metadata=metadata_bytes
-            )
+            api_result = client.install_dev_application(path=container_path)
         else:
-            api_result = client.install_application(url=url, metadata=metadata_bytes)
+            api_result = client.install_application(package=package, version=version)
 
         result = ok(api_result)
     except Exception as e:

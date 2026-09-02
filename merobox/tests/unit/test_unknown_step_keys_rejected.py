@@ -102,7 +102,8 @@ class TestKeysTheExecutorsActuallyRead:
             {
                 "type": "install_application",
                 "node": "n1",
-                "url": "https://example.test/app.wasm",
+                "package": "com.example.app",
+                "version": "1.0.0",
             },
             {
                 "type": "join_namespace",
@@ -148,7 +149,7 @@ class TestKeysTheExecutorsActuallyRead:
 
     def test_install_application_still_needs_a_source(self):
         errors = _errors({"type": "install_application", "node": "n1"})
-        assert any("'path' or 'url'" in e for e in errors)
+        assert any("'path' or 'package' + 'version'" in e for e in errors)
 
 
 def test_the_validate_cli_agrees_with_the_runner():
