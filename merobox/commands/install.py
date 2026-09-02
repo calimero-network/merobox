@@ -6,11 +6,11 @@ import os
 import shutil
 import sys
 from typing import Optional
-from urllib.parse import urlparse
 
 import click
 import docker
 
+from merobox.commands.bootstrap.steps.install import install_by_coords
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import (
     CONTAINER_DATA_DIR_PATTERNS,
@@ -97,37 +97,29 @@ def _prepare_container_path(
 
 
 def validate_installation_source(
-    url: str = None, path: str = None, is_dev: bool = False
+    package: str = None, version: str = None, path: str = None
 ) -> tuple[bool, str]:
-    """Validate that either URL or path is provided based on installation type."""
-    if is_dev:
-        if not path:
-            return False, "Development installation requires --path parameter"
+    """Validate that either a local path or registry coordinates are named."""
+    if path:
         if not os.path.exists(path):
             return False, f"File not found: {path}"
         if not os.path.isfile(path):
             return False, f"Path is not a file: {path}"
         return True, ""
-    else:
-        if not url:
-            return False, "Remote installation requires --url parameter"
-        try:
-            parsed = urlparse(url)
-            if not parsed.scheme or not parsed.netloc:
-                return False, f"Invalid URL format: {url}"
-            return True, ""
-        except (ValueError, AttributeError):
-            return False, f"Invalid URL: {url}"
+    if not package or not version:
+        return False, "Installation requires --path, or --package and --version"
+    return True, ""
 
 
 @click.command()
 @click.option(
     "--node", "-n", required=True, help="Node name to install the application on"
 )
-@click.option("--url", help="URL to install the application from")
+@click.option("--package", help="Registry package to install")
+@click.option("--version", help="Version of that package")
 @click.option("--path", help="Local path for dev installation")
 @click.option(
-    "--dev", is_flag=True, help="Install as development application from local path"
+    "--dev", is_flag=True, help="Accepted and ignored; a --path install is local"
 )
 @click.option("--metadata", help="Application metadata (optional)")
 @click.option(
@@ -136,7 +128,7 @@ def validate_installation_source(
     help=f"Timeout in seconds for installation (default: {INSTALL_TIMEOUT})",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def install(node, url, path, dev, metadata, timeout, verbose):
+def install(node, package, version, path, dev, metadata, timeout, verbose):
     """Install applications on Calimero nodes."""
     manager = DockerManager()
 
@@ -144,7 +136,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
     check_node_running(node, manager)
 
     # Validate installation source
-    is_valid, error_msg = validate_installation_source(url, path, dev)
+    is_valid, error_msg = validate_installation_source(package, version, path)
     if not is_valid:
         console.print(f"[red]✗ {error_msg}[/red]")
         sys.exit(1)
@@ -163,9 +155,8 @@ def install(node, url, path, dev, metadata, timeout, verbose):
 
     # Execute installation using calimero-client-py
     try:
-        client = get_client_for_rpc_url(rpc_url, node_name=node)
-
-        if dev and path:
+        if path:
+            client = get_client_for_rpc_url(rpc_url, node_name=node)
             application_path = os.path.abspath(os.path.expanduser(path))
             if not os.path.isfile(application_path):
                 console.print(
@@ -184,7 +175,7 @@ def install(node, url, path, dev, metadata, timeout, verbose):
                 path=container_path, metadata=metadata_bytes
             )
         else:
-            api_result = client.install_application(url=url, metadata=metadata_bytes)
+            api_result = install_by_coords(rpc_url, package, version)
 
         result = ok(api_result)
     except Exception as e:

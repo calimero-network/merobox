@@ -6,13 +6,37 @@ import os
 import shutil
 from typing import Any, Optional
 
+import requests
 from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
+from merobox.commands.constants import (
+    CONTAINER_DATA_DIR_PATTERNS,
+    DEFAULT_CONNECTION_TIMEOUT,
+    DEFAULT_METADATA,
+)
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
+
+COORDS_READ_TIMEOUT = 120.0  # a registry install fetches a bundle before replying
+
+
+def install_by_coords(rpc_url: str, package: str, version: str) -> dict[str, Any]:
+    """Install by registry coordinates over the raw admin API.
+
+    The compiled client still sends the removed `url` body, which the node now
+    rejects; no Authorization header, matching the harness's other raw helpers.
+    """
+    resp = requests.post(
+        f"{rpc_url.rstrip('/')}/admin-api/install-application",
+        json={"package": package, "version": version},
+        timeout=(DEFAULT_CONNECTION_TIMEOUT, COORDS_READ_TIMEOUT),
+    )
+    if resp.status_code != 200:
+        # raise_for_status would drop the server's reason for refusing.
+        raise RuntimeError(f"install_application HTTP {resp.status_code}: {resp.text}")
+    return resp.json()
 
 
 class InstallApplicationStep(BaseStep):
@@ -43,18 +67,25 @@ class InstallApplicationStep(BaseStep):
         if "path" in self.config and not isinstance(self.config["path"], str):
             raise ValueError(f"Step '{step_name}': 'path' must be a string")
 
-        # Validate url is a string if provided
-        if "url" in self.config and not isinstance(self.config["url"], str):
-            raise ValueError(f"Step '{step_name}': 'url' must be a string")
+        # Validate package and version are strings if provided
+        for field in ("package", "version"):
+            if field in self.config and not isinstance(self.config[field], str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
 
         # Validate dev is a boolean if provided
         if "dev" in self.config and not isinstance(self.config["dev"], bool):
             raise ValueError(f"Step '{step_name}': 'dev' must be a boolean")
 
-        # Validate that either path or url is provided
-        if "path" not in self.config and "url" not in self.config:
+        if ("package" in self.config) != ("version" in self.config):
             raise ValueError(
-                f"Step '{step_name}': Either 'path' or 'url' must be provided"
+                f"Step '{step_name}': 'package' and 'version' are one coordinate; "
+                "give both"
+            )
+
+        if "path" not in self.config and "package" not in self.config:
+            raise ValueError(
+                f"Step '{step_name}': Either 'path' or 'package' + 'version' "
+                "must be provided"
             )
 
     def _get_exportable_variables(self):
@@ -139,8 +170,8 @@ class InstallApplicationStep(BaseStep):
             if raw_application_path
             else None
         )
-        application_url = self.config.get("url")
-        is_dev = self.config.get("dev", False)
+        package = self.config.get("package")
+        version = self.config.get("version")
 
         # Validate export configuration
         if not self._validate_export_config():
@@ -148,8 +179,10 @@ class InstallApplicationStep(BaseStep):
                 "[yellow]⚠️  Install step export configuration validation failed[/yellow]"
             )
 
-        if not application_path and not application_url:
-            console.print("[red]No application path or URL specified[/red]")
+        if not application_path and not package:
+            console.print(
+                "[red]No application path or package coordinates specified[/red]"
+            )
             return False
 
         # Resolve node (gets URL and ensures authentication)
@@ -164,9 +197,9 @@ class InstallApplicationStep(BaseStep):
             console.print(
                 f"[cyan]Connecting to {rpc_url} (node: {node_name})...[/cyan]"
             )
-            client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
+            if application_path:
+                client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-            if is_dev and application_path:
                 if not os.path.isfile(application_path):
                     console.print(
                         f"[red]Application path not found or not a file: {application_path}[/red]"
@@ -200,11 +233,10 @@ class InstallApplicationStep(BaseStep):
                     )
             else:
                 console.print(
-                    f"[cyan]Installing application from URL: {application_url}[/cyan]"
+                    f"[cyan]Installing {package}@{version} from the node's "
+                    f"configured registry[/cyan]"
                 )
-                api_result = client.install_application(
-                    url=application_url, metadata=DEFAULT_METADATA
-                )
+                api_result = install_by_coords(rpc_url, package, version)
 
             result = ok(api_result)
         except Exception as e:

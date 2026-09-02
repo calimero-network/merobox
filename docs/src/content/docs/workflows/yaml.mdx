@@ -226,19 +226,34 @@ Fields specific to each step are documented per type. Placeholder references
 
 ### install_application
 
-Install a WASM application on a node.
+Install an application on a node, from a local bundle or from the registry the
+node is configured with. Name exactly one source: `path`, or `package` plus
+`version`.
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `node` | yes | string | Target node. |
-| `path` | yes | string | Path to the `.wasm` file. |
-| `dev` | no | bool (`false`) | Install in dev mode. |
+| `path` | no | string | Path to a local `.wasm` / `.mpk` bundle. |
+| `package` | no | string | Registry package to install. |
+| `version` | no | string | Version of that package. |
+| `dev` | no | bool (`false`) | Accepted and ignored; a `path` install is always local. |
 
 ```yaml
 - type: install_application
   node: calimero-node-1
   path: ./workflow-examples/res/kv_store.wasm
-  dev: true
+  outputs:
+    app_id: applicationId
+```
+
+Installing by coordinates goes through the node's registry, so it exercises the
+same acquisition path a real deployment uses:
+
+```yaml
+- type: install_application
+  node: calimero-node-1
+  package: com.calimero.kv-store
+  version: 0.0.0
   outputs:
     app_id: applicationId
 ```
