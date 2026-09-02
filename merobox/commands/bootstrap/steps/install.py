@@ -8,9 +8,10 @@ from typing import Any, Optional
 
 from rich.markup import escape
 
+from merobox.commands.bootstrap.config import validate_workflow_step
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS, DEFAULT_METADATA
+from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -19,51 +20,16 @@ class InstallApplicationStep(BaseStep):
     """Execute an install application step."""
 
     def _get_required_fields(self) -> list[str]:
-        """
-        Define which fields are required for this step.
-
-        Returns:
-            List of required field names
-        """
         return ["node"]
 
     def _validate_field_types(self) -> None:
-        """
-        Validate that fields have the correct types.
-        """
-        step_name = self.config.get(
-            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
-        )
-
-        # Validate node is a string
-        if not isinstance(self.config.get("node"), str):
-            raise ValueError(f"Step '{step_name}': 'node' must be a string")
-
-        # Validate path is a string if provided
-        if "path" in self.config and not isinstance(self.config["path"], str):
-            raise ValueError(f"Step '{step_name}': 'path' must be a string")
-
-        # Validate url is a string if provided
-        if "url" in self.config and not isinstance(self.config["url"], str):
-            raise ValueError(f"Step '{step_name}': 'url' must be a string")
-
-        # Validate dev is a boolean if provided
-        if "dev" in self.config and not isinstance(self.config["dev"], bool):
-            raise ValueError(f"Step '{step_name}': 'dev' must be a boolean")
-
-        # Validate that either path or url is provided
-        if "path" not in self.config and "url" not in self.config:
-            raise ValueError(
-                f"Step '{step_name}': Either 'path' or 'url' must be provided"
-            )
+        # The schema layer already states every rule for this step, so it is the
+        # one that enforces them; a second hand-rolled copy would drift.
+        errors = validate_workflow_step(self.config, 0)
+        if errors:
+            raise ValueError("; ".join(errors))
 
     def _get_exportable_variables(self):
-        """
-        Define which variables this step can export.
-
-        Available variables from install_application API response:
-        - applicationId: Application ID (this is what the API actually returns)
-        """
         return [
             (
                 "applicationId",
@@ -139,8 +105,8 @@ class InstallApplicationStep(BaseStep):
             if raw_application_path
             else None
         )
-        application_url = self.config.get("url")
-        is_dev = self.config.get("dev", False)
+        package = self.config.get("package")
+        version = self.config.get("version")
 
         # Validate export configuration
         if not self._validate_export_config():
@@ -148,8 +114,10 @@ class InstallApplicationStep(BaseStep):
                 "[yellow]⚠️  Install step export configuration validation failed[/yellow]"
             )
 
-        if not application_path and not application_url:
-            console.print("[red]No application path or URL specified[/red]")
+        if not application_path and not package:
+            console.print(
+                "[red]No application path or package coordinates specified[/red]"
+            )
             return False
 
         # Resolve node (gets URL and ensures authentication)
@@ -166,7 +134,7 @@ class InstallApplicationStep(BaseStep):
             )
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
 
-            if is_dev and application_path:
+            if application_path:
                 if not os.path.isfile(application_path):
                     console.print(
                         f"[red]Application path not found or not a file: {application_path}[/red]"
@@ -177,9 +145,7 @@ class InstallApplicationStep(BaseStep):
                     console.print(
                         f"[cyan]Installing dev application from host filesystem path: {application_path}[/cyan]"
                     )
-                    api_result = client.install_dev_application(
-                        path=application_path, metadata=DEFAULT_METADATA
-                    )
+                    api_result = client.install_dev_application(path=application_path)
                 else:
                     container_path = self._prepare_container_path(
                         node_name, application_path
@@ -195,15 +161,14 @@ class InstallApplicationStep(BaseStep):
                     console.print(
                         f"[cyan]Installing dev application using container path: {container_path}[/cyan]"
                     )
-                    api_result = client.install_dev_application(
-                        path=container_path, metadata=DEFAULT_METADATA
-                    )
+                    api_result = client.install_dev_application(path=container_path)
             else:
                 console.print(
-                    f"[cyan]Installing application from URL: {application_url}[/cyan]"
+                    f"[cyan]Installing {package}@{version} from the node's "
+                    f"configured registry[/cyan]"
                 )
                 api_result = client.install_application(
-                    url=application_url, metadata=DEFAULT_METADATA
+                    package=package, version=version
                 )
 
             result = ok(api_result)

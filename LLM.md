@@ -73,7 +73,7 @@ merobox nuke my-node
 
 ```bash
 # Install a WASM application on a node
-merobox install --node my-node --path /path/to/app.wasm --dev
+merobox install --node my-node --path /path/to/app.mpk
 
 # List all installed applications
 merobox application list --node my-node
@@ -161,7 +161,7 @@ name: Simple Node Setup
 steps:
   - type: install_application
     node: node-1
-    path: ./app.wasm
+    path: ./app.mpk
     outputs:
       app_id: "application_id"
 
@@ -271,7 +271,7 @@ Install a WASM application on a node.
 ```yaml
 - type: install_application
   node: node-1
-  path: ./my-app.wasm
+  path: ./my-app.mpk
   outputs:
     app_id: "application_id"
 ```
@@ -854,7 +854,7 @@ steps:
 
   - type: install_application
     node: main-node
-    path: ./app.wasm
+    path: ./app.mpk
     outputs:
       app: "application_id"
 
@@ -881,7 +881,7 @@ steps:
   # Start nodes
   - type: install_application
     node: node-1
-    path: ./app.wasm
+    path: ./app.mpk
     outputs:
       app_id: "application_id"
 
@@ -941,7 +941,7 @@ name: Quick Test
 steps:
   - type: install_application
     node: test-node
-    path: ./app.wasm
+    path: ./app.mpk
     outputs:
       app_id: "application_id"
 
@@ -1003,7 +1003,7 @@ steps:
   # Setup two nodes in same context
   - type: install_application
     node: sender
-    path: ./app.wasm
+    path: ./app.mpk
     outputs:
       app_id: "application_id"
 
@@ -1066,7 +1066,7 @@ steps:
   # Setup context
   - type: install_application
     node: main-node
-    path: ./app.wasm
+    path: ./app.mpk
     outputs:
       app_id: "application_id"
 
@@ -1121,7 +1121,7 @@ name: Data Upload and Processing
 steps:
   - type: install_application
     node: data-node
-    path: ./processor.wasm
+    path: ./processor.mpk
     outputs:
       app_id: "application_id"
 
@@ -1273,7 +1273,7 @@ docker ps
 
 ```bash
 # Verify WASM file exists
-ls -lh /path/to/app.wasm
+ls -lh /path/to/app.mpk
 
 # Check node is running
 merobox health my-node
@@ -1461,7 +1461,7 @@ merobox run --name <node>          # Start node
 merobox list                       # List nodes
 merobox health <node>              # Check health
 merobox logs <node>                # View logs
-merobox install <node> <wasm>      # Install app
+merobox install <node> <bundle>    # Install app
 merobox bootstrap run <yaml>       # Run workflow
 merobox nuke <node>                # Delete node data
 

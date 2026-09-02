@@ -243,7 +243,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Build workflow WASM apps
+      - name: Build workflow app bundles
         env:
           # Build the apps from the SAME core revision the merod above came from.
           # Core master's apps import host functions a released merod does not
@@ -256,8 +256,8 @@ jobs:
           # both the binary and docker matrices.
           CORE_BRANCH: ${{ steps.download-merod.outputs.tag }}
         run: |
-          chmod +x workflow-examples/scripts/build_res_wasm.sh
-          ./workflow-examples/scripts/build_res_wasm.sh
+          chmod +x workflow-examples/scripts/build_res_bundles.sh
+          ./workflow-examples/scripts/build_res_bundles.sh
 
       - name: Upload merod binary
         uses: actions/upload-artifact@v4
@@ -266,10 +266,10 @@ jobs:
           path: /tmp/merod
           retention-days: 1
 
-      - name: Upload WASM artifacts
+      - name: Upload app bundles
         uses: actions/upload-artifact@v4
         with:
-          name: wasm-apps
+          name: app-bundles
           path: workflow-examples/res/
           retention-days: 1
 
@@ -406,11 +406,20 @@ jobs:
           meroctl --version
           echo "✓ meroctl $TAG installed"
 
-      - name: Download WASM artifacts
+      - name: Download app bundles
         uses: actions/download-artifact@v4
         with:
-          name: wasm-apps
+          name: app-bundles
           path: workflow-examples/res/
+
+      # Native nodes inherit os.environ, so no image to stamp.
+      - name: Serve the bundles over an http registry
+        run: |
+          sudo systemctl start docker
+          url=$(./workflow-examples/scripts/fixture-registry.sh)
+          echo "fixture registry at $url"
+          echo "CALIMERO_REGISTRY_MODE=http" >> "$GITHUB_ENV"
+          echo "CALIMERO_REGISTRY_URL=$url" >> "$GITHUB_ENV"
 
       - name: Run ${{ matrix.name }}
         env:
@@ -419,14 +428,21 @@ jobs:
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE" --no-docker
 
+      - name: Assert the registry served the bundle
+        if: always()
+        env:
+          WORKFLOW_FILE: ${{ matrix.file }}
+        run: ./workflow-examples/scripts/fixture-registry.sh --assert "$WORKFLOW_FILE"
+
   # ── Test phase (TEE): mock-TEE scenarios, native, feature-enabled merod ──
   # These are excluded from the binary+docker matrices and run only here, on the
   # native path, against the merod built by build-merod-mock. Apps: all ten use
-  # the committed res/kv_store_v2.wasm (no WASM build needed).
+  # res/com.calimero.kv-store-v2-1.0.0.mpk, which is gitignored, so the bundles
+  # come from build-binary rather than from the checkout.
   test-tee:
     name: TEE (${{ matrix.name }})
     runs-on: ubuntu-latest
-    needs: [build-merod-mock, list-workflows]
+    needs: [build-binary, build-merod-mock, list-workflows]
     strategy:
       fail-fast: false
       matrix:
@@ -475,6 +491,14 @@ jobs:
           meroctl --version
           echo "✓ meroctl $TAG installed"
 
+      # build-binary bundles from the release tag its merod came from, which is
+      # the same tag build-merod-mock resolves, so these match this job's merod.
+      - name: Download app bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: app-bundles
+          path: workflow-examples/res/
+
       - name: Run ${{ matrix.name }}
         env:
           WORKFLOW_FILE: ${{ matrix.file }}
@@ -515,9 +539,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Docker
-        uses: docker/setup-buildx-action@v3
-
+      # No setup-buildx: only the classic builder writes the stamp to the local store.
       - name: Start Docker daemon
         run: |
           sudo systemctl start docker
@@ -554,10 +576,17 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Build workflow WASM apps
+      - name: Build workflow app bundles
         run: |
-          chmod +x workflow-examples/scripts/build_res_wasm.sh
-          ./workflow-examples/scripts/build_res_wasm.sh
+          chmod +x workflow-examples/scripts/build_res_bundles.sh
+          ./workflow-examples/scripts/build_res_bundles.sh
+
+      # No per-node env key, so a container's registry travels in its image.
+      - name: Serve the bundles over an http registry
+        run: |
+          url=$(./workflow-examples/scripts/fixture-registry.sh \
+            --stamp ghcr.io/calimero-network/merod:edge)
+          echo "fixture registry at $url"
 
       - name: Start node log capture
         run: |
@@ -570,6 +599,12 @@ jobs:
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE"
+
+      - name: Assert the registry served the bundle
+        if: always()
+        env:
+          WORKFLOW_FILE: ${{ matrix.file }}
+        run: ./workflow-examples/scripts/fixture-registry.sh --assert "$WORKFLOW_FILE"
 
       # The PR run is green whatever happens here, so say what failed and how to
       # tell drift from a defect where the reader will actually see it.
@@ -610,9 +645,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Docker
-        uses: docker/setup-buildx-action@v3
-
+      # No setup-buildx: only the classic builder writes the stamp to the local store.
       - name: Start Docker daemon
         run: |
           sudo systemctl start docker
@@ -632,31 +665,33 @@ jobs:
           cd example-project
           pip install -r requirements.txt
 
-      # Build kv_store.wasm fresh from calimero-network/core master.
-      # example-project/res/kv_store.wasm is checked in as a fallback for
-      # local developers who don't have the core repo, but CI must
-      # rebuild against current core so the CRDT op format matches the
-      # `merod:edge` image the workflow runs against. A stale WASM in
-      # CI causes node-2 to fail to deserialise deltas from node-1 with
-      # `Invalid Option representation: ...` once core's op encoding
-      # has changed.
+      # Nothing is committed under example-project/res/, so the bundle is built
+      # here: a stale one makes node-2 fail to deserialise node-1's deltas with
+      # `Invalid Option representation: ...` once core's op encoding moves.
       - name: Set up Rust (wasm32 target for kv_store)
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Build kv_store.wasm from current core
+      - name: Build com.calimero.kv-store-1.0.0.mpk from current core
         run: |
-          chmod +x workflow-examples/scripts/build_res_wasm.sh
-          ./workflow-examples/scripts/build_res_wasm.sh
+          chmod +x workflow-examples/scripts/build_res_bundles.sh
+          ./workflow-examples/scripts/build_res_bundles.sh
           # The build script outputs to workflow-examples/res/. Copy
           # into example-project/res/ so the integration workflow's
-          # `path: ./res/kv_store.wasm` resolves to the fresh build.
+          # `path: ./res/com.calimero.kv-store-1.0.0.mpk` resolves to the fresh build.
           mkdir -p example-project/res
-          cp workflow-examples/res/kv_store.wasm example-project/res/kv_store.wasm
-          echo "::group::Rebuilt kv_store.wasm"
-          ls -la example-project/res/kv_store.wasm
+          cp workflow-examples/res/com.calimero.kv-store-1.0.0.mpk example-project/res/com.calimero.kv-store-1.0.0.mpk
+          echo "::group::Rebuilt com.calimero.kv-store-1.0.0.mpk"
+          ls -la example-project/res/com.calimero.kv-store-1.0.0.mpk
           echo "::endgroup::"
+
+      # Only this dir holds every bundle; the copy above is one file.
+      - name: Serve the bundles over an http registry
+        run: |
+          url=$(./workflow-examples/scripts/fixture-registry.sh \
+            --stamp ghcr.io/calimero-network/merod:edge)
+          echo "fixture registry at $url"
 
       - name: Start node log capture
         run: |
@@ -678,6 +713,10 @@ jobs:
           echo "Cleaning up after integration tests..."
           cd .. && merobox stop --all || true
           merobox nuke -f || true
+
+      - name: Assert the registry served the bundle
+        if: always()
+        run: ./workflow-examples/scripts/fixture-registry.sh --assert example-project/workflows/workflow-example.yml
 
       - name: Stop node log capture
         if: always()

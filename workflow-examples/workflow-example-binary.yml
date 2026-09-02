@@ -24,6 +24,8 @@ no_docker: true
 # Keep the `image` field for compatibility, but it will be ignored by BinaryManager.
 force_pull_image: false
 
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 nodes:
   count: 3
   # `image` is a Docker-only hint; ignored in --no-docker mode but kept for compatibility
@@ -39,8 +41,8 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId # Export 'applicationId' field as 'app_id'
 

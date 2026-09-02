@@ -1,10 +1,13 @@
 description: Example workflow demonstrating wait_for_sync step for root hash verification
 name: Wait for Sync Example
-force_pull_image: true
+# A pull would replace the image the registry stamp produced.
+force_pull_image: false
 
 # This workflow demonstrates the new wait_for_sync step that actively verifies
 # node synchronization by comparing root hashes instead of using fixed wait times.
 
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 nodes:
   count: 3
   image: ghcr.io/calimero-network/merod:edge
@@ -15,8 +18,8 @@ steps:
   - name: Install KV Store Application
     type: install_application
     node: sync-node-1
-    path: workflow-examples/res/kv_store.wasm
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId
 

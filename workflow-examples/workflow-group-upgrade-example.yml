@@ -1,14 +1,16 @@
 name: Group Upgrade Lifecycle Example
 description: >
   Demonstrates the group-application upgrade lifecycle: install two distinct
-  application binaries, initiate upgrade from v1 to v2, poll upgrade
-  status, and attempt retry (which is expected to fail once the
-  upgrade has completed — exercising the expected_failure flag).
+  applications, initiate upgrade from v1 to v2, poll upgrade status, and
+  attempt retry (which is expected to fail once the upgrade has completed —
+  exercising the expected_failure flag).
 
-  Requires kv_store_v2.wasm in workflow-examples/res/, which is a purpose-
-  built v2 of kv-store copied from core/apps/kv-store-v2. The server rejects
-  same-app upgrades without a migration method, so two distinct binaries
-  are needed to exercise the upgrade path.
+  Requires com.calimero.kv-store-v2-1.0.0.mpk in workflow-examples/res/, built by
+  workflow-examples/scripts/build_res_bundles.sh from the same core/apps/kv-store
+  source as v1, but bundled a second time under its own package id. The server
+  rejects same-app upgrades without a migration method, so the target needs a
+  distinct application id — and since ApplicationId::for_bundle derives the id
+  from (package, signer), not version, that means a distinct package.
 
   This workflow does not exercise register_group_signing_key because the
   server auto-stores the node-held signing key when the caller is the
@@ -23,11 +25,11 @@ nodes:
   prefix: calimero-node
 
 steps:
-  # Phase 1: Install two distinct application binaries
+  # Phase 1: Install two distinct applications
   - name: Install v1 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_v1: applicationId
@@ -35,7 +37,7 @@ steps:
   - name: Install v2 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store_v2.wasm
+    path: workflow-examples/res/com.calimero.kv-store-v2-1.0.0.mpk
     dev: true
     outputs:
       app_v2: applicationId

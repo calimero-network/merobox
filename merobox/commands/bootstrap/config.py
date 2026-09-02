@@ -268,14 +268,21 @@ class InstallApplicationStep(BaseStepConfig):
 
     type: Literal["install_application"] = "install_application"
     node: str = Field(..., description="Target node for installation")
-    path: Optional[str] = Field(None, description="Path to the WASM file")
-    url: Optional[str] = Field(None, description="URL to install the WASM from")
-    dev: Optional[bool] = Field(False, description="Install in dev mode")
+    path: Optional[str] = Field(None, description="Path to the application bundle")
+    package: Optional[str] = Field(None, description="Registry package to install")
+    version: Optional[str] = Field(None, description="Version of that package")
+    dev: Optional[bool] = Field(
+        False, description="Accepted and ignored; a 'path' install is always local"
+    )
 
     @model_validator(mode="after")
     def validate_source(self) -> "InstallApplicationStep":
-        if not self.path and not self.url:
-            raise ValueError("either 'path' or 'url' must be specified")
+        if bool(self.package) != bool(self.version):
+            raise ValueError("'package' and 'version' are one coordinate; give both")
+        if not self.path and not self.package:
+            raise ValueError("either 'path' or 'package' + 'version' must be specified")
+        if self.path and self.package:
+            raise ValueError("'path' and 'package' name two sources; give one")
         return self
 
 
@@ -2654,7 +2661,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
                 "name": "Install Application on Node 1",
                 "type": "install_application",
                 "node": "calimero-node-1",
-                "path": "./workflow-examples/res/kv_store.wasm",
+                "path": "./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk",
                 "dev": True,
                 "outputs": {"app_id": "id"},
             },

@@ -205,9 +205,6 @@ CONTAINER_DATA_DIR_PATTERNS = [
 # JSON-RPC method names
 JSONRPC_METHOD_EXECUTE = "execute"
 
-# Default metadata
-DEFAULT_METADATA = b""
-
 # Error messages
 ERROR_NODE_NOT_RUNNING = "Node {node} is not running"
 ERROR_NODE_NOT_FOUND = "Node {node} not found"

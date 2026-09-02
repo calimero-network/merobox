@@ -1,10 +1,13 @@
 description: Network-focused workflow monitoring DAG propagation reliability over ~75 seconds
 name: DAG Propagation Monitoring Test
 
-force_pull_image: true
+# A pull would replace the image the registry stamp produced.
+force_pull_image: false
 nuke_on_start: true
 e2e_mode: true
 
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 nodes:
   count: 5
   image: ghcr.io/calimero-network/merod:edge
@@ -18,8 +21,8 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: dag-node-1
-    path: ./workflow-examples/res/kv_store.wasm
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId
 

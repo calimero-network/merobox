@@ -9,9 +9,9 @@ description: >
   per-group `upgrade_group` path. This workflow exercises the cascade
   path (cascade=true on the underlying upgrade_group RPC).
 
-  Uses the same kv_store v1 + v2 binaries as the group-upgrade example;
-  v1 is produced by workflow-examples/scripts/build_res_wasm.sh, v2 is
-  committed under workflow-examples/res/.
+  Uses the same kv-store v1 + v2 bundles as the group-upgrade example, both
+  built by workflow-examples/scripts/build_res_bundles.sh into
+  workflow-examples/res/.
 
   This is a SMOKE TEST. It verifies:
     - The cascade RPC dispatches successfully against a namespace root
@@ -30,11 +30,11 @@ nodes:
   prefix: calimero-node
 
 steps:
-  # Phase 1: Install two distinct application binaries
+  # Phase 1: Install two distinct applications
   - name: Install v1 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_v1: applicationId
@@ -42,7 +42,7 @@ steps:
   - name: Install v2 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store_v2.wasm
+    path: workflow-examples/res/com.calimero.kv-store-v2-1.0.0.mpk
     dev: true
     outputs:
       app_v2: applicationId

@@ -1,9 +1,12 @@
 description: Open invitation workflow following e2e test pattern
 name: Open Invitation Workflow
 
-# Force pull Docker images even if they exist locally
-force_pull_image: true
+# A pull would replace the image the registry stamp produced.
+force_pull_image: false
 # Run: merobox bootstrap run workflow-examples/workflow-open-invitation-example.yml --e2e-mode
+
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 
 # Testing image merod:3e23d21
 nodes:
@@ -16,8 +19,8 @@ steps:
   - name: Install Application
     type: install_application
     node: open-inv-node-1
-    path: workflow-examples/res/kv_store.wasm
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId
 
