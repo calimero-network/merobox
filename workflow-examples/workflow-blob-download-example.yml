@@ -17,7 +17,7 @@ steps:
   - name: Install Blobs Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/blobs.wasm
+    path: workflow-examples/res/com.calimero.blobs-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId

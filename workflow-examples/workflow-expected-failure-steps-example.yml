@@ -18,7 +18,7 @@ steps:
   - name: Install application on node 1
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId
@@ -98,11 +98,11 @@ steps:
     expected_failure: true
 
   # Two more step types — install_application and add_group_members — were
-  # also wired for expected_failure, but exercising them end-to-end in this
-  # example isn't reliable:
-  #   - install_application with a non-wasm file SUCCEEDS on merod (it
-  #     doesn't validate WASM magic bytes at install time), so we'd need a
-  #     larger harness to make it fail cleanly.
+  # also wired for expected_failure, but this example doesn't exercise them
+  # end-to-end:
+  #   - install_application with a non-bundle file now fails cleanly on
+  #     merod ("not a signed application bundle"), unlike the raw-wasm
+  #     install this comment used to describe, which merod accepted outright.
   #   - add_group_members with a malformed identity string panics the Rust
   #     client (InvalidPublicKey decode), which aborts the whole process
   #     before Python can catch the error — an upstream bug, not something

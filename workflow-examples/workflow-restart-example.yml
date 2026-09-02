@@ -11,7 +11,7 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId         # Export 'applicationId' field as 'app_id'
@@ -103,7 +103,7 @@ restart: false          # Don't restart nodes at the beginning of workflow
 wait_timeout: 60
 
 # Usage Examples:
-# 
+#
 # 1. Fresh start workflow:
 #    stop_all_nodes: true, restart: true
 #    - This will restart nodes at the beginning and stop all at the end

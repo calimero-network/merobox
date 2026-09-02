@@ -233,7 +233,7 @@ node is configured with. Name exactly one source: `path`, or `package` plus
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `node` | yes | string | Target node. |
-| `path` | no | string | Path to a local `.wasm` / `.mpk` bundle. |
+| `path` | no | string | Path to a local `.mpk` bundle. |
 | `package` | no | string | Registry package to install. |
 | `version` | no | string | Version of that package. |
 | `dev` | no | bool (`false`) | Accepted and ignored; a `path` install is always local. |
@@ -241,7 +241,7 @@ node is configured with. Name exactly one source: `path`, or `package` plus
 ```yaml
 - type: install_application
   node: calimero-node-1
-  path: ./workflow-examples/res/kv_store.wasm
+  path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
   outputs:
     app_id: applicationId
 ```

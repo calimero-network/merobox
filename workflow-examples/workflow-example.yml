@@ -15,7 +15,7 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId          # Export 'applicationId' field as 'app_id'
@@ -197,7 +197,7 @@ steps:
           value: "value_{{current_iteration}}_from_node1"
         outputs:
           iteration_set_result: result  # Export 'result' as 'iteration_set_result'
-      
+
       - name: Wait for Set Operation
         type: wait_for_sync
         context_id: "{{context_id}}"

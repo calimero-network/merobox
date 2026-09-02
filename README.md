@@ -60,7 +60,7 @@ steps:
   - name: "Install App"
     type: "install_application"
     node: "node-1"
-    path: "./app.wasm"
+    path: "./app.mpk"
     outputs:
       app_id: applicationId
 

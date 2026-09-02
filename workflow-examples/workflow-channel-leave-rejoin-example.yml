@@ -70,11 +70,11 @@ steps:
   # ── Bootstrap: the app on every node, one namespace ────────────────
   # Installed on all three: each node executes the context locally, so
   # each needs the bytecode. Only node-1's application id is captured —
-  # the same wasm installs to the same id everywhere.
+  # the same bundle installs to the same id everywhere.
   - name: Install Application on Node 1
     type: install_application
     node: channel-node-1
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId
@@ -82,13 +82,13 @@ steps:
   - name: Install Application on Node 2
     type: install_application
     node: channel-node-2
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
 
   - name: Install Application on Node 3
     type: install_application
     node: channel-node-3
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
 
   - name: Create the Workspace Namespace on Node 1

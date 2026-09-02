@@ -2661,7 +2661,7 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
                 "name": "Install Application on Node 1",
                 "type": "install_application",
                 "node": "calimero-node-1",
-                "path": "./workflow-examples/res/kv_store.wasm",
+                "path": "./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk",
                 "dev": True,
                 "outputs": {"app_id": "id"},
             },

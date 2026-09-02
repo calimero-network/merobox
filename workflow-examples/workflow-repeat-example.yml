@@ -11,7 +11,7 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId          # Export 'applicationId' field as 'app_id'
@@ -80,7 +80,7 @@ steps:
           value: "simple_value_{{current_iteration}}"
         outputs:
           simple_set_result: result  # Export 'result' as 'simple_set_result'
-      
+
       - name: Wait for Set Operation
         type: wait_for_sync
         context_id: "{{context_id}}"
@@ -108,7 +108,7 @@ steps:
           value: "complex_value_{{current_iteration}}_a"
         outputs:
           complex_set_a_result: result  # Export 'result' as 'complex_set_a_result'
-      
+
       - name: Set Another Key-Value Pair
         type: call
         node: calimero-node-1
@@ -119,7 +119,7 @@ steps:
           value: "complex_value_{{current_iteration}}_b"
         outputs:
           complex_set_b_result: result  # Export 'result' as 'complex_set_b_result'
-      
+
       - name: Wait Between Operations
         type: wait_for_sync
         context_id: "{{context_id}}"
@@ -129,7 +129,7 @@ steps:
         timeout: 60
         check_interval: 2
         trigger_sync: true
-      
+
       - name: Retrieve First Key-Value Pair
         type: call
         node: calimero-node-2
@@ -139,7 +139,7 @@ steps:
           key: "complex_key_{{current_iteration}}_a"
         outputs:
           complex_get_a_result: result  # Export 'result' as 'complex_get_a_result'
-      
+
       - name: Retrieve Second Key-Value Pair
         type: call
         node: calimero-node-2
@@ -167,7 +167,7 @@ steps:
           value: "data_for_iteration_{{current_iteration}}"
         outputs:
           iteration_set_result: result  # Export 'result' as 'iteration_set_result'
-      
+
       - name: Wait for Propagation
         type: wait_for_sync
         context_id: "{{context_id}}"
@@ -177,7 +177,7 @@ steps:
         timeout: 60
         check_interval: 2
         trigger_sync: true
-      
+
       - name: Verify Data from Different Node
         type: call
         node: calimero-node-2
