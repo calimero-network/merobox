@@ -192,17 +192,21 @@ jobs:
           # against a member list of accounts, and `remove_group_members` is
           # handed one.
           #
-          # tee-matrix-open-late-join is excluded: a TEE replica that joins a
-          # namespace with a PRE-EXISTING context in an Open subgroup replicates
-          # nothing. Auto-follow is purely event-driven, so a pre-existing
-          # context arrives only via a backfill — and the backfill enumerates one
-          # group, while the auto-follow flag is read from a member row the
-          # inherited-only replica does not have in that subgroup. That is a core
-          # bug, not a scenario one, and it predates this branch: the last green
-          # run built merod from rc.20, before membership became account-keyed.
-          # Re-add once calimero-network/core#3472 lands.
+          # tee-matrix-open-late-join is back in. It was excluded because a TEE
+          # replica joining a namespace with a PRE-EXISTING context in an Open
+          # subgroup replicated nothing: auto-follow is purely event-driven, so
+          # such a context arrives only through a backfill, and that backfill
+          # enumerated the flag's own group rather than the subtree beneath it.
+          # An inherited-only member has no membership row in the Open subgroup,
+          # which is exactly the member the backfill exists to serve.
+          #
+          # core#3527 walks the subtree and resolves the flag at the inheritance
+          # anchor, and it ships in 0.11.0-rc.30. build-merod-mock builds from
+          # the latest core release, so this job now gets the fix. Re-enabled
+          # rather than left out: the scenario is the only thing that checks the
+          # late-arrival path end to end, and an excluded scenario proves nothing
+          # about a fix that claims to address it.
           TEE=$(ls workflow-examples/tee-*.yml | \
-            grep -v tee-matrix-open-late-join | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";""))})')
           echo "tee=$TEE" >> $GITHUB_OUTPUT
 
