@@ -69,44 +69,47 @@ mkdir -p "$RES_DIR"
 cp "$CORE_DIR/apps/kv-store/res/kv_store.wasm" "$RES_DIR/"
 cp "$CORE_DIR/apps/blobs/res/blobs.wasm" "$RES_DIR/"
 
-# `cargo mero build` already embeds each app's ABI as the `calimero_abi_v1`
-# section — that is the whole reason core moved to it — so the two apps built
-# above need no embed pass here any more. What still does is `kv_store_v2.wasm`
-# below: a checked-in blob with no source in either repo, so nothing builds it and
-# nothing embeds its schema.
+# Signed bundles, which is what a node installs since core#3652 made
+# distribution registry-only: `install_application` now rejects a bare wasm
+# with "not a signed application bundle". The `.wasm` above is still emitted —
+# it carries the embedded ABI the schema steps below patch, and nothing reads
+# the bundle for that.
 #
-# Why any of this matters: calimero-network/core#3286 made an upgrade whose TARGET
-# build carries no embedded ABI a hard refusal ("refusing to swap bytecode without
-# migration evidence"), and core's decision table needs BOTH sides —
-# plan_upgrade() bails with AbiUnavailable{Current} when the running app has no
-# ABI either. merod:edge (master) enforces it, the released binary does not, which
-# is why group-upgrade-example passed in binary mode and failed in docker mode.
-echo "Building mero-abi (embed tool) from $CORE_DIR ..."
-(cd "$CORE_DIR" && cargo build -p mero-abi --release)
-if [ -n "${CARGO_TARGET_DIR:-}" ]; then
-  ABI_TOOL="$CARGO_TARGET_DIR/release/mero-abi"
-else
-  ABI_TOOL="$CORE_DIR/target/release/mero-abi"
-fi
-[ -x "$ABI_TOOL" ] || { echo "ERROR: mero-abi not found at $ABI_TOOL" >&2; exit 1; }
+# `--dev` signs with the well-known dev key deliberately. The seed is
+# deterministic, so `ApplicationId = hash(package, signer)` is stable across
+# rebuilds, which is what makes a bundle usable as a fixture at all. The
+# registry refuses dev-signed bundles, so these cannot escape into real
+# distribution.
+#
+# `--output` because the default name is `<package>-<version>.mpk`, and a
+# workflow should not have to know an app's version to name its own fixture.
+(cd "$CORE_DIR" && cargo mero bundle --dev --no-icon \
+  --manifest-path apps/kv-store/Cargo.toml --output "$RES_DIR/kv_store.mpk")
+(cd "$CORE_DIR" && cargo mero bundle --dev --no-icon \
+  --manifest-path apps/blobs/Cargo.toml --output "$RES_DIR/blobs.mpk")
 
-KV_SCHEMA="$CORE_DIR/apps/kv-store/res/state-schema.json"
-BLOBS_SCHEMA="$CORE_DIR/apps/blobs/res/state-schema.json"
-for f in "$KV_SCHEMA" "$BLOBS_SCHEMA"; do
-  # `cargo mero build` emits these; a missing one means the build did not do its
-  # job, which is worth failing on even though only KV's is embedded below.
-  [ -f "$f" ] || { echo "ERROR: state schema missing: $f (cargo mero build should emit it)" >&2; exit 1; }
-done
+# The upgrade target. `core/apps/kv-store-v2`, which the committed
+# `kv_store_v2.wasm` was copied from, no longer exists — so the v2 side is
+# built from the same source under a different package id. `--package` exists
+# for exactly this ("a migration-target bundle under a distinct identity"), and
+# a distinct id is what the upgrade path needs: the server refuses a same-app
+# upgrade that carries no migration method, which is why two binaries were
+# needed in the first place.
+(cd "$CORE_DIR" && cargo mero bundle --dev --no-icon \
+  --package com.calimero.kv-store-v2 \
+  --manifest-path apps/kv-store/Cargo.toml --output "$RES_DIR/kv_store_v2.mpk")
 
+# No manual ABI embed pass any more. `cargo mero build` and `cargo mero bundle`
+# both embed the `calimero_abi_v1` section themselves, and the one artifact that
+# needed patching by hand — the checked-in `kv_store_v2.wasm`, a blob with no
+# source in either repo — is gone: v2 is now built from kv-store above. That
+# also removes the reason this script built `mero-abi` at all.
+#
+# It still matters that both sides carry an ABI: calimero-network/core#3286 made
+# an upgrade whose target build has none a hard refusal ("refusing to swap
+# bytecode without migration evidence"), and `plan_upgrade()` bails with
+# `AbiUnavailable{Current}` when the running app has none either. Building both
+# sides from the same source satisfies that by construction rather than by a
+# patch step that could silently be skipped.
 
-# kv_store_v2.wasm is a checked-in, purpose-built second binary for the SAME
-# kv-store state: the upgrade workflows need two distinct blobs to swap between,
-# and there is no v2 source in this repo to emit a schema from. Giving it
-# kv-store's own schema states the truth — same state_root, same state_version —
-# and an equal version on both sides is exactly what makes core resolve the hop
-# as UpgradeAction::CodeOnly, no migration edge required.
-if [ -f "$RES_DIR/kv_store_v2.wasm" ]; then
-  "$ABI_TOOL" embed "$RES_DIR/kv_store_v2.wasm" "$KV_SCHEMA"
-fi
-
-echo "Done. kv_store.wasm and blobs.wasm (ABI embedded by cargo mero) in $RES_DIR"
+echo "Done. kv_store/blobs .wasm (ABI embedded) and .mpk bundles in $RES_DIR"

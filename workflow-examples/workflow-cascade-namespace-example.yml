@@ -34,7 +34,7 @@ steps:
   - name: Install v1 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/kv_store.mpk
     dev: true
     outputs:
       app_v1: applicationId
@@ -42,7 +42,7 @@ steps:
   - name: Install v2 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store_v2.wasm
+    path: workflow-examples/res/kv_store_v2.mpk
     dev: true
     outputs:
       app_v2: applicationId

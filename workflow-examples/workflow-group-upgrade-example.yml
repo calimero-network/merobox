@@ -5,10 +5,10 @@ description: >
   status, and attempt retry (which is expected to fail once the
   upgrade has completed — exercising the expected_failure flag).
 
-  Requires kv_store_v2.wasm in workflow-examples/res/, which is a purpose-
-  built v2 of kv-store copied from core/apps/kv-store-v2. The server rejects
-  same-app upgrades without a migration method, so two distinct binaries
-  are needed to exercise the upgrade path.
+  Requires kv_store_v2.mpk in workflow-examples/res/, built by
+  scripts/build_res_wasm.sh from core's kv-store under a distinct package id.
+  The server rejects same-app upgrades without a migration method, so two
+  distinct applications are needed to exercise the upgrade path.
 
   This workflow does not exercise register_group_signing_key because the
   server auto-stores the node-held signing key when the caller is the
@@ -27,7 +27,7 @@ steps:
   - name: Install v1 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/kv_store.mpk
     dev: true
     outputs:
       app_v1: applicationId
@@ -35,7 +35,7 @@ steps:
   - name: Install v2 Application
     type: install_application
     node: calimero-node-1
-    path: workflow-examples/res/kv_store_v2.wasm
+    path: workflow-examples/res/kv_store_v2.mpk
     dev: true
     outputs:
       app_v2: applicationId

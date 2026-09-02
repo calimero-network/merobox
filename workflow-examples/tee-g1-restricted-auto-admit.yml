@@ -68,7 +68,7 @@ steps:
   - name: Install kv-store on owner (scaffolding for namespace creation)
     type: install_application
     node: tee-owner
-    path: ./workflow-examples/res/kv_store_v2.wasm
+    path: ./workflow-examples/res/kv_store_v2.mpk
     dev: true
     outputs:
       app_id: applicationId

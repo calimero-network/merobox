@@ -74,7 +74,7 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: channel-node-1
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/kv_store.mpk
     dev: true
     outputs:
       app_id: applicationId
@@ -82,13 +82,13 @@ steps:
   - name: Install Application on Node 2
     type: install_application
     node: channel-node-2
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/kv_store.mpk
     dev: true
 
   - name: Install Application on Node 3
     type: install_application
     node: channel-node-3
-    path: ./workflow-examples/res/kv_store.wasm
+    path: ./workflow-examples/res/kv_store.mpk
     dev: true
 
   - name: Create the Workspace Namespace on Node 1

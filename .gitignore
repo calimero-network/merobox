@@ -79,5 +79,9 @@ kv-store-benchmark-report.txt
 # Workflow example WASM (built from calimero-network/core by workflow-examples/scripts/build_res_wasm.sh)
 workflow-examples/res/kv_store.wasm
 workflow-examples/res/blobs.wasm
+# Signed bundles, built by scripts/build_res_wasm.sh alongside the wasm.
+workflow-examples/res/kv_store.mpk
+workflow-examples/res/blobs.mpk
+workflow-examples/res/kv_store_v2.mpk
 workflow-examples/.core-repo/
 .claude/
