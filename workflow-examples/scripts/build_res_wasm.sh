@@ -29,13 +29,23 @@ if [ -n "$CORE_REPO_DIR" ]; then
   CORE_DIR="$CORE_REPO_DIR"
 else
   CORE_DIR="$CORE_REPO_DIR_DEFAULT"
+  # `fetch` rather than `clone --branch`, so CORE_BRANCH may be a commit SHA as
+  # well as a branch or tag. `--branch` only takes refs, and a caller pinning to
+  # the exact revision an image was built from has a SHA, not a ref — which is
+  # the only way to build an app against the node it will actually run with.
+  # GitHub serves reachable SHAs to `fetch`, so one path covers all three.
   if [ ! -d "$CORE_DIR/.git" ]; then
-    echo "Cloning $CORE_REPO_URL ($CORE_BRANCH) into $CORE_DIR ..."
-    git clone --depth 1 --branch "$CORE_BRANCH" "$CORE_REPO_URL" "$CORE_DIR"
+    echo "Fetching $CORE_REPO_URL ($CORE_BRANCH) into $CORE_DIR ..."
+    git init -q "$CORE_DIR"
+    git -C "$CORE_DIR" remote add origin "$CORE_REPO_URL"
   else
     echo "Updating existing clone at $CORE_DIR ..."
-    (cd "$CORE_DIR" && git fetch origin "$CORE_BRANCH" && git checkout "$CORE_BRANCH" && git pull --ff-only)
   fi
+  git -C "$CORE_DIR" fetch --depth 1 origin "$CORE_BRANCH"
+  # FETCH_HEAD, not "$CORE_BRANCH": a shallow fetch of a SHA creates no local
+  # branch to check out, and this works identically for refs.
+  git -C "$CORE_DIR" checkout -q --detach FETCH_HEAD
+  echo "Core is at $(git -C "$CORE_DIR" rev-parse HEAD)"
 fi
 
 echo "Building WASM apps from $CORE_DIR ..."

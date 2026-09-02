@@ -554,7 +554,43 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # Build the apps from the commit `merod:edge` was ACTUALLY built from,
+      # not from whatever master is now.
+      #
+      # These two race on every core push: the script clones master, while the
+      # image is rebuilt separately and lands minutes later. Whenever core
+      # changes a persisted format, the window between them produces a run where
+      # the app is newer than the node — and the symptom is not a version error
+      # but silent data loss. calimero-network/core#3743 moved `CrdtType` to new
+      # Borsh tags and a canary built 77 seconds later fed the old node a tag it
+      # rejected, so `child_trie` "treated the bucket as empty, which DROPS the
+      # children it holds", roots diverged, and twelve canaries failed on sync
+      # timeouts that named nothing.
+      #
+      # The job header says ghcr keeps no immutable edge build to pin to, which
+      # is true of the IMAGE. The image records its source though, so the app
+      # can be pinned to that instead — same commit both sides, no window.
+      #
+      # Falls back to master rather than failing: an unreadable label should
+      # cost the pin, not the run.
+      - name: Resolve the core revision behind merod:edge
+        id: edge-rev
+        run: |
+          docker pull --quiet ghcr.io/calimero-network/merod:edge
+          rev=$(docker inspect --format \
+            '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            ghcr.io/calimero-network/merod:edge 2>/dev/null || true)
+          if [ -n "$rev" ] && [ "$rev" != "<no value>" ]; then
+            echo "merod:edge was built from core $rev"
+            echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::merod:edge carries no revision label; building apps from master, which can race the image"
+            echo "rev=master" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build workflow WASM apps
+        env:
+          CORE_BRANCH: ${{ steps.edge-rev.outputs.rev }}
         run: |
           chmod +x workflow-examples/scripts/build_res_wasm.sh
           ./workflow-examples/scripts/build_res_wasm.sh
