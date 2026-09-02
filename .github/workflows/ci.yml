@@ -144,13 +144,9 @@ jobs:
           # does not distinguish them: both report 0.11.0-rc.25, and only the
           # build hash differs (edge 5cc9668 vs release d630815). Re-add here once
           # a core release carries the endpoint.
-          # install-by-coordinates resolves its app from a registry rather than a
-          # bundle path, so it needs a node stamped at a served base_url. Neither
-          # lane here has one; the `test-install-by-coordinates` job does.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
             grep -v delegated-authorship | \
-            grep -v install-by-coordinates | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
@@ -174,7 +170,6 @@ jobs:
           # (see the binary-mode note above).
           DOCKER=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
-            grep -v install-by-coordinates | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \
             grep -v auth-image | \
@@ -417,12 +412,42 @@ jobs:
           name: app-bundles
           path: workflow-examples/res/
 
+      # Nothing to stamp here: there is no image. BinaryManager builds each
+      # node's environment from `os.environ.copy()`, so merod inherits these.
+      - name: Serve the bundles over an http registry
+        run: |
+          # The registry is a container even in this lane; the nodes are not.
+          sudo systemctl start docker
+          url=$(./workflow-examples/scripts/fixture-registry.sh)
+          echo "fixture registry at $url"
+          echo "CALIMERO_REGISTRY_MODE=http" >> "$GITHUB_ENV"
+          echo "CALIMERO_REGISTRY_URL=$url" >> "$GITHUB_ENV"
+
       - name: Run ${{ matrix.name }}
         env:
           WORKFLOW_FILE: ${{ matrix.file }}
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE" --no-docker
+
+      # A green run proves nothing on its own: the node logs an install whether
+      # the registry, a peer or a cached blob served it. Ask the registry.
+      - name: Assert the registry served the bundle
+        env:
+          WORKFLOW_FILE: ${{ matrix.file }}
+        run: |
+          grep -qE '^ +package:' "$WORKFLOW_FILE" || exit 0
+          if ! docker logs fixture-registry 2>&1 | grep -q 'GET /artifacts/'; then
+            echo "::error::$WORKFLOW_FILE installs by coordinates but fetched nothing from fixture-registry"
+            exit 1
+          fi
+
+      # Which coordinate was requested, and whether it 404'd, is the diagnostic
+      # neither the node log nor a failed assert carries.
+      - name: Show registry access log
+        if: always()
+        # `|| true`: a diagnostic must not be what turns a job red.
+        run: docker logs fixture-registry 2>&1 | tail -50 || true
 
   # ── Test phase (TEE): mock-TEE scenarios, native, feature-enabled merod ──
   # These are excluded from the binary+docker matrices and run only here, on the
@@ -529,9 +554,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Docker
-        uses: docker/setup-buildx-action@v3
-
+      # No setup-buildx: the registry stamp below has to land in the local image
+      # store, which the classic builder writes to and a buildx builder does not.
       - name: Start Docker daemon
         run: |
           sudo systemctl start docker
@@ -573,6 +597,16 @@ jobs:
           chmod +x workflow-examples/scripts/build_res_bundles.sh
           ./workflow-examples/scripts/build_res_bundles.sh
 
+      # merobox has no per-node env key, so the node's application source has to
+      # travel in the image, stamped at the address the registry came up on here.
+      # A workflow that force-pulls would replace it, so the ones installing by
+      # coordinates set `force_pull_image: false`.
+      - name: Serve the bundles over an http registry
+        run: |
+          url=$(./workflow-examples/scripts/fixture-registry.sh \
+            --stamp ghcr.io/calimero-network/merod:edge)
+          echo "fixture registry at $url"
+
       - name: Start node log capture
         run: |
           chmod +x .github/scripts/capture-node-logs.sh
@@ -584,6 +618,25 @@ jobs:
         run: |
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE"
+
+      # A green run proves nothing on its own: the node logs an install whether
+      # the registry, a peer or a cached blob served it. Ask the registry.
+      - name: Assert the registry served the bundle
+        env:
+          WORKFLOW_FILE: ${{ matrix.file }}
+        run: |
+          grep -qE '^ +package:' "$WORKFLOW_FILE" || exit 0
+          if ! docker logs fixture-registry 2>&1 | grep -q 'GET /artifacts/'; then
+            echo "::error::$WORKFLOW_FILE installs by coordinates but fetched nothing from fixture-registry"
+            exit 1
+          fi
+
+      # Which coordinate was requested, and whether it 404'd, is the diagnostic
+      # neither the node log nor a failed assert carries.
+      - name: Show registry access log
+        if: always()
+        # `|| true`: a diagnostic must not be what turns a job red.
+        run: docker logs fixture-registry 2>&1 | tail -50 || true
 
       # The PR run is green whatever happens here, so say what failed and how to
       # tell drift from a defect where the reader will actually see it.
@@ -614,77 +667,6 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  # ── Test phase (registry): install by registry coordinates ──
-  # Every other lane installs from a bundle path. One workflow here proves the
-  # `{package, version}` path merod now requires of a real deployment. Reports
-  # rather than gates on PRs for the same reason the docker canary does: the
-  # rolling merod:edge image can redden it with no merobox commit involved.
-  test-install-by-coordinates:
-    name: Registry canary (install by coordinates)
-    runs-on: ubuntu-latest
-    needs: [build-binary]
-    continue-on-error: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      # No setup-buildx here, unlike the docker lanes: the image stamp below has
-      # to land in the local image store, which the classic builder writes to.
-      - name: Start Docker daemon
-        run: |
-          sudo systemctl start docker
-          sudo docker --version
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Download app bundles
-        uses: actions/download-artifact@v4
-        with:
-          name: app-bundles
-          path: workflow-examples/res/
-
-      # merobox has no per-node env key, so the node's application source has to
-      # travel in the image, stamped at the address the registry came up on here.
-      - name: Serve the bundles over an http registry
-        env:
-          IMAGE: ghcr.io/calimero-network/merod:edge
-        run: |
-          chmod +x workflow-examples/scripts/fixture-registry.sh
-          url=$(./workflow-examples/scripts/fixture-registry.sh)
-          echo "fixture registry at $url"
-          docker pull "$IMAGE"
-          printf 'FROM %s\nENV CALIMERO_REGISTRY_MODE=http\nENV CALIMERO_REGISTRY_URL=%s\n' \
-            "$IMAGE" "$url" | docker build -q -t "$IMAGE" - >/dev/null
-
-      - name: Run install-by-coordinates
-        run: |
-          chmod +x workflow-examples/scripts/run_with_retry.sh
-          ./workflow-examples/scripts/run_with_retry.sh \
-            workflow-examples/workflow-install-by-coordinates-example.yml
-
-      # A green run proves nothing on its own: the node logs an install whether
-      # the registry, a peer or a cached blob served it. Ask the registry.
-      - name: Assert the registry served the bundle
-        run: |
-          if ! docker logs fixture-registry 2>&1 | grep -q 'GET /artifacts/'; then
-            echo "::error::nothing was fetched from fixture-registry; the coordinate install did not use the http registry"
-            exit 1
-          fi
-
-      # Which coordinate was requested, and whether it 404'd, is the diagnostic
-      # a failed assert above does not carry.
-      - name: Show registry access log
-        if: always()
-        run: docker logs fixture-registry 2>&1 | tail -50
-
   test-merobox-integration:
     runs-on: ubuntu-latest
     steps:
@@ -695,9 +677,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Docker
-        uses: docker/setup-buildx-action@v3
-
+      # No setup-buildx: the registry stamp below has to land in the local image
+      # store, which the classic builder writes to and a buildx builder does not.
       - name: Start Docker daemon
         run: |
           sudo systemctl start docker
@@ -738,6 +719,15 @@ jobs:
           ls -la example-project/res/com.calimero.kv-store-1.0.0.mpk
           echo "::endgroup::"
 
+      # Served from workflow-examples/res/, the only directory holding every
+      # bundle; the copy above is a single file. The fixture's node-2 executes
+      # without installing, so it resolves the app from the stamped registry.
+      - name: Serve the bundles over an http registry
+        run: |
+          url=$(./workflow-examples/scripts/fixture-registry.sh \
+            --stamp ghcr.io/calimero-network/merod:edge)
+          echo "fixture registry at $url"
+
       - name: Start node log capture
         run: |
           chmod +x .github/scripts/capture-node-logs.sh
@@ -758,6 +748,22 @@ jobs:
           echo "Cleaning up after integration tests..."
           cd .. && merobox stop --all || true
           merobox nuke -f || true
+
+      # A green run proves nothing on its own: the node logs an install whether
+      # the registry, a peer or a cached blob served it. Ask the registry.
+      - name: Assert the registry served the bundle
+        run: |
+          if ! docker logs fixture-registry 2>&1 | grep -q 'GET /artifacts/'; then
+            echo "::error::the workflow fixture fetched nothing from fixture-registry"
+            exit 1
+          fi
+
+      # Which coordinate was requested, and whether it 404'd, is the diagnostic
+      # neither the node log nor a failed assert carries.
+      - name: Show registry access log
+        if: always()
+        # `|| true`: a diagnostic must not be what turns a job red.
+        run: docker logs fixture-registry 2>&1 | tail -50 || true
 
       - name: Stop node log capture
         if: always()

@@ -1,6 +1,8 @@
 description: A comprehensive example workflow demonstrating the repeat step functionality
 name: Repeat Step Example Workflow
 
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 nodes:
   count: 2
   image: ghcr.io/calimero-network/merod:edge
@@ -11,8 +13,8 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId          # Export 'applicationId' field as 'app_id'
 

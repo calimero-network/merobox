@@ -3,15 +3,23 @@
 # expects, so a node resolves `{package, version}` the way a real deployment does.
 #
 # Usage:
-#   ./workflow-examples/scripts/fixture-registry.sh [bundle dir]
+#   ./workflow-examples/scripts/fixture-registry.sh [--stamp IMAGE] [bundle dir]
 #
-# Prints the base URL to stamp into the node image as CALIMERO_REGISTRY_URL.
+# Prints the base URL to serve as CALIMERO_REGISTRY_URL. `--stamp` also bakes it
+# into IMAGE, which is the only route a containerised node has (see below).
 set -euo pipefail
 
 readonly CONTAINER=fixture-registry
 readonly IMAGE=nginx:alpine
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+stamp_image=""
+if [ "${1:-}" = --stamp ]; then
+  stamp_image="${2:?--stamp needs an image}"
+  shift 2
+fi
+
 bundle_dir="${1:-$SCRIPT_DIR/../res}"
 root="${FIXTURE_REGISTRY_ROOT:-$PWD/fixture-registry}"
 port="${FIXTURE_REGISTRY_PORT:-8080}"
@@ -52,7 +60,17 @@ docker run -d --name "$CONTAINER" -p "$port:80" \
   -v "$root:/usr/share/nginx/html:ro" "$IMAGE" >/dev/null
 
 # Published on the host and addressed by the docker0 gateway: that address is
-# the host itself, so it resolves from every bridge network, not just this one.
+# the host itself, so it resolves from every bridge network and from a merod
+# running natively on the host. Loopback would only serve the latter.
 gateway=$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}')
 [ -n "$gateway" ] || { echo "no gateway on the default bridge" >&2; exit 1; }
-echo "http://$gateway:$port/"
+url="http://$gateway:$port/"
+
+# merobox has no per-node env key, so a container's registry has to travel in
+# the image it boots from; a native merod inherits the caller's environment.
+if [ -n "$stamp_image" ]; then
+  printf 'FROM %s\nENV CALIMERO_REGISTRY_MODE=http\nENV CALIMERO_REGISTRY_URL=%s\n' \
+    "$stamp_image" "$url" | docker build -q -t "$stamp_image" - >/dev/null
+fi
+
+echo "$url"

@@ -25,6 +25,8 @@ description: |
   real app install + context join + sync cycles.
 name: Fault Injection — partition_peers (RPC-preserving libp2p cut)
 
+# The nodes resolve `package@version` against their own registry, so this needs
+# one serving the bundles - see workflow-install-by-coordinates-example.yml.
 nodes:
   count: 3
   image: ghcr.io/calimero-network/merod:edge
@@ -39,8 +41,8 @@ steps:
   - name: Install kv_store on node 1
     type: install_application
     node: calimero-node-1
-    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId
 

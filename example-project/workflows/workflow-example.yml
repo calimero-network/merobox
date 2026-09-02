@@ -1,8 +1,9 @@
 description: A sample workflow that demonstrates the bootstrap functionality with dynamic value capture
 name: Sample Calimero Workflow
 
-# Force pull Docker images even if they exist locally
-force_pull_image: true
+# Never force pull: node 2 resolves the app from a registry the image is
+# stamped to point at, and a pull would replace that image with an unstamped one.
+force_pull_image: false
 
 # Step ordering mirrors workflow-examples/workflow-groups-example.yml,
 # the known-good namespace + explicit join_context flow against
@@ -25,8 +26,8 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: ./res/com.calimero.kv-store-1.0.0.mpk
-    dev: true
+    package: com.calimero.kv-store
+    version: 1.0.0
     outputs:
       app_id: applicationId
 
