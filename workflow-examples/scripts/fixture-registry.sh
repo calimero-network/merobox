@@ -40,9 +40,20 @@ d = yaml.safe_load(open(sys.argv[1])) or {}
 uses = any(s.get("type") == "install_application" and s.get("package") for s in flat(d.get("steps")))
 sys.exit(0 if uses else 1)
 PY
-  if ! docker logs "$CONTAINER" 2>&1 | grep -q 'GET /artifacts/'; then
+  # Captured, then matched WITHOUT a pipe. `docker logs ... | grep -q` reads
+  # wrong under the `pipefail` set above: `grep -q` exits the moment it matches,
+  # SIGPIPEs the producer, and the pipeline reports 141 — so `!` turns a
+  # SUCCESSFUL match into the error branch. It only fires once the log is long
+  # enough that grep wins the race, which is why this passed until a run served
+  # five bundles and then printed the very `GET /artifacts/` lines it claimed
+  # were absent.
+  #
+  # Piping the captured text back into `grep -q` would reproduce it exactly, so
+  # the match is a bash pattern test with no second process to signal.
+  registry_log=$(docker logs "$CONTAINER" 2>&1 || true)
+  if [[ $registry_log != *"GET /artifacts/"* ]]; then
     echo "::error::$workflow installs by coordinates but fetched nothing from the fixture registry"
-    docker logs "$CONTAINER" 2>&1 | tail -50 || true
+    printf '%s\n' "$registry_log" | tail -50
     exit 1
   fi
   exit 0
