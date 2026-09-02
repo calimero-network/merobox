@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from rich.markup import escape
 
+from merobox.commands.bootstrap.config import validate_workflow_step
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS
@@ -19,58 +20,16 @@ class InstallApplicationStep(BaseStep):
     """Execute an install application step."""
 
     def _get_required_fields(self) -> list[str]:
-        """
-        Define which fields are required for this step.
-
-        Returns:
-            List of required field names
-        """
         return ["node"]
 
     def _validate_field_types(self) -> None:
-        """
-        Validate that fields have the correct types.
-        """
-        step_name = self.config.get(
-            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
-        )
-
-        # Validate node is a string
-        if not isinstance(self.config.get("node"), str):
-            raise ValueError(f"Step '{step_name}': 'node' must be a string")
-
-        # Validate path is a string if provided
-        if "path" in self.config and not isinstance(self.config["path"], str):
-            raise ValueError(f"Step '{step_name}': 'path' must be a string")
-
-        # Validate package and version are strings if provided
-        for field in ("package", "version"):
-            if field in self.config and not isinstance(self.config[field], str):
-                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
-
-        # Validate dev is a boolean if provided
-        if "dev" in self.config and not isinstance(self.config["dev"], bool):
-            raise ValueError(f"Step '{step_name}': 'dev' must be a boolean")
-
-        if ("package" in self.config) != ("version" in self.config):
-            raise ValueError(
-                f"Step '{step_name}': 'package' and 'version' are one coordinate; "
-                "give both"
-            )
-
-        if "path" not in self.config and "package" not in self.config:
-            raise ValueError(
-                f"Step '{step_name}': Either 'path' or 'package' + 'version' "
-                "must be provided"
-            )
+        # The schema layer already states every rule for this step, so it is the
+        # one that enforces them; a second hand-rolled copy would drift.
+        errors = validate_workflow_step(self.config, 0)
+        if errors:
+            raise ValueError("; ".join(errors))
 
     def _get_exportable_variables(self):
-        """
-        Define which variables this step can export.
-
-        Available variables from install_application API response:
-        - applicationId: Application ID (this is what the API actually returns)
-        """
         return [
             (
                 "applicationId",

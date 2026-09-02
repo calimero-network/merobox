@@ -11,10 +11,7 @@ import click
 import docker
 
 from merobox.commands.client import get_client_for_rpc_url
-from merobox.commands.constants import (
-    CONTAINER_DATA_DIR_PATTERNS,
-    INSTALL_TIMEOUT,
-)
+from merobox.commands.constants import CONTAINER_DATA_DIR_PATTERNS
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import (
@@ -96,17 +93,14 @@ def _prepare_container_path(
 
 def validate_installation_source(
     package: str = None, version: str = None, path: str = None
-) -> tuple[bool, str]:
-    """Validate that either a local path or registry coordinates are named."""
+) -> None:
+    """Raise unless either a local bundle path or registry coordinates are named."""
     if path:
-        if not os.path.exists(path):
-            return False, f"File not found: {path}"
         if not os.path.isfile(path):
-            return False, f"Path is not a file: {path}"
-        return True, ""
+            raise click.BadParameter(f"not a file: {path}", param_hint="--path")
+        return
     if not package or not version:
-        return False, "Installation requires --path, or --package and --version"
-    return True, ""
+        raise click.BadParameter("give --path, or --package and --version")
 
 
 @click.command()
@@ -115,28 +109,16 @@ def validate_installation_source(
 )
 @click.option("--package", help="Registry package to install")
 @click.option("--version", help="Version of that package")
-@click.option("--path", help="Local path for dev installation")
-@click.option(
-    "--dev", is_flag=True, help="Accepted and ignored; a --path install is local"
-)
-@click.option(
-    "--timeout",
-    default=INSTALL_TIMEOUT,
-    help=f"Timeout in seconds for installation (default: {INSTALL_TIMEOUT})",
-)
+@click.option("--path", help="Local path to an application bundle")
 @click.option("--verbose", "-v", is_flag=True, help="Show verbose output")
-def install(node, package, version, path, dev, timeout, verbose):
+def install(node, package, version, path, verbose):
     """Install applications on Calimero nodes."""
     manager = DockerManager()
 
     # Check if node is running
     check_node_running(node, manager)
 
-    # Validate installation source
-    is_valid, error_msg = validate_installation_source(package, version, path)
-    if not is_valid:
-        console.print(f"[red]✗ {error_msg}[/red]")
-        sys.exit(1)
+    validate_installation_source(package, version, path)
 
     # Get admin API URL
     rpc_url = get_node_rpc_url(node, manager)

@@ -412,11 +412,9 @@ jobs:
           name: app-bundles
           path: workflow-examples/res/
 
-      # Nothing to stamp here: there is no image. BinaryManager builds each
-      # node's environment from `os.environ.copy()`, so merod inherits these.
+      # Native nodes inherit os.environ, so no image to stamp.
       - name: Serve the bundles over an http registry
         run: |
-          # The registry is a container even in this lane; the nodes are not.
           sudo systemctl start docker
           url=$(./workflow-examples/scripts/fixture-registry.sh)
           echo "fixture registry at $url"
@@ -430,24 +428,11 @@ jobs:
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE" --no-docker
 
-      # A green run proves nothing on its own: the node logs an install whether
-      # the registry, a peer or a cached blob served it. Ask the registry.
       - name: Assert the registry served the bundle
+        if: always()
         env:
           WORKFLOW_FILE: ${{ matrix.file }}
-        run: |
-          grep -qE '^ +package:' "$WORKFLOW_FILE" || exit 0
-          if ! docker logs fixture-registry 2>&1 | grep -q 'GET /artifacts/'; then
-            echo "::error::$WORKFLOW_FILE installs by coordinates but fetched nothing from fixture-registry"
-            exit 1
-          fi
-
-      # Which coordinate was requested, and whether it 404'd, is the diagnostic
-      # neither the node log nor a failed assert carries.
-      - name: Show registry access log
-        if: always()
-        # `|| true`: a diagnostic must not be what turns a job red.
-        run: docker logs fixture-registry 2>&1 | tail -50 || true
+        run: ./workflow-examples/scripts/fixture-registry.sh --assert "$WORKFLOW_FILE"
 
   # ── Test phase (TEE): mock-TEE scenarios, native, feature-enabled merod ──
   # These are excluded from the binary+docker matrices and run only here, on the
@@ -554,8 +539,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      # No setup-buildx: the registry stamp below has to land in the local image
-      # store, which the classic builder writes to and a buildx builder does not.
+      # No setup-buildx: only the classic builder writes the stamp to the local store.
       - name: Start Docker daemon
         run: |
           sudo systemctl start docker
@@ -597,10 +581,7 @@ jobs:
           chmod +x workflow-examples/scripts/build_res_bundles.sh
           ./workflow-examples/scripts/build_res_bundles.sh
 
-      # merobox has no per-node env key, so the node's application source has to
-      # travel in the image, stamped at the address the registry came up on here.
-      # A workflow that force-pulls would replace it, so the ones installing by
-      # coordinates set `force_pull_image: false`.
+      # No per-node env key, so a container's registry travels in its image.
       - name: Serve the bundles over an http registry
         run: |
           url=$(./workflow-examples/scripts/fixture-registry.sh \
@@ -619,24 +600,11 @@ jobs:
           chmod +x workflow-examples/scripts/run_with_retry.sh
           ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE"
 
-      # A green run proves nothing on its own: the node logs an install whether
-      # the registry, a peer or a cached blob served it. Ask the registry.
       - name: Assert the registry served the bundle
+        if: always()
         env:
           WORKFLOW_FILE: ${{ matrix.file }}
-        run: |
-          grep -qE '^ +package:' "$WORKFLOW_FILE" || exit 0
-          if ! docker logs fixture-registry 2>&1 | grep -q 'GET /artifacts/'; then
-            echo "::error::$WORKFLOW_FILE installs by coordinates but fetched nothing from fixture-registry"
-            exit 1
-          fi
-
-      # Which coordinate was requested, and whether it 404'd, is the diagnostic
-      # neither the node log nor a failed assert carries.
-      - name: Show registry access log
-        if: always()
-        # `|| true`: a diagnostic must not be what turns a job red.
-        run: docker logs fixture-registry 2>&1 | tail -50 || true
+        run: ./workflow-examples/scripts/fixture-registry.sh --assert "$WORKFLOW_FILE"
 
       # The PR run is green whatever happens here, so say what failed and how to
       # tell drift from a defect where the reader will actually see it.
@@ -677,8 +645,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      # No setup-buildx: the registry stamp below has to land in the local image
-      # store, which the classic builder writes to and a buildx builder does not.
+      # No setup-buildx: only the classic builder writes the stamp to the local store.
       - name: Start Docker daemon
         run: |
           sudo systemctl start docker
@@ -719,9 +686,7 @@ jobs:
           ls -la example-project/res/com.calimero.kv-store-1.0.0.mpk
           echo "::endgroup::"
 
-      # Served from workflow-examples/res/, the only directory holding every
-      # bundle; the copy above is a single file. The fixture's node-2 executes
-      # without installing, so it resolves the app from the stamped registry.
+      # Only this dir holds every bundle; the copy above is one file.
       - name: Serve the bundles over an http registry
         run: |
           url=$(./workflow-examples/scripts/fixture-registry.sh \
@@ -749,21 +714,9 @@ jobs:
           cd .. && merobox stop --all || true
           merobox nuke -f || true
 
-      # A green run proves nothing on its own: the node logs an install whether
-      # the registry, a peer or a cached blob served it. Ask the registry.
       - name: Assert the registry served the bundle
-        run: |
-          if ! docker logs fixture-registry 2>&1 | grep -q 'GET /artifacts/'; then
-            echo "::error::the workflow fixture fetched nothing from fixture-registry"
-            exit 1
-          fi
-
-      # Which coordinate was requested, and whether it 404'd, is the diagnostic
-      # neither the node log nor a failed assert carries.
-      - name: Show registry access log
         if: always()
-        # `|| true`: a diagnostic must not be what turns a job red.
-        run: docker logs fixture-registry 2>&1 | tail -50 || true
+        run: ./workflow-examples/scripts/fixture-registry.sh --assert example-project/workflows/workflow-example.yml
 
       - name: Stop node log capture
         if: always()

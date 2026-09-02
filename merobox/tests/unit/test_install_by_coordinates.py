@@ -9,6 +9,7 @@ over raw HTTP - the same reason the namespace and TEE steps do.
 import asyncio
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 
 from merobox.commands.bootstrap.config import validate_workflow_step
@@ -66,10 +67,10 @@ class TestSourceValidation:
 
 
 class TestExecutorFieldValidation:
-    """The executor's own check, for steps built directly (parallel groups)."""
+    """A step built directly, as a parallel group does, still gets checked."""
 
     def test_non_string_package_raises(self):
-        with pytest.raises(ValueError, match="'package' must be a string"):
+        with pytest.raises(ValueError, match="package"):
             InstallApplicationStep(_config(package=1, version="1.0.0"))
 
     def test_half_a_coordinate_raises(self):
@@ -153,19 +154,20 @@ class TestCliSourceValidation:
     """`merobox install` must accept the same sources as the workflow step."""
 
     def test_coordinates_pass(self):
-        assert validate_installation_source(
-            package="com.example.app", version="1.0.0"
-        ) == (True, "")
+        validate_installation_source(package="com.example.app", version="1.0.0")
 
-    def test_a_path_passes_without_dev(self, tmp_path):
+    def test_a_path_passes(self, tmp_path):
         bundle = tmp_path / "app.mpk"
         bundle.write_bytes(b"\0asm")
-        assert validate_installation_source(path=str(bundle)) == (True, "")
+        validate_installation_source(path=str(bundle))
+
+    def test_a_missing_file_is_refused(self, tmp_path):
+        with pytest.raises(click.BadParameter, match="not a file"):
+            validate_installation_source(path=str(tmp_path / "absent.mpk"))
 
     @pytest.mark.parametrize(
         "kwargs", [{}, {"package": "com.example.app"}, {"version": "1.0.0"}]
     )
     def test_a_missing_or_half_coordinate_is_refused(self, kwargs):
-        ok, error = validate_installation_source(**kwargs)
-        assert not ok
-        assert "--package and --version" in error
+        with pytest.raises(click.BadParameter, match="--package and --version"):
+            validate_installation_source(**kwargs)

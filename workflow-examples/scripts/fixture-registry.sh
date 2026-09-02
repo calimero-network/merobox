@@ -4,6 +4,7 @@
 #
 # Usage:
 #   ./workflow-examples/scripts/fixture-registry.sh [--stamp IMAGE] [bundle dir]
+#   ./workflow-examples/scripts/fixture-registry.sh --assert WORKFLOW
 #
 # Prints the base URL to serve as CALIMERO_REGISTRY_URL. `--stamp` also bakes it
 # into IMAGE, which is the only route a containerised node has (see below).
@@ -20,9 +21,36 @@ if [ "${1:-}" = --stamp ]; then
   shift 2
 fi
 
+# A coordinate install that never reached the fixture resolved its bytecode
+# somewhere else, so a green run would be hiding a broken registry.
+if [ "${1:-}" = --assert ]; then
+  workflow="${2:?--assert needs a workflow file}"
+  python3 - "$workflow" <<'PY' || exit 0
+import sys, yaml
+def flat(steps):
+    for s in steps or []:
+        if not isinstance(s, dict):
+            continue
+        yield s
+        yield from flat(s.get("steps"))
+        for g in s.get("groups") or []:
+            if isinstance(g, dict):
+                yield from flat(g.get("steps"))
+d = yaml.safe_load(open(sys.argv[1])) or {}
+uses = any(s.get("type") == "install_application" and s.get("package") for s in flat(d.get("steps")))
+sys.exit(0 if uses else 1)
+PY
+  if ! docker logs "$CONTAINER" 2>&1 | grep -q 'GET /artifacts/'; then
+    echo "::error::$workflow installs by coordinates but fetched nothing from the fixture registry"
+    docker logs "$CONTAINER" 2>&1 | tail -50 || true
+    exit 1
+  fi
+  exit 0
+fi
+
 bundle_dir="${1:-$SCRIPT_DIR/../res}"
-root="${FIXTURE_REGISTRY_ROOT:-$PWD/fixture-registry}"
-port="${FIXTURE_REGISTRY_PORT:-8080}"
+root=$PWD/fixture-registry
+port=8080
 
 # `{package}-{version}.mpk`, split on the dash that starts the version; the
 # package half contains dashes of its own.
@@ -50,10 +78,6 @@ stage() {
 }
 
 stage
-
-if [ "${FIXTURE_REGISTRY_STAGE_ONLY:-}" = 1 ]; then
-  exit 0
-fi
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$CONTAINER" -p "$port:80" \

@@ -1,24 +1,12 @@
 #!/usr/bin/env bash
 # Build the .mpk bundles the workflow examples install, from calimero-network/core.
+# The node refuses a raw .wasm on the dev install, so every fixture is a bundle.
 #
-# The node refuses a raw .wasm on the dev install ("not a signed application
-# bundle"), so every fixture here is a `cargo mero bundle` output rather than the
-# bare wasm this script used to copy.
+# Usage: ./workflow-examples/scripts/build_res_bundles.sh
+#        CORE_REPO_DIR=/path/to/core ./workflow-examples/scripts/build_res_bundles.sh
 #
-# Usage:
-#   From merobox repo root:  ./workflow-examples/scripts/build_res_bundles.sh
-#   Or:                      CORE_REPO_DIR=/path/to/core ./workflow-examples/scripts/build_res_bundles.sh
-#
-# Set CORE_REPO_DIR to use an existing core clone; otherwise we clone into
-# workflow-examples/.core-repo.
-#
-# CORE_BRANCH should match the merod you intend to run these bundles against. It
-# defaults to master, which is right for merod:edge - but an app built from master
-# can import a host function a RELEASED merod does not have (`account_id` since
-# calimero-network/core#3320), and that fails at instantiation with
-# Link(Import("env", "account_id", UnknownImport)) rather than anything that names
-# a version skew. CI pins CORE_BRANCH to the release tag it downloaded merod from
-# for exactly this reason; do the same locally if you are testing a release.
+# CORE_BRANCH must match the merod these run against: an app built from master
+# can import a host function a released merod lacks, which dies at instantiation.
 
 set -euo pipefail
 
@@ -45,15 +33,13 @@ fi
 echo "Building bundles from $CORE_DIR ..."
 rustup target add wasm32-unknown-unknown 2>/dev/null || true
 
-# `cargo mero`, not the per-app `build.sh` scripts: core removed those in
-# calimero-network/core#3308, and a bare `cargo build` emits no ABI, which the
-# node needs to introspect an upgrade target.
+# `cargo mero`, not `cargo build`: the latter emits no ABI, which the node needs
+# to introspect an upgrade target.
 PATH="$(cd "$CORE_DIR" && ./scripts/setup-cargo-mero.sh):$PATH"
 export PATH
 
-# `cd`, not --manifest-path: without it the output lands in the workspace root's
-# dist/, which is where the copy below reads from. `--dev` signs with the
-# well-known development key, which a local node accepts and the registry refuses.
+# `cd`, not --manifest-path: that puts the output in the workspace root's dist/.
+# `--dev` signs with the development key, which a local node accepts.
 bundle() { # <app dir> <package id> <app version>
   echo ">>> Bundling $1 ($2 @ $3)"
   (cd "$CORE_DIR/$1" && cargo mero bundle --dev --no-icon --package "$2" --app-version "$3")
@@ -63,11 +49,8 @@ bundle() { # <app dir> <package id> <app version>
 bundle apps/kv-store com.calimero.kv-store 1.0.0
 bundle apps/blobs com.calimero.blobs 1.0.0
 
-# The upgrade workflows install two applications and compare their ids, so the
-# second needs its OWN package: `ApplicationId::for_bundle` hashes package and
-# signer, not version, so a shared package would hand both installs one id and
-# the comparison would pass while testing nothing. Same source as v1 on purpose -
-# what those workflows exercise is the upgrade machinery, not a behaviour change.
+# Its own package, not just its own version: `ApplicationId::for_bundle` hashes
+# package and signer, so one package would give both installs a single id.
 bundle apps/kv-store com.calimero.kv-store-v2 1.0.0
 
 echo "Done. Bundles in $RES_DIR:"
