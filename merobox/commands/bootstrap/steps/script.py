@@ -4,6 +4,7 @@ Script execution step for bootstrap workflow.
 
 import io
 import os
+import shutil
 import subprocess
 import tarfile
 import time
@@ -12,6 +13,30 @@ from typing import Any
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import SCRIPT_CONTAINER_STOP_TIMEOUT
 from merobox.commands.utils import console
+
+
+def posix_shell() -> str:
+    """The shell a local `type: script` step runs under.
+
+    `/bin/sh` is a path, not a name, and it does not exist on Windows — passing
+    it to `subprocess.run` there fails with `FileNotFoundError` before the
+    script is read. Git for Windows ships `sh.exe` and is present on GitHub's
+    windows runners, but under Program Files, so it is only reachable by
+    resolving PATH rather than assuming a location.
+
+    Raises `FileNotFoundError` with a useful message when no POSIX shell is
+    available, since "script step failed" would otherwise be the only clue.
+    """
+    if os.name != "nt":
+        return "/bin/sh"
+
+    found = shutil.which("sh") or shutil.which("bash")
+    if found is None:
+        raise FileNotFoundError(
+            "a script step needs a POSIX shell, and neither `sh` nor `bash` is "
+            "on PATH. On Windows those come from Git for Windows."
+        )
+    return found
 
 
 class ScriptStep(BaseStep):
@@ -269,11 +294,12 @@ class ScriptStep(BaseStep):
                 env_key = key.upper().replace("-", "_").replace(".", "_")
                 env[env_key] = str(value) if value is not None else ""
 
-            # Run the script using /bin/sh
+            # Run the script under a POSIX shell — resolved, not hardcoded:
+            # `/bin/sh` does not exist on Windows.
             start_time = time.time()
             try:
                 completed = subprocess.run(
-                    ["/bin/sh", self.script_path, *resolved_args],
+                    [posix_shell(), self.script_path, *resolved_args],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
