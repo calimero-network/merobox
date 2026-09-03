@@ -1,0 +1,149 @@
+description: |
+  A DELEGATED invitation, routed to an admitter that did not mint it.
+
+  `CAN_INVITE_MEMBERS` lets a member mint invitations but not admit them —
+  admission stays with admins and TEE nodes. So a non-admin inviter hands out
+  invitations it cannot itself complete, and the joiner has to reach somebody
+  else. That is the case the invitation's `admitter_addrs` exists for, and
+  nothing else in this suite covers it: every other invitation here is minted by
+  an admin, who is also an admitter, so "reached the node that invited me" and
+  "reached an admitter" are the same event and neither is tested.
+
+  Two assertions, and the second is the one with teeth:
+
+  - the delegated flow completes — a non-admin mints, a third node joins, and
+    the namespace lists it afterwards;
+  - the joiner acted on the addresses the invitation carried, via the line the
+    dial emits.
+
+  The dialing half of that chain shipped on a code path nothing called
+  (core#3793) and merged green, because a unit test can prove a function
+  correct without proving anything calls it. A log assertion is what notices.
+
+  What this deliberately does NOT assert: that the invitation's addresses were
+  the ONLY way the joiner could find an admitter. That needs a topology where
+  node-3 cannot discover node-1 otherwise, and merobox wires bootstrap peers
+  cluster-wide or not at all — there is no selective wiring, and with mDNS off
+  for everyone the first two nodes cannot complete setup either. So a green run
+  here means the mechanism engaged, not that it was load-bearing. Strengthening
+  that is tracked separately.
+
+name: Delegated invitation routes to an admitter
+
+nodes:
+  count: 3
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: admroute-node
+
+steps:
+  - name: Install the app on the admin node
+    type: install_application
+    node: admroute-node-1
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Admin creates the namespace
+    type: create_namespace
+    node: admroute-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  # Setup, not the case under test: node-2 joins on an ADMIN-minted invitation
+  # so that it becomes a member who can later be granted the right to invite.
+  - name: Admin invites node-2
+    type: create_namespace_invitation
+    node: admroute-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      admin_invitation: invitation
+
+  - name: Node-2 joins
+    type: join_namespace
+    node: admroute-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{admin_invitation}}'
+
+  - name: Read node-2's account
+    type: node_identity
+    node: admroute-node-2
+    outputs:
+      inviter_account: accountId
+
+  - name: Read node-3's account
+    type: node_identity
+    node: admroute-node-3
+    outputs:
+      joiner_account: accountId
+
+  # Bit 1, so 2 on its own: the right to invite and nothing else. Granting more
+  # could make node-2 an admin, and an admin is also an admitter — which would
+  # collapse the distinction this scenario turns on.
+  - name: Grant node-2 CAN_INVITE_MEMBERS and nothing more
+    type: set_member_capabilities
+    node: admroute-node-1
+    group_id: '{{namespace_id}}'
+    member_id: '{{inviter_account}}'
+    capabilities: 2
+
+  - name: Settle the grant
+    type: wait_for_sync
+    nodes:
+      - admroute-node-1
+      - admroute-node-2
+    group_id: '{{namespace_id}}'
+
+  # The case under test. Node-2 is not an admin, so the admitters default to the
+  # group's admins plus its TEE nodes — node-1, not node-2 — and the invitation
+  # carries whatever addresses node-2 holds for them.
+  - name: Node-2 mints a delegated invitation it cannot itself admit
+    type: create_namespace_invitation
+    node: admroute-node-2
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      delegated_invitation: invitation
+
+  - name: Node-3 joins on the delegated invitation
+    type: join_namespace
+    node: admroute-node-3
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{delegated_invitation}}'
+
+  - name: Settle after the delegated join
+    type: wait_for_sync
+    nodes:
+      - admroute-node-1
+      - admroute-node-3
+    group_id: '{{namespace_id}}'
+
+  # The outcome. Read from the ADMIN's view, not the joiner's: node-3 believing
+  # it joined proves less than the admitter having folded it.
+  - name: The admin lists node-3 as a member
+    type: assert_api_response
+    node: admroute-node-1
+    path: '/admin-api/groups/{{namespace_id}}/members'
+    present:
+      - members
+
+  # The mechanism. Without this the scenario passes on a run where gossip
+  # happened to reach node-1 and the addresses were never touched, which is
+  # exactly the state core#3793 shipped in.
+  - name: Node-3 acted on the invitation's admitter addresses
+    type: assert_log_present
+    nodes:
+      - admroute-node-3
+    patterns:
+      - "dialed an admitter named by the invitation"
+
+  - name: No panics on any node
+    type: assert_log_absent
+    nodes:
+      - admroute-node-1
+      - admroute-node-2
+      - admroute-node-3
+    patterns:
+      - "panicked at"
+
+stop_all_nodes: true
