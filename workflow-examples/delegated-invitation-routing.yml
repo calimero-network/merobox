@@ -93,7 +93,7 @@ steps:
     nodes:
       - admroute-node-1
       - admroute-node-2
-    namespace_id: '{{namespace_id}}'
+    group_id: '{{namespace_id}}'
 
   # The case under test. Node-2 is not an admin, so the admitters default to the
   # group's admins plus its TEE nodes — node-1, not node-2 — and the invitation
@@ -116,7 +116,7 @@ steps:
     nodes:
       - admroute-node-1
       - admroute-node-3
-    namespace_id: '{{namespace_id}}'
+    group_id: '{{namespace_id}}'
 
   # The outcome. Read from the ADMIN's view, not the joiner's: node-3 believing
   # it joined proves less than the admitter having folded it.
