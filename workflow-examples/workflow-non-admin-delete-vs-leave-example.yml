@@ -1,0 +1,425 @@
+name: Non-Admin Delete Refused, Leave Allowed
+description: >
+  What a plain member of somebody else's namespace can and cannot tear down,
+  asserted at all three levels: namespace, subgroup, context.
+
+  Across the shipped workflows every `delete_namespace`, `delete_group` and
+  `delete_context` is issued by the node that CREATED the thing, so the
+  admin gate on those routes was covered only in the direction that passes.
+  Nothing asserted that a non-admin is refused, and nothing paired that
+  refusal with the self-service `leave_*` route the member is supposed to
+  use instead. That pairing is the whole point: a client that offers a
+  member "Delete" gives them a button that can only ever fail, and a client
+  that offers "Leave" but wires it to an admin-only endpoint fails in the
+  same place while looking correct.
+
+  Three properties:
+
+    1. **Delete is refused for a non-admin, at every level.** merod gates
+       each route differently, and the refusals do NOT read alike — a
+       client matching on one wording misreports the others as node
+       faults:
+
+         delete_namespace → `require_admin` on the root
+              "identity {id} is not an admin of group {group}"
+         delete_context   → `require_admin` on the context's OWNING group
+              "identity {id} is not an admin of group {group}"
+         delete_group     → NOT require_admin. Admits the subgroup's owner,
+              an admin of the namespace root, or a member holding
+              CAN_DELETE_SUBGROUP. It refuses with
+              `CapabilitiesError::Unauthorized`, which `parse_api_error`
+              classifies nowhere — so the client gets a bare
+              "HTTP 500: Internal server error" and the reason stays in the
+              node log. The status is all that can be pinned.
+
+       Each is pinned with `expected_error`, so an unreachable node cannot
+       stand in for the refusal under test.
+
+       Note this differs BY MEROD VERSION. The two 403s above come from
+       `membership_refusal_status`, which core master added and 0.11.0-rc.28
+       does not have — on rc.28 all three refusals are the reason-stripped
+       500. A client that only recognises the message therefore recognises
+       nothing on a released node, which is exactly the bug this workflow
+       found in calimero-network/tauri-app#209.
+
+    2. **Leave works for that same member, at every level.** `leave_context`
+       is a node-local opt-out (no governance op), `leave_group` publishes
+       `MemberLeft` in one subgroup, `leave_namespace` publishes it at the
+       root and cascades. Run in that order, innermost first.
+
+    3. **The admin's world is untouched.** After the member leaves, node 1
+       still has the namespace, the subgroup and both contexts. A "leave"
+       that took the group down with it would be a delete wearing another
+       name, and nothing else here would catch it.
+
+  A fourth thing this pins, which is a trap rather than a property:
+  `leave_group` needs a DIRECT membership row. A member who joined an Open
+  subgroup through `join_subgroup_inheritance` has none — the apply path
+  for `MemberJoinedOpen` is validate-only and writes no row — even though
+  `list_group_members` DOES report them (it unions the inherited set in),
+  so a client reading the member list sees a role and reasonably offers
+  Leave. merod then refuses with "not a direct member ... leave the parent
+  group where the membership anchor lives instead". Both subgroup shapes
+  are therefore built here: `direct-room`, where node 2 is added by the
+  admin and holds a real row, and `open-room`, where it self-joins by
+  inheritance and holds none.
+
+  Two nodes are enough: one admin who owns everything, one member who owns
+  nothing. Default capabilities are set explicitly to
+  CAN_CREATE_CONTEXT | CAN_JOIN_OPEN_SUBGROUPS (1 | 4 = 5) — enough for the
+  member to self-join `open-room`, and deliberately WITHOUT
+  CAN_DELETE_SUBGROUP (1 << 6 = 64), which would let it delete a subgroup
+  and turn property 1 inside out.
+
+force_pull_image: true
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: perm-node
+
+steps:
+  # ── Bootstrap ──────────────────────────────────────────────────────
+  # Installed on both nodes: each executes contexts locally, so each needs
+  # the bytecode. The same wasm installs to the same id everywhere, so only
+  # node 1's is captured.
+  - name: Install Application on Node 1
+    type: install_application
+    node: perm-node-1
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Install Application on Node 2
+    type: install_application
+    node: perm-node-2
+    path: ./workflow-examples/res/kv_store.wasm
+    dev: true
+
+  - name: Node 1 Creates the Namespace It Will Admin
+    type: create_namespace
+    node: perm-node-1
+    application_id: "{{app_id}}"
+    outputs:
+      namespace_id: namespaceId
+
+  # Without CAN_JOIN_OPEN_SUBGROUPS the member cannot self-join `open-room`
+  # and the inherited-membership half of this workflow never gets set up.
+  # CAN_DELETE_SUBGROUP (64) is pointedly absent: with it, the delete_group
+  # refusal below would not fire and the step would report an unexpected
+  # success rather than passing vacuously.
+  - name: Grant Joiners Context + Open-Subgroup Rights, and Nothing Destructive
+    type: set_default_capabilities
+    node: perm-node-1
+    group_id: "{{namespace_id}}"
+    capabilities: 5
+
+  - name: Invite Node 2
+    type: create_namespace_invitation
+    node: perm-node-1
+    namespace_id: "{{namespace_id}}"
+    outputs:
+      invite_node2: invitation
+
+  - name: Wait for Namespace Governance to Gossip
+    type: wait
+    seconds: 5
+
+  - name: Node 2 Joins as a Plain Member
+    type: join_namespace
+    node: perm-node-2
+    namespace_id: "{{namespace_id}}"
+    invitation: "{{invite_node2}}"
+    outputs:
+      identity_node2: memberIdentity
+      # Member-addressing endpoints take the ACCOUNT, not the signing key.
+      account_node2: memberAccount
+
+  - name: Assert Node 2 Really Joined
+    type: assert
+    statements:
+      - "is_set({{identity_node2}})"
+      - "is_set({{account_node2}})"
+
+  # ── Two subgroups, two membership shapes ───────────────────────────
+  - name: Create direct-room (Restricted — membership by explicit add)
+    type: create_group_in_namespace
+    node: perm-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: direct-room
+    outputs:
+      direct_room_id: groupId
+
+  # Born Open rather than created-then-flipped, so there is no window in
+  # which the subgroup is Restricted and the inheritance join is refused.
+  - name: Create open-room (Open — membership by inheritance)
+    type: create_group_in_namespace
+    node: perm-node-1
+    namespace_id: "{{namespace_id}}"
+    group_name: open-room
+    visibility: open
+    outputs:
+      open_room_id: groupId
+
+  - name: Create a Context at the Namespace Root
+    type: create_context
+    node: perm-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{namespace_id}}"
+    outputs:
+      ctx_root: contextId
+      node1_root_key: memberPublicKey
+
+  - name: Create a Context Inside direct-room
+    type: create_context
+    node: perm-node-1
+    application_id: "{{app_id}}"
+    group_id: "{{direct_room_id}}"
+    outputs:
+      ctx_direct: contextId
+      node1_direct_key: memberPublicKey
+
+  - name: Assert the Two Subgroups and Two Contexts Are Distinct
+    type: assert
+    statements:
+      - "is_set({{direct_room_id}})"
+      - "is_set({{open_room_id}})"
+      - "{{direct_room_id}} != {{open_room_id}}"
+      - "{{ctx_root}} != {{ctx_direct}}"
+
+  # A real membership ROW for node 2, by account. This is what makes the
+  # `leave_group` below possible at all — see the inheritance trap further
+  # down for the shape that has no row.
+  - name: Admin Adds Node 2 to direct-room as a Member
+    type: add_group_members
+    node: perm-node-1
+    group_id: "{{direct_room_id}}"
+    members:
+      - identity: "{{account_node2}}"
+        role: Member
+
+  - name: Wait for Subgroup and Context Registration to Propagate
+    type: wait
+    seconds: 10
+
+  - name: Node 2 Self-Joins open-room by Inheritance (no direct row)
+    type: join_subgroup_inheritance
+    node: perm-node-2
+    group_id: "{{open_room_id}}"
+
+  - name: Node 2 Joins the Root Context
+    type: join_context
+    node: perm-node-2
+    context_id: "{{ctx_root}}"
+    outputs:
+      node2_root_key: memberPublicKey
+
+  - name: Node 2 Joins the direct-room Context
+    type: join_context
+    node: perm-node-2
+    context_id: "{{ctx_direct}}"
+    outputs:
+      node2_direct_key: memberPublicKey
+
+  - name: Settle Before Asserting Permissions
+    type: wait_for_sync
+    context_id: "{{ctx_root}}"
+    nodes:
+      - perm-node-1
+      - perm-node-2
+    timeout: 60
+    trigger_sync: true
+
+  # `list_group_members` 403s a non-member (`ContextError::NotAGroupMember`,
+  # typed precisely so it is not a generic 500), so this step SUCCEEDING is
+  # itself the proof that node 2 is in the namespace. Without it the refusals
+  # below would be consistent with "you are not here at all" rather than
+  # "you are here but not an admin", and would pass for the wrong reason.
+  # The mirror-image step after the leave asserts the same route now fails.
+  - name: Node 2 Is a Namespace Member (a Non-Member Is Refused This Call)
+    type: list_group_members
+    node: perm-node-2
+    group_id: "{{namespace_id}}"
+
+  # ── Property 1: every delete is refused, each with its own wording ──
+  - name: Non-Admin Cannot Delete a Root Context
+    type: delete_context
+    node: perm-node-2
+    context_id: "{{ctx_root}}"
+    expected_failure: true
+    expected_error: "is not an admin of group"
+
+  - name: Non-Admin Cannot Delete a Subgroup Context
+    type: delete_context
+    node: perm-node-2
+    context_id: "{{ctx_direct}}"
+    expected_failure: true
+    expected_error: "is not an admin of group"
+
+  # Different gate, and — MEASURED, not assumed — a refusal the client cannot
+  # read. `delete_group` refuses with `CapabilitiesError::Unauthorized`, which
+  # `parse_api_error` classifies nowhere, so it falls through to the generic
+  # arm that deliberately does NOT echo an unclassified message back (it can
+  # carry store paths or key material). The client sees `500 Internal server
+  # error` and nothing else; the reason exists only in the node log.
+  #
+  # So the status is all there is to pin. That still separates a refusal from
+  # the failures that would otherwise satisfy `expected_failure` for the wrong
+  # reason — an unreachable node, a 404 on a bad id, a 403 from the
+  # `MembershipError` family the two steps above assert.
+  #
+  # Tighten this to "lacks permission to delete subgroup" once core classifies
+  # `CapabilitiesError` the way master's `membership_refusal_status` now
+  # classifies `MembershipError`.
+  - name: Non-Admin Cannot Delete a Subgroup
+    type: delete_group
+    node: perm-node-2
+    group_id: "{{direct_room_id}}"
+    expected_failure: true
+    expected_error: "HTTP 500"
+
+  - name: Non-Admin Cannot Delete the Namespace
+    type: delete_namespace
+    node: perm-node-2
+    namespace_id: "{{namespace_id}}"
+    expected_failure: true
+    expected_error: "is not an admin of group"
+
+  # ── The inheritance trap ───────────────────────────────────────────
+  # `list_group_members` unions inherited members in, so open-room reports
+  # node 2 with a role — but `MemberJoinedOpen` writes no membership row,
+  # and `leave_group` needs one. A client that decides "Leave" from the
+  # member list alone offers a button that lands here.
+  - name: Leaving an Inherited Open Subgroup Is Refused — There Is No Row to Remove
+    type: leave_group
+    node: perm-node-2
+    group_id: "{{open_room_id}}"
+    expected_failure: true
+    expected_error: "not a direct member"
+
+  # ── Property 2: the leaves work, innermost first ───────────────────
+  # Node-local opt-out: no governance op, nobody else observes it, and a
+  # later `join_context` reverses it.
+  - name: Non-Admin CAN Leave a Context
+    type: leave_context
+    node: perm-node-2
+    context_id: "{{ctx_direct}}"
+
+  # Publishes MemberLeft in direct-room only. Node 2's namespace membership
+  # and its inherited open-room access are untouched by this.
+  - name: Non-Admin CAN Leave a Subgroup It Holds a Direct Row In
+    type: leave_group
+    node: perm-node-2
+    group_id: "{{direct_room_id}}"
+
+  - name: Let the Subgroup Leave Settle
+    type: wait
+    seconds: 5
+
+  # Publishes MemberLeft at the root and cascades through every descendant
+  # node 2 still holds a direct row in.
+  - name: Non-Admin CAN Leave the Namespace
+    type: leave_namespace
+    node: perm-node-2
+    namespace_id: "{{namespace_id}}"
+
+  - name: Let the Namespace Leave Cascade
+    type: wait
+    seconds: 10
+
+  # Having left, node 2 is no longer a member, so the member list it could
+  # read a moment ago is now refused it. This is the leave actually taking
+  # effect on the node's own view — not merely a 200 from the leave call.
+  - name: Node 2 Can No Longer Read the Namespace Member List
+    type: list_group_members
+    node: perm-node-2
+    group_id: "{{namespace_id}}"
+    expected_failure: true
+    expected_error: "not a member of group"
+
+  # ── Property 3: the admin's world survived all of it ───────────────
+  # Asserted by identity, not by presence in a listing: `get_group_info`
+  # answers with the group's own id, so a wrong or missing group cannot
+  # satisfy the comparison the way `is_set` on any old value could.
+  - name: Node 1 Still Has the Namespace
+    type: get_group_info
+    node: perm-node-1
+    group_id: "{{namespace_id}}"
+    outputs:
+      admin_ns_info: groupId
+
+  - name: Assert the Namespace Was Not Taken Down by the Member's Leave
+    type: assert
+    statements:
+      - "{{admin_ns_info}} == {{namespace_id}}"
+
+  - name: Node 1 Still Has direct-room
+    type: get_group_info
+    node: perm-node-1
+    group_id: "{{direct_room_id}}"
+    outputs:
+      admin_direct_room_info: groupId
+
+  - name: Assert the Subgroup Survived the Member's Leave
+    type: assert
+    statements:
+      - "{{admin_direct_room_info}} == {{direct_room_id}}"
+
+  # No capture: this fails outright if the namespace is gone, and the
+  # write/read pair below is the real proof the contexts are still live.
+  - name: Node 1 Can Still Enumerate the Namespace's Contexts
+    type: list_group_contexts
+    node: perm-node-1
+    group_id: "{{namespace_id}}"
+
+  # The admin can still USE the context the member left, which is the
+  # difference between a leave and a delete stated as behaviour rather
+  # than as a listing.
+  - name: Admin Still Writes to the Context the Member Left
+    type: call
+    node: perm-node-1
+    context_id: "{{ctx_direct}}"
+    method: set
+    args:
+      key: after_member_left
+      value: still-running
+    executor_public_key: "{{node1_direct_key}}"
+
+  - name: Admin Reads It Back
+    type: call
+    node: perm-node-1
+    context_id: "{{ctx_direct}}"
+    method: get
+    args:
+      key: after_member_left
+    executor_public_key: "{{node1_direct_key}}"
+    outputs:
+      after_leave_value: result.output
+
+  - name: Assert the Context Is Still Live for the Admin
+    type: assert
+    statements:
+      - "{{after_leave_value}} == still-running"
+
+  # ── Teardown: the admin CAN do everything the member could not ─────
+  # Same three calls, same targets, from the node that owns them. Without
+  # this the refusals above would be consistent with the routes simply
+  # being broken.
+  - name: Admin Deletes the Context
+    type: delete_context
+    node: perm-node-1
+    context_id: "{{ctx_direct}}"
+
+  - name: Admin Deletes the Subgroup
+    type: delete_group
+    node: perm-node-1
+    group_id: "{{direct_room_id}}"
+
+  - name: Admin Deletes the Namespace
+    type: delete_namespace
+    node: perm-node-1
+    namespace_id: "{{namespace_id}}"
+
+stop_all_nodes: true
+restart: false
