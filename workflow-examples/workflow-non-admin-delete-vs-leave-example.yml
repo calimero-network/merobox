@@ -58,11 +58,15 @@ description: >
   for `MemberJoinedOpen` is validate-only and writes no row — even though
   `list_group_members` DOES report them (it unions the inherited set in),
   so a client reading the member list sees a role and reasonably offers
-  Leave. merod then refuses with "not a direct member ... leave the parent
-  group where the membership anchor lives instead". Both subgroup shapes
-  are therefore built here: `direct-room`, where node 2 is added by the
-  admin and holds a real row, and `open-room`, where it self-joins by
-  inheritance and holds none.
+  Leave. merod then refuses — but NOT readably: the pre-flight in
+  `leave_group.rs` raises a bare `eyre!` rather than the typed
+  `MembershipError::MemberNotDirect` that `membership_refusal_status`
+  already maps to a 409 with its message, so the caller gets the
+  reason-stripped 500 and the wording exists only in the node log. That is
+  a core defect, not a merobox one, and it is why the step below pins the
+  status; see the comment there. Both subgroup shapes are therefore built
+  here: `direct-room`, where node 2 is added by the admin and holds a real
+  row, and `open-room`, where it self-joins by inheritance and holds none.
 
   Two nodes are enough: one admin who owns everything, one member who owns
   nothing. Default capabilities are set explicitly to
@@ -81,12 +85,18 @@ nodes:
 steps:
   # ── Bootstrap ──────────────────────────────────────────────────────
   # Installed on both nodes: each executes contexts locally, so each needs
-  # the bytecode. The same wasm installs to the same id everywhere, so only
-  # node 1's is captured.
+  # the bytecode. `ApplicationId::for_bundle` hashes package and signer, so the
+  # same bundle installs to the same id on both — only node 1's is captured.
+  #
+  # The fixture is the `.mpk` BUNDLE, not a raw `.wasm`: the node refuses a raw
+  # wasm on the dev install, and `build_res_bundles.sh` (which CI runs before
+  # this lane, uploading `res/` as the `app-bundles` artifact) emits only
+  # bundles. Nothing under `res/` is committed — it is gitignored — so a path
+  # naming a `.wasm` resolves to no file at all.
   - name: Install Application on Node 1
     type: install_application
     node: perm-node-1
-    path: ./workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
     outputs:
       app_id: applicationId
@@ -94,7 +104,7 @@ steps:
   - name: Install Application on Node 2
     type: install_application
     node: perm-node-2
-    path: ./workflow-examples/res/kv_store.wasm
+    path: workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
     dev: true
 
   - name: Node 1 Creates the Namespace It Will Admin
@@ -258,20 +268,23 @@ steps:
     expected_error: "is not an admin of group"
 
   # Different gate, and — MEASURED, not assumed — a refusal the client cannot
-  # read. `delete_group` refuses with `CapabilitiesError::Unauthorized`, which
-  # `parse_api_error` classifies nowhere, so it falls through to the generic
-  # arm that deliberately does NOT echo an unclassified message back (it can
-  # carry store paths or key material). The client sees `500 Internal server
-  # error` and nothing else; the reason exists only in the node log.
+  # read. `delete_group` builds its refusal as a bare
+  # `eyre!("deleting subgroup '{group_id:?}': {e} (or be its owner)")` wrapping
+  # the `CapabilitiesError`, so nothing survives for `parse_api_error` to
+  # downcast: it falls through to the final arm, which deliberately does NOT
+  # echo an untyped message back (it can carry store paths or key material).
+  # The client sees `500 Internal server error` and nothing else; the reason
+  # exists only in the node log. Note that classifying `CapabilitiesError`
+  # alone would NOT fix this — the wrap has to go too.
   #
   # So the status is all there is to pin. That still separates a refusal from
   # the failures that would otherwise satisfy `expected_failure` for the wrong
   # reason — an unreachable node, a 404 on a bad id, a 403 from the
   # `MembershipError` family the two steps above assert.
   #
-  # Tighten this to "lacks permission to delete subgroup" once core classifies
-  # `CapabilitiesError` the way master's `membership_refusal_status` now
-  # classifies `MembershipError`.
+  # Tighten this to "lacks permission to delete subgroup" once core raises a
+  # typed refusal here and classifies it, the way master's
+  # `membership_refusal_status` already classifies `MembershipError`.
   - name: Non-Admin Cannot Delete a Subgroup
     type: delete_group
     node: perm-node-2
@@ -291,12 +304,43 @@ steps:
   # node 2 with a role — but `MemberJoinedOpen` writes no membership row,
   # and `leave_group` needs one. A client that decides "Leave" from the
   # member list alone offers a button that lands here.
+  #
+  # Pinned by status, for the same reason as `delete_group` above but by a
+  # DIFFERENT mechanism, and this one is a core defect rather than a gap:
+  #
+  #   `crates/governance-store/src/errors.rs` has the typed variant
+  #   `MembershipError::MemberNotDirect`, and master's
+  #   `membership_refusal_status` already classifies it — 409, message kept.
+  #   But the pre-flight in `crates/context/src/handlers/leave_group.rs`
+  #   does not raise it. It builds a bare `eyre::eyre!("this node is not a
+  #   direct member of {:?} …")` instead, which downcasts to nothing, so
+  #   `parse_api_error` falls to its final arm — the one that deliberately
+  #   drops an untyped message because it can carry store paths or key
+  #   material — and answers a bare 500.
+  #
+  # So the refusal a client can actually read is strictly WORSE than the one
+  # core already knows how to send, and the comment above that pre-flight
+  # ("so we surface a friendly error") describes the opposite of the effect.
+  # Raising `MemberNotDirect` there is a one-line change and would let this
+  # step pin the reason; until then the status is all there is.
   - name: Leaving an Inherited Open Subgroup Is Refused — There Is No Row to Remove
     type: leave_group
     node: perm-node-2
     group_id: "{{open_room_id}}"
     expected_failure: true
-    expected_error: "not a direct member"
+    expected_error: "HTTP 500"
+
+  # A bare status match would also be satisfied by a `leave_group` that got
+  # far enough to publish `MemberLeft` and only then fell over — which is not
+  # hypothetical: half-applied root ops are exactly what core#3854 fixed. So
+  # prove the refusal changed nothing. This exact call on this exact group is
+  # already asserted to SUCCEED before the delete block and to be REFUSED once
+  # node 2 really leaves, so the probe is known to answer both ways and cannot
+  # pass by being inert.
+  - name: The Refused Leave Cost Node 2 Nothing — It Is Still a Namespace Member
+    type: list_group_members
+    node: perm-node-2
+    group_id: "{{namespace_id}}"
 
   # ── Property 2: the leaves work, innermost first ───────────────────
   # Node-local opt-out: no governance op, nobody else observes it, and a
