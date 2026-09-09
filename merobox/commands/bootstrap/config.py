@@ -18,6 +18,7 @@ from pydantic import (
     model_validator,
 )
 
+from merobox.commands.constants import DEFAULT_IMAGE
 from merobox.commands.utils import console
 
 # Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
@@ -2654,7 +2655,12 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",
-            "image": "ghcr.io/calimero-network/merod:6a47604",
+            # Was a bare commit tag (`merod:6a47604`), which ghcr garbage
+            # collects — it 404s now, so the sample this command generates
+            # could not pull its own node. calimero-network/merobox#1.
+            # The shared default is an alias ghcr keeps repointing, so it
+            # cannot rot the same way.
+            "image": DEFAULT_IMAGE,
         },
         "steps": [
             {
