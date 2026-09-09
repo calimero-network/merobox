@@ -209,7 +209,23 @@ steps:
       - identity: "{{account_node2}}"
         role: Member
 
-  - name: Wait for Subgroup and Context Registration to Propagate
+  # Push the membership op immediately rather than waiting for the next gossip
+  # heartbeat — same pattern, and same reason, as the `sync_group` in
+  # workflow-group-admin-example.yml and workflow-group-metadata-example.yml.
+  # Node 2's direct row is what the whole `leave_group` half depends on, so
+  # letting it ride on heartbeat timing is the one propagation here worth
+  # forcing rather than sleeping on.
+  - name: Force the Membership Op Out to Node 2
+    type: sync_group
+    node: perm-node-1
+    group_id: "{{direct_room_id}}"
+
+  # Still needed, and NOT redundant with the push above: that pushes the
+  # membership op, while the three steps after this need the two CONTEXTS node
+  # 1 created to have registered on node 2. Left at 10s rather than tuned down,
+  # because shortening it is the half that can only be validated by a green
+  # canary run, not by reading the code.
+  - name: Wait for Context Registration to Propagate
     type: wait
     seconds: 10
 
