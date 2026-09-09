@@ -79,6 +79,13 @@ kv-store-benchmark-report.txt
 # Workflow example bundles (built from calimero-network/core by workflow-examples/scripts/build_res_bundles.sh)
 workflow-examples/res/*.mpk
 example-project/res/*.mpk
+# Nothing in these trees is a source file. The bundle script used to emit raw
+# .wasm here too, and an ignore covering only *.mpk is how a 474 KB
+# kv_store.wasm reached master in #404 and had to be reverted in #405 — and how
+# a stale local copy nearly rode along again. Ignore the outputs, not one
+# extension of them.
+workflow-examples/res/*.wasm
+example-project/res/*.wasm
 # Staged bundle tree served by workflow-examples/scripts/fixture-registry.sh
 fixture-registry/
 workflow-examples/.core-repo/
