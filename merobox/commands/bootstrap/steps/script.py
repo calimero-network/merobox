@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.constants import SCRIPT_CONTAINER_STOP_TIMEOUT
+from merobox.commands.constants import DEFAULT_IMAGE, SCRIPT_CONTAINER_STOP_TIMEOUT
 from merobox.commands.utils import console
 
 
@@ -416,9 +416,12 @@ class ScriptStep(BaseStep):
                 console.print(f"[red]Failed to read script file: {str(e)}[/red]")
                 return False
 
-            # Get the base image from the workflow context
-            # We'll use a default image since we don't have direct access to the config here
-            image = "ghcr.io/calimero-network/merod:prerelease"
+            # This step runs before any node starts, so there is no launched
+            # container whose image could be reused, and the step has no handle
+            # on the workflow config. The shared default is the closest thing to
+            # "the image this run would use" — spelled once in constants so it
+            # cannot drift away from what run_node() picks.
+            image = DEFAULT_IMAGE
 
             console.print(f"[cyan]Using Docker image: {image}[/cyan]")
 

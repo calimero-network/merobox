@@ -30,6 +30,7 @@ from merobox.commands.config_utils import (
 )
 from merobox.commands.constants import (
     CONTAINER_STOP_TIMEOUT,
+    DEFAULT_IMAGE,
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
     GRACEFUL_CLEANUP_DRAIN_TIMEOUT,
@@ -500,7 +501,7 @@ class DockerManager(CleanupMixin):
         """Run a Calimero node container."""
         try:
             # Determine the image to use
-            image_to_use = image or "ghcr.io/calimero-network/merod:prerelease"
+            image_to_use = image or DEFAULT_IMAGE
 
             # Ensure the image is available
             if not self._ensure_image_pulled(image_to_use):

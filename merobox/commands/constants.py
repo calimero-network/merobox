@@ -149,6 +149,22 @@ HEALTH_CHECK_TIMEOUT = 10  # seconds
 INSTALL_TIMEOUT = 30  # seconds
 
 # Docker configuration
+#
+# `prerelease` is an alias ghcr re-points at every core prerelease, and that is
+# the point: merobox drives merod's admin API directly, so the two move as a
+# pair, and merobox cuts ~20 releases a month. core publishes this alias
+# specifically so merobox can follow it (1884a44, 2026-02) — a hand-bumped
+# release tag would be stale within days, and merobox is not in core's
+# `.github/fleet.json`, so no automation would ever move it.
+#
+# What is NOT acceptable here is an EPHEMERAL tag. ghcr garbage-collects bare
+# commit tags and expires `pr-<N>` when the PR closes (merobox#1), so a default
+# spelled that way stops resolving and the node cannot be pulled at all. The
+# generated sample workflow carried `merod:6a47604` until it 404'd, which is
+# what `test_default_image_is_durable` now forbids.
+#
+# For a reproducible run, pin at the call site — `--image`, or `image:` in the
+# workflow. Every example workflow does.
 DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:prerelease"
 DEFAULT_NODE_PREFIX = "calimero-node"
 DEFAULT_DATA_DIR_PREFIX = "data"
