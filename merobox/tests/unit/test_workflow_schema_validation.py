@@ -69,6 +69,30 @@ class TestValidateWorkflowStep:
         errors = config_module.validate_workflow_step(step, 0)
         assert len(errors) == 0
 
+    @pytest.mark.parametrize(
+        "step_type", ["assert_api_response", "account_devices", "account_applications"]
+    )
+    def test_body_assertion_steps_take_every_assertion_field(
+        self, config_module, step_type
+    ):
+        step = {
+            "type": step_type,
+            "node": "calimero-node-1",
+            "where": {"deviceId": "d"},
+            "match": {"a": 1},
+            "not_match": {"b": 2},
+            "contains": {"c": [3]},
+            "not_contains": {"d": [4]},
+            "present": ["e"],
+            "absent": ["f"],
+            "expect_no_match": False,
+            "retries": 2,
+            "interval": 1,
+        }
+        if step_type == "assert_api_response":
+            step["path"] = "/admin-api/account/devices"
+        assert config_module.validate_workflow_step(step, 0) == []
+
     def test_valid_create_context_step(self, config_module):
         """Test validation of a valid create_context step."""
         step = {

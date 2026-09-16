@@ -476,6 +476,8 @@ Read-only lookups. Each takes `node` plus the id shown.
 | `get_group_info` | `group_id` | Full group record. |
 | `list_group_contexts` | `group_id` | Contexts registered in a group. |
 | `list_group_members` | `group_id` | Members of a group. |
+| `account_devices` | the [body assertions](#assert_api_response), optional | Every device of the node's account: `devices[]` with `deviceId`, `isSelf`, `revoked`, `applications`, `namespaces`. |
+| `account_applications` | the [body assertions](#assert_api_response), optional | The applications the account speaks in: `applications[]` with `applicationId`, `namespaces`. |
 
 ```yaml
 - type: list_group_members
@@ -1621,15 +1623,45 @@ never hands the body to a typed deserializer.
 | --- | --- | --- | --- |
 | `node` | yes | string | Node whose admin API is queried. |
 | `path` | yes | string | Admin-API path, e.g. `/admin-api/health`. |
+| `where` | no | map | Field equalities picking one element out of any list in the body. |
 | `match` | one of | map | Dotted paths mapped to expected values. |
+| `not_match` | one of | map | Dotted paths that must not hold these values. |
+| `contains` | one of | map | Dotted paths to lists that must contain these entries, in any order. |
+| `not_contains` | one of | map | Dotted paths to lists that must hold none of these entries. |
 | `present` | one of | list | Dotted paths that must exist, whatever their value. |
 | `absent` | one of | list | Dotted paths that must not exist. |
+| `expect_no_match` | one of | bool | No element matches `where`. Takes no other assertion. |
+| `retries` | no | int | Re-issue the request until the assertions pass. |
+| `interval` | no | number | Seconds between those requests (default 1). |
 | `token` | no | string | Explicit JWT (otherwise the token `login` cached for the node). |
 
-At least one of `match` / `present` / `absent` is required, so a step can never
-silently assert nothing. Paths address the body verbatim: the admin API
-serializes its payload directly, camelCase, with no envelope, so a field reads
-`fleetCompletedAt`.
+At least one assertion is required, so a step can never silently assert nothing.
+`account_devices` and `account_applications` take the same assertion fields, and
+assert against the listing they read without a second request.
+Paths address the body verbatim, camelCase, so a field reads `fleetCompletedAt`.
+With `where`, paths address the element it picked.
+A path to a missing key fails every assertion except `absent`, so a renamed field
+cannot pass a negative check.
+
+```yaml
+# The paired device is bound in the account namespace and not in namespace C.
+- type: account_devices
+  node: calimero-node-1
+  where:
+    deviceId: '{{tablet}}'
+  contains:
+    namespaces: ['{{account_ns}}']
+  not_contains:
+    namespaces: ['{{ns_c}}']
+
+# The account namespace is never listed as a project.
+- type: assert_api_response
+  node: calimero-node-1
+  path: /admin-api/namespaces
+  where:
+    namespaceId: '{{account_ns}}'
+  expect_no_match: true
+```
 
 ```yaml
 - type: assert_api_response
@@ -1658,9 +1690,9 @@ absent key fails it and is reported as absent, not as null.
 
 A failure prints the per-path verdict and then the whole response body, so CI
 output alone tells "the field is missing" from "the field is wrong". The step
-issues one request and does not poll; wrap it in `repeat` or precede it with
-`wait_for_sync` when the assertion has to wait for state to settle. A non-2xx
-status fails the step and works with `expected_failure` / `expected_error`:
+issues one request unless `retries` asks for more; set it when the assertion has
+to wait for state no barrier can wait on. A non-2xx status fails the step and
+works with `expected_failure` / `expected_error`:
 
 ```yaml
 - type: assert_api_response

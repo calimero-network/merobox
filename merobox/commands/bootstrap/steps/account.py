@@ -215,22 +215,18 @@ class _AccountStepBase(BaseStep):
         resolve = lambda value: self._resolve_dynamic_value(  # noqa: E731
             value, workflow_results, dynamic_values
         )
-        selected = body_assert.select(data, self.config.get("where"), resolve)
-        if selected is body_assert.MISSING:
+        where = self.config.get("where")
+        selected = body_assert.select(data, where, resolve)
+        if self.config.get("expect_no_match"):
+            misses = body_assert.unexpected_match(selected, where)
+        elif selected is body_assert.MISSING:
             console.print(
                 f"[red]✗ {node_name}: no element matching "
-                f"{self.config.get('where')!r} in {json.dumps(data, sort_keys=True)}[/red]"
+                f"{where!r} in {json.dumps(data, sort_keys=True)}[/red]"
             )
             return False
-        misses = body_assert.failures(
-            selected,
-            self.config.get("match"),
-            self.config.get("present"),
-            self.config.get("absent"),
-            resolve,
-            self.config.get("not_match"),
-            self.config.get("contains"),
-        )
+        else:
+            misses = body_assert.failures(selected, self.config, resolve)
         for miss in misses:
             console.print(f"[red]    {miss}[/red]")
         return not misses

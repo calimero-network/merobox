@@ -209,6 +209,95 @@ class TestNotMatchAndContains:
         _step(contains={"data.applications": ["a"]})
 
 
+class TestNotContains:
+    """A list must not hold an entry: the tablet stays out of namespace C."""
+
+    def test_passes_when_no_entry_is_listed(self):
+        step = _step(where={"deviceId": "aa"}, not_contains={"namespaces": ["ns-b1"]})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is True
+
+    def test_fails_when_one_entry_is_listed(self):
+        step = _step(
+            where={"deviceId": "bb"}, not_contains={"namespaces": ["ns-c1", "ns-b1"]}
+        )
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_an_entry_resolves_placeholders(self):
+        step = _step(where={"deviceId": "bb"}, not_contains={"namespaces": ["{{ns}}"]})
+        result, _get, _results = _execute(step, _DEVICES, dynamic={"ns": "ns-b1"})
+        assert result is False
+
+    def test_fails_when_the_key_is_absent(self):
+        step = _step(where={"deviceId": "bb"}, not_contains={"nope": ["ns-b1"]})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_refuses_a_non_list(self):
+        step = _step(where={"deviceId": "bb"}, not_contains={"deviceId": ["bb"]})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_it_counts_as_an_assertion(self):
+        _step(not_contains={"data.applications": ["a"]})
+
+    def test_it_must_be_a_mapping(self):
+        with pytest.raises(ValueError, match="not_contains"):
+            _step(not_contains=["a"])
+
+
+class TestExpectNoMatch:
+    """ "No element matches `where`" is an assertion of its own.
+
+    Without it, a row that is gone could only be asserted by pinning a list's
+    length on some other row that is still there.
+    """
+
+    def test_passes_when_nothing_matches(self):
+        step = _step(where={"deviceId": "zz"}, expect_no_match=True)
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is True
+
+    def test_fails_when_an_element_matches(self, capsys):
+        step = _step(where={"deviceId": "{{device}}"}, expect_no_match=True)
+        result, _get, _results = _execute(step, _DEVICES, dynamic={"device": "aa"})
+        assert result is False
+        assert "'aa'" in capsys.readouterr().out
+
+    def test_it_needs_where(self):
+        with pytest.raises(ValueError, match="where"):
+            _step(expect_no_match=True)
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"match": {"a": 1}},
+            {"not_match": {"a": 1}},
+            {"contains": {"a": [1]}},
+            {"not_contains": {"a": [1]}},
+            {"present": ["a"]},
+            {"absent": ["a"]},
+        ],
+    )
+    def test_it_asserts_nothing_about_a_row_it_says_is_not_there(self, extra):
+        with pytest.raises(ValueError, match="expect_no_match"):
+            _step(where={"deviceId": "zz"}, expect_no_match=True, **extra)
+
+    def test_it_must_be_a_boolean(self):
+        with pytest.raises(ValueError, match="expect_no_match"):
+            _step(where={"deviceId": "zz"}, expect_no_match="yes")
+
+    def test_it_rereads_until_the_element_is_gone(self):
+        gone = {"data": {"devices": [_DEVICES["data"]["devices"][1]]}}
+        step = _step(
+            where={"deviceId": "aa"}, expect_no_match=True, retries=3, interval=0.01
+        )
+        result, get = TestRetries()._run_with(step, [_DEVICES, gone])
+        assert result is True
+        assert get.call_count == 2
+
+
 class TestRetries:
     """Retry covers the states no barrier can wait on.
 
