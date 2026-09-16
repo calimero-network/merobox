@@ -813,9 +813,7 @@ and so does this step, at load.
 | `namespaces` | one of these two | list of strings | Project namespaces to follow directly. |
 | `applications` | no | list of strings | Scope the holder certifies. Empty means every namespace the holder takes part in. |
 | `expect_status` | no | int | HTTP status the pairing must be refused with. |
-| `await_self` | no | bool | Return only once the new device has folded what the holder wrote. Needs `account_namespace`. |
-| `retries` | no | int | Listings `await_self` reads before failing (default 45). |
-| `interval` | no | number | Seconds between those reads (default 2). |
+| `await_self` | no | bool | Return only once the new device has folded what the holder wrote, polling up to 45 times 2 s apart. Needs `account_namespace`. |
 
 `await_self` polls the new node's own `account/devices` until its own row
 (`isSelf`) carries the `applications` the holder certified.

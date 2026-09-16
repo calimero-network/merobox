@@ -37,7 +37,8 @@ from merobox.commands.utils import console
 _CLIENT_ERROR_PREFIX = "Client error: "  # calimero-client-py wraps every failed call
 _HTTP_STATUS = re.compile(r"HTTP (\d{3})\b")  # what it puts first for a non-2xx answer
 _AUTO = "auto"  # `account_namespace: auto` reads the id off the holder's identity
-_AWAIT_SELF_BUDGET = (45, 2.0)  # reads and seconds apart, as core's scenarios wait
+_AWAIT_SELF_READS = 45  # listings await_self reads, as core's account scenarios wait
+_AWAIT_SELF_INTERVAL = 2.0  # seconds between those reads
 _OFFER_KEYS = {  # account_pair_complete field -> the pair-init answer it carries
     "device_id": "deviceId",
     "kem_public_key": "kemPublicKey",
@@ -261,12 +262,10 @@ class _AccountStepBase(BaseStep):
             console.print(f"[red]    {miss}[/red]")
         return not misses
 
-    def _read_budget(
-        self, retries: int = 1, interval: float = 1.0
-    ) -> tuple[int, float]:
-        """Attempts and spacing, the given defaults unless the scenario sets them."""
-        return int(self.config.get("retries") or retries), float(
-            self.config.get("interval") or interval
+    def _read_budget(self) -> tuple[int, float]:
+        """Attempts and spacing. One attempt unless the scenario asks for more."""
+        return int(self.config.get("retries") or 1), float(
+            self.config.get("interval") or 1
         )
 
     def _finish(
@@ -370,6 +369,18 @@ class _PairStepBase(_AccountStepBase):
                 "non-empty 'namespaces' - the node refuses a pairing naming neither"
             )
 
+    def _account_namespace(self, holder: str | None, dynamic_values: dict[str, Any]):
+        """The configured account namespace, read off the holder for `auto`."""
+        if "account_namespace" not in self.config:
+            return None
+        value = self._resolved("account_namespace", dynamic_values)
+        if value != _AUTO:
+            return value
+        identity = self._data(self._client(holder).get_node_identity())
+        if not identity.get("accountNamespaceId"):
+            raise RuntimeError(f"{holder} names no account namespace: {identity}")
+        return identity["accountNamespaceId"]
+
     def _pair_init(
         self,
         node_name: str,
@@ -450,14 +461,7 @@ class AccountPairStep(_PairStepBase):
         self._validate_init_fields()
         if "applications" in self.config:
             self._require_string_lists(("applications",))
-        body_assert.validate(self.config, self._get_step_name())
         expect_status = self._expect_status()
-        budget = [field for field in ("retries", "interval") if field in self.config]
-        if budget and not self.config.get("await_self"):
-            raise ValueError(
-                f"Step '{self._get_step_name()}': {', '.join(budget)} only apply "
-                "to 'await_self'"
-            )
         if self.config.get("await_self"):
             if "account_namespace" not in self.config:
                 raise ValueError(
@@ -488,24 +492,7 @@ class AccountPairStep(_PairStepBase):
                 "paired_key_delivered_{node_name}",
                 "Whether the holder wrapped the current scope key for it",
             ),
-            (
-                "accountNamespace",
-                "paired_account_namespace_{node_name}",
-                "The account namespace the new device follows, when one was named",
-            ),
         ]
-
-    def _account_namespace(self, holder: str, dynamic_values: dict[str, Any]):
-        """The configured account namespace, read off the holder for `auto`."""
-        if "account_namespace" not in self.config:
-            return None
-        value = self._resolved("account_namespace", dynamic_values)
-        if value != _AUTO:
-            return value
-        identity = self._data(self._client(holder).get_node_identity())
-        if not identity.get("accountNamespaceId"):
-            raise RuntimeError(f"{holder} names no account namespace: {identity}")
-        return identity["accountNamespaceId"]
 
     async def _await_self(
         self,
@@ -516,12 +503,11 @@ class AccountPairStep(_PairStepBase):
     ) -> bool:
         """Poll the new node's own listing until it reads back what was certified;
         a scope arrives only by the registry, so it proves the holder's op folded."""
-        attempts, interval = self._read_budget(*_AWAIT_SELF_BUDGET)
         own_row = {"deviceId": device_id, "isSelf": True}
         seen: Any = None
-        for attempt in range(attempts):
+        for attempt in range(_AWAIT_SELF_READS):
             if attempt:
-                await asyncio.sleep(interval)
+                await asyncio.sleep(_AWAIT_SELF_INTERVAL)
             try:
                 seen = self._data(self._client(node_name).list_account_devices())
             except Exception as e:  # noqa: BLE001 - the last one is reported below
@@ -536,8 +522,8 @@ class AccountPairStep(_PairStepBase):
             elif account_namespace in (row.get("namespaces") or []):
                 return True
         console.print(
-            f"✗ {node_name} did not read back its pairing within {attempts} "
-            f"attempt(s); last saw: {seen}",
+            f"✗ {node_name} did not read back its pairing within "
+            f"{_AWAIT_SELF_READS} reads; last saw: {seen}",
             style="red",
             markup=False,
         )
@@ -609,31 +595,17 @@ class AccountPairInitStep(_PairStepBase):
             )
         self._expect_status()
 
-    def _get_exportable_variables(self):
-        return [
-            ("accountId", "pair_init_account_id_{node_name}", "The account"),
-            *(
-                (field, f"pair_init_{key}_{{node_name}}", "Part of the offer")
-                for key, field in _OFFER_KEYS.items()
-            ),
-        ]
-
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
         node_name = self._resolved("node", dynamic_values)
-        account_namespace = (
-            self._resolved("account_namespace", dynamic_values)
-            if "account_namespace" in self.config
-            else None
-        )
         try:
             result = ok(
                 self._pair_init(
                     node_name,
                     self._resolved("root_key", dynamic_values),
                     self._resolved_list("namespaces", dynamic_values),
-                    account_namespace,
+                    self._account_namespace(None, dynamic_values),
                 )
             )
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
@@ -666,17 +638,6 @@ class AccountPairCompleteStep(_PairStepBase):
         if "applications" in self.config:
             self._require_string_lists(("applications",))
         self._expect_status()
-
-    def _get_exportable_variables(self):
-        return [
-            ("accountId", "pair_complete_account_id_{node_name}", "The account"),
-            ("deviceId", "pair_complete_device_id_{node_name}", "Device certified"),
-            (
-                "keyDelivered",
-                "pair_complete_key_delivered_{node_name}",
-                "Whether the holder wrapped the current scope key for it",
-            ),
-        ]
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -1042,21 +1003,6 @@ class NodeIdentityStep(_AccountStepBase):
                 "identity_agreement_key_{node_name}",
                 "The device's X25519 key, the third input `merod account sign-cert` "
                 "needs alongside the device id and the signing key",
-            ),
-            (
-                "accountNamespaceId",
-                "identity_account_namespace_{node_name}",
-                "The account's own namespace - what account_pair's account_namespace takes",
-            ),
-            (
-                "holdsAccountRoot",
-                "identity_holds_account_root_{node_name}",
-                "Whether this node can certify another device into the account",
-            ),
-            (
-                "deviceCertified",
-                "identity_device_certified_{node_name}",
-                "Whether pair-complete has certified this node's device",
             ),
         ]
 

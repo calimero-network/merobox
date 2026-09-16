@@ -833,47 +833,34 @@ class TestAccountPairAwaitSelf:
     row carrying the scope proves it folded the holder's last op.
     """
 
-    def setup_method(self):
-        self.config = {
-            "type": "account_pair",
-            "name": "Pair",
-            "node": "calimero-node-3",
-            "holder": "calimero-node-2",
-            "root_key": "cc" * 32,
-            "account_namespace": ACCOUNT_NS,
-            "await_self": True,
-            "interval": 0.001,
-        }
+    CONFIG = {
+        "type": "account_pair",
+        "name": "Pair",
+        "node": "calimero-node-3",
+        "holder": "calimero-node-2",
+        "root_key": "cc" * 32,
+        "account_namespace": ACCOUNT_NS,
+        "await_self": True,
+    }
 
-    def _step(self, listings, **config):
+    def _run(self, listings, **config):
+        """Run the pairing against `listings`, with sleeps skipped; the new node
+        and the sleep mock come back for inspection."""
         new_device = MagicMock()
-        new_device.pair_device_init.return_value = _envelope(
-            {
-                "accountId": "aa" * 32,
-                "deviceId": DEVICE,
-                "kemPublicKey": "11" * 32,
-                "signPublicKey": "22" * 32,
-                "statement": "33" * 64,
-                "confirmationCode": "0011223344556677",
-            }
-        )
+        new_device.pair_device_init.return_value = _envelope(INIT)
         new_device.list_account_devices.side_effect = listings
         holder = MagicMock()
-        holder.pair_device_complete.return_value = _envelope(
-            {
-                "accountId": "aa" * 32,
-                "deviceId": DEVICE,
-                "keyDelivered": True,
-                "confirmationCode": "0011223344556677",
-            }
-        )
-        step = AccountPairStep({**self.config, **config})
+        holder.pair_device_complete.return_value = _envelope(INIT)
+        step = AccountPairStep({**self.CONFIG, **config})
         step._client = MagicMock(  # noqa: SLF001
             side_effect=lambda name: (
                 new_device if name == "calimero-node-3" else holder
             )
         )
-        return step, new_device
+        sleep = AsyncMock()
+        with patch("merobox.commands.bootstrap.steps.account.asyncio.sleep", sleep):
+            verdict = _run(step.execute({}, {}))
+        return verdict, new_device, sleep
 
     @staticmethod
     def _row(**fields):
@@ -890,47 +877,35 @@ class TestAccountPairAwaitSelf:
         }
 
     def test_it_needs_the_account_namespace(self):
-        config = {**self.config, "namespaces": [NAMESPACE]}
+        config = {**self.CONFIG, "namespaces": [NAMESPACE]}
         del config["account_namespace"]
         with pytest.raises(ValueError, match="await_self"):
             AccountPairStep(config)
 
     def test_it_cannot_wait_on_a_refusal(self):
         with pytest.raises(ValueError, match="await_self"):
-            AccountPairStep({**self.config, "expect_status": 403})
-
-    @pytest.mark.parametrize("field", ["retries", "interval"])
-    def test_a_non_positive_budget_is_a_scenario_bug(self, field):
-        with pytest.raises(ValueError, match=field):
-            AccountPairStep({**self.config, field: 0})
-
-    @pytest.mark.parametrize("field", ["retries", "interval"])
-    def test_a_budget_without_await_self_is_refused(self, field):
-        config = {**self.config, field: 2}
-        del config["await_self"]
-        with pytest.raises(ValueError, match="await_self"):
-            AccountPairStep(config)
+            AccountPairStep({**self.CONFIG, "expect_status": 403})
 
     def test_a_repeated_application_is_one_scope(self):
-        step, _new_device = self._step(
+        verdict, _new_device, _sleep = self._run(
             [self._row(namespaces=[ACCOUNT_NS], applications=[APP_ONE])],
             applications=[APP_ONE, APP_ONE],
         )
-        assert _run(step.execute({}, {})) is True
+        assert verdict is True
 
     def test_unscoped_it_waits_for_its_own_link_in_the_account_namespace(self):
-        step, new_device = self._step(
+        verdict, new_device, _sleep = self._run(
             [
                 {"devices": []},
                 self._row(namespaces=[NAMESPACE]),
                 self._row(namespaces=[NAMESPACE, ACCOUNT_NS]),
             ]
         )
-        assert _run(step.execute({}, {})) is True
+        assert verdict is True
         assert new_device.list_account_devices.call_count == 3
 
     def test_scoped_it_waits_for_the_scope_the_holder_signed(self):
-        step, new_device = self._step(
+        verdict, new_device, _sleep = self._run(
             [
                 self._row(namespaces=[ACCOUNT_NS]),
                 self._row(namespaces=[ACCOUNT_NS], applications=[APP_ONE]),
@@ -938,7 +913,7 @@ class TestAccountPairAwaitSelf:
             ],
             applications=[APP_ONE, APP_TWO],
         )
-        assert _run(step.execute({}, {})) is True
+        assert verdict is True
         assert new_device.list_account_devices.call_count == 3
 
     @pytest.mark.parametrize(
@@ -949,33 +924,24 @@ class TestAccountPairAwaitSelf:
         ],
     )
     def test_only_its_own_row_counts(self, row):
-        step, _new_device = self._step([{"devices": [row]}] * 2, retries=2)
-        assert _run(step.execute({}, {})) is False
+        verdict, _new_device, _sleep = self._run([{"devices": [row]}] * 45)
+        assert verdict is False
 
     def test_a_listing_that_errors_is_retried(self):
-        step, _new_device = self._step(
+        verdict, _new_device, _sleep = self._run(
             [RuntimeError("Client error: HTTP 503"), self._row(namespaces=[ACCOUNT_NS])]
         )
-        assert _run(step.execute({}, {})) is True
+        assert verdict is True
 
-    def test_it_gives_up_after_the_budget(self):
-        step, new_device = self._step([{"devices": []}] * 5, retries=3)
-        assert _run(step.execute({}, {})) is False
-        assert new_device.list_account_devices.call_count == 3
-
-    def test_the_default_budget_is_the_one_the_account_scenarios_use(self):
-        del self.config["interval"]
-        step, new_device = self._step([{"devices": []}] * 50)
-        sleep = AsyncMock()
-        with patch("merobox.commands.bootstrap.steps.account.asyncio.sleep", sleep):
-            assert _run(step.execute({}, {})) is False
+    def test_it_gives_up_after_the_wait_core_s_scenarios_use(self):
+        verdict, new_device, sleep = self._run([{"devices": []}] * 50)
+        assert verdict is False
         assert new_device.list_account_devices.call_count == 45
         assert {call.args[0] for call in sleep.call_args_list} == {2.0}
 
     def test_without_it_the_step_does_not_read_the_listing(self):
-        del self.config["interval"]
-        step, new_device = self._step([], await_self=False)
-        assert _run(step.execute({}, {})) is True
+        verdict, new_device, _sleep = self._run([], await_self=False)
+        assert verdict is True
         new_device.list_account_devices.assert_not_called()
 
 

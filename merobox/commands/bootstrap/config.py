@@ -1181,12 +1181,13 @@ class AccountCreateStepConfig(BaseStepConfig):
     expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
-class AccountPairStepConfig(BaseStepConfig):
-    """Configuration for account_pair step."""
+class _PairInitFields(BaseStepConfig):
+    """What the new device's half of pairing takes."""
 
-    type: Literal["account_pair"] = "account_pair"
     node: str = Field(..., description="The NEW device's node")
-    holder: str = Field(..., description="Node that already holds the account root")
+    root_key: str = Field(
+        ..., description="Account genesis root key, from node_identity's output"
+    )
     namespaces: list[str] = Field(
         default_factory=list,
         description="Namespaces the NEW device listens on. May be empty when "
@@ -1195,47 +1196,32 @@ class AccountPairStepConfig(BaseStepConfig):
     account_namespace: Optional[str] = Field(
         None,
         description="Account namespace the NEW device follows, from which it "
-        "learns the account's namespaces. 'auto' reads it off the holder",
+        "learns the account's namespaces. account_pair also takes 'auto'",
     )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
+
+
+class AccountPairStepConfig(_PairInitFields):
+    """Configuration for account_pair step."""
+
+    type: Literal["account_pair"] = "account_pair"
+    holder: str = Field(..., description="Node that already holds the account root")
     await_self: Optional[bool] = Field(
         None,
         description="Return only once the NEW device lists itself with the scope "
         "the holder certified, or unscoped, bound in the account namespace",
-    )
-    retries: Optional[int] = Field(
-        None, gt=0, description="Listings await_self reads before failing (default 45)"
-    )
-    interval: Optional[float] = Field(
-        None, gt=0, description="Seconds between await_self reads (default 2)"
-    )
-    root_key: str = Field(
-        ..., description="Account genesis root key, from node_identity's output"
     )
     applications: list[str] = Field(
         default_factory=list,
         description="Applications the holder scopes the link to. Empty means "
         "every namespace this holder takes part in",
     )
-    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
-class AccountPairInitStepConfig(BaseStepConfig):
+class AccountPairInitStepConfig(_PairInitFields):
     """Configuration for account_pair_init step."""
 
     type: Literal["account_pair_init"] = "account_pair_init"
-    node: str = Field(..., description="The NEW device's node")
-    root_key: str = Field(
-        ..., description="Account genesis root key, from node_identity's output"
-    )
-    namespaces: list[str] = Field(
-        default_factory=list,
-        description="Namespaces the NEW device listens on. May be empty when "
-        "account_namespace is set",
-    )
-    account_namespace: Optional[str] = Field(
-        None, description="Account namespace id the NEW device follows"
-    )
-    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
 class AccountPairCompleteStepConfig(BaseStepConfig):
