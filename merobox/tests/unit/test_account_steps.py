@@ -32,6 +32,7 @@ from merobox.commands.bootstrap.steps.account import (
     PerformIntentStep,
     SignWarrantStep,
 )
+from merobox.commands.errors import UnresolvedPlaceholderError
 
 NAMESPACE = "ab" * 32
 ACCOUNT_NS = "4e" * 32
@@ -550,6 +551,14 @@ class TestAccountPairStep:
             "cc" * 32, [], account_namespace=ACCOUNT_NS
         )
 
+    def test_a_failed_holder_lookup_is_not_the_refusal_under_test(self):
+        """`expect_status` asserts the pairing's answer, not the identity read's."""
+        config = {**self._account_ns_config("auto"), "expect_status": 404}
+        step, new_device, holder = self._paired(self._init_payload(), config=config)
+        holder.get_node_identity.side_effect = _client_error(404, "no identity")
+        assert _run(step.execute({}, {})) is False
+        new_device.pair_device_init.assert_not_called()
+
     def test_auto_fails_when_the_holder_names_no_account_namespace(self):
         step, new_device, holder = self._paired(
             self._init_payload(),
@@ -606,6 +615,46 @@ class TestAccountPairStep:
         step, _new_device, holder = self._paired(init)
         assert _run(step.execute({}, {})) is False
         holder.pair_device_complete.assert_not_called()
+
+
+class TestUnresolvedPlaceholders:
+    """A refusal or an absence asserted against a placeholder's own text passes
+    for the wrong reason, so the account steps refuse one that never bound."""
+
+    def test_a_refusal_is_not_asserted_against_a_typo(self):
+        client = MagicMock()
+        client.relink_device.side_effect = _client_error(400, "not a device id")
+        step = _step(
+            AccountRelinkStep,
+            {
+                "type": "account_relink",
+                "name": "Relink",
+                "node": "calimero-node-1",
+                "device_id": "{{devcie}}",
+                "expect_status": 400,
+            },
+            client,
+        )
+        with pytest.raises(UnresolvedPlaceholderError, match="devcie"):
+            _run(step.execute({}, {"device": DEVICE}))
+        client.relink_device.assert_not_called()
+
+    def test_a_listing_is_not_filtered_by_a_typo(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = {"devices": [{"deviceId": DEVICE}]}
+        step = _step(
+            AccountDevicesStep,
+            {
+                "type": "account_devices",
+                "name": "Devices",
+                "node": "calimero-node-1",
+                "where": {"deviceId": "{{devcie}}"},
+                "match": {"deviceId": DEVICE},
+            },
+            client,
+        )
+        with pytest.raises(UnresolvedPlaceholderError, match="devcie"):
+            _run(step.execute({}, {"device": DEVICE}))
 
 
 # =============================================================================

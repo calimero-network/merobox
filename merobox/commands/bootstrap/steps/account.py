@@ -19,6 +19,8 @@ calimero-client-py 0.6.20. Going through the client keeps the token cache, the
 error mapping and the connection handling this layer exists to provide.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import re
@@ -39,6 +41,9 @@ _AUTO = "auto"  # `account_namespace: auto` reads the id off the holder's identi
 
 class _AccountStepBase(BaseStep):
     """Shared client plumbing for the account steps."""
+
+    # A refusal or an absence asserted against a placeholder's own text passes.
+    strict_placeholders = True
 
     def _client(self, node_name: str):
         """A client bound to `node_name`, with its cached token attached."""
@@ -418,8 +423,17 @@ class AccountPairStep(_AccountStepBase):
         root_key = self._resolved("root_key", dynamic_values)
         applications = self._resolved_list("applications", dynamic_values)
 
+        # Outside the try: `expect_status` asserts the pairing, not this lookup.
         try:
             account_namespace = self._account_namespace(holder, dynamic_values)
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            console.print(
+                f"[red]Could not read {holder}'s account namespace: "
+                f"{escape(str(e))}[/red]"
+            )
+            return False
+
+        try:
             init = self._data(
                 self._client(node_name).pair_device_init(
                     root_key, namespaces, account_namespace=account_namespace
