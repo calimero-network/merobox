@@ -245,21 +245,28 @@ class NodeExecStep(BaseStep):
 
     @staticmethod
     def _write_files(files: dict[str, str], host_home: str) -> list[str]:
-        """Write each `/app/data/…` input file under `host_home`; the paths written."""
-        for container_path in files:
-            if not container_path.startswith(f"{CONTAINER_HOME}/"):
-                raise RuntimeError(
-                    f"'{container_path}' is outside {CONTAINER_HOME}, so merod "
-                    "would not see it"
-                )
-        written = []
+        """Write each `/app/data/…` input file under `host_home`, readable by its
+        owner alone since it is usually a recovery phrase; the paths written."""
+        targets = {}
         for container_path, content in files.items():
-            host_path = os.path.join(
-                host_home, container_path[len(CONTAINER_HOME) + 1 :]
-            )
-            os.makedirs(os.path.dirname(host_path), exist_ok=True)
-            with open(host_path, "w", encoding="utf-8") as handle:
+            relative = os.path.normpath(container_path[len(CONTAINER_HOME) + 1 :])
+            if (
+                not container_path.startswith(f"{CONTAINER_HOME}/")
+                or relative in (os.curdir, os.pardir)
+                or relative.startswith(os.pardir + os.sep)
+            ):
+                raise RuntimeError(
+                    f"'{container_path}' is not a file under {CONTAINER_HOME}, so "
+                    "merod would not see it"
+                )
+            targets[os.path.join(host_home, relative)] = content
+        written = []
+        for host_path, content in targets.items():
+            os.makedirs(os.path.dirname(host_path), mode=0o700, exist_ok=True)
+            fd = os.open(host_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with open(fd, "w", encoding="utf-8") as handle:
                 handle.write(content if content.endswith("\n") else content + "\n")
+            os.chmod(host_path, 0o600)
             written.append(host_path)
         return written
 
@@ -380,8 +387,8 @@ class NodeExecStep(BaseStep):
                         self._run_binary, node_name, home, args
                     )
                 else:
-                    exit_code, stdout, stderr = self._run_container(
-                        node_name, image, home, args
+                    exit_code, stdout, stderr = await asyncio.to_thread(
+                        self._run_container, node_name, image, home, args
                     )
             finally:
                 # An input is often a recovery phrase, which must not outlive the command.

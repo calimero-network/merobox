@@ -894,9 +894,9 @@ a host directory either way.
 
 The home is the step's `data_dir`, else where merobox recorded the node's config
 when it started it; with Docker, the existing container's image and mount come
-first. A running node is **refused** unless `allow_running` says otherwise —
-attempting it yields an opaque lock error several layers down, which reads like a
-node fault.
+first.
+A running node is **refused** unless `allow_running` says otherwise: attempting it
+yields an opaque lock error several layers down, which reads like a node fault.
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |

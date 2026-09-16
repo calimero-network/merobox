@@ -9,6 +9,7 @@ than reconstructing them, and keeping input files inside the mount.
 
 import asyncio
 import os
+import stat
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -632,6 +633,7 @@ class TestNodeExecBinaryMode:
         def run(command, **_kwargs):
             seen["command"] = command
             seen["phrase"] = (home / "recovery.txt").read_text()
+            seen["mode"] = stat.S_IMODE((home / "recovery.txt").stat().st_mode)
             return subprocess.CompletedProcess(command, returncode, "proof\n", "")
 
         with patch(
@@ -640,6 +642,7 @@ class TestNodeExecBinaryMode:
             assert _run(step.execute({}, {})) is (returncode == 0)
         assert seen["command"][-1] == os.path.join(str(home), "recovery.txt")
         assert seen["phrase"] == "legal winner\n"
+        assert seen["mode"] == 0o600, "a phrase is readable by its owner alone"
         assert not (home / "recovery.txt").exists(), "a phrase must not outlive it"
 
     def test_it_refuses_while_the_node_is_running(self, tmp_path):
@@ -669,3 +672,26 @@ class TestNodeExecBinaryMode:
         )
         verdict, _run_mock, _ = self._run(step, returncode=1)
         assert verdict is True
+
+    def test_a_path_climbing_out_of_the_home_is_refused(self, tmp_path):
+        step = self._step(
+            self._manager(),
+            data_dir=str(self._home(tmp_path)),
+            files={"/app/data/../escaped.txt": "legal winner"},
+        )
+        verdict, run, _ = self._run(step)
+        assert verdict is False
+        run.assert_not_called()
+        assert not (tmp_path / "data" / NODE / "escaped.txt").exists()
+
+    @pytest.mark.parametrize(
+        "arg, mapped",
+        [
+            ("/app/data", "HOME"),
+            ("/app/data/x.txt", "HOME/x.txt"),
+            ("/app/database", "/app/database"),
+            ("--from=/app/data/x.txt", "--from=/app/data/x.txt"),
+        ],
+    )
+    def test_only_a_whole_home_path_is_mapped(self, arg, mapped):
+        assert NodeExecStep._on_host(arg, "HOME") == mapped
