@@ -902,7 +902,7 @@ node fault.
 | --- | --- | --- | --- |
 | `node` | yes | string | Node whose data directory to run against. |
 | `args` | yes | list[string] | Subcommand and flags, e.g. `['account', 'export']`. |
-| `files` | no | map | `/app/data/…` path → contents, written into the node's home before running. Other paths are refused. |
+| `files` | no | map | `/app/data/…` path → contents, written into the node's home before running and removed once it exits. Other paths are refused. |
 | `capture` | no | map | Name → regex with one capturing group, pulled out of stdout. |
 | `data_dir` | no | string | The directory holding `<node>/config.toml`, when merobox has no record of it. |
 | `image` | no | string | Docker only: the image to run when the container is gone and merobox has no record. |

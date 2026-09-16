@@ -175,13 +175,17 @@ class TestNodeExecExecution:
             "files": {f"{CONTAINER_HOME}/phrase.txt": "{{phrase}}"},
         }
         step = self._step(manager, config)
-        with patch.object(
-            manager.client.containers, "create", return_value=_stub_container()
-        ):
+        seen = {}
+
+        def create(**_kwargs):
+            seen["phrase"] = (tmp_path / "phrase.txt").read_text()
+            return _stub_container()
+
+        with patch.object(manager.client.containers, "create", side_effect=create):
             assert _run(step.execute({}, {"phrase": "word word word"})) is True
 
-        written = (tmp_path / "phrase.txt").read_text()
-        assert written == "word word word\n", "a trailing newline is added for the CLI"
+        assert seen["phrase"] == "word word word\n", "a trailing newline is added"
+        assert not (tmp_path / "phrase.txt").exists(), "a phrase must not outlive it"
 
     def test_refuses_a_file_outside_the_mount(self, tmp_path):
         manager = _manager(tmp_path)
@@ -614,7 +618,8 @@ class TestNodeExecBinaryMode:
         assert verdict is True
         assert run.call_args.args[0][2] == str(home)
 
-    def test_container_paths_name_files_in_the_home(self, tmp_path):
+    @pytest.mark.parametrize("returncode", [0, 1])
+    def test_container_paths_name_files_in_the_home(self, tmp_path, returncode):
         home = self._home(tmp_path)
         step = self._step(
             self._manager(),
@@ -622,10 +627,20 @@ class TestNodeExecBinaryMode:
             args=["account", "revoke-proof", "--from", "/app/data/recovery.txt"],
             files={"/app/data/recovery.txt": "legal winner"},
         )
-        verdict, run, _ = self._run(step)
-        assert verdict is True
-        assert run.call_args.args[0][-1] == os.path.join(str(home), "recovery.txt")
-        assert (home / "recovery.txt").read_text() == "legal winner\n"
+        seen = {}
+
+        def run(command, **_kwargs):
+            seen["command"] = command
+            seen["phrase"] = (home / "recovery.txt").read_text()
+            return subprocess.CompletedProcess(command, returncode, "proof\n", "")
+
+        with patch(
+            "merobox.commands.bootstrap.steps.node_exec.subprocess.run", side_effect=run
+        ):
+            assert _run(step.execute({}, {})) is (returncode == 0)
+        assert seen["command"][-1] == os.path.join(str(home), "recovery.txt")
+        assert seen["phrase"] == "legal winner\n"
+        assert not (home / "recovery.txt").exists(), "a phrase must not outlive it"
 
     def test_it_refuses_while_the_node_is_running(self, tmp_path):
         step = self._step(

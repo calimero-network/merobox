@@ -25,6 +25,7 @@ disagree with how the node was actually started.
 """
 
 import asyncio
+import contextlib
 import os
 import re
 import subprocess
@@ -243,20 +244,24 @@ class NodeExecStep(BaseStep):
         return home
 
     @staticmethod
-    def _write_files(files: dict[str, str], host_home: str) -> None:
-        """Write each `/app/data/…` input file to the same place under `host_home`."""
-        for container_path, content in files.items():
+    def _write_files(files: dict[str, str], host_home: str) -> list[str]:
+        """Write each `/app/data/…` input file under `host_home`; the paths written."""
+        for container_path in files:
             if not container_path.startswith(f"{CONTAINER_HOME}/"):
                 raise RuntimeError(
                     f"'{container_path}' is outside {CONTAINER_HOME}, so merod "
                     "would not see it"
                 )
+        written = []
+        for container_path, content in files.items():
             host_path = os.path.join(
                 host_home, container_path[len(CONTAINER_HOME) + 1 :]
             )
             os.makedirs(os.path.dirname(host_path), exist_ok=True)
             with open(host_path, "w", encoding="utf-8") as handle:
                 handle.write(content if content.endswith("\n") else content + "\n")
+            written.append(host_path)
+        return written
 
     @staticmethod
     def _on_host(arg: str, host_home: str) -> str:
@@ -366,16 +371,23 @@ class NodeExecStep(BaseStep):
 
             if binary:
                 home = self._home(node_name, os.path.join("data", node_name, node_name))
-                self._write_files(files, home)
-                exit_code, stdout, stderr = await asyncio.to_thread(
-                    self._run_binary, node_name, home, args
-                )
             else:
                 image, home = self._container_spec(node_name)
-                self._write_files(files, home)
-                exit_code, stdout, stderr = self._run_container(
-                    node_name, image, home, args
-                )
+            written = self._write_files(files, home)
+            try:
+                if binary:
+                    exit_code, stdout, stderr = await asyncio.to_thread(
+                        self._run_binary, node_name, home, args
+                    )
+                else:
+                    exit_code, stdout, stderr = self._run_container(
+                        node_name, image, home, args
+                    )
+            finally:
+                # An input is often a recovery phrase, which must not outlive the command.
+                for path in written:
+                    with contextlib.suppress(FileNotFoundError):
+                        os.remove(path)
 
             if exit_code != 0:
                 raise RuntimeError(

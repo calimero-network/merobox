@@ -1144,8 +1144,9 @@ class NodeExecStepConfig(BaseStepConfig):
     )
     files: Optional[dict[str, str]] = Field(
         None,
-        description="Files to write into the node's home before running, as "
-        "/app/data/... path -> contents. Such a path in args names the same file",
+        description="Files to write into the node's home for the command, as "
+        "/app/data/... path -> contents; removed once it exits. Such a path in "
+        "args names the same file",
     )
     capture: Optional[dict[str, str]] = Field(
         None,
