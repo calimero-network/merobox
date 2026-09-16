@@ -470,7 +470,7 @@ Read-only lookups. Each takes `node` plus the id shown.
 | Step | Extra fields | Reads |
 | --- | --- | --- |
 | `list_namespaces` | — | Namespaces on the node. |
-| `node_identity` | — | Who this node is: `accountId`, `deviceId`, `publicKey`, `accountRootPublicKey`. Takes no namespace — none of it varies by one. |
+| `node_identity` | — | Who this node is: `accountId`, `deviceId`, `publicKey`, `accountRootPublicKey`, `deviceAgreementKey`, `accountNamespaceId`, `holdsAccountRoot`, `deviceCertified`. Takes no namespace, since none of it varies by one. |
 | `list_namespace_groups` | `namespace_id` | Subgroups of a namespace. |
 | `list_subgroups` | `group_id` | Subgroups of a group. |
 | `get_group_info` | `group_id` | Full group record. |
@@ -796,25 +796,98 @@ describes" channel the code exists to defeat.
 The paired node needs no membership of its own: being a device of a member's
 account is its whole route in.
 
+The device follows the **account namespace** when `account_namespace` is set.
+From it the device learns every namespace the account gains or leaves, so
+`namespaces` may be left out.
+`auto` reads the id off the holder's `node_identity`, and fails the step when the
+holder reports none.
+The node refuses a pairing that names neither `account_namespace` nor a namespace,
+and so does this step, at load.
+
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `node` | yes | string | The **new** device's node. |
 | `holder` | yes | string | Node that already holds the account root. |
-| `namespace_id` | yes | string | Namespace the account lives in. |
-| `root_key` | yes | string | Genesis root key, from `account_create`. |
-| `nonce` | yes | string | Genesis nonce, from `account_create`. |
+| `root_key` | yes | string | `accountRootPublicKey`, from `node_identity` on the holder. |
+| `account_namespace` | one of these two | string | Account namespace id, or `auto`. |
+| `namespaces` | one of these two | list of strings | Project namespaces to follow directly. |
+| `applications` | no | list of strings | Scope the holder certifies. Empty means every namespace the holder takes part in. |
+| `expect_status` | no | int | HTTP status the pairing must be refused with. |
+| `await_self` | no | bool | Return only once the new device has folded what the holder wrote, polling up to 45 times 2 s apart. Needs `account_namespace`. |
 
-Outputs: `accountId`, `deviceId`, `keyDelivered`.
+`await_self` polls the new node's own `account/devices` until its own row
+(`isSelf`) carries the `applications` the holder certified.
+A scope reaches the device only through the account namespace, so reading it back
+proves the device folded the holder's last write there.
+With no `applications`, it waits for the row to list the account namespace.
+
+Outputs: `accountId`, `deviceId`, `keyDelivered`, and `accountNamespace` when one
+was named.
 
 ```yaml
 - type: account_pair
   node: calimero-node-3        # the new device
   holder: calimero-node-2      # holds the account root
-  namespace_id: '{{namespace_id}}'
   root_key: '{{root_key}}'
-  nonce: '{{nonce}}'
+  account_namespace: auto
+  applications: ['{{app_id}}']
+  await_self: true
   outputs:
     paired_device: deviceId
+    account_ns: accountNamespace
+```
+
+### account_pair_init and account_pair_complete
+
+The two halves of `account_pair` as separate steps, for asserting how the holder
+refuses an offer with one field changed.
+Use `account_pair` for everything else: it cross-checks the halves for you.
+
+`account_pair_init` runs on the **new** device's node and takes `node`,
+`root_key`, and `account_namespace` or `namespaces`, as `account_pair` does
+(without `auto`, since it names no holder).
+It exports the offer: `accountId`, `deviceId`, `kemPublicKey`, `signPublicKey`,
+`statement`, `confirmationCode`.
+
+`account_pair_complete` runs on the **holder** and takes the offer field by
+field, plus optional `applications`.
+It fails unless the holder certified the device and code it was given, and
+exports `accountId`, `deviceId`, `keyDelivered`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | The holder. |
+| `device_id` | yes | string | `deviceId` from `account_pair_init`. |
+| `kem_public_key` | yes | string | `kemPublicKey` from `account_pair_init`. |
+| `sign_public_key` | yes | string | `signPublicKey` from `account_pair_init`. |
+| `statement` | yes | string | `statement` from `account_pair_init`. |
+| `confirmation_code` | yes | string | `confirmationCode` from `account_pair_init`. |
+| `applications` | no | list of strings | Scope the holder certifies. |
+| `expect_status` | no | int | HTTP status the certification must be refused with. |
+
+Both take `expect_status`.
+
+```yaml
+- type: account_pair_init
+  node: calimero-node-3
+  root_key: '{{root_key}}'
+  namespaces: ['{{namespace_id}}']
+  outputs:
+    offer_device: deviceId
+    offer_kem: kemPublicKey
+    offer_sign: signPublicKey
+    offer_statement: statement
+    offer_code: confirmationCode
+
+# Still 128 hex characters, so the refusal is the signature check failing.
+- type: account_pair_complete
+  node: calimero-node-2
+  device_id: '{{offer_device}}'
+  kem_public_key: '{{offer_kem}}'
+  sign_public_key: '{{offer_sign}}'
+  statement: '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+  confirmation_code: '{{offer_code}}'
+  expect_status: 400
 ```
 
 ### account_revoke
