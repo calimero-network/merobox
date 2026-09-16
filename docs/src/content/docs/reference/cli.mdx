@@ -39,8 +39,10 @@ subcommands.
 <Aside type="note">
   Node data directories live under `./data/<node-name>/` relative to the current
   working directory. The default node name prefix is `calimero-node`, the
-  default Docker image is `ghcr.io/calimero-network/merod:prerelease`, and the
-  default ports are P2P `2428` and RPC `2528`.
+  default Docker image is `ghcr.io/calimero-network/merod:prerelease` — an alias
+  ghcr repoints at each core prerelease, so a run follows core — and the
+  default ports are P2P `2428` and RPC `2528`. Pass `--image` to pin a run to
+  a release tag.
 </Aside>
 
 <Aside type="caution" title="Not standalone commands">
@@ -75,7 +77,7 @@ merobox run --auth-service                      # with Traefik + auth stack
 | `--base-rpc-port` / `-r`   | auto-detect        | Base RPC (server) port.                                                 |
 | `--prefix`                 | `calimero-node`    | Node name prefix.                                                       |
 | `--data-dir`               | —                  | Custom data directory (single node only).                              |
-| `--image`                  | prerelease image   | Custom Docker image.                                                    |
+| `--image`                  | `merod:prerelease` | Custom Docker image (e.g. a release tag, to pin the run).              |
 | `--force-pull`             | off                | Force-pull the Docker image even if present locally.                   |
 | `--auth-service`           | off                | Enable the authentication service with a Traefik proxy (Docker only).  |
 | `--auth-image`             | `mero-auth:edge`   | Custom Docker image for the auth service.                              |

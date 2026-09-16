@@ -249,7 +249,9 @@ merobox run --no-docker --binary-path ./merod --auth-mode embedded
 **Symptom.** A Docker node won't start because its image can't be pulled.
 
 **Cause.** The container registry is unreachable, or the image/tag is wrong. The
-default image is `ghcr.io/calimero-network/merod:prerelease`.
+default image is `ghcr.io/calimero-network/merod:prerelease`. Note that ghcr garbage-collects
+bare commit tags and expires `pr-<N>` tags once the PR closes, so an older
+workflow naming one of those will fail to pull however healthy the registry is.
 
 **Fix.**
 

@@ -18,6 +18,7 @@ from pydantic import (
     model_validator,
 )
 
+from merobox.commands.constants import DEFAULT_IMAGE
 from merobox.commands.utils import console
 
 # Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
@@ -55,6 +56,8 @@ VALID_STEP_TYPES = frozenset(
         "list_namespaces",
         "account_create",
         "account_pair",
+        "account_pair_init",
+        "account_pair_complete",
         "account_relink",
         "account_devices",
         "account_applications",
@@ -448,6 +451,12 @@ class CallStep(BaseStepConfig):
     expected_failure: Optional[bool] = Field(
         False, description="Assert the call is rejected/fails rather than succeeds"
     )
+    allow_failure: Optional[bool] = Field(
+        False,
+        description="Pass whether the call succeeds or fails, exporting the error "
+        "fields either way (None on success). For a probe of state that may not "
+        "have propagated yet",
+    )
     unauthenticated: Optional[bool] = Field(
         False,
         description=(
@@ -543,48 +552,59 @@ class WebSocketEventAssertStepConfig(BaseStepConfig):
     )
 
 
-class AssertApiResponseStepConfig(BaseStepConfig):
-    """Configuration for assert_api_response step (raw admin-API assertion)."""
+class BodyAssertStepConfig(BaseStepConfig):
+    """Assertions on a response body, shared by the steps that read one."""
 
-    type: Literal["assert_api_response"] = "assert_api_response"
-    node: str = Field(..., description="Node whose admin API is queried")
-    path: str = Field(..., description="Admin-API path, e.g. /admin-api/health")
-    match: Optional[dict[str, Any]] = Field(
+    where: Optional[dict[str, Any]] = Field(
         None,
-        description="Dotted paths into the response body mapped to expected values",
+        description="Field equalities picking ONE element out of a list in the "
+        "body, so a row is asserted by identity rather than by position",
+    )
+    match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths mapped to expected values"
     )
     not_match: Optional[dict[str, Any]] = Field(
         None, description="Dotted paths that must NOT hold these values"
     )
-    contains: Optional[dict[str, Any]] = Field(
+    contains: Optional[dict[str, list[Any]]] = Field(
         None,
         description="Dotted paths to lists that must contain these entries, "
         "order-insensitive",
+    )
+    not_contains: Optional[dict[str, list[Any]]] = Field(
+        None,
+        description="Dotted paths to lists that must hold none of these entries",
     )
     present: Optional[list[str]] = Field(
         None, description="Dotted paths that must exist, whatever their value"
     )
     absent: Optional[list[str]] = Field(
-        None, description="Dotted paths that must not exist in the body"
+        None, description="Dotted paths that must not exist"
     )
-    token: Optional[str] = Field(
-        None, description="Explicit JWT to attach (overrides the cached token)"
-    )
-    where: Optional[dict[str, Any]] = Field(
+    expect_no_match: Optional[bool] = Field(
         None,
-        description="Field equalities picking ONE element out of a list in the "
-        "body, so a device or application is asserted by identity rather than "
-        "by position",
+        description="Assert that no element matches 'where'. Takes no other "
+        "assertion, since there is no element to apply one to",
     )
     retries: Optional[int] = Field(
         None,
         gt=0,
-        description="Re-issue the request until the assertions pass. For states "
-        "no barrier can wait on: an install writes no DAG state, and a paired "
-        "device is a member of nothing so wait_for_sync cannot read it",
+        description="Re-read until the assertions pass, for a state no barrier "
+        "can wait on",
     )
     interval: Optional[float] = Field(
-        None, gt=0, description="Seconds between retries (default 1)"
+        None, gt=0, description="Seconds between reads (default 1)"
+    )
+
+
+class AssertApiResponseStepConfig(BodyAssertStepConfig):
+    """Configuration for assert_api_response step (raw admin-API assertion)."""
+
+    type: Literal["assert_api_response"] = "assert_api_response"
+    node: str = Field(..., description="Node whose admin API is queried")
+    path: str = Field(..., description="Admin-API path, e.g. /admin-api/health")
+    token: Optional[str] = Field(
+        None, description="Explicit JWT to attach (overrides the cached token)"
     )
 
 
@@ -1131,14 +1151,15 @@ class NodeExecStepConfig(BaseStepConfig):
     """Configuration for node_exec step."""
 
     type: Literal["node_exec"] = "node_exec"
-    node: str = Field(..., description="Node whose data directory to run against")
+    node: str = Field(..., description="Stopped node whose home to run against")
     args: list[str] = Field(
         ..., description="merod subcommand and flags, e.g. ['account', 'export']"
     )
     files: Optional[dict[str, str]] = Field(
         None,
-        description="Files to write under /app/data before running, "
-        "as container path -> contents",
+        description="Files to write into the node's home for the command, as "
+        "/app/data/... path -> contents; removed once it exits. Such a path in "
+        "args names the same file",
     )
     capture: Optional[dict[str, str]] = Field(
         None,
@@ -1159,13 +1180,14 @@ class NodeExecStepConfig(BaseStepConfig):
     )
     image: Optional[str] = Field(
         None,
-        description="Image to run. Defaults to the one merobox started the node "
-        "from; needed only when the container is gone and merobox has no record",
+        description="Docker only: image to run. Defaults to the one merobox started "
+        "the node from; needed only when the container is gone and merobox has no "
+        "record",
     )
     data_dir: Optional[str] = Field(
         None,
-        description="Host path holding the node's home. Defaults to the container's "
-        "bind mount, else merobox's ./data/<node> convention",
+        description="Host directory holding <node>/config.toml. Defaults to where "
+        "merobox started the node, else its ./data convention for the mode",
     )
 
 
@@ -1178,19 +1200,62 @@ class AccountCreateStepConfig(BaseStepConfig):
     expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
-class AccountPairStepConfig(BaseStepConfig):
+class _PairInitFields(BaseStepConfig):
+    """What the new device's half of pairing takes."""
+
+    node: str = Field(..., description="The NEW device's node")
+    root_key: str = Field(
+        ..., description="Account genesis root key, from node_identity's output"
+    )
+    namespaces: list[str] = Field(
+        default_factory=list,
+        description="Namespaces the NEW device listens on. May be empty when "
+        "account_namespace is set",
+    )
+    account_namespace: Optional[str] = Field(
+        None,
+        description="Account namespace the NEW device follows, from which it "
+        "learns the account's namespaces. account_pair also takes 'auto'",
+    )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
+
+
+class AccountPairStepConfig(_PairInitFields):
     """Configuration for account_pair step."""
 
     type: Literal["account_pair"] = "account_pair"
-    node: str = Field(..., description="The NEW device's node")
     holder: str = Field(..., description="Node that already holds the account root")
-    namespaces: list[str] = Field(
-        ...,
-        description="Namespaces the NEW device listens on. A member of nothing "
-        "can neither read its account's namespaces off a DAG nor derive them",
+    await_self: Optional[bool] = Field(
+        None,
+        description="Return only once the NEW device lists itself with the scope "
+        "the holder certified, or unscoped, bound in the account namespace",
     )
-    root_key: str = Field(
-        ..., description="Account genesis root key, from account_create's output"
+    applications: list[str] = Field(
+        default_factory=list,
+        description="Applications the holder scopes the link to. Empty means "
+        "every namespace this holder takes part in",
+    )
+
+
+class AccountPairInitStepConfig(_PairInitFields):
+    """Configuration for account_pair_init step."""
+
+    type: Literal["account_pair_init"] = "account_pair_init"
+
+
+class AccountPairCompleteStepConfig(BaseStepConfig):
+    """Configuration for account_pair_complete step."""
+
+    type: Literal["account_pair_complete"] = "account_pair_complete"
+    node: str = Field(..., description="Node that holds the account root")
+    device_id: str = Field(..., description="deviceId from account_pair_init")
+    kem_public_key: str = Field(..., description="kemPublicKey from account_pair_init")
+    sign_public_key: str = Field(
+        ..., description="signPublicKey from account_pair_init"
+    )
+    statement: str = Field(..., description="statement from account_pair_init")
+    confirmation_code: str = Field(
+        ..., description="confirmationCode from account_pair_init"
     )
     applications: list[str] = Field(
         default_factory=list,
@@ -1214,62 +1279,18 @@ class AccountRelinkStepConfig(BaseStepConfig):
     expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
-class AccountDevicesStepConfig(BaseStepConfig):
+class AccountDevicesStepConfig(BodyAssertStepConfig):
     """Configuration for account_devices step."""
 
     type: Literal["account_devices"] = "account_devices"
     node: str = Field(..., description="Node whose account is listed")
-    where: Optional[dict[str, Any]] = Field(
-        None, description="Field equalities picking ONE row out of the listing"
-    )
-    match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths into that row mapped to expected values"
-    )
-    not_match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths that must NOT hold these values"
-    )
-    contains: Optional[dict[str, Any]] = Field(
-        None,
-        description="Dotted paths to lists that must contain these entries, "
-        "order-insensitive",
-    )
-    retries: Optional[int] = Field(
-        None,
-        gt=0,
-        description="Re-read until the assertions pass, for a node no barrier can wait on",
-    )
-    interval: Optional[float] = Field(
-        None, gt=0, description="Seconds between reads (default 1)"
-    )
 
 
-class AccountApplicationsStepConfig(BaseStepConfig):
+class AccountApplicationsStepConfig(BodyAssertStepConfig):
     """Configuration for account_applications step."""
 
     type: Literal["account_applications"] = "account_applications"
     node: str = Field(..., description="Node whose account is listed")
-    where: Optional[dict[str, Any]] = Field(
-        None, description="Field equalities picking ONE row out of the listing"
-    )
-    match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths into that row mapped to expected values"
-    )
-    not_match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths that must NOT hold these values"
-    )
-    contains: Optional[dict[str, Any]] = Field(
-        None,
-        description="Dotted paths to lists that must contain these entries, "
-        "order-insensitive",
-    )
-    retries: Optional[int] = Field(
-        None,
-        gt=0,
-        description="Re-read until the assertions pass, for a node no barrier can wait on",
-    )
-    interval: Optional[float] = Field(
-        None, gt=0, description="Seconds between reads (default 1)"
-    )
 
 
 class AccountRevokeStepConfig(BaseStepConfig):
@@ -1957,6 +1978,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "list_namespaces": ListNamespacesStepConfig,
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
+    "account_pair_init": AccountPairInitStepConfig,
+    "account_pair_complete": AccountPairCompleteStepConfig,
     "account_relink": AccountRelinkStepConfig,
     "account_devices": AccountDevicesStepConfig,
     "account_applications": AccountApplicationsStepConfig,
@@ -2654,7 +2677,12 @@ def create_sample_workflow_config(output_path: str = "workflow-example.yml"):
         "nodes": {
             "count": 2,
             "prefix": "calimero-node",
-            "image": "ghcr.io/calimero-network/merod:6a47604",
+            # Was a bare commit tag (`merod:6a47604`), which ghcr garbage
+            # collects — it 404s now, so the sample this command generates
+            # could not pull its own node. calimero-network/merobox#1.
+            # The shared default is an alias ghcr keeps repointing, so it
+            # cannot rot the same way.
+            "image": DEFAULT_IMAGE,
         },
         "steps": [
             {

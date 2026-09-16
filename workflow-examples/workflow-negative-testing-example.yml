@@ -173,16 +173,16 @@ steps:
       - statement: "is_set({{invalid_context_error_message}})"
         message: "Invalid context error should have error_message set (may be network or JSON-RPC error)"
 
-  # Step 15: Test expected failure when call succeeds (should warn but continue)
-  # This tests that None values are properly exported for both simple and complex dict syntax
-  - name: Expected Failure But Call Succeeds
+  # Step 15: A call allowed to fail that succeeds still binds its error captures,
+  # as None, for both simple and complex dict syntax
+  - name: Allowed Failure But Call Succeeds
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
     method: get
     args:
       key: test_key
-    expected_failure: true # This should succeed, but we expect failure
+    allow_failure: true # succeeds, so the error fields bind as None
     outputs:
       # Simple string assignments (should export None)
       unexpected_success_error_type: error_type # Should be None
@@ -197,8 +197,7 @@ steps:
         field: error_message
 
   # Step 16: Assert that unexpected success exported None values
-  # Note: When expected_failure is True but call succeeds, error fields are exported as None
-  # This tests both simple and complex dict syntax export None values correctly
+  # A call allowed to fail that succeeds exports its error fields as None
   - name: Assert Unexpected Success Handled
     type: assert
     statements:
@@ -257,14 +256,14 @@ steps:
   # Step 19: Test that error field exports are protected from overwriting
   # Test scenario: Export error_type to a key, then also export result to potentially
   # the same key. The error field export should be protected and remain None.
-  - name: Expected Failure But Succeeds - Protected Error Fields
+  - name: Allowed Failure But Succeeds - Protected Error Fields
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
     method: get
     args:
       key: test_key
-    expected_failure: true # This should succeed, but we expect failure
+    allow_failure: true # succeeds, so the error fields bind as None
     outputs:
       # Export error fields first (should be None)
       # These keys will be marked as protected
@@ -289,14 +288,14 @@ steps:
   # Step 21: Test protection with complex output syntax
   # This tests that the protection mechanism also works with complex dict-based
   # output syntax, ensuring custom target keys are also protected.
-  - name: Expected Failure But Succeeds - Protected Complex Error Fields
+  - name: Allowed Failure But Succeeds - Protected Complex Error Fields
     type: call
     node: calimero-node-1
     context_id: "{{context_id}}"
     method: get
     args:
       key: test_key
-    expected_failure: true # This should succeed, but we expect failure
+    allow_failure: true # succeeds, so the error fields bind as None
     outputs:
       # Complex dict syntax for error fields (with custom targets)
       # These should be protected from overwriting
