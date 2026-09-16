@@ -19,6 +19,8 @@ calimero-client-py 0.6.20. Going through the client keeps the token cache, the
 error mapping and the connection handling this layer exists to provide.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import re
@@ -34,10 +36,23 @@ from merobox.commands.utils import console
 
 _CLIENT_ERROR_PREFIX = "Client error: "  # calimero-client-py wraps every failed call
 _HTTP_STATUS = re.compile(r"HTTP (\d{3})\b")  # what it puts first for a non-2xx answer
+_AUTO = "auto"  # `account_namespace: auto` reads the id off the holder's identity
+_AWAIT_SELF_READS = 45  # listings await_self reads, as core's account scenarios wait
+_AWAIT_SELF_INTERVAL = 2.0  # seconds between those reads
+_OFFER_KEYS = {  # account_pair_complete field -> the pair-init answer it carries
+    "device_id": "deviceId",
+    "kem_public_key": "kemPublicKey",
+    "sign_public_key": "signPublicKey",
+    "statement": "statement",
+    "confirmation_code": "confirmationCode",
+}
 
 
 class _AccountStepBase(BaseStep):
     """Shared client plumbing for the account steps."""
+
+    # A refusal or an absence asserted against a placeholder's own text passes.
+    strict_placeholders = True
 
     def _client(self, node_name: str):
         """A client bound to `node_name`, with its cached token attached."""
@@ -195,6 +210,18 @@ class _AccountStepBase(BaseStep):
         )
         return False
 
+    def _refusal_verdict(self, result: dict[str, Any], failure: str) -> bool | None:
+        """The verdict when the call failed or `expect_status` is set, else None."""
+        expect_status = self._expect_status()
+        if not result["success"]:
+            if expect_status is not None:
+                return self._report_expect_status(expect_status, result)
+            console.print(f"[red]{failure}: {escape(str(result.get('error')))}[/red]")
+            return False
+        if expect_status is not None:
+            return self._report_unexpected_status_success(expect_status)
+        return None
+
     def _assert_body(
         self,
         node_name: str,
@@ -299,19 +326,11 @@ class AccountCreateStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account create failed: {e}", error=e)
 
-        expect_status = self._expect_status()
-
-        if not result["success"]:
-            if expect_status is not None:
-                return self._report_expect_status(expect_status, result)
-            console.print(
-                f"[red]Failed to enrol an account on {node_name}: "
-                f"{escape(str(result.get('error')))}[/red]"
-            )
-            return False
-
-        if expect_status is not None:
-            return self._report_unexpected_status_success(expect_status)
+        verdict = self._refusal_verdict(
+            result, f"Failed to enrol an account on {node_name}"
+        )
+        if verdict is not None:
+            return verdict
 
         data = result["data"]
         if not data.get("accountId"):
@@ -326,7 +345,86 @@ class AccountCreateStep(_AccountStepBase):
         )
 
 
-class AccountPairStep(_AccountStepBase):
+class _PairStepBase(_AccountStepBase):
+    """The two halves of pairing, shared by the composite and the split steps."""
+
+    def _validate_init_fields(self) -> None:
+        """Core refuses a pair-init naming neither namespace field; so does this."""
+        if "namespaces" in self.config:
+            self._require_string_lists(("namespaces",))
+        if "account_namespace" in self.config:
+            self._require_strings(("account_namespace",))
+        elif not self.config.get("namespaces"):
+            raise ValueError(
+                f"Step '{self._get_step_name()}': needs 'account_namespace' or a "
+                "non-empty 'namespaces' - the node refuses a pairing naming neither"
+            )
+
+    def _account_namespace(self, holder: str | None, dynamic_values: dict[str, Any]):
+        """The configured account namespace, read off the holder for `auto`."""
+        if "account_namespace" not in self.config:
+            return None
+        value = self._resolved("account_namespace", dynamic_values)
+        if value != _AUTO:
+            return value
+        identity = self._data(self._client(holder).get_node_identity())
+        if not identity.get("accountNamespaceId"):
+            raise RuntimeError(f"{holder} names no account namespace: {identity}")
+        return identity["accountNamespaceId"]
+
+    def _pair_init(
+        self,
+        node_name: str,
+        root_key: str,
+        namespaces: list[str],
+        account_namespace: str | None,
+    ) -> dict[str, Any]:
+        """Mint a device on `node_name`, failing on an offer missing any part."""
+        init = self._data(
+            self._client(node_name).pair_device_init(
+                root_key, namespaces, account_namespace=account_namespace
+            )
+        )
+        missing = [
+            field
+            for field in ("accountId", *_OFFER_KEYS.values())
+            if not init.get(field)
+        ]
+        if missing:
+            raise RuntimeError(f"pair-init omitted {', '.join(missing)}: {init}")
+        return init
+
+    def _pair_complete(
+        self, holder: str, offer: dict[str, Any], applications: list[str]
+    ) -> dict[str, Any]:
+        """Certify `offer` on `holder`, failing unless that offer is what it certified."""
+        complete = self._data(
+            self._client(holder).pair_device_complete(
+                *(offer[field] for field in _OFFER_KEYS.values()),
+                applications or None,
+            )
+        )
+        # The check a human is supposed to make. Both sides derive it over exactly
+        # what gets certified, so a mismatch means the payload was altered in transit.
+        if complete.get("confirmationCode") != offer["confirmationCode"]:
+            raise RuntimeError(
+                "confirmation codes differ between the offer and pair-complete "
+                f"({offer['confirmationCode']} vs {complete.get('confirmationCode')})"
+                " - the payload did not arrive as it was minted"
+            )
+        # Taking the offer's ids over complete's would hide a link to another
+        # device or account.
+        for field in ("accountId", "deviceId"):
+            if field in offer and complete.get(field) != offer[field]:
+                raise RuntimeError(
+                    f"pair-complete certified a different {field} than the offer "
+                    f"named ({offer[field]} vs {complete.get(field)}) - the device "
+                    "now linked is not the one that asked"
+                )
+        return complete
+
+
+class AccountPairStep(_PairStepBase):
     """Pair a second node onto an account that already exists elsewhere.
 
     Both halves of the exchange in one step, because the ordering between them is
@@ -339,17 +437,34 @@ class AccountPairStep(_AccountStepBase):
     Modelling merobox as the operator in the middle is the point: it is the
     channel a human would be, and passing the confirmation code through is what
     a human comparing it out loud would do.
+
+    `account_namespace` makes the device follow the account's own namespace, from
+    which it learns every project namespace on its own, so `namespaces` may then
+    be empty. `await_self` returns only once the new device has folded what the
+    holder wrote there.
     """
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "holder", "namespaces", "root_key"]
+        return ["node", "holder", "root_key"]
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node", "holder", "root_key"))
-        self._require_string_lists(("namespaces",))
+        self._validate_init_fields()
         if "applications" in self.config:
             self._require_string_lists(("applications",))
-        self._expect_status()
+        expect_status = self._expect_status()
+        if self.config.get("await_self"):
+            if "account_namespace" not in self.config:
+                raise ValueError(
+                    f"Step '{self._get_step_name()}': 'await_self' needs "
+                    "'account_namespace' - a device that does not follow it never "
+                    "reads its own pairing back"
+                )
+            if expect_status is not None:
+                raise ValueError(
+                    f"Step '{self._get_step_name()}': 'await_self' cannot wait on "
+                    "a pairing 'expect_status' says is refused"
+                )
 
     def _get_exportable_variables(self):
         return [
@@ -370,6 +485,41 @@ class AccountPairStep(_AccountStepBase):
             ),
         ]
 
+    async def _await_self(
+        self,
+        node_name: str,
+        device_id: str,
+        account_namespace: str,
+        applications: list[str],
+    ) -> bool:
+        """Poll the new node's own listing until it reads back what was certified;
+        a scope arrives only by the registry, so it proves the holder's op folded."""
+        own_row = {"deviceId": device_id, "isSelf": True}
+        seen: Any = None
+        for attempt in range(_AWAIT_SELF_READS):
+            if attempt:
+                await asyncio.sleep(_AWAIT_SELF_INTERVAL)
+            try:
+                seen = self._data(self._client(node_name).list_account_devices())
+            except Exception as e:  # noqa: BLE001 - the last one is reported below
+                seen = e
+                continue
+            row = body_assert.select(seen, own_row, lambda value: value)
+            if row is body_assert.MISSING:
+                continue
+            if applications:
+                if set(row.get("applications") or []) == set(applications):
+                    return True
+            elif account_namespace in (row.get("namespaces") or []):
+                return True
+        console.print(
+            f"✗ {node_name} did not read back its pairing within "
+            f"{_AWAIT_SELF_READS} reads; last saw: {seen}",
+            style="red",
+            markup=False,
+        )
+        return False
+
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
     ) -> bool:
@@ -379,72 +529,30 @@ class AccountPairStep(_AccountStepBase):
         root_key = self._resolved("root_key", dynamic_values)
         applications = self._resolved_list("applications", dynamic_values)
 
+        # Outside the try: `expect_status` asserts the pairing, not this lookup.
         try:
-            init = self._data(
-                self._client(node_name).pair_device_init(root_key, namespaces)
+            account_namespace = self._account_namespace(holder, dynamic_values)
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            console.print(
+                f"[red]Could not read {holder}'s account namespace: "
+                f"{escape(str(e))}[/red]"
             )
-            missing = [
-                field
-                for field in (
-                    "accountId",
-                    "deviceId",
-                    "kemPublicKey",
-                    "signPublicKey",
-                    "statement",
-                    "confirmationCode",
-                )
-                if not init.get(field)
-            ]
-            if missing:
-                raise RuntimeError(f"pair-init omitted {', '.join(missing)}: {init}")
+            return False
 
-            complete = self._data(
-                self._client(holder).pair_device_complete(
-                    init["deviceId"],
-                    init["kemPublicKey"],
-                    init["signPublicKey"],
-                    init["statement"],
-                    init["confirmationCode"],
-                    applications or None,
-                )
-            )
-            # The check a human is supposed to make. Both sides derive it over
-            # exactly what gets certified, so a mismatch means the payload was
-            # altered in transit and the device must not be trusted — asserting it
-            # here keeps the scenario honest about what pairing actually promises.
-            if complete.get("confirmationCode") != init["confirmationCode"]:
-                raise RuntimeError(
-                    "confirmation codes differ between pair-init and pair-complete "
-                    f"({init['confirmationCode']} vs {complete.get('confirmationCode')})"
-                    " — the payload did not arrive as it was minted"
-                )
-            # What was certified has to be what was minted. Taking init's values
-            # over complete's would hide a link to another device or account.
-            for field in ("accountId", "deviceId"):
-                if complete.get(field) != init[field]:
-                    raise RuntimeError(
-                        f"pair-complete certified a different {field} than "
-                        f"pair-init minted ({init[field]} vs "
-                        f"{complete.get(field)}) - the device now linked is not "
-                        "the one that asked"
-                    )
+        try:
+            init = self._pair_init(node_name, root_key, namespaces, account_namespace)
+            complete = self._pair_complete(holder, init, applications)
+            if account_namespace is not None:
+                complete = {**complete, "accountNamespace": account_namespace}
             result = ok(complete)
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account pair failed: {e}", error=e)
 
-        expect_status = self._expect_status()
-
-        if not result["success"]:
-            if expect_status is not None:
-                return self._report_expect_status(expect_status, result)
-            console.print(
-                f"[red]Failed to pair {node_name} onto the account held by "
-                f"{holder}: {escape(str(result.get('error')))}[/red]"
-            )
-            return False
-
-        if expect_status is not None:
-            return self._report_unexpected_status_success(expect_status)
+        verdict = self._refusal_verdict(
+            result, f"Failed to pair {node_name} onto the account held by {holder}"
+        )
+        if verdict is not None:
+            return verdict
 
         data = result["data"]
         console.print(
@@ -452,8 +560,108 @@ class AccountPairStep(_AccountStepBase):
             f"{data.get('accountId')} as device {data.get('deviceId')} "
             f"(key delivered: {data.get('keyDelivered')})"
         )
+        if self.config.get("await_self") and not await self._await_self(
+            node_name, data["deviceId"], data["accountNamespace"], applications
+        ):
+            return False
         return self._finish(
             node_name, "paired_account", data, workflow_results, dynamic_values
+        )
+
+
+class AccountPairInitStep(_PairStepBase):
+    """The new device's half of `account_pair`: mint a device, export the offer,
+    so a scenario can hand the holder an offer with one field changed."""
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "root_key"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(("node", "root_key"))
+        self._validate_init_fields()
+        if self.config.get("account_namespace") == _AUTO:
+            raise ValueError(
+                f"Step '{self._get_step_name()}': 'account_namespace: auto' needs a "
+                "holder to read it from; pass the id from node_identity"
+            )
+        self._expect_status()
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+        try:
+            result = ok(
+                self._pair_init(
+                    node_name,
+                    self._resolved("root_key", dynamic_values),
+                    self._resolved_list("namespaces", dynamic_values),
+                    self._account_namespace(None, dynamic_values),
+                )
+            )
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"account pair-init failed: {e}", error=e)
+
+        verdict = self._refusal_verdict(
+            result, f"Failed to mint a device on {node_name}"
+        )
+        if verdict is not None:
+            return verdict
+
+        data = result["data"]
+        console.print(
+            f"[green]✓[/green] {node_name} minted device {data['deviceId']} for "
+            f"account {data['accountId']}"
+        )
+        return self._finish(
+            node_name, "pair_init", data, workflow_results, dynamic_values
+        )
+
+
+class AccountPairCompleteStep(_PairStepBase):
+    """The holder's half of `account_pair`: certify an offer given field by field."""
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", *_OFFER_KEYS]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(("node", *_OFFER_KEYS))
+        if "applications" in self.config:
+            self._require_string_lists(("applications",))
+        self._expect_status()
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+        offer = {
+            field: self._resolved(key, dynamic_values)
+            for key, field in _OFFER_KEYS.items()
+        }
+        try:
+            result = ok(
+                self._pair_complete(
+                    node_name,
+                    offer,
+                    self._resolved_list("applications", dynamic_values),
+                )
+            )
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"account pair-complete failed: {e}", error=e)
+
+        verdict = self._refusal_verdict(
+            result, f"{node_name} did not certify device {offer['deviceId']}"
+        )
+        if verdict is not None:
+            return verdict
+
+        data = result["data"]
+        console.print(
+            f"[green]✓[/green] {node_name} certified device {data.get('deviceId')} "
+            f"(key delivered: {data.get('keyDelivered')})"
+        )
+        return self._finish(
+            node_name, "pair_complete", data, workflow_results, dynamic_values
         )
 
 
@@ -527,19 +735,11 @@ class AccountRevokeStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account revoke failed: {e}", error=e)
 
-        expect_status = self._expect_status()
-
-        if not result["success"]:
-            if expect_status is not None:
-                return self._report_expect_status(expect_status, result)
-            console.print(
-                f"[red]Failed to revoke {device_id} via {node_name}: "
-                f"{escape(str(result.get('error')))}[/red]"
-            )
-            return False
-
-        if expect_status is not None:
-            return self._report_unexpected_status_success(expect_status)
+        verdict = self._refusal_verdict(
+            result, f"Failed to revoke {device_id} via {node_name}"
+        )
+        if verdict is not None:
+            return verdict
 
         data = result["data"]
         console.print(
@@ -592,19 +792,11 @@ class AccountRelinkStep(_AccountStepBase):
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account relink failed: {e}", error=e)
 
-        expect_status = self._expect_status()
-
-        if not result["success"]:
-            if expect_status is not None:
-                return self._report_expect_status(expect_status, result)
-            console.print(
-                f"[red]Failed to relink {device_id} via {node_name}: "
-                f"{escape(str(result.get('error')))}[/red]"
-            )
-            return False
-
-        if expect_status is not None:
-            return self._report_unexpected_status_success(expect_status)
+        verdict = self._refusal_verdict(
+            result, f"Failed to relink {device_id} via {node_name}"
+        )
+        if verdict is not None:
+            return verdict
 
         data = result["data"]
         outcomes = data.get("outcomes") or []

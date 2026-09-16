@@ -17,7 +17,7 @@ loop, per this repo's convention.
 
 import asyncio
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,6 +25,8 @@ from merobox.commands.bootstrap.steps.account import (
     AccountApplicationsStep,
     AccountCreateStep,
     AccountDevicesStep,
+    AccountPairCompleteStep,
+    AccountPairInitStep,
     AccountPairStep,
     AccountRelinkStep,
     AccountRevokeStep,
@@ -32,8 +34,10 @@ from merobox.commands.bootstrap.steps.account import (
     PerformIntentStep,
     SignWarrantStep,
 )
+from merobox.commands.errors import UnresolvedPlaceholderError
 
 NAMESPACE = "ab" * 32
+ACCOUNT_NS = "4e" * 32
 
 
 def _run(coro):
@@ -450,12 +454,31 @@ class TestAccountPairStep:
     def test_valid_config_passes_validation(self):
         _step(AccountPairStep, self.config)
 
-    @pytest.mark.parametrize("field", ["node", "holder", "namespaces", "root_key"])
+    @pytest.mark.parametrize("field", ["node", "holder", "root_key"])
     def test_missing_required_field_raises(self, field):
         config = {**self.config}
         del config[field]
         with pytest.raises(ValueError, match=field):
             AccountPairStep(config)
+
+    @pytest.mark.parametrize("namespaces", [None, []])
+    def test_it_needs_a_namespace_or_the_account_namespace(self, namespaces):
+        """Core refuses a pair-init naming neither, so refuse it at load."""
+        config = {**self.config}
+        del config["namespaces"]
+        if namespaces is not None:
+            config["namespaces"] = namespaces
+        with pytest.raises(ValueError, match="account_namespace"):
+            AccountPairStep(config)
+
+    def test_the_account_namespace_alone_is_enough(self):
+        config = {**self.config, "account_namespace": ACCOUNT_NS}
+        del config["namespaces"]
+        AccountPairStep(config)
+
+    def test_the_account_namespace_must_be_a_string(self):
+        with pytest.raises(ValueError, match="account_namespace"):
+            AccountPairStep({**self.config, "account_namespace": ["x"]})
 
     def _init_payload(self, code="0011223344556677"):
         return {
@@ -467,7 +490,7 @@ class TestAccountPairStep:
             "confirmationCode": code,
         }
 
-    def _paired(self, init, code=None, **complete):
+    def _paired(self, init, code=None, config=None, holder_identity=None, **complete):
         """A step wired to two clients: the new device's, and the holder's.
 
         Both endpoints really answer with `accountId` and `deviceId`, so complete
@@ -476,6 +499,7 @@ class TestAccountPairStep:
         new_device = MagicMock()
         new_device.pair_device_init.return_value = _envelope(init)
         holder = MagicMock()
+        holder.get_node_identity.return_value = _envelope(holder_identity or {})
         holder.pair_device_complete.return_value = _envelope(
             {
                 "accountId": init.get("accountId"),
@@ -485,7 +509,7 @@ class TestAccountPairStep:
                 **complete,
             }
         )
-        step = AccountPairStep(self.config)
+        step = AccountPairStep(config or self.config)
         # `_client` is called with a node name, so route by which node it is.
         step._client = MagicMock(  # noqa: SLF001
             side_effect=lambda name: (
@@ -506,7 +530,9 @@ class TestAccountPairStep:
         results = {}
         assert _run(step.execute(results, {})) is True
 
-        new_device.pair_device_init.assert_called_once_with("cc" * 32, [NAMESPACE])
+        new_device.pair_device_init.assert_called_once_with(
+            "cc" * 32, [NAMESPACE], account_namespace=None
+        )
         # Everything init minted has to reach complete verbatim; a dropped field
         # would be a pairing that certifies key material nobody committed to.
         holder.pair_device_complete.assert_called_once_with(
@@ -518,6 +544,54 @@ class TestAccountPairStep:
             None,
         )
         assert results["paired_account_calimero-node-3"]["deviceId"] == init["deviceId"]
+
+    def _account_ns_config(self, value):
+        config = {**self.config, "account_namespace": value}
+        del config["namespaces"]
+        return config
+
+    def test_it_passes_the_account_namespace_through(self):
+        step, new_device, _holder = self._paired(
+            self._init_payload(), config=self._account_ns_config("{{acc_ns}}")
+        )
+        results = {}
+        assert _run(step.execute(results, {"acc_ns": ACCOUNT_NS})) is True
+        new_device.pair_device_init.assert_called_once_with(
+            "cc" * 32, [], account_namespace=ACCOUNT_NS
+        )
+        assert (
+            results["paired_account_calimero-node-3"]["accountNamespace"] == ACCOUNT_NS
+        )
+
+    def test_auto_reads_the_account_namespace_off_the_holder(self):
+        step, new_device, holder = self._paired(
+            self._init_payload(),
+            config=self._account_ns_config("auto"),
+            holder_identity={"accountNamespaceId": ACCOUNT_NS},
+        )
+        assert _run(step.execute({}, {})) is True
+        holder.get_node_identity.assert_called_once_with()
+        new_device.pair_device_init.assert_called_once_with(
+            "cc" * 32, [], account_namespace=ACCOUNT_NS
+        )
+
+    def test_a_failed_holder_lookup_is_not_the_refusal_under_test(self):
+        """`expect_status` asserts the pairing's answer, not the identity read's."""
+        config = {**self._account_ns_config("auto"), "expect_status": 404}
+        step, new_device, holder = self._paired(self._init_payload(), config=config)
+        holder.get_node_identity.side_effect = _client_error(404, "no identity")
+        assert _run(step.execute({}, {})) is False
+        new_device.pair_device_init.assert_not_called()
+
+    def test_auto_fails_when_the_holder_names_no_account_namespace(self):
+        step, new_device, holder = self._paired(
+            self._init_payload(),
+            config=self._account_ns_config("auto"),
+            holder_identity={"accountId": "aa" * 32},
+        )
+        assert _run(step.execute({}, {})) is False
+        new_device.pair_device_init.assert_not_called()
+        holder.pair_device_complete.assert_not_called()
 
     def test_a_confirmation_code_mismatch_fails_the_step(self):
         """The check a human is supposed to make, made mechanically.
@@ -565,6 +639,332 @@ class TestAccountPairStep:
         step, _new_device, holder = self._paired(init)
         assert _run(step.execute({}, {})) is False
         holder.pair_device_complete.assert_not_called()
+
+
+class TestUnresolvedPlaceholders:
+    """A refusal or an absence asserted against a placeholder's own text passes
+    for the wrong reason, so the account steps refuse one that never bound."""
+
+    def test_a_refusal_is_not_asserted_against_a_typo(self):
+        client = MagicMock()
+        client.relink_device.side_effect = _client_error(400, "not a device id")
+        step = _step(
+            AccountRelinkStep,
+            {
+                "type": "account_relink",
+                "name": "Relink",
+                "node": "calimero-node-1",
+                "device_id": "{{devcie}}",
+                "expect_status": 400,
+            },
+            client,
+        )
+        with pytest.raises(UnresolvedPlaceholderError, match="devcie"):
+            _run(step.execute({}, {"device": DEVICE}))
+        client.relink_device.assert_not_called()
+
+    def test_a_listing_is_not_filtered_by_a_typo(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = {"devices": [{"deviceId": DEVICE}]}
+        step = _step(
+            AccountDevicesStep,
+            {
+                "type": "account_devices",
+                "name": "Devices",
+                "node": "calimero-node-1",
+                "where": {"deviceId": "{{devcie}}"},
+                "match": {"deviceId": DEVICE},
+            },
+            client,
+        )
+        with pytest.raises(UnresolvedPlaceholderError, match="devcie"):
+            _run(step.execute({}, {"device": DEVICE}))
+
+
+INIT = {
+    "accountId": "aa" * 32,
+    "deviceId": DEVICE,
+    "kemPublicKey": "1a" * 32,
+    "signPublicKey": "2b" * 32,
+    "statement": "3c" * 64,
+    "confirmationCode": "0011-2233-4455-6677",
+}
+
+PAIR_INIT = {
+    "type": "account_pair_init",
+    "name": "Init",
+    "node": "calimero-node-3",
+    "root_key": "cc" * 32,
+    "namespaces": [NAMESPACE],
+}
+
+PAIR_COMPLETE = {
+    "type": "account_pair_complete",
+    "name": "Complete",
+    "node": "calimero-node-2",
+    "device_id": INIT["deviceId"],
+    "kem_public_key": INIT["kemPublicKey"],
+    "sign_public_key": INIT["signPublicKey"],
+    "statement": INIT["statement"],
+    "confirmation_code": INIT["confirmationCode"],
+}
+
+
+class TestAccountPairInitStep:
+    """The new device's half, so a scenario can hand the holder a doctored offer."""
+
+    @pytest.mark.parametrize("field", ["node", "root_key"])
+    def test_missing_required_field_raises(self, field):
+        config = {**PAIR_INIT}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            AccountPairInitStep(config)
+
+    def test_it_needs_a_namespace_or_the_account_namespace(self):
+        config = {**PAIR_INIT}
+        del config["namespaces"]
+        with pytest.raises(ValueError, match="account_namespace"):
+            AccountPairInitStep(config)
+
+    def test_auto_is_refused_since_the_step_names_no_holder(self):
+        with pytest.raises(ValueError, match="auto"):
+            AccountPairInitStep({**PAIR_INIT, "account_namespace": "auto"})
+
+    def test_it_mints_on_the_node_and_exports_the_offer(self):
+        client = MagicMock()
+        client.pair_device_init.return_value = _envelope(INIT)
+        outputs = {
+            "device": "deviceId",
+            "kem": "kemPublicKey",
+            "sign": "signPublicKey",
+            "statement": "statement",
+            "code": "confirmationCode",
+        }
+        step = _step(
+            AccountPairInitStep,
+            {**PAIR_INIT, "account_namespace": ACCOUNT_NS, "outputs": outputs},
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        client.pair_device_init.assert_called_once_with(
+            "cc" * 32, [NAMESPACE], account_namespace=ACCOUNT_NS
+        )
+        assert dynamic_values == {
+            "device": DEVICE,
+            "kem": INIT["kemPublicKey"],
+            "sign": INIT["signPublicKey"],
+            "statement": INIT["statement"],
+            "code": INIT["confirmationCode"],
+        }
+
+    def test_an_incomplete_offer_fails_the_step(self):
+        client = MagicMock()
+        client.pair_device_init.return_value = _envelope(
+            {k: v for k, v in INIT.items() if k != "statement"}
+        )
+        step = _step(AccountPairInitStep, PAIR_INIT, client)
+        assert _run(step.execute({}, {})) is False
+
+
+class TestAccountPairCompleteStep:
+    """The holder's half, taking the offer field by field."""
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "node",
+            "device_id",
+            "kem_public_key",
+            "sign_public_key",
+            "statement",
+            "confirmation_code",
+        ],
+    )
+    def test_missing_required_field_raises(self, field):
+        config = {**PAIR_COMPLETE}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            AccountPairCompleteStep(config)
+
+    def _client(self, **complete):
+        client = MagicMock()
+        client.pair_device_complete.return_value = _envelope(
+            {
+                "accountId": INIT["accountId"],
+                "deviceId": INIT["deviceId"],
+                "keyDelivered": True,
+                "confirmationCode": INIT["confirmationCode"],
+                **complete,
+            }
+        )
+        return client
+
+    def test_it_certifies_the_offer_it_was_given(self):
+        client = self._client()
+        step = _step(
+            AccountPairCompleteStep,
+            {
+                **PAIR_COMPLETE,
+                "applications": [APP_ONE],
+                "outputs": {"delivered": "keyDelivered"},
+            },
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        client.pair_device_complete.assert_called_once_with(
+            INIT["deviceId"],
+            INIT["kemPublicKey"],
+            INIT["signPublicKey"],
+            INIT["statement"],
+            INIT["confirmationCode"],
+            [APP_ONE],
+        )
+        assert dynamic_values == {"delivered": True}
+
+    def test_placeholders_resolve(self):
+        client = self._client()
+        config = {**PAIR_COMPLETE, "statement": "{{statement}}"}
+        step = _step(AccountPairCompleteStep, config, client)
+        assert _run(step.execute({}, {"statement": INIT["statement"]})) is True
+        assert client.pair_device_complete.call_args.args[3] == INIT["statement"]
+
+    @pytest.mark.parametrize(
+        "echo", [{"confirmationCode": "ff" * 8}, {"deviceId": "99" * 32}]
+    )
+    def test_certifying_something_else_fails_the_step(self, echo):
+        step = _step(AccountPairCompleteStep, PAIR_COMPLETE, self._client(**echo))
+        assert _run(step.execute({}, {})) is False
+
+    def test_a_doctored_offer_is_asserted_by_its_status(self):
+        client = MagicMock()
+        client.pair_device_complete.side_effect = _client_error(400, "bad statement")
+        step = _step(
+            AccountPairCompleteStep,
+            {**PAIR_COMPLETE, "statement": "00" * 64, "expect_status": 400},
+            client,
+        )
+        assert _run(step.execute({}, {})) is True
+
+
+class TestAccountPairAwaitSelf:
+    """`await_self` returns only once the new node reads back what was certified.
+
+    A scope reaches the new node only through the replicated registry, so its own
+    row carrying the scope proves it folded the holder's last op.
+    """
+
+    CONFIG = {
+        "type": "account_pair",
+        "name": "Pair",
+        "node": "calimero-node-3",
+        "holder": "calimero-node-2",
+        "root_key": "cc" * 32,
+        "account_namespace": ACCOUNT_NS,
+        "await_self": True,
+    }
+
+    def _run(self, listings, **config):
+        """Run the pairing against `listings`, with sleeps skipped; the new node
+        and the sleep mock come back for inspection."""
+        new_device = MagicMock()
+        new_device.pair_device_init.return_value = _envelope(INIT)
+        new_device.list_account_devices.side_effect = listings
+        holder = MagicMock()
+        holder.pair_device_complete.return_value = _envelope(INIT)
+        step = AccountPairStep({**self.CONFIG, **config})
+        step._client = MagicMock(  # noqa: SLF001
+            side_effect=lambda name: (
+                new_device if name == "calimero-node-3" else holder
+            )
+        )
+        sleep = AsyncMock()
+        with patch("merobox.commands.bootstrap.steps.account.asyncio.sleep", sleep):
+            verdict = _run(step.execute({}, {}))
+        return verdict, new_device, sleep
+
+    @staticmethod
+    def _row(**fields):
+        return {
+            "devices": [
+                {
+                    "deviceId": DEVICE,
+                    "isSelf": True,
+                    "applications": [],
+                    "namespaces": [],
+                    **fields,
+                }
+            ]
+        }
+
+    def test_it_needs_the_account_namespace(self):
+        config = {**self.CONFIG, "namespaces": [NAMESPACE]}
+        del config["account_namespace"]
+        with pytest.raises(ValueError, match="await_self"):
+            AccountPairStep(config)
+
+    def test_it_cannot_wait_on_a_refusal(self):
+        with pytest.raises(ValueError, match="await_self"):
+            AccountPairStep({**self.CONFIG, "expect_status": 403})
+
+    def test_a_repeated_application_is_one_scope(self):
+        verdict, _new_device, _sleep = self._run(
+            [self._row(namespaces=[ACCOUNT_NS], applications=[APP_ONE])],
+            applications=[APP_ONE, APP_ONE],
+        )
+        assert verdict is True
+
+    def test_unscoped_it_waits_for_its_own_link_in_the_account_namespace(self):
+        verdict, new_device, _sleep = self._run(
+            [
+                {"devices": []},
+                self._row(namespaces=[NAMESPACE]),
+                self._row(namespaces=[NAMESPACE, ACCOUNT_NS]),
+            ]
+        )
+        assert verdict is True
+        assert new_device.list_account_devices.call_count == 3
+
+    def test_scoped_it_waits_for_the_scope_the_holder_signed(self):
+        verdict, new_device, _sleep = self._run(
+            [
+                self._row(namespaces=[ACCOUNT_NS]),
+                self._row(namespaces=[ACCOUNT_NS], applications=[APP_ONE]),
+                self._row(namespaces=[ACCOUNT_NS], applications=[APP_TWO, APP_ONE]),
+            ],
+            applications=[APP_ONE, APP_TWO],
+        )
+        assert verdict is True
+        assert new_device.list_account_devices.call_count == 3
+
+    @pytest.mark.parametrize(
+        "row",
+        [
+            {"deviceId": "99" * 32, "isSelf": True, "namespaces": [ACCOUNT_NS]},
+            {"deviceId": DEVICE, "isSelf": False, "namespaces": [ACCOUNT_NS]},
+        ],
+    )
+    def test_only_its_own_row_counts(self, row):
+        verdict, _new_device, _sleep = self._run([{"devices": [row]}] * 45)
+        assert verdict is False
+
+    def test_a_listing_that_errors_is_retried(self):
+        verdict, _new_device, _sleep = self._run(
+            [RuntimeError("Client error: HTTP 503"), self._row(namespaces=[ACCOUNT_NS])]
+        )
+        assert verdict is True
+
+    def test_it_gives_up_after_the_wait_core_s_scenarios_use(self):
+        verdict, new_device, sleep = self._run([{"devices": []}] * 50)
+        assert verdict is False
+        assert new_device.list_account_devices.call_count == 45
+        assert {call.args[0] for call in sleep.call_args_list} == {2.0}
+
+    def test_without_it_the_step_does_not_read_the_listing(self):
+        verdict, new_device, _sleep = self._run([], await_self=False)
+        assert verdict is True
+        new_device.list_account_devices.assert_not_called()
 
 
 # =============================================================================
@@ -792,7 +1192,12 @@ class TestOutputsAreActuallyExported:
                 "holder": "calimero-node-2",
                 "namespaces": [NAMESPACE],
                 "root_key": "cc" * 32,
-                "outputs": {"paired_device": "deviceId", "delivered": "keyDelivered"},
+                "account_namespace": ACCOUNT_NS,
+                "outputs": {
+                    "paired_device": "deviceId",
+                    "delivered": "keyDelivered",
+                    "account_ns": "accountNamespace",
+                },
             }
         )
         step._client = MagicMock(  # noqa: SLF001
@@ -805,6 +1210,7 @@ class TestOutputsAreActuallyExported:
         assert _run(step.execute({}, dynamic_values)) is True
         assert dynamic_values["paired_device"] == "ee" * 32
         assert dynamic_values["delivered"] is True
+        assert dynamic_values["account_ns"] == ACCOUNT_NS
 
     def test_account_revoke_exports_key_rotated(self):
         client = MagicMock()
@@ -860,6 +1266,38 @@ class TestOutputsAreActuallyExported:
         assert dynamic_values["acct"] == "aa" * 32
         assert dynamic_values["dev"] == "cc" * 32
         assert dynamic_values["root"] == "bb" * 32
+
+    def test_node_identity_exports_the_account_namespace_fields(self):
+        client = MagicMock()
+        client.get_node_identity.return_value = _envelope(
+            {
+                "accountId": "aa" * 32,
+                "accountNamespaceId": ACCOUNT_NS,
+                "holdsAccountRoot": True,
+                "deviceCertified": False,
+            }
+        )
+        step = _step(
+            NodeIdentityStep,
+            {
+                "type": "node_identity",
+                "name": "Who am I",
+                "node": "calimero-node-1",
+                "outputs": {
+                    "account_ns": "accountNamespaceId",
+                    "holds_root": "holdsAccountRoot",
+                    "certified": "deviceCertified",
+                },
+            },
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values == {
+            "account_ns": ACCOUNT_NS,
+            "holds_root": True,
+            "certified": False,
+        }
 
 
 # =============================================================================
@@ -1222,6 +1660,13 @@ class TestExpectStatus:
             RELINK,
             "relink_device",
             {"applications": [APP_ONE], "outcomes": []},
+        ),
+        (AccountPairInitStep, PAIR_INIT, "pair_device_init", INIT),
+        (
+            AccountPairCompleteStep,
+            PAIR_COMPLETE,
+            "pair_device_complete",
+            {"deviceId": DEVICE, "confirmationCode": INIT["confirmationCode"]},
         ),
     ]
 
