@@ -207,6 +207,9 @@ the workflow and `bootstrap run` exits non-zero. Two mechanisms adjust this:
   operation is rejected, and *fails* if it unexpectedly succeeds. This is how
   negative / authorization tests are written. Pair with `unauthenticated: true`
   on `call`/`ws_connect` to force a no-token request and assert a 401.
+- **`allow_failure: true`** on `call` passes whichever way the call goes and
+  exports its error fields, `None` on success, for probing state that may not
+  have propagated yet.
 - **`non_blocking: true`** on an [`assert`](/workflows/yaml/#assert) step records
   the failure but lets the workflow continue — used heavily inside `fuzzy_test`
   where individual assertion misses are tracked rather than fatal.

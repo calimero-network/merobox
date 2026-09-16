@@ -212,9 +212,9 @@ Pin the reason whenever the workflow is gating a specific refusal:
   expected_error: 'identity downgrade forbidden'
 ```
 
-The `call` step is the one exception to the unexpected-success rule: it keeps
-warning and passing, because workflows use `expected_failure` on a read as a
-soft "may not have propagated yet" probe and rely on its `None` error exports.
+For a `call` that may go either way, such as a read of state that may not have
+propagated yet, set `allow_failure: true` instead: the step passes on either
+outcome and exports the error fields, as `None` when the call succeeded.
 
 Fields specific to each step are documented per type. Placeholder references
 (`{{var}}`) and `${ENV}` expansion are described in the
@@ -954,27 +954,33 @@ Outputs: `accountId`, `deviceId`.
 
 ### node_exec
 
-Run an offline `merod` subcommand against a **stopped** node's data directory, in
-a one-shot container from the node's own image.
+Run an offline `merod` subcommand against a **stopped** node's home.
+In binary mode it runs the `merod` binary merobox started the node with; with
+Docker, a one-shot container from the node's own image.
+A path under `/app/data`, in `files:` or as a whole argument, names a file in the
+node's home in both modes, so a scenario reads the same either way.
 
 Some operations are CLI-only and cannot run against a live node: `merod account
 export|import` opens the datastore directly and RocksDB's lock is exclusive. That
 rules out both obvious routes — `docker exec` needs a *running* container, and the
 admin api does not expose the recovery key (serving a secret whose point is to live
-offline over HTTP would be the wrong shape). What works is that the data directory
-is a host bind mount and the image's entrypoint is `merod` itself.
+offline over HTTP would be the wrong shape). What works is that the node's home is
+a host directory either way.
 
-The image and mount are read off the existing container rather than reconstructed
-from workflow config, so the step cannot disagree with how the node was actually
-started. A running node is **refused** unless `allow_running` says otherwise —
-attempting it yields an opaque lock error several layers down, which reads like a
-node fault.
+The home is the step's `data_dir`, else where merobox recorded the node's config
+when it started it; with Docker, the existing container's image and mount come
+first.
+A running node is **refused** unless `allow_running` says otherwise: attempting it
+yields an opaque lock error several layers down, which reads like a node fault.
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `node` | yes | string | Node whose data directory to run against. |
 | `args` | yes | list[string] | Subcommand and flags, e.g. `['account', 'export']`. |
-| `files` | no | map | Container path → contents, written into the mount before running. Paths outside `/app/data` are refused. |
+| `files` | no | map | `/app/data/…` path → contents, written into the node's home before running and removed once it exits. Other paths are refused. |
+| `capture` | no | map | Name → regex with one capturing group, pulled out of stdout. |
+| `data_dir` | no | string | The directory holding `<node>/config.toml`, when merobox has no record of it. |
+| `image` | no | string | Docker only: the image to run when the container is gone and merobox has no record. |
 | `allow_running` | no | bool | Run even if the node is up. Unsafe for anything that opens the datastore. |
 | `expected_failure` | no | bool | Assert the command is refused rather than succeeding. |
 
@@ -1134,6 +1140,7 @@ Invoke a method on an application in a context (JSON-RPC).
 | `args` | no | map | Method arguments (dynamic values resolved recursively). |
 | `executor_public_key` | no | string | Identity to execute as. |
 | `expected_failure` | no | bool (`false`) | Pass only if the call is rejected. |
+| `allow_failure` | no | bool (`false`) | Pass on either outcome, exporting the error fields (`None` on success). Excludes `expected_failure`. |
 | `unauthenticated` | no | bool (`false`) | Force a no-token request (negative auth test). |
 
 ```yaml
