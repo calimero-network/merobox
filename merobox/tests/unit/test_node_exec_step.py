@@ -8,6 +8,10 @@ than reconstructing them, and keeping input files inside the mount.
 """
 
 import asyncio
+import os
+import stat
+import subprocess
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,7 +39,7 @@ def _manager(
     used to pass validation and fail inside merod.
     """
     (tmp_path / node).mkdir(parents=True, exist_ok=True)
-    manager = MagicMock()
+    manager = MagicMock(binary_path=None)
     manager.is_node_running.return_value = running
 
     container = MagicMock()
@@ -172,13 +176,17 @@ class TestNodeExecExecution:
             "files": {f"{CONTAINER_HOME}/phrase.txt": "{{phrase}}"},
         }
         step = self._step(manager, config)
-        with patch.object(
-            manager.client.containers, "create", return_value=_stub_container()
-        ):
+        seen = {}
+
+        def create(**_kwargs):
+            seen["phrase"] = (tmp_path / "phrase.txt").read_text()
+            return _stub_container()
+
+        with patch.object(manager.client.containers, "create", side_effect=create):
             assert _run(step.execute({}, {"phrase": "word word word"})) is True
 
-        written = (tmp_path / "phrase.txt").read_text()
-        assert written == "word word word\n", "a trailing newline is added for the CLI"
+        assert seen["phrase"] == "word word word\n", "a trailing newline is added"
+        assert not (tmp_path / "phrase.txt").exists(), "a phrase must not outlive it"
 
     def test_refuses_a_file_outside_the_mount(self, tmp_path):
         manager = _manager(tmp_path)
@@ -291,7 +299,7 @@ class TestNodeExecAfterTheContainerIsGone:
     def _gone(self, tmp_path, node_images=None):
         """A manager whose container lookup raises, as docker-py does for a
         removed container."""
-        manager = MagicMock()
+        manager = MagicMock(binary_path=None)
         manager.is_node_running.return_value = False
         manager.client.containers.get.side_effect = RuntimeError("No such container")
         manager.node_images = node_images if node_images is not None else {}
@@ -387,7 +395,7 @@ class TestNodeExecUsesTheRecordedDataDir:
         elsewhere = tmp_path / "somewhere-else" / "calimero-node-2"
         (elsewhere / "calimero-node-2").mkdir(parents=True)
 
-        manager = MagicMock()
+        manager = MagicMock(binary_path=None)
         manager.is_node_running.return_value = False
         manager.client.containers.get.side_effect = RuntimeError("No such container")
         manager.node_images = {"calimero-node-2": "merod:local"}
@@ -418,7 +426,7 @@ class TestNodeExecUsesTheRecordedDataDir:
         empty = tmp_path / "data" / "calimero-node-2"
         empty.mkdir(parents=True)
 
-        manager = MagicMock()
+        manager = MagicMock(binary_path=None)
         manager.is_node_running.return_value = False
         manager.client.containers.get.side_effect = RuntimeError("No such container")
         manager.node_images = {"calimero-node-2": "merod:local"}
@@ -537,3 +545,153 @@ class TestNodeExecCapture:
             results = {}
             assert _run(self._step(manager, config).execute(results, {})) is True
         assert "author_secret" not in results["exec_calimero-node-2"]
+
+
+MEROD = "/opt/merod"
+NODE = "calimero-node-2"
+
+
+class TestNodeExecBinaryMode:
+    """No container to run in, so `merod` runs as a subprocess on the node's home.
+
+    The home is the directory holding `<node>/config.toml`, in both modes, and a
+    path under /app/data names a file inside it whichever mode runs the step.
+    """
+
+    def _manager(self, running=False, config_files=None):
+        return SimpleNamespace(
+            binary_path=MEROD,
+            is_node_running=lambda _name: running,
+            node_config_files=config_files or {},
+        )
+
+    def _home(self, tmp_path):
+        home = tmp_path / "data" / NODE / NODE
+        (home / NODE).mkdir(parents=True)
+        return home
+
+    def _run(self, step, stdout="phrase words\n", returncode=0):
+        completed = subprocess.CompletedProcess([], returncode, stdout, "advisory\n")
+        dynamic_values = {}
+        with patch(
+            "merobox.commands.bootstrap.steps.node_exec.subprocess.run",
+            return_value=completed,
+        ) as run:
+            verdict = _run(step.execute({}, dynamic_values))
+        return verdict, run, dynamic_values
+
+    def _step(self, manager, **extra):
+        return NodeExecStep(
+            {
+                "type": "node_exec",
+                "name": "Export",
+                "node": NODE,
+                "args": ["account", "export"],
+                **extra,
+            },
+            manager=manager,
+        )
+
+    def test_it_runs_merod_on_the_conventional_home(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        home = str(self._home(tmp_path))
+        step = self._step(self._manager(), outputs={"phrase": "stdout_first_line"})
+        verdict, run, dynamic_values = self._run(step)
+        assert verdict is True
+        assert run.call_args.args[0] == [
+            MEROD,
+            "--home",
+            home,
+            "--node",
+            NODE,
+            "account",
+            "export",
+        ]
+        assert run.call_args.kwargs["env"]["CALIMERO_HOME"] == home
+        assert run.call_args.kwargs["timeout"] > 0
+        assert dynamic_values == {"phrase": "phrase words"}
+
+    def test_the_recorded_config_path_wins(self, tmp_path):
+        home = tmp_path / "elsewhere"
+        (home / NODE).mkdir(parents=True)
+        manager = self._manager(config_files={NODE: str(home / NODE / "config.toml")})
+        verdict, run, _ = self._run(self._step(manager))
+        assert verdict is True
+        assert run.call_args.args[0][2] == str(home)
+
+    @pytest.mark.parametrize("returncode", [0, 1])
+    def test_container_paths_name_files_in_the_home(self, tmp_path, returncode):
+        home = self._home(tmp_path)
+        step = self._step(
+            self._manager(),
+            data_dir=str(home),
+            args=["account", "revoke-proof", "--from", "/app/data/recovery.txt"],
+            files={"/app/data/recovery.txt": "legal winner"},
+        )
+        seen = {}
+
+        def run(command, **_kwargs):
+            seen["command"] = command
+            seen["phrase"] = (home / "recovery.txt").read_text()
+            seen["mode"] = stat.S_IMODE((home / "recovery.txt").stat().st_mode)
+            return subprocess.CompletedProcess(command, returncode, "proof\n", "")
+
+        with patch(
+            "merobox.commands.bootstrap.steps.node_exec.subprocess.run", side_effect=run
+        ):
+            assert _run(step.execute({}, {})) is (returncode == 0)
+        assert seen["command"][-1] == os.path.join(str(home), "recovery.txt")
+        assert seen["phrase"] == "legal winner\n"
+        assert seen["mode"] == 0o600, "a phrase is readable by its owner alone"
+        assert not (home / "recovery.txt").exists(), "a phrase must not outlive it"
+
+    def test_it_refuses_while_the_node_is_running(self, tmp_path):
+        step = self._step(
+            self._manager(running=True), data_dir=str(self._home(tmp_path))
+        )
+        verdict, run, _ = self._run(step)
+        assert verdict is False
+        run.assert_not_called()
+
+    def test_a_home_without_the_node_is_rejected(self, tmp_path):
+        step = self._step(self._manager(), data_dir=str(tmp_path))
+        verdict, run, _ = self._run(step)
+        assert verdict is False
+        run.assert_not_called()
+
+    def test_a_nonzero_exit_fails_the_step(self, tmp_path):
+        step = self._step(self._manager(), data_dir=str(self._home(tmp_path)))
+        verdict, _run_mock, _ = self._run(step, returncode=1)
+        assert verdict is False
+
+    def test_a_refusal_passes_under_expected_failure(self, tmp_path):
+        step = self._step(
+            self._manager(),
+            data_dir=str(self._home(tmp_path)),
+            expected_failure=True,
+        )
+        verdict, _run_mock, _ = self._run(step, returncode=1)
+        assert verdict is True
+
+    def test_a_path_climbing_out_of_the_home_is_refused(self, tmp_path):
+        step = self._step(
+            self._manager(),
+            data_dir=str(self._home(tmp_path)),
+            files={"/app/data/../escaped.txt": "legal winner"},
+        )
+        verdict, run, _ = self._run(step)
+        assert verdict is False
+        run.assert_not_called()
+        assert not (tmp_path / "data" / NODE / "escaped.txt").exists()
+
+    @pytest.mark.parametrize(
+        "arg, mapped",
+        [
+            ("/app/data", "HOME"),
+            ("/app/data/x.txt", "HOME/x.txt"),
+            ("/app/database", "/app/database"),
+            ("--from=/app/data/x.txt", "--from=/app/data/x.txt"),
+        ],
+    )
+    def test_only_a_whole_home_path_is_mapped(self, arg, mapped):
+        assert NodeExecStep._on_host(arg, "HOME") == mapped

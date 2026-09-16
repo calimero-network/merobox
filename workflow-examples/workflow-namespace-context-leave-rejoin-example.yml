@@ -283,10 +283,7 @@ steps:
       value: also-written-while-node2-away
     executor_public_key: "{{node1_root_key}}"
 
-  # `expected_failure` on a `call` only warns when the call succeeds anyway —
-  # `call` is deliberately lenient so workflows can use it as a soft probe. The
-  # exported error is what asserts: populated on a real failure, None when the
-  # call went through, so `is_set` is what makes a leave that did nothing red.
+  # The read must be refused, and the captured error is asserted as well.
   # `error` and not `error_message`, because `error` is seeded in every failure
   # branch while `error_message` stays None for a JSON-RPC error carrying
   # neither `message` nor `data` — a false red on a leave that worked.

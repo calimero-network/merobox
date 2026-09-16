@@ -140,10 +140,6 @@ steps:
   #   - silent disconnect no-op → node-3 still on bridge → assert fails
   #   - wrong-network disconnect → node-3 still on bridge → assert fails
   #   - correct disconnect → node-3 off bridge → assert passes
-  # An additional `call` step with `expected_failure: true` would only
-  # add a soft warning (the existing ExecuteStep prints
-  # "Expected failure but call succeeded" and still returns True on
-  # unexpected success), so it would not strengthen the gate.
 
   - name: Heal node 3
     type: connect_node

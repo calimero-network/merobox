@@ -157,6 +157,7 @@ class BinaryManager(CleanupMixin):
 
         self.processes = {}  # node_name -> subprocess.Popen
         self.node_rpc_ports: dict[str, int] = {}
+        self.node_config_files: dict[str, str] = {}
         self.pid_file_dir = Path("./data/.pids")
         self.pid_file_dir.mkdir(parents=True, exist_ok=True)
 
@@ -439,6 +440,7 @@ class BinaryManager(CleanupMixin):
 
             # The actual config file is in a nested subdirectory created by merod init
             actual_config_file = node_data_dir / node_name / "config.toml"
+            self.node_config_files[node_name] = str(actual_config_file.absolute())
 
             # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
             if e2e_mode:

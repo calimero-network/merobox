@@ -141,6 +141,8 @@ _VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 _ACCOUNT_STEP_CLASSES = {
     "account_create": "AccountCreateStep",
     "account_pair": "AccountPairStep",
+    "account_pair_init": "AccountPairInitStep",
+    "account_pair_complete": "AccountPairCompleteStep",
     "account_relink": "AccountRelinkStep",
     "account_devices": "AccountDevicesStep",
     "account_applications": "AccountApplicationsStep",

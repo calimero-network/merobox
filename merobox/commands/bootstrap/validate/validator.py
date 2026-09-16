@@ -12,6 +12,8 @@ from merobox.commands.bootstrap.steps.account import (
     AccountApplicationsStep,
     AccountCreateStep,
     AccountDevicesStep,
+    AccountPairCompleteStep,
+    AccountPairInitStep,
     AccountPairStep,
     AccountRelinkStep,
     AccountRevokeStep,
@@ -295,6 +297,10 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = AccountCreateStep
         elif step_type == "account_pair":
             step_class = AccountPairStep
+        elif step_type == "account_pair_init":
+            step_class = AccountPairInitStep
+        elif step_type == "account_pair_complete":
+            step_class = AccountPairCompleteStep
         elif step_type == "account_relink":
             step_class = AccountRelinkStep
         elif step_type == "account_devices":

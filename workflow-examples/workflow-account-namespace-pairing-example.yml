@@ -1,0 +1,88 @@
+description: >
+  Pair a device into an account's own namespace, from which it learns every
+  namespace the account takes part in, and assert the two refusals pair-complete
+  owes a tampered offer.
+name: Account Namespace Pairing Example
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: account-ns
+  base_port: 9061
+  base_rpc_port: 9161
+
+steps:
+  - name: The laptop's account root and account namespace
+    type: node_identity
+    node: account-ns-1
+    outputs:
+      root_key: accountRootPublicKey
+      account_ns: accountNamespaceId
+
+  # The refusals come first: a device the laptop has certified would be refused
+  # for that instead of for the field under test.
+  - name: The phone mints an offer
+    type: account_pair_init
+    node: account-ns-2
+    root_key: '{{root_key}}'
+    account_namespace: '{{account_ns}}'
+    outputs:
+      offer_device: deviceId
+      offer_kem: kemPublicKey
+      offer_sign: signPublicKey
+      offer_statement: statement
+      offer_code: confirmationCode
+
+  # Still 128 hex characters, so the refusal is the signature check, not the width check.
+  - name: The laptop refuses a tampered statement
+    type: account_pair_complete
+    node: account-ns-1
+    device_id: '{{offer_device}}'
+    kem_public_key: '{{offer_kem}}'
+    sign_public_key: '{{offer_sign}}'
+    statement: '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    confirmation_code: '{{offer_code}}'
+    expect_status: 400
+
+  - name: The laptop refuses a confirmation code the phone never showed
+    type: account_pair_complete
+    node: account-ns-1
+    device_id: '{{offer_device}}'
+    kem_public_key: '{{offer_kem}}'
+    sign_public_key: '{{offer_sign}}'
+    statement: '{{offer_statement}}'
+    confirmation_code: DEAD-BEEF-DEAD-BEEF
+    expect_status: 400
+
+  - name: Pair the phone into the account namespace alone
+    type: account_pair
+    node: account-ns-2
+    holder: account-ns-1
+    root_key: '{{root_key}}'
+    account_namespace: auto
+    await_self: true
+    outputs:
+      phone_device: deviceId
+      paired_ns: accountNamespace
+
+  - name: The phone speaks as a certified device of the laptop's account
+    type: assert_api_response
+    node: account-ns-2
+    path: /admin-api/identity
+    match:
+      data.accountNamespaceId: '{{account_ns}}'
+      data.deviceCertified: true
+      data.holdsAccountRoot: false
+
+  - name: The laptop bound the phone in the account namespace
+    type: account_devices
+    node: account-ns-1
+    where:
+      deviceId: '{{phone_device}}'
+    match:
+      revoked: false
+    contains:
+      namespaces:
+        - '{{paired_ns}}'
+
+stop_all_nodes: true
