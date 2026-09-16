@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 MISSING = object()
+ASSERTIONS = ("match", "not_match", "contains", "not_contains", "present", "absent")
 
 Resolve = Callable[[Any], Any]
 
@@ -63,19 +64,11 @@ def select(payload: Any, where: dict[str, Any] | None, resolve: Resolve) -> Any:
     return MISSING
 
 
-def failures(
-    payload: Any,
-    match: dict[str, Any] | None,
-    present: list[str] | None,
-    absent: list[str] | None,
-    resolve: Resolve,
-    not_match: dict[str, Any] | None = None,
-    contains: dict[str, Any] | None = None,
-) -> list[str]:
+def failures(payload: Any, config: dict[str, Any], resolve: Resolve) -> list[str]:
     """Per-path verdicts; empty means the body satisfied every assertion."""
     found = []
 
-    for path, expected in (match or {}).items():
+    for path, expected in (config.get("match") or {}).items():
         if isinstance(expected, str):
             expected = resolve(expected)
         actual = lookup(payload, path)
@@ -84,7 +77,7 @@ def failures(
         elif actual != expected:
             found.append(f"{path}: expected {expected!r}, got {actual!r}")
 
-    for path, unwanted in (not_match or {}).items():
+    for path, unwanted in (config.get("not_match") or {}).items():
         if isinstance(unwanted, str):
             unwanted = resolve(unwanted)
         actual = lookup(payload, path)
@@ -98,26 +91,22 @@ def failures(
     # Order-insensitive: a list the node builds by scan order is not a sequence
     # the scenario chose, so asserting position would fail on a reordering that
     # changed nothing.
-    for path, wanted in (contains or {}).items():
-        actual = lookup(payload, path)
-        if actual is MISSING:
-            found.append(
-                f"{path}: expected to contain {wanted!r}, but the key is absent"
-            )
-            continue
-        if not isinstance(actual, list):
-            found.append(f"{path}: expected a list to search, got {actual!r}")
-            continue
-        items = [resolve(i) if isinstance(i, str) else i for i in wanted]
-        for item in items:
-            if item not in actual:
-                found.append(f"{path}: expected to contain {item!r}, got {actual!r}")
+    for field, wanted in (("contains", True), ("not_contains", False)):
+        for path, items in (config.get(field) or {}).items():
+            actual = _searchable(payload, path, items, found)
+            if actual is None:
+                continue
+            for item in items:
+                item = resolve(item) if isinstance(item, str) else item
+                if (item in actual) != wanted:
+                    verb = "contain" if wanted else "not contain"
+                    found.append(f"{path}: expected to {verb} {item!r}, got {actual!r}")
 
-    for path in present or []:
+    for path in config.get("present") or []:
         if lookup(payload, path) is MISSING:
             found.append(f"{path}: expected the key to be present, it is absent")
 
-    for path in absent or []:
+    for path in config.get("absent") or []:
         actual = lookup(payload, path)
         if actual is not MISSING:
             found.append(
@@ -127,11 +116,33 @@ def failures(
     return found
 
 
+def _searchable(
+    payload: Any, path: str, items: Any, found: list[str]
+) -> list[Any] | None:
+    """The list at `path`, or None after recording why it cannot be searched."""
+    actual = lookup(payload, path)
+    if actual is MISSING:
+        found.append(
+            f"{path}: expected a list to search for {items!r}, but the key is absent"
+        )
+        return None
+    if not isinstance(actual, list):
+        found.append(f"{path}: expected a list to search, got {actual!r}")
+        return None
+    return actual
+
+
+def unexpected_match(selected: Any, where: dict[str, Any] | None) -> list[str]:
+    """`expect_no_match`'s verdict on what `select` returned."""
+    if selected is MISSING:
+        return []
+    return [f"expected no element matching {where!r}, found {selected!r}"]
+
+
 def count(config: dict[str, Any]) -> int:
     """How many assertions a step config carries."""
-    return sum(
-        len(config.get(field) or [])
-        for field in ("match", "not_match", "contains", "present", "absent")
+    return sum(len(config.get(field) or []) for field in ASSERTIONS) + bool(
+        config.get("expect_no_match")
     )
 
 
@@ -144,13 +155,41 @@ def validate(config: dict[str, Any], step_name: str) -> None:
         value = config.get(field)
         if value is not None and (not isinstance(value, (int, float)) or value <= 0):
             raise ValueError(f"Step '{step_name}': '{field}' must be a positive number")
-    for field in ("match", "not_match", "contains"):
+    for field in ("match", "not_match", "contains", "not_contains"):
         value = config.get(field)
         if value is not None and not isinstance(value, dict):
             raise ValueError(f"Step '{step_name}': '{field}' must be a mapping")
+    for field in ("contains", "not_contains"):
+        for path, items in (config.get(field) or {}).items():
+            if not isinstance(items, list):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' maps '{path}' to a list of entries"
+                )
+    _validate_expect_no_match(config, step_name)
     for field in ("present", "absent"):
         value = config.get(field)
         if value is not None and (
             not isinstance(value, list) or not all(isinstance(p, str) for p in value)
         ):
             raise ValueError(f"Step '{step_name}': '{field}' must be a list of strings")
+
+
+def _validate_expect_no_match(config: dict[str, Any], step_name: str) -> None:
+    """It says the `where` element is not there, so no other assertion applies."""
+    value = config.get("expect_no_match")
+    if value is None:
+        return
+    if not isinstance(value, bool):
+        raise ValueError(f"Step '{step_name}': 'expect_no_match' must be a boolean")
+    if not value:
+        return
+    if not config.get("where"):
+        raise ValueError(
+            f"Step '{step_name}': 'expect_no_match' needs 'where' to name the element"
+        )
+    combined = [field for field in ASSERTIONS if config.get(field)]
+    if combined:
+        raise ValueError(
+            f"Step '{step_name}': 'expect_no_match' asserts there is no element, so "
+            f"{', '.join(combined)} would have nothing to check"
+        )

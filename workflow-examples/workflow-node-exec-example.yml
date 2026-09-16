@@ -1,0 +1,67 @@
+description: >
+  Offline merod commands against a stopped node's home, in binary and Docker
+  mode alike: export the recovery phrase, then hand it back to a command as a
+  file under /app/data.
+name: Node Exec Example
+
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: node-exec
+  base_port: 9063
+  base_rpc_port: 9163
+
+steps:
+  - name: The node holds its account root
+    type: assert_api_response
+    node: node-exec-1
+    path: /admin-api/identity
+    match:
+      data.holdsAccountRoot: true
+
+  # The datastore's lock is exclusive, so the offline commands need the node down.
+  - name: Take the node offline
+    type: stop_node
+    nodes: node-exec-1
+
+  - name: Export the recovery phrase
+    type: node_exec
+    node: node-exec-1
+    args: [account, export]
+    outputs:
+      phrase: stdout_first_line
+
+  # The device id is arbitrary: signing a revocation offline checks no store.
+  - name: Mint a revocation from the phrase, handed over as a file
+    type: node_exec
+    node: node-exec-1
+    files:
+      /app/data/recovery.txt: '{{phrase}}'
+    args:
+      - account
+      - revoke-proof
+      - --device
+      - eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+      - --from
+      - /app/data/recovery.txt
+    outputs:
+      proof: stdout_first_line
+
+  - name: Both commands answered
+    type: assert
+    statements:
+      - 'is_set({{phrase}})'
+      - 'is_set({{proof}})'
+
+  - name: Bring the node back
+    type: start_node
+    nodes: node-exec-1
+
+  - name: The node still holds the same account root
+    type: assert_api_response
+    node: node-exec-1
+    path: /admin-api/identity
+    match:
+      data.holdsAccountRoot: true
+
+stop_all_nodes: true

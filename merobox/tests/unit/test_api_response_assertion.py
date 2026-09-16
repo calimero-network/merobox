@@ -109,6 +109,27 @@ def _execute(
         return _run(step.execute(results, dynamic or {})), get, results
 
 
+def _run_with(step, bodies):
+    """Run the step against one 200 response per body, in order."""
+    responses = []
+    for body in bodies:
+        response = MagicMock()
+        response.status_code = 200
+        response.content = json.dumps(body).encode()
+        response.text = json.dumps(body)
+        responses.append(response)
+    auth = MagicMock()
+    auth.get_cached_token.return_value = None
+    with (
+        patch("merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth),
+        patch(
+            "merobox.commands.bootstrap.steps.api_assertion.requests.get",
+            side_effect=responses,
+        ) as get,
+    ):
+        return _run(step.execute({}, {})), get
+
+
 _DEVICES = {
     "data": {
         "devices": [
@@ -209,6 +230,101 @@ class TestNotMatchAndContains:
         _step(contains={"data.applications": ["a"]})
 
 
+class TestNotContains:
+    """A list must not hold an entry: the tablet stays out of namespace C."""
+
+    def test_passes_when_no_entry_is_listed(self):
+        step = _step(where={"deviceId": "aa"}, not_contains={"namespaces": ["ns-b1"]})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is True
+
+    def test_fails_when_one_entry_is_listed(self):
+        step = _step(
+            where={"deviceId": "bb"}, not_contains={"namespaces": ["ns-c1", "ns-b1"]}
+        )
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_an_entry_resolves_placeholders(self):
+        step = _step(where={"deviceId": "bb"}, not_contains={"namespaces": ["{{ns}}"]})
+        result, _get, _results = _execute(step, _DEVICES, dynamic={"ns": "ns-b1"})
+        assert result is False
+
+    def test_fails_when_the_key_is_absent(self):
+        step = _step(where={"deviceId": "bb"}, not_contains={"nope": ["ns-b1"]})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_refuses_a_non_list(self):
+        step = _step(where={"deviceId": "bb"}, not_contains={"deviceId": ["bb"]})
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is False
+
+    def test_it_counts_as_an_assertion(self):
+        _step(not_contains={"data.applications": ["a"]})
+
+    def test_it_must_be_a_mapping(self):
+        with pytest.raises(ValueError, match="not_contains"):
+            _step(not_contains=["a"])
+
+
+@pytest.mark.parametrize("field", ["contains", "not_contains"])
+def test_a_single_value_is_refused_rather_than_searched_letter_by_letter(field):
+    with pytest.raises(ValueError, match=field):
+        _step(where={"deviceId": "bb"}, **{field: {"namespaces": "ns-b1"}})
+
+
+class TestExpectNoMatch:
+    """ "No element matches `where`" is an assertion of its own.
+
+    Without it, a row that is gone could only be asserted by pinning a list's
+    length on some other row that is still there.
+    """
+
+    def test_passes_when_nothing_matches(self):
+        step = _step(where={"deviceId": "zz"}, expect_no_match=True)
+        result, _get, _results = _execute(step, _DEVICES)
+        assert result is True
+
+    def test_fails_when_an_element_matches(self, capsys):
+        step = _step(where={"deviceId": "{{device}}"}, expect_no_match=True)
+        result, _get, _results = _execute(step, _DEVICES, dynamic={"device": "aa"})
+        assert result is False
+        assert "'aa'" in capsys.readouterr().out
+
+    def test_it_needs_where(self):
+        with pytest.raises(ValueError, match="where"):
+            _step(expect_no_match=True)
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"match": {"a": 1}},
+            {"not_match": {"a": 1}},
+            {"contains": {"a": [1]}},
+            {"not_contains": {"a": [1]}},
+            {"present": ["a"]},
+            {"absent": ["a"]},
+        ],
+    )
+    def test_it_asserts_nothing_about_a_row_it_says_is_not_there(self, extra):
+        with pytest.raises(ValueError, match="expect_no_match"):
+            _step(where={"deviceId": "zz"}, expect_no_match=True, **extra)
+
+    def test_it_must_be_a_boolean(self):
+        with pytest.raises(ValueError, match="expect_no_match"):
+            _step(where={"deviceId": "zz"}, expect_no_match="yes")
+
+    def test_it_rereads_until_the_element_is_gone(self):
+        gone = {"data": {"devices": [_DEVICES["data"]["devices"][1]]}}
+        step = _step(
+            where={"deviceId": "aa"}, expect_no_match=True, retries=3, interval=0.01
+        )
+        result, get = _run_with(step, [_DEVICES, gone])
+        assert result is True
+        assert get.call_count == 2
+
+
 class TestRetries:
     """Retry covers the states no barrier can wait on.
 
@@ -216,30 +332,6 @@ class TestRetries:
     and a paired device is a member of nothing, so `wait_for_sync` has no group
     state to read from it. Both are "ask again until it is true".
     """
-
-    def _responses(self, bodies):
-        made = []
-        for body in bodies:
-            response = MagicMock()
-            response.status_code = 200
-            response.content = json.dumps(body).encode()
-            response.text = json.dumps(body)
-            made.append(response)
-        return made
-
-    def _run_with(self, step, bodies):
-        auth = MagicMock()
-        auth.get_cached_token.return_value = None
-        with (
-            patch(
-                "merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth
-            ),
-            patch(
-                "merobox.commands.bootstrap.steps.api_assertion.requests.get",
-                side_effect=self._responses(bodies),
-            ) as get,
-        ):
-            return _run(step.execute({}, {})), get
 
     def test_passes_on_a_later_attempt(self):
         stub = {"data": {"apps": [{"id": "app-a", "size": 0}]}}
@@ -250,7 +342,7 @@ class TestRetries:
             retries=3,
             interval=0.01,
         )
-        result, get = self._run_with(step, [stub, stub, installed])
+        result, get = _run_with(step, [stub, stub, installed])
         assert result is True
         assert get.call_count == 3
 
@@ -259,7 +351,7 @@ class TestRetries:
         step = _step(
             where={"id": "app-a"}, match={"size": 782803}, retries=5, interval=0.01
         )
-        result, get = self._run_with(step, [installed, installed, installed])
+        result, get = _run_with(step, [installed, installed, installed])
         assert result is True
         assert get.call_count == 1
 
@@ -268,14 +360,14 @@ class TestRetries:
         step = _step(
             where={"id": "app-a"}, match={"size": 782803}, retries=3, interval=0.01
         )
-        result, get = self._run_with(step, [stub, stub, stub])
+        result, get = _run_with(step, [stub, stub, stub])
         assert result is False
         assert get.call_count == 3
 
     def test_a_single_attempt_is_the_default(self):
         stub = {"data": {"apps": [{"id": "app-a", "size": 0}]}}
         step = _step(where={"id": "app-a"}, match={"size": 782803})
-        result, get = self._run_with(step, [stub])
+        result, get = _run_with(step, [stub])
         assert result is False
         assert get.call_count == 1
 
