@@ -37,6 +37,7 @@ from merobox.commands.utils import console
 _CLIENT_ERROR_PREFIX = "Client error: "  # calimero-client-py wraps every failed call
 _HTTP_STATUS = re.compile(r"HTTP (\d{3})\b")  # what it puts first for a non-2xx answer
 _AUTO = "auto"  # `account_namespace: auto` reads the id off the holder's identity
+_AWAIT_SELF_BUDGET = (45, 2.0)  # reads and seconds apart, as core's scenarios wait
 
 
 class _AccountStepBase(BaseStep):
@@ -241,10 +242,12 @@ class _AccountStepBase(BaseStep):
             console.print(f"[red]    {miss}[/red]")
         return not misses
 
-    def _read_budget(self) -> tuple[int, float]:
-        """Attempts and spacing. One attempt unless the scenario asks for more."""
-        return int(self.config.get("retries") or 1), float(
-            self.config.get("interval") or 1
+    def _read_budget(
+        self, retries: int = 1, interval: float = 1.0
+    ) -> tuple[int, float]:
+        """Attempts and spacing, the given defaults unless the scenario sets them."""
+        return int(self.config.get("retries") or retries), float(
+            self.config.get("interval") or interval
         )
 
     def _finish(
@@ -357,7 +360,8 @@ class AccountPairStep(_AccountStepBase):
 
     `account_namespace` makes the device follow the account's own namespace, from
     which it learns every project namespace on its own, so `namespaces` may then
-    be empty.
+    be empty. `await_self` returns only once the new device has folded what the
+    holder wrote there.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -376,7 +380,26 @@ class AccountPairStep(_AccountStepBase):
             )
         if "applications" in self.config:
             self._require_string_lists(("applications",))
-        self._expect_status()
+        body_assert.validate(self.config, self._get_step_name())
+        expect_status = self._expect_status()
+        budget = [field for field in ("retries", "interval") if field in self.config]
+        if budget and not self.config.get("await_self"):
+            raise ValueError(
+                f"Step '{self._get_step_name()}': {', '.join(budget)} only apply "
+                "to 'await_self'"
+            )
+        if self.config.get("await_self"):
+            if "account_namespace" not in self.config:
+                raise ValueError(
+                    f"Step '{self._get_step_name()}': 'await_self' needs "
+                    "'account_namespace' - a device that does not follow it never "
+                    "reads its own pairing back"
+                )
+            if expect_status is not None:
+                raise ValueError(
+                    f"Step '{self._get_step_name()}': 'await_self' cannot wait on "
+                    "a pairing 'expect_status' says is refused"
+                )
 
     def _get_exportable_variables(self):
         return [
@@ -413,6 +436,42 @@ class AccountPairStep(_AccountStepBase):
         if not identity.get("accountNamespaceId"):
             raise RuntimeError(f"{holder} names no account namespace: {identity}")
         return identity["accountNamespaceId"]
+
+    async def _await_self(
+        self,
+        node_name: str,
+        device_id: str,
+        account_namespace: str,
+        applications: list[str],
+    ) -> bool:
+        """Poll the new node's own listing until it reads back what was certified;
+        a scope arrives only by the registry, so it proves the holder's op folded."""
+        attempts, interval = self._read_budget(*_AWAIT_SELF_BUDGET)
+        own_row = {"deviceId": device_id, "isSelf": True}
+        seen: Any = None
+        for attempt in range(attempts):
+            if attempt:
+                await asyncio.sleep(interval)
+            try:
+                seen = self._data(self._client(node_name).list_account_devices())
+            except Exception as e:  # noqa: BLE001 - the last one is reported below
+                seen = e
+                continue
+            row = body_assert.select(seen, own_row, lambda value: value)
+            if row is body_assert.MISSING:
+                continue
+            if applications:
+                if set(row.get("applications") or []) == set(applications):
+                    return True
+            elif account_namespace in (row.get("namespaces") or []):
+                return True
+        console.print(
+            f"✗ {node_name} did not read back its pairing within {attempts} "
+            f"attempt(s); last saw: {seen}",
+            style="red",
+            markup=False,
+        )
+        return False
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -510,6 +569,10 @@ class AccountPairStep(_AccountStepBase):
             f"{data.get('accountId')} as device {data.get('deviceId')} "
             f"(key delivered: {data.get('keyDelivered')})"
         )
+        if self.config.get("await_self") and not await self._await_self(
+            node_name, data["deviceId"], data["accountNamespace"], applications
+        ):
+            return False
         return self._finish(
             node_name, "paired_account", data, workflow_results, dynamic_values
         )

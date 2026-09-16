@@ -1195,6 +1195,17 @@ class AccountPairStepConfig(BaseStepConfig):
         description="Account namespace the NEW device follows, from which it "
         "learns the account's namespaces. 'auto' reads it off the holder",
     )
+    await_self: Optional[bool] = Field(
+        None,
+        description="Return only once the NEW device lists itself with the scope "
+        "the holder certified, or unscoped, bound in the account namespace",
+    )
+    retries: Optional[int] = Field(
+        None, gt=0, description="Listings await_self reads before failing (default 45)"
+    )
+    interval: Optional[float] = Field(
+        None, gt=0, description="Seconds between await_self reads (default 2)"
+    )
     root_key: str = Field(
         ..., description="Account genesis root key, from node_identity's output"
     )

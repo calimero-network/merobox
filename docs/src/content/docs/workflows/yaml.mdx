@@ -813,6 +813,15 @@ and so does this step, at load.
 | `namespaces` | one of these two | list of strings | Project namespaces to follow directly. |
 | `applications` | no | list of strings | Scope the holder certifies. Empty means every namespace the holder takes part in. |
 | `expect_status` | no | int | HTTP status the pairing must be refused with. |
+| `await_self` | no | bool | Return only once the new device has folded what the holder wrote. Needs `account_namespace`. |
+| `retries` | no | int | Listings `await_self` reads before failing (default 45). |
+| `interval` | no | number | Seconds between those reads (default 2). |
+
+`await_self` polls the new node's own `account/devices` until its own row
+(`isSelf`) carries the `applications` the holder certified.
+A scope reaches the device only through the account namespace, so reading it back
+proves the device folded the holder's last write there.
+With no `applications`, it waits for the row to list the account namespace.
 
 Outputs: `accountId`, `deviceId`, `keyDelivered`, and `accountNamespace` when one
 was named.
@@ -823,6 +832,8 @@ was named.
   holder: calimero-node-2      # holds the account root
   root_key: '{{root_key}}'
   account_namespace: auto
+  applications: ['{{app_id}}']
+  await_self: true
   outputs:
     paired_device: deviceId
     account_ns: accountNamespace
