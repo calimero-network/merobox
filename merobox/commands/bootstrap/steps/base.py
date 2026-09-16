@@ -1583,7 +1583,11 @@ class BaseStep:
         # Check if there are any placeholders in the string (embedded or complete)
         if "{{" in value and "}}" in value:
             # Handle complete placeholder strings first (e.g., "{{current_iteration}}")
-            if value.startswith("{{") and value.endswith("}}"):
+            if (
+                value.startswith("{{")
+                and value.endswith("}}")
+                and value.count("{{") == 1
+            ):
                 placeholder = value[2:-2].strip()
 
                 # First, check if this is a simple custom output variable name

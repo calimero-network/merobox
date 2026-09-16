@@ -81,12 +81,7 @@ class _AccountStepBase(BaseStep):
                 )
 
     def _resolved_list(self, key: str, dynamic_values: dict[str, Any]) -> list[str]:
-        """Resolve each entry of a list field. Absent is an empty list.
-
-        A list rather than one comma-joined string because merobox resolves ONE
-        placeholder per value, so `{{a}},{{b}}` reads as a single placeholder
-        named `a}},{{b` and passes through verbatim.
-        """
+        """Resolve each entry of a list field. Absent is an empty list."""
         return [
             str(self._resolve_dynamic_value(item, {}, dynamic_values))
             for item in self.config.get(key, [])
