@@ -25,6 +25,8 @@ from merobox.commands.bootstrap.steps.account import (
     AccountApplicationsStep,
     AccountCreateStep,
     AccountDevicesStep,
+    AccountPairCompleteStep,
+    AccountPairInitStep,
     AccountPairStep,
     AccountRelinkStep,
     AccountRevokeStep,
@@ -655,6 +657,173 @@ class TestUnresolvedPlaceholders:
         )
         with pytest.raises(UnresolvedPlaceholderError, match="devcie"):
             _run(step.execute({}, {"device": DEVICE}))
+
+
+INIT = {
+    "accountId": "aa" * 32,
+    "deviceId": DEVICE,
+    "kemPublicKey": "1a" * 32,
+    "signPublicKey": "2b" * 32,
+    "statement": "3c" * 64,
+    "confirmationCode": "0011-2233-4455-6677",
+}
+
+PAIR_INIT = {
+    "type": "account_pair_init",
+    "name": "Init",
+    "node": "calimero-node-3",
+    "root_key": "cc" * 32,
+    "namespaces": [NAMESPACE],
+}
+
+PAIR_COMPLETE = {
+    "type": "account_pair_complete",
+    "name": "Complete",
+    "node": "calimero-node-2",
+    "device_id": INIT["deviceId"],
+    "kem_public_key": INIT["kemPublicKey"],
+    "sign_public_key": INIT["signPublicKey"],
+    "statement": INIT["statement"],
+    "confirmation_code": INIT["confirmationCode"],
+}
+
+
+class TestAccountPairInitStep:
+    """The new device's half, so a scenario can hand the holder a doctored offer."""
+
+    @pytest.mark.parametrize("field", ["node", "root_key"])
+    def test_missing_required_field_raises(self, field):
+        config = {**PAIR_INIT}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            AccountPairInitStep(config)
+
+    def test_it_needs_a_namespace_or_the_account_namespace(self):
+        config = {**PAIR_INIT}
+        del config["namespaces"]
+        with pytest.raises(ValueError, match="account_namespace"):
+            AccountPairInitStep(config)
+
+    def test_auto_is_refused_since_the_step_names_no_holder(self):
+        with pytest.raises(ValueError, match="auto"):
+            AccountPairInitStep({**PAIR_INIT, "account_namespace": "auto"})
+
+    def test_it_mints_on_the_node_and_exports_the_offer(self):
+        client = MagicMock()
+        client.pair_device_init.return_value = _envelope(INIT)
+        outputs = {
+            "device": "deviceId",
+            "kem": "kemPublicKey",
+            "sign": "signPublicKey",
+            "statement": "statement",
+            "code": "confirmationCode",
+        }
+        step = _step(
+            AccountPairInitStep,
+            {**PAIR_INIT, "account_namespace": ACCOUNT_NS, "outputs": outputs},
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        client.pair_device_init.assert_called_once_with(
+            "cc" * 32, [NAMESPACE], account_namespace=ACCOUNT_NS
+        )
+        assert dynamic_values == {
+            "device": DEVICE,
+            "kem": INIT["kemPublicKey"],
+            "sign": INIT["signPublicKey"],
+            "statement": INIT["statement"],
+            "code": INIT["confirmationCode"],
+        }
+
+    def test_an_incomplete_offer_fails_the_step(self):
+        client = MagicMock()
+        client.pair_device_init.return_value = _envelope(
+            {k: v for k, v in INIT.items() if k != "statement"}
+        )
+        step = _step(AccountPairInitStep, PAIR_INIT, client)
+        assert _run(step.execute({}, {})) is False
+
+
+class TestAccountPairCompleteStep:
+    """The holder's half, taking the offer field by field."""
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "node",
+            "device_id",
+            "kem_public_key",
+            "sign_public_key",
+            "statement",
+            "confirmation_code",
+        ],
+    )
+    def test_missing_required_field_raises(self, field):
+        config = {**PAIR_COMPLETE}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            AccountPairCompleteStep(config)
+
+    def _client(self, **complete):
+        client = MagicMock()
+        client.pair_device_complete.return_value = _envelope(
+            {
+                "accountId": INIT["accountId"],
+                "deviceId": INIT["deviceId"],
+                "keyDelivered": True,
+                "confirmationCode": INIT["confirmationCode"],
+                **complete,
+            }
+        )
+        return client
+
+    def test_it_certifies_the_offer_it_was_given(self):
+        client = self._client()
+        step = _step(
+            AccountPairCompleteStep,
+            {
+                **PAIR_COMPLETE,
+                "applications": [APP_ONE],
+                "outputs": {"delivered": "keyDelivered"},
+            },
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        client.pair_device_complete.assert_called_once_with(
+            INIT["deviceId"],
+            INIT["kemPublicKey"],
+            INIT["signPublicKey"],
+            INIT["statement"],
+            INIT["confirmationCode"],
+            [APP_ONE],
+        )
+        assert dynamic_values == {"delivered": True}
+
+    def test_placeholders_resolve(self):
+        client = self._client()
+        config = {**PAIR_COMPLETE, "statement": "{{statement}}"}
+        step = _step(AccountPairCompleteStep, config, client)
+        assert _run(step.execute({}, {"statement": INIT["statement"]})) is True
+        assert client.pair_device_complete.call_args.args[3] == INIT["statement"]
+
+    @pytest.mark.parametrize(
+        "echo", [{"confirmationCode": "ff" * 8}, {"deviceId": "99" * 32}]
+    )
+    def test_certifying_something_else_fails_the_step(self, echo):
+        step = _step(AccountPairCompleteStep, PAIR_COMPLETE, self._client(**echo))
+        assert _run(step.execute({}, {})) is False
+
+    def test_a_doctored_offer_is_asserted_by_its_status(self):
+        client = MagicMock()
+        client.pair_device_complete.side_effect = _client_error(400, "bad statement")
+        step = _step(
+            AccountPairCompleteStep,
+            {**PAIR_COMPLETE, "statement": "00" * 64, "expect_status": 400},
+            client,
+        )
+        assert _run(step.execute({}, {})) is True
 
 
 class TestAccountPairAwaitSelf:
@@ -1503,6 +1672,13 @@ class TestExpectStatus:
             RELINK,
             "relink_device",
             {"applications": [APP_ONE], "outcomes": []},
+        ),
+        (AccountPairInitStep, PAIR_INIT, "pair_device_init", INIT),
+        (
+            AccountPairCompleteStep,
+            PAIR_COMPLETE,
+            "pair_device_complete",
+            {"deviceId": DEVICE, "confirmationCode": INIT["confirmationCode"]},
         ),
     ]
 

@@ -56,6 +56,8 @@ VALID_STEP_TYPES = frozenset(
         "list_namespaces",
         "account_create",
         "account_pair",
+        "account_pair_init",
+        "account_pair_complete",
         "account_relink",
         "account_devices",
         "account_applications",
@@ -1217,6 +1219,47 @@ class AccountPairStepConfig(BaseStepConfig):
     expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
+class AccountPairInitStepConfig(BaseStepConfig):
+    """Configuration for account_pair_init step."""
+
+    type: Literal["account_pair_init"] = "account_pair_init"
+    node: str = Field(..., description="The NEW device's node")
+    root_key: str = Field(
+        ..., description="Account genesis root key, from node_identity's output"
+    )
+    namespaces: list[str] = Field(
+        default_factory=list,
+        description="Namespaces the NEW device listens on. May be empty when "
+        "account_namespace is set",
+    )
+    account_namespace: Optional[str] = Field(
+        None, description="Account namespace id the NEW device follows"
+    )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
+
+
+class AccountPairCompleteStepConfig(BaseStepConfig):
+    """Configuration for account_pair_complete step."""
+
+    type: Literal["account_pair_complete"] = "account_pair_complete"
+    node: str = Field(..., description="Node that holds the account root")
+    device_id: str = Field(..., description="deviceId from account_pair_init")
+    kem_public_key: str = Field(..., description="kemPublicKey from account_pair_init")
+    sign_public_key: str = Field(
+        ..., description="signPublicKey from account_pair_init"
+    )
+    statement: str = Field(..., description="statement from account_pair_init")
+    confirmation_code: str = Field(
+        ..., description="confirmationCode from account_pair_init"
+    )
+    applications: list[str] = Field(
+        default_factory=list,
+        description="Applications the holder scopes the link to. Empty means "
+        "every namespace this holder takes part in",
+    )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
+
+
 class AccountRelinkStepConfig(BaseStepConfig):
     """Configuration for account_relink step."""
 
@@ -1974,6 +2017,8 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "list_namespaces": ListNamespacesStepConfig,
     "account_create": AccountCreateStepConfig,
     "account_pair": AccountPairStepConfig,
+    "account_pair_init": AccountPairInitStepConfig,
+    "account_pair_complete": AccountPairCompleteStepConfig,
     "account_relink": AccountRelinkStepConfig,
     "account_devices": AccountDevicesStepConfig,
     "account_applications": AccountApplicationsStepConfig,
