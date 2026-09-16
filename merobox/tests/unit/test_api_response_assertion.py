@@ -109,6 +109,27 @@ def _execute(
         return _run(step.execute(results, dynamic or {})), get, results
 
 
+def _run_with(step, bodies):
+    """Run the step against one 200 response per body, in order."""
+    responses = []
+    for body in bodies:
+        response = MagicMock()
+        response.status_code = 200
+        response.content = json.dumps(body).encode()
+        response.text = json.dumps(body)
+        responses.append(response)
+    auth = MagicMock()
+    auth.get_cached_token.return_value = None
+    with (
+        patch("merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth),
+        patch(
+            "merobox.commands.bootstrap.steps.api_assertion.requests.get",
+            side_effect=responses,
+        ) as get,
+    ):
+        return _run(step.execute({}, {})), get
+
+
 _DEVICES = {
     "data": {
         "devices": [
@@ -247,6 +268,12 @@ class TestNotContains:
             _step(not_contains=["a"])
 
 
+@pytest.mark.parametrize("field", ["contains", "not_contains"])
+def test_a_single_value_is_refused_rather_than_searched_letter_by_letter(field):
+    with pytest.raises(ValueError, match=field):
+        _step(where={"deviceId": "bb"}, **{field: {"namespaces": "ns-b1"}})
+
+
 class TestExpectNoMatch:
     """ "No element matches `where`" is an assertion of its own.
 
@@ -293,7 +320,7 @@ class TestExpectNoMatch:
         step = _step(
             where={"deviceId": "aa"}, expect_no_match=True, retries=3, interval=0.01
         )
-        result, get = TestRetries()._run_with(step, [_DEVICES, gone])
+        result, get = _run_with(step, [_DEVICES, gone])
         assert result is True
         assert get.call_count == 2
 
@@ -306,30 +333,6 @@ class TestRetries:
     state to read from it. Both are "ask again until it is true".
     """
 
-    def _responses(self, bodies):
-        made = []
-        for body in bodies:
-            response = MagicMock()
-            response.status_code = 200
-            response.content = json.dumps(body).encode()
-            response.text = json.dumps(body)
-            made.append(response)
-        return made
-
-    def _run_with(self, step, bodies):
-        auth = MagicMock()
-        auth.get_cached_token.return_value = None
-        with (
-            patch(
-                "merobox.commands.bootstrap.steps.base.AuthManager", return_value=auth
-            ),
-            patch(
-                "merobox.commands.bootstrap.steps.api_assertion.requests.get",
-                side_effect=self._responses(bodies),
-            ) as get,
-        ):
-            return _run(step.execute({}, {})), get
-
     def test_passes_on_a_later_attempt(self):
         stub = {"data": {"apps": [{"id": "app-a", "size": 0}]}}
         installed = {"data": {"apps": [{"id": "app-a", "size": 782803}]}}
@@ -339,7 +342,7 @@ class TestRetries:
             retries=3,
             interval=0.01,
         )
-        result, get = self._run_with(step, [stub, stub, installed])
+        result, get = _run_with(step, [stub, stub, installed])
         assert result is True
         assert get.call_count == 3
 
@@ -348,7 +351,7 @@ class TestRetries:
         step = _step(
             where={"id": "app-a"}, match={"size": 782803}, retries=5, interval=0.01
         )
-        result, get = self._run_with(step, [installed, installed, installed])
+        result, get = _run_with(step, [installed, installed, installed])
         assert result is True
         assert get.call_count == 1
 
@@ -357,14 +360,14 @@ class TestRetries:
         step = _step(
             where={"id": "app-a"}, match={"size": 782803}, retries=3, interval=0.01
         )
-        result, get = self._run_with(step, [stub, stub, stub])
+        result, get = _run_with(step, [stub, stub, stub])
         assert result is False
         assert get.call_count == 3
 
     def test_a_single_attempt_is_the_default(self):
         stub = {"data": {"apps": [{"id": "app-a", "size": 0}]}}
         step = _step(where={"id": "app-a"}, match={"size": 782803})
-        result, get = self._run_with(step, [stub])
+        result, get = _run_with(step, [stub])
         assert result is False
         assert get.call_count == 1
 

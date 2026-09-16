@@ -558,12 +558,12 @@ class BodyAssertStepConfig(BaseStepConfig):
     not_match: Optional[dict[str, Any]] = Field(
         None, description="Dotted paths that must NOT hold these values"
     )
-    contains: Optional[dict[str, Any]] = Field(
+    contains: Optional[dict[str, list[Any]]] = Field(
         None,
         description="Dotted paths to lists that must contain these entries, "
         "order-insensitive",
     )
-    not_contains: Optional[dict[str, Any]] = Field(
+    not_contains: Optional[dict[str, list[Any]]] = Field(
         None,
         description="Dotted paths to lists that must hold none of these entries",
     )

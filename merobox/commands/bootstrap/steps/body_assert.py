@@ -170,6 +170,12 @@ def validate(config: dict[str, Any], step_name: str) -> None:
         value = config.get(field)
         if value is not None and not isinstance(value, dict):
             raise ValueError(f"Step '{step_name}': '{field}' must be a mapping")
+    for field in ("contains", "not_contains"):
+        for path, items in (config.get(field) or {}).items():
+            if not isinstance(items, list):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' maps '{path}' to a list of entries"
+                )
     _validate_expect_no_match(config, step_name)
     for field in ("present", "absent"):
         value = config.get(field)
