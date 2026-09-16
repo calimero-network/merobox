@@ -96,12 +96,7 @@ class _AccountStepBase(BaseStep):
                 )
 
     def _resolved_list(self, key: str, dynamic_values: dict[str, Any]) -> list[str]:
-        """Resolve each entry of a list field. Absent is an empty list.
-
-        A list rather than one comma-joined string because merobox resolves ONE
-        placeholder per value, so `{{a}},{{b}}` reads as a single placeholder
-        named `a}},{{b` and passes through verbatim.
-        """
+        """Resolve each entry of a list field. Absent is an empty list."""
         return [
             str(self._resolve_dynamic_value(item, {}, dynamic_values))
             for item in self.config.get(key, [])
@@ -242,22 +237,18 @@ class _AccountStepBase(BaseStep):
         resolve = lambda value: self._resolve_dynamic_value(  # noqa: E731
             value, workflow_results, dynamic_values
         )
-        selected = body_assert.select(data, self.config.get("where"), resolve)
-        if selected is body_assert.MISSING:
+        where = self.config.get("where")
+        selected = body_assert.select(data, where, resolve)
+        if self.config.get("expect_no_match"):
+            misses = body_assert.unexpected_match(selected, where)
+        elif selected is body_assert.MISSING:
             console.print(
                 f"[red]✗ {node_name}: no element matching "
-                f"{self.config.get('where')!r} in {json.dumps(data, sort_keys=True)}[/red]"
+                f"{where!r} in {json.dumps(data, sort_keys=True)}[/red]"
             )
             return False
-        misses = body_assert.failures(
-            selected,
-            self.config.get("match"),
-            self.config.get("present"),
-            self.config.get("absent"),
-            resolve,
-            self.config.get("not_match"),
-            self.config.get("contains"),
-        )
+        else:
+            misses = body_assert.failures(selected, self.config, resolve)
         for miss in misses:
             console.print(f"[red]    {miss}[/red]")
         return not misses

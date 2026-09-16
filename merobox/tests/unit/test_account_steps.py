@@ -216,6 +216,28 @@ class TestListingAssertions:
         step = self._step_with(client, where={"deviceId": "zz" * 32}, match={})
         assert _run(step.execute({}, {})) is False
 
+    def test_not_contains_fails_on_a_listed_namespace(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(
+            client, where={"deviceId": DEVICE}, not_contains={"namespaces": ["ns-a1"]}
+        )
+        assert _run(step.execute({}, {})) is False
+
+    def test_expect_no_match_passes_when_the_row_is_gone(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(
+            client, where={"deviceId": "zz" * 32}, expect_no_match=True
+        )
+        assert _run(step.execute({}, {})) is True
+
+    def test_expect_no_match_fails_while_the_row_is_listed(self):
+        client = MagicMock()
+        client.list_account_devices.return_value = self._devices()
+        step = self._step_with(client, where={"deviceId": DEVICE}, expect_no_match=True)
+        assert _run(step.execute({}, {})) is False
+
     def test_without_assertions_it_is_still_a_plain_read(self):
         client = MagicMock()
         client.list_account_devices.return_value = self._devices()

@@ -546,48 +546,59 @@ class WebSocketEventAssertStepConfig(BaseStepConfig):
     )
 
 
-class AssertApiResponseStepConfig(BaseStepConfig):
-    """Configuration for assert_api_response step (raw admin-API assertion)."""
+class BodyAssertStepConfig(BaseStepConfig):
+    """Assertions on a response body, shared by the steps that read one."""
 
-    type: Literal["assert_api_response"] = "assert_api_response"
-    node: str = Field(..., description="Node whose admin API is queried")
-    path: str = Field(..., description="Admin-API path, e.g. /admin-api/health")
-    match: Optional[dict[str, Any]] = Field(
+    where: Optional[dict[str, Any]] = Field(
         None,
-        description="Dotted paths into the response body mapped to expected values",
+        description="Field equalities picking ONE element out of a list in the "
+        "body, so a row is asserted by identity rather than by position",
+    )
+    match: Optional[dict[str, Any]] = Field(
+        None, description="Dotted paths mapped to expected values"
     )
     not_match: Optional[dict[str, Any]] = Field(
         None, description="Dotted paths that must NOT hold these values"
     )
-    contains: Optional[dict[str, Any]] = Field(
+    contains: Optional[dict[str, list[Any]]] = Field(
         None,
         description="Dotted paths to lists that must contain these entries, "
         "order-insensitive",
+    )
+    not_contains: Optional[dict[str, list[Any]]] = Field(
+        None,
+        description="Dotted paths to lists that must hold none of these entries",
     )
     present: Optional[list[str]] = Field(
         None, description="Dotted paths that must exist, whatever their value"
     )
     absent: Optional[list[str]] = Field(
-        None, description="Dotted paths that must not exist in the body"
+        None, description="Dotted paths that must not exist"
     )
-    token: Optional[str] = Field(
-        None, description="Explicit JWT to attach (overrides the cached token)"
-    )
-    where: Optional[dict[str, Any]] = Field(
+    expect_no_match: Optional[bool] = Field(
         None,
-        description="Field equalities picking ONE element out of a list in the "
-        "body, so a device or application is asserted by identity rather than "
-        "by position",
+        description="Assert that no element matches 'where'. Takes no other "
+        "assertion, since there is no element to apply one to",
     )
     retries: Optional[int] = Field(
         None,
         gt=0,
-        description="Re-issue the request until the assertions pass. For states "
-        "no barrier can wait on: an install writes no DAG state, and a paired "
-        "device is a member of nothing so wait_for_sync cannot read it",
+        description="Re-read until the assertions pass, for a state no barrier "
+        "can wait on",
     )
     interval: Optional[float] = Field(
-        None, gt=0, description="Seconds between retries (default 1)"
+        None, gt=0, description="Seconds between reads (default 1)"
+    )
+
+
+class AssertApiResponseStepConfig(BodyAssertStepConfig):
+    """Configuration for assert_api_response step (raw admin-API assertion)."""
+
+    type: Literal["assert_api_response"] = "assert_api_response"
+    node: str = Field(..., description="Node whose admin API is queried")
+    path: str = Field(..., description="Admin-API path, e.g. /admin-api/health")
+    token: Optional[str] = Field(
+        None, description="Explicit JWT to attach (overrides the cached token)"
     )
 
 
@@ -1260,62 +1271,18 @@ class AccountRelinkStepConfig(BaseStepConfig):
     expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
 
-class AccountDevicesStepConfig(BaseStepConfig):
+class AccountDevicesStepConfig(BodyAssertStepConfig):
     """Configuration for account_devices step."""
 
     type: Literal["account_devices"] = "account_devices"
     node: str = Field(..., description="Node whose account is listed")
-    where: Optional[dict[str, Any]] = Field(
-        None, description="Field equalities picking ONE row out of the listing"
-    )
-    match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths into that row mapped to expected values"
-    )
-    not_match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths that must NOT hold these values"
-    )
-    contains: Optional[dict[str, Any]] = Field(
-        None,
-        description="Dotted paths to lists that must contain these entries, "
-        "order-insensitive",
-    )
-    retries: Optional[int] = Field(
-        None,
-        gt=0,
-        description="Re-read until the assertions pass, for a node no barrier can wait on",
-    )
-    interval: Optional[float] = Field(
-        None, gt=0, description="Seconds between reads (default 1)"
-    )
 
 
-class AccountApplicationsStepConfig(BaseStepConfig):
+class AccountApplicationsStepConfig(BodyAssertStepConfig):
     """Configuration for account_applications step."""
 
     type: Literal["account_applications"] = "account_applications"
     node: str = Field(..., description="Node whose account is listed")
-    where: Optional[dict[str, Any]] = Field(
-        None, description="Field equalities picking ONE row out of the listing"
-    )
-    match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths into that row mapped to expected values"
-    )
-    not_match: Optional[dict[str, Any]] = Field(
-        None, description="Dotted paths that must NOT hold these values"
-    )
-    contains: Optional[dict[str, Any]] = Field(
-        None,
-        description="Dotted paths to lists that must contain these entries, "
-        "order-insensitive",
-    )
-    retries: Optional[int] = Field(
-        None,
-        gt=0,
-        description="Re-read until the assertions pass, for a node no barrier can wait on",
-    )
-    interval: Optional[float] = Field(
-        None, gt=0, description="Seconds between reads (default 1)"
-    )
 
 
 class AccountRevokeStepConfig(BaseStepConfig):
