@@ -847,6 +847,21 @@ class NodeIdentityStep(_AccountStepBase):
                 "The device's X25519 key, the third input `merod account sign-cert` "
                 "needs alongside the device id and the signing key",
             ),
+            (
+                "accountNamespaceId",
+                "identity_account_namespace_{node_name}",
+                "The account's own namespace - what account_pair's account_namespace takes",
+            ),
+            (
+                "holdsAccountRoot",
+                "identity_holds_account_root_{node_name}",
+                "Whether this node can certify another device into the account",
+            ),
+            (
+                "deviceCertified",
+                "identity_device_certified_{node_name}",
+                "Whether pair-complete has certified this node's device",
+            ),
         ]
 
     async def execute(

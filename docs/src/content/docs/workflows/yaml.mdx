@@ -470,7 +470,7 @@ Read-only lookups. Each takes `node` plus the id shown.
 | Step | Extra fields | Reads |
 | --- | --- | --- |
 | `list_namespaces` | — | Namespaces on the node. |
-| `node_identity` | — | Who this node is: `accountId`, `deviceId`, `publicKey`, `accountRootPublicKey`. Takes no namespace — none of it varies by one. |
+| `node_identity` | — | Who this node is: `accountId`, `deviceId`, `publicKey`, `accountRootPublicKey`, `deviceAgreementKey`, `accountNamespaceId`, `holdsAccountRoot`, `deviceCertified`. Takes no namespace — none of it varies by one. |
 | `list_namespace_groups` | `namespace_id` | Subgroups of a namespace. |
 | `list_subgroups` | `group_id` | Subgroups of a group. |
 | `get_group_info` | `group_id` | Full group record. |

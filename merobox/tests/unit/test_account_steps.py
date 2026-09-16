@@ -908,6 +908,38 @@ class TestOutputsAreActuallyExported:
         assert dynamic_values["dev"] == "cc" * 32
         assert dynamic_values["root"] == "bb" * 32
 
+    def test_node_identity_exports_the_account_namespace_fields(self):
+        client = MagicMock()
+        client.get_node_identity.return_value = _envelope(
+            {
+                "accountId": "aa" * 32,
+                "accountNamespaceId": ACCOUNT_NS,
+                "holdsAccountRoot": True,
+                "deviceCertified": False,
+            }
+        )
+        step = _step(
+            NodeIdentityStep,
+            {
+                "type": "node_identity",
+                "name": "Who am I",
+                "node": "calimero-node-1",
+                "outputs": {
+                    "account_ns": "accountNamespaceId",
+                    "holds_root": "holdsAccountRoot",
+                    "certified": "deviceCertified",
+                },
+            },
+            client,
+        )
+        dynamic_values = {}
+        assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values == {
+            "account_ns": ACCOUNT_NS,
+            "holds_root": True,
+            "certified": False,
+        }
+
 
 # =============================================================================
 # SignWarrantStep
