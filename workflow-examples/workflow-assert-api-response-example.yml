@@ -49,3 +49,39 @@ steps:
     namespace_id: '{{namespace_id}}'
     outputs:
       typed_total: total
+
+  - name: The node's account namespace
+    type: node_identity
+    node: calimero-node-1
+    outputs:
+      account_ns: accountNamespaceId
+
+  # The node that created the namespace is bound in it, and in nothing it never joined.
+  - name: The node's own device is bound in the namespace it created
+    type: account_devices
+    node: calimero-node-1
+    where:
+      isSelf: true
+    contains:
+      namespaces:
+        - '{{namespace_id}}'
+    not_contains:
+      namespaces:
+        - '0000000000000000000000000000000000000000000000000000000000000000'
+
+  - name: The namespace is listed as a project
+    type: assert_api_response
+    node: calimero-node-1
+    path: /admin-api/namespaces
+    where:
+      namespaceId: '{{namespace_id}}'
+    present:
+      - namespaceId
+
+  - name: The account namespace is not
+    type: assert_api_response
+    node: calimero-node-1
+    path: /admin-api/namespaces
+    where:
+      namespaceId: '{{account_ns}}'
+    expect_no_match: true

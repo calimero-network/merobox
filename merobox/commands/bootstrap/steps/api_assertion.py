@@ -54,20 +54,7 @@ class AssertApiResponseStep(BaseStep):
         self._validate_string_field("node")
         self._validate_string_field("path")
         self._validate_string_field("token", required=False)
-        self._validate_dict_field("match", required=False)
-        self._validate_list_field("present", required=False, element_type=str)
-        self._validate_list_field("absent", required=False, element_type=str)
-        self._validate_dict_field("where", required=False)
-        self._validate_dict_field("not_match", required=False)
-        self._validate_dict_field("contains", required=False)
-        for field in ("retries", "interval"):
-            value = self.config.get(field)
-            if value is not None and (
-                not isinstance(value, (int, float)) or value <= 0
-            ):
-                raise ValueError(
-                    f"Step '{self._get_step_name()}': '{field}' must be a positive number"
-                )
+        body_assert.validate(self.config, self._get_step_name())
         for field in ("match", "present", "absent"):
             for path in self.config.get(field) or []:
                 if not isinstance(path, str) or not path.strip():
@@ -78,8 +65,9 @@ class AssertApiResponseStep(BaseStep):
         # Without an assertion the step would pass unconditionally.
         if not self._assertion_count() and not self._is_expected_failure():
             raise ValueError(
-                f"Step '{self._get_step_name()}': needs at least one of 'match', "
-                f"'present' or 'absent' - without one it asserts nothing"
+                f"Step '{self._get_step_name()}': needs at least one of "
+                f"{', '.join(body_assert.ASSERTIONS)} or 'expect_no_match' - "
+                f"without one it asserts nothing"
             )
 
     def _assertion_count(self) -> int:
@@ -177,7 +165,9 @@ class AssertApiResponseStep(BaseStep):
         workflow_results[f"api_response_{node_name}"] = payload
 
         selected = self._select(payload, workflow_results, dynamic_values)
-        if selected is _MISSING:
+        if self.config.get("expect_no_match"):
+            failures = body_assert.unexpected_match(selected, self.config.get("where"))
+        elif selected is _MISSING:
             if not quiet:
                 console.print(
                     f"✗ assert_api_response on {node_name}: GET {path} returned no "
@@ -191,9 +181,11 @@ class AssertApiResponseStep(BaseStep):
                     markup=False,
                 )
             return False
-        payload = selected
-
-        failures = self._assertion_failures(payload, workflow_results, dynamic_values)
+        else:
+            payload = selected
+            failures = self._assertion_failures(
+                payload, workflow_results, dynamic_values
+            )
         if failures:
             if quiet:
                 return False
@@ -241,10 +233,6 @@ class AssertApiResponseStep(BaseStep):
     ) -> list[str]:
         return body_assert.failures(
             payload,
-            self.config.get("match"),
-            self.config.get("present"),
-            self.config.get("absent"),
+            self.config,
             lambda v: self._resolve_dynamic_value(v, workflow_results, dynamic_values),
-            self.config.get("not_match"),
-            self.config.get("contains"),
         )
