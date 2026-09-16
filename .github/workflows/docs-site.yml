@@ -15,9 +15,11 @@ permissions:
   pages: write
   id-token: write
 
+# Serialize Pages deploys but never kill one mid-flight; a mid-deploy
+# cancellation shows up as a failure on the master commit that triggered it.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-deploy:

@@ -12,9 +12,11 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on PRs only; a push to master gets its own group so
+# runs never cancel each other and show up as failures on master commits.
 concurrency:
-  group: docs-ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: docs-ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
