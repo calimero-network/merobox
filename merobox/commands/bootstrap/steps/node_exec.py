@@ -29,6 +29,7 @@ import contextlib
 import os
 import re
 import subprocess
+from functools import partial
 from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps._docker_utils import is_binary_mode
@@ -378,18 +379,13 @@ class NodeExecStep(BaseStep):
 
             if binary:
                 home = self._home(node_name, os.path.join("data", node_name, node_name))
+                run = partial(self._run_binary, node_name, home)
             else:
                 image, home = self._container_spec(node_name)
+                run = partial(self._run_container, node_name, image, home)
             written = self._write_files(files, home)
             try:
-                if binary:
-                    exit_code, stdout, stderr = await asyncio.to_thread(
-                        self._run_binary, node_name, home, args
-                    )
-                else:
-                    exit_code, stdout, stderr = await asyncio.to_thread(
-                        self._run_container, node_name, image, home, args
-                    )
+                exit_code, stdout, stderr = await asyncio.to_thread(run, args)
             finally:
                 # An input is often a recovery phrase, which must not outlive the command.
                 for path in written:
