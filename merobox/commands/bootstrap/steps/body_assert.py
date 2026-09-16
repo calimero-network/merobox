@@ -91,23 +91,16 @@ def failures(payload: Any, config: dict[str, Any], resolve: Resolve) -> list[str
     # Order-insensitive: a list the node builds by scan order is not a sequence
     # the scenario chose, so asserting position would fail on a reordering that
     # changed nothing.
-    for path, wanted in (config.get("contains") or {}).items():
-        actual = _searchable(payload, path, wanted, found)
-        if actual is None:
-            continue
-        for item in _resolved_items(wanted, resolve):
-            if item not in actual:
-                found.append(f"{path}: expected to contain {item!r}, got {actual!r}")
-
-    for path, unwanted in (config.get("not_contains") or {}).items():
-        actual = _searchable(payload, path, unwanted, found)
-        if actual is None:
-            continue
-        for item in _resolved_items(unwanted, resolve):
-            if item in actual:
-                found.append(
-                    f"{path}: expected not to contain {item!r}, got {actual!r}"
-                )
+    for field, wanted in (("contains", True), ("not_contains", False)):
+        for path, items in (config.get(field) or {}).items():
+            actual = _searchable(payload, path, items, found)
+            if actual is None:
+                continue
+            for item in items:
+                item = resolve(item) if isinstance(item, str) else item
+                if (item in actual) != wanted:
+                    verb = "contain" if wanted else "not contain"
+                    found.append(f"{path}: expected to {verb} {item!r}, got {actual!r}")
 
     for path in config.get("present") or []:
         if lookup(payload, path) is MISSING:
@@ -137,10 +130,6 @@ def _searchable(
         found.append(f"{path}: expected a list to search, got {actual!r}")
         return None
     return actual
-
-
-def _resolved_items(items: list[Any], resolve: Resolve) -> list[Any]:
-    return [resolve(i) if isinstance(i, str) else i for i in items]
 
 
 def unexpected_match(selected: Any, where: dict[str, Any] | None) -> list[str]:
