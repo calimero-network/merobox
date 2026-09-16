@@ -1138,14 +1138,14 @@ class NodeExecStepConfig(BaseStepConfig):
     """Configuration for node_exec step."""
 
     type: Literal["node_exec"] = "node_exec"
-    node: str = Field(..., description="Node whose data directory to run against")
+    node: str = Field(..., description="Stopped node whose home to run against")
     args: list[str] = Field(
         ..., description="merod subcommand and flags, e.g. ['account', 'export']"
     )
     files: Optional[dict[str, str]] = Field(
         None,
-        description="Files to write under /app/data before running, "
-        "as container path -> contents",
+        description="Files to write into the node's home before running, as "
+        "/app/data/... path -> contents. Such a path in args names the same file",
     )
     capture: Optional[dict[str, str]] = Field(
         None,
@@ -1166,13 +1166,14 @@ class NodeExecStepConfig(BaseStepConfig):
     )
     image: Optional[str] = Field(
         None,
-        description="Image to run. Defaults to the one merobox started the node "
-        "from; needed only when the container is gone and merobox has no record",
+        description="Docker only: image to run. Defaults to the one merobox started "
+        "the node from; needed only when the container is gone and merobox has no "
+        "record",
     )
     data_dir: Optional[str] = Field(
         None,
-        description="Host path holding the node's home. Defaults to the container's "
-        "bind mount, else merobox's ./data/<node> convention",
+        description="Host directory holding <node>/config.toml. Defaults to where "
+        "merobox started the node, else its ./data convention for the mode",
     )
 
 

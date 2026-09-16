@@ -268,3 +268,23 @@ def test_binary_stop_node_explicit_timeout_wins():
     manager.stop_node("node1", stop_timeout=42)
 
     mock_process.wait.assert_called_once_with(timeout=42)
+
+
+def test_run_node_records_where_the_node_config_lives(tmp_path, monkeypatch):
+    """node_exec reads a binary node's home off this record, as it does for Docker."""
+    monkeypatch.chdir(tmp_path)
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+    data_dir = tmp_path / "custom"
+    with (
+        patch("merobox.commands.binary_manager.subprocess.run"),
+        patch("merobox.commands.binary_manager.subprocess.Popen") as popen,
+        patch("merobox.commands.binary_manager.time.sleep"),
+        patch.object(manager, "_is_process_running", return_value=True),
+    ):
+        popen.return_value.pid = 4242
+        assert manager.run_node("n1", data_dir=str(data_dir)) is True
+    assert manager.node_config_files == {
+        "n1": str((data_dir / "n1" / "n1" / "config.toml").absolute())
+    }

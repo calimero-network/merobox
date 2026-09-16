@@ -1,5 +1,5 @@
 """
-Run an offline `merod` subcommand against a stopped node's data directory.
+Run an offline `merod` subcommand against a stopped node's home.
 
 Some node operations are CLI-only and deliberately cannot run against a live
 node: `merod account export|import` opens the datastore directly, and RocksDB
@@ -8,9 +8,10 @@ approaches — `docker exec` needs a *running* container, and the admin API does
 not expose the recovery key (serving it over HTTP would be the wrong shape for a
 secret whose whole point is to live offline).
 
-What does work: the node's data directory is a host bind mount, and the image's
-entrypoint is `merod` itself. So a one-shot container over the same directory can
-run any subcommand while the node is down.
+What does work: the node's home is a host directory. A binary-mode node's is
+handed straight to the `merod` binary; a Docker node's is bind-mounted into a
+one-shot container of the node's image. Either runs any subcommand while the
+node is down.
 
 This is one general step rather than an `account_export` / `account_import` pair
 because the awkward part is not the account plane — it is "invoke the binary
@@ -23,10 +24,13 @@ from workflow config: a stopped container still reports both, so the step cannot
 disagree with how the node was actually started.
 """
 
+import asyncio
 import os
 import re
+import subprocess
 from typing import Any, Optional
 
+from merobox.commands.bootstrap.steps._docker_utils import is_binary_mode
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
@@ -40,7 +44,11 @@ NODE_EXEC_TIMEOUT = 120
 
 
 class NodeExecStep(BaseStep):
-    """Run `merod --home … --node <name> <args…>` in a one-shot container.
+    """Run `merod --home … --node <name> <args…>` against a stopped node.
+
+    In binary mode it runs merobox's `merod` directly; with Docker, a one-shot
+    container of the node's image. A path under /app/data, in `files:` or as a
+    whole argument, names a file in the node's home in both modes.
 
     The node must be **stopped**: the datastore is opened directly and RocksDB's
     lock is exclusive. Running against a live node is refused rather than
@@ -211,32 +219,117 @@ class NodeExecStep(BaseStep):
                 "`image:` on the step."
             )
 
-        if not source:
-            source = self.config.get("data_dir")
-        if not source:
-            # `<data_dir>/<node>/config.toml`, so the directory bound to
-            # /app/data is that path's grandparent. Exact, unlike rebuilding a
-            # relative path — the manager keeps this record precisely because
-            # reconstruction "would break if the CWD changed, or if a custom
-            # data_dir was used".
-            config_file = getattr(self.manager, "node_config_files", {}).get(node_name)
-            if config_file:
-                source = os.path.dirname(os.path.dirname(config_file))
-        if not source:
-            source = os.path.abspath(os.path.join("data", node_name))
-
-        # Check for the node's HOME, not just the directory: `--home /app/data
-        # --node <name>` reads `<source>/<name>/config.toml`, so an existing but
-        # wrong `source` passed an isdir() check and failed later inside merod
-        # with "Node is not initialized" — naming a path the log never showed.
-        node_home = os.path.join(source, node_name)
-        if not os.path.isdir(node_home):
-            raise RuntimeError(
-                f"'{source}' does not hold {node_name}'s home (expected "
-                f"'{node_home}'), so `--home {CONTAINER_HOME} --node {node_name}` "
-                "would find nothing. Pass `data_dir:` if it lives elsewhere."
-            )
+        source = source or self._home(node_name, os.path.join("data", node_name))
         return image, source
+
+    def _home(self, node_name: str, convention: str) -> str:
+        """The directory holding `<node>/config.toml`: `data_dir:`, else the
+        grandparent of the config path the manager recorded, else `convention`."""
+        home = self.config.get("data_dir")
+        config_file = getattr(self.manager, "node_config_files", {}).get(node_name)
+        if not home and config_file:
+            home = os.path.dirname(os.path.dirname(config_file))
+        home = home or os.path.abspath(convention)
+
+        # merod reads `<home>/<name>/config.toml`; a wrong but existing home would
+        # otherwise fail inside merod with "Node is not initialized".
+        node_dir = os.path.join(home, node_name)
+        if not os.path.isdir(node_dir):
+            raise RuntimeError(
+                f"'{home}' does not hold {node_name}'s home (expected "
+                f"'{node_dir}'), so `--home … --node {node_name}` would find "
+                "nothing. Pass `data_dir:` if it lives elsewhere."
+            )
+        return home
+
+    @staticmethod
+    def _write_files(files: dict[str, str], host_home: str) -> None:
+        """Write each `/app/data/…` input file to the same place under `host_home`."""
+        for container_path, content in files.items():
+            if not container_path.startswith(f"{CONTAINER_HOME}/"):
+                raise RuntimeError(
+                    f"'{container_path}' is outside {CONTAINER_HOME}, so merod "
+                    "would not see it"
+                )
+            host_path = os.path.join(
+                host_home, container_path[len(CONTAINER_HOME) + 1 :]
+            )
+            os.makedirs(os.path.dirname(host_path), exist_ok=True)
+            with open(host_path, "w", encoding="utf-8") as handle:
+                handle.write(content if content.endswith("\n") else content + "\n")
+
+    @staticmethod
+    def _on_host(arg: str, host_home: str) -> str:
+        """`arg` with a leading /app/data rewritten to `host_home`."""
+        if arg == CONTAINER_HOME or arg.startswith(f"{CONTAINER_HOME}/"):
+            return host_home + arg[len(CONTAINER_HOME) :]
+        return arg
+
+    def _run_binary(
+        self, node_name: str, home: str, args: list[str]
+    ) -> tuple[int, str, str]:
+        """Run merobox's own `merod` on `home`; exit code, stdout, stderr."""
+        command = [self.manager.binary_path, "--home", home, "--node", node_name]
+        command += [self._on_host(arg, home) for arg in args]
+        console.print(
+            f"[cyan]node_exec[/cyan] {node_name}: merod {' '.join(args)}\n"
+            f"  binary: {self.manager.binary_path}\n  home: {home}"
+        )
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=NODE_EXEC_TIMEOUT,
+            env={**os.environ, "CALIMERO_HOME": home},
+        )
+        return completed.returncode, completed.stdout, completed.stderr
+
+    def _run_container(
+        self, node_name: str, image: str, host_home: str, args: list[str]
+    ) -> tuple[int, str, str]:
+        """Run `merod` in a one-shot container of `image`; exit code, stdout, stderr."""
+        # `merod` explicitly with the entrypoint cleared, which is how merobox
+        # starts node containers itself (`run_node` sets `entrypoint = ""` and
+        # passes "merod" as argv[0]). Relying on the image's ENTRYPOINT works
+        # for the images that have one and silently does the wrong thing for
+        # any that wrap it — matching the pattern that already works here is
+        # cheaper than depending on every image agreeing with us.
+        command = ["merod", "--home", CONTAINER_HOME, "--node", node_name, *args]
+        console.print(
+            f"[cyan]node_exec[/cyan] {node_name}: merod {' '.join(args)}\n"
+            f"  image: {image}\n"
+            f"  mount: {host_home} -> {CONTAINER_HOME}"
+        )
+
+        container = self.manager.client.containers.create(
+            image=image,
+            # `root`, for the same reason `run_node` overrides it on node
+            # containers: the merod images set `USER user`, while the bind
+            # mount is owned by the host user that created it and merobox
+            # chmods the node's home to 0700. A non-root container user cannot
+            # traverse that, so merod finds no config and reports the node as
+            # uninitialised — the same directory the running node reads fine,
+            # because that one is root.
+            user="root",
+            entrypoint="",
+            command=command,
+            volumes={host_home: {"bind": CONTAINER_HOME, "mode": "rw"}},
+            environment={"CALIMERO_HOME": CONTAINER_HOME},
+        )
+        try:
+            container.start()
+            status = container.wait(timeout=NODE_EXEC_TIMEOUT)
+            stdout = container.logs(stdout=True, stderr=False).decode(
+                "utf-8", errors="replace"
+            )
+            stderr = container.logs(stdout=False, stderr=True).decode(
+                "utf-8", errors="replace"
+            )
+            return status.get("StatusCode", -1), stdout, stderr
+        finally:
+            container.remove(force=True)
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -254,10 +347,11 @@ class NodeExecStep(BaseStep):
         }
         allow_running = bool(self.config.get("allow_running", False))
 
-        if self.manager is None or not hasattr(self.manager, "client"):
+        binary = is_binary_mode(self.manager)
+        if self.manager is None or not (binary or hasattr(self.manager, "client")):
             console.print(
-                "[red]node_exec needs a local Docker-managed node; it cannot run "
-                "against a remote node.[/red]"
+                "[red]node_exec needs a local node merobox started, in binary or "
+                "Docker mode; it cannot run against a remote node.[/red]"
             )
             return False
 
@@ -270,64 +364,18 @@ class NodeExecStep(BaseStep):
                     "the command genuinely does not touch the store."
                 )
 
-            image, host_home = self._container_spec(node_name)
-
-            # Input files are written on the HOST side of the bind mount, so the
-            # one-shot container sees them at their container path. This is how a
-            # command that reads a file (`account import --from …`) gets its input
-            # without stdin plumbing through the Docker API.
-            for container_path, content in files.items():
-                if not container_path.startswith(f"{CONTAINER_HOME}/"):
-                    raise RuntimeError(
-                        f"'{container_path}' is outside {CONTAINER_HOME}, so the "
-                        "container would not see it"
-                    )
-                relative = container_path[len(CONTAINER_HOME) + 1 :]
-                host_path = os.path.join(host_home, relative)
-                os.makedirs(os.path.dirname(host_path), exist_ok=True)
-                with open(host_path, "w", encoding="utf-8") as handle:
-                    handle.write(content if content.endswith("\n") else content + "\n")
-
-            # `merod` explicitly with the entrypoint cleared, which is how merobox
-            # starts node containers itself (`run_node` sets `entrypoint = ""` and
-            # passes "merod" as argv[0]). Relying on the image's ENTRYPOINT works
-            # for the images that have one and silently does the wrong thing for
-            # any that wrap it — matching the pattern that already works here is
-            # cheaper than depending on every image agreeing with us.
-            command = ["merod", "--home", CONTAINER_HOME, "--node", node_name, *args]
-            console.print(
-                f"[cyan]node_exec[/cyan] {node_name}: merod {' '.join(args)}\n"
-                f"  image: {image}\n"
-                f"  mount: {host_home} -> {CONTAINER_HOME}"
-            )
-
-            container = self.manager.client.containers.create(
-                image=image,
-                # `root`, for the same reason `run_node` overrides it on node
-                # containers: the merod images set `USER user`, while the bind
-                # mount is owned by the host user that created it and merobox
-                # chmods the node's home to 0700. A non-root container user cannot
-                # traverse that, so merod finds no config and reports the node as
-                # uninitialised — the same directory the running node reads fine,
-                # because that one is root.
-                user="root",
-                entrypoint="",
-                command=command,
-                volumes={host_home: {"bind": CONTAINER_HOME, "mode": "rw"}},
-                environment={"CALIMERO_HOME": CONTAINER_HOME},
-            )
-            try:
-                container.start()
-                status = container.wait(timeout=NODE_EXEC_TIMEOUT)
-                exit_code = status.get("StatusCode", -1)
-                stdout = container.logs(stdout=True, stderr=False).decode(
-                    "utf-8", errors="replace"
+            if binary:
+                home = self._home(node_name, os.path.join("data", node_name, node_name))
+                self._write_files(files, home)
+                exit_code, stdout, stderr = await asyncio.to_thread(
+                    self._run_binary, node_name, home, args
                 )
-                stderr = container.logs(stdout=False, stderr=True).decode(
-                    "utf-8", errors="replace"
+            else:
+                image, home = self._container_spec(node_name)
+                self._write_files(files, home)
+                exit_code, stdout, stderr = self._run_container(
+                    node_name, image, home, args
                 )
-            finally:
-                container.remove(force=True)
 
             if exit_code != 0:
                 raise RuntimeError(
