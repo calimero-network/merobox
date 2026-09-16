@@ -1186,12 +1186,17 @@ class AccountPairStepConfig(BaseStepConfig):
     node: str = Field(..., description="The NEW device's node")
     holder: str = Field(..., description="Node that already holds the account root")
     namespaces: list[str] = Field(
-        ...,
-        description="Namespaces the NEW device listens on. A member of nothing "
-        "can neither read its account's namespaces off a DAG nor derive them",
+        default_factory=list,
+        description="Namespaces the NEW device listens on. May be empty when "
+        "account_namespace is set",
+    )
+    account_namespace: Optional[str] = Field(
+        None,
+        description="Account namespace the NEW device follows, from which it "
+        "learns the account's namespaces. 'auto' reads it off the holder",
     )
     root_key: str = Field(
-        ..., description="Account genesis root key, from account_create's output"
+        ..., description="Account genesis root key, from node_identity's output"
     )
     applications: list[str] = Field(
         default_factory=list,

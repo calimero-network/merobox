@@ -34,6 +34,7 @@ from merobox.commands.utils import console
 
 _CLIENT_ERROR_PREFIX = "Client error: "  # calimero-client-py wraps every failed call
 _HTTP_STATUS = re.compile(r"HTTP (\d{3})\b")  # what it puts first for a non-2xx answer
+_AUTO = "auto"  # `account_namespace: auto` reads the id off the holder's identity
 
 
 class _AccountStepBase(BaseStep):
@@ -348,14 +349,26 @@ class AccountPairStep(_AccountStepBase):
     Modelling merobox as the operator in the middle is the point: it is the
     channel a human would be, and passing the confirmation code through is what
     a human comparing it out loud would do.
+
+    `account_namespace` makes the device follow the account's own namespace, from
+    which it learns every project namespace on its own, so `namespaces` may then
+    be empty.
     """
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "holder", "namespaces", "root_key"]
+        return ["node", "holder", "root_key"]
 
     def _validate_field_types(self) -> None:
         self._require_strings(("node", "holder", "root_key"))
-        self._require_string_lists(("namespaces",))
+        if "namespaces" in self.config:
+            self._require_string_lists(("namespaces",))
+        if "account_namespace" in self.config:
+            self._require_strings(("account_namespace",))
+        elif not self.config.get("namespaces"):
+            raise ValueError(
+                f"Step '{self._get_step_name()}': needs 'account_namespace' or a "
+                "non-empty 'namespaces' - the node refuses a pairing naming neither"
+            )
         if "applications" in self.config:
             self._require_string_lists(("applications",))
         self._expect_status()
@@ -377,7 +390,24 @@ class AccountPairStep(_AccountStepBase):
                 "paired_key_delivered_{node_name}",
                 "Whether the holder wrapped the current scope key for it",
             ),
+            (
+                "accountNamespace",
+                "paired_account_namespace_{node_name}",
+                "The account namespace the new device follows, when one was named",
+            ),
         ]
+
+    def _account_namespace(self, holder: str, dynamic_values: dict[str, Any]):
+        """The configured account namespace, read off the holder for `auto`."""
+        if "account_namespace" not in self.config:
+            return None
+        value = self._resolved("account_namespace", dynamic_values)
+        if value != _AUTO:
+            return value
+        identity = self._data(self._client(holder).get_node_identity())
+        if not identity.get("accountNamespaceId"):
+            raise RuntimeError(f"{holder} names no account namespace: {identity}")
+        return identity["accountNamespaceId"]
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -389,8 +419,11 @@ class AccountPairStep(_AccountStepBase):
         applications = self._resolved_list("applications", dynamic_values)
 
         try:
+            account_namespace = self._account_namespace(holder, dynamic_values)
             init = self._data(
-                self._client(node_name).pair_device_init(root_key, namespaces)
+                self._client(node_name).pair_device_init(
+                    root_key, namespaces, account_namespace=account_namespace
+                )
             )
             missing = [
                 field
@@ -437,6 +470,8 @@ class AccountPairStep(_AccountStepBase):
                         f"{complete.get(field)}) - the device now linked is not "
                         "the one that asked"
                     )
+            if account_namespace is not None:
+                complete = {**complete, "accountNamespace": account_namespace}
             result = ok(complete)
         except Exception as e:  # noqa: BLE001 - reported, not swallowed
             result = fail(f"account pair failed: {e}", error=e)

@@ -796,25 +796,36 @@ describes" channel the code exists to defeat.
 The paired node needs no membership of its own: being a device of a member's
 account is its whole route in.
 
+The device follows the **account namespace** when `account_namespace` is set.
+From it the device learns every namespace the account gains or leaves, so
+`namespaces` may be left out.
+`auto` reads the id off the holder's `node_identity`, and fails the step when the
+holder reports none.
+The node refuses a pairing that names neither `account_namespace` nor a namespace,
+and so does this step, at load.
+
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `node` | yes | string | The **new** device's node. |
 | `holder` | yes | string | Node that already holds the account root. |
-| `namespace_id` | yes | string | Namespace the account lives in. |
-| `root_key` | yes | string | Genesis root key, from `account_create`. |
-| `nonce` | yes | string | Genesis nonce, from `account_create`. |
+| `root_key` | yes | string | `accountRootPublicKey`, from `node_identity` on the holder. |
+| `account_namespace` | one of these two | string | Account namespace id, or `auto`. |
+| `namespaces` | one of these two | list of strings | Project namespaces to follow directly. |
+| `applications` | no | list of strings | Scope the holder certifies. Empty means every namespace the holder takes part in. |
+| `expect_status` | no | int | HTTP status the pairing must be refused with. |
 
-Outputs: `accountId`, `deviceId`, `keyDelivered`.
+Outputs: `accountId`, `deviceId`, `keyDelivered`, and `accountNamespace` when one
+was named.
 
 ```yaml
 - type: account_pair
   node: calimero-node-3        # the new device
   holder: calimero-node-2      # holds the account root
-  namespace_id: '{{namespace_id}}'
   root_key: '{{root_key}}'
-  nonce: '{{nonce}}'
+  account_namespace: auto
   outputs:
     paired_device: deviceId
+    account_ns: accountNamespace
 ```
 
 ### account_revoke

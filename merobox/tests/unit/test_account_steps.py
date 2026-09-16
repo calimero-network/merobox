@@ -34,6 +34,7 @@ from merobox.commands.bootstrap.steps.account import (
 )
 
 NAMESPACE = "ab" * 32
+ACCOUNT_NS = "4e" * 32
 
 
 def _run(coro):
@@ -428,12 +429,31 @@ class TestAccountPairStep:
     def test_valid_config_passes_validation(self):
         _step(AccountPairStep, self.config)
 
-    @pytest.mark.parametrize("field", ["node", "holder", "namespaces", "root_key"])
+    @pytest.mark.parametrize("field", ["node", "holder", "root_key"])
     def test_missing_required_field_raises(self, field):
         config = {**self.config}
         del config[field]
         with pytest.raises(ValueError, match=field):
             AccountPairStep(config)
+
+    @pytest.mark.parametrize("namespaces", [None, []])
+    def test_it_needs_a_namespace_or_the_account_namespace(self, namespaces):
+        """Core refuses a pair-init naming neither, so refuse it at load."""
+        config = {**self.config}
+        del config["namespaces"]
+        if namespaces is not None:
+            config["namespaces"] = namespaces
+        with pytest.raises(ValueError, match="account_namespace"):
+            AccountPairStep(config)
+
+    def test_the_account_namespace_alone_is_enough(self):
+        config = {**self.config, "account_namespace": ACCOUNT_NS}
+        del config["namespaces"]
+        AccountPairStep(config)
+
+    def test_the_account_namespace_must_be_a_string(self):
+        with pytest.raises(ValueError, match="account_namespace"):
+            AccountPairStep({**self.config, "account_namespace": ["x"]})
 
     def _init_payload(self, code="0011223344556677"):
         return {
@@ -445,7 +465,7 @@ class TestAccountPairStep:
             "confirmationCode": code,
         }
 
-    def _paired(self, init, code=None, **complete):
+    def _paired(self, init, code=None, config=None, holder_identity=None, **complete):
         """A step wired to two clients: the new device's, and the holder's.
 
         Both endpoints really answer with `accountId` and `deviceId`, so complete
@@ -454,6 +474,7 @@ class TestAccountPairStep:
         new_device = MagicMock()
         new_device.pair_device_init.return_value = _envelope(init)
         holder = MagicMock()
+        holder.get_node_identity.return_value = _envelope(holder_identity or {})
         holder.pair_device_complete.return_value = _envelope(
             {
                 "accountId": init.get("accountId"),
@@ -463,7 +484,7 @@ class TestAccountPairStep:
                 **complete,
             }
         )
-        step = AccountPairStep(self.config)
+        step = AccountPairStep(config or self.config)
         # `_client` is called with a node name, so route by which node it is.
         step._client = MagicMock(  # noqa: SLF001
             side_effect=lambda name: (
@@ -484,7 +505,9 @@ class TestAccountPairStep:
         results = {}
         assert _run(step.execute(results, {})) is True
 
-        new_device.pair_device_init.assert_called_once_with("cc" * 32, [NAMESPACE])
+        new_device.pair_device_init.assert_called_once_with(
+            "cc" * 32, [NAMESPACE], account_namespace=None
+        )
         # Everything init minted has to reach complete verbatim; a dropped field
         # would be a pairing that certifies key material nobody committed to.
         holder.pair_device_complete.assert_called_once_with(
@@ -496,6 +519,46 @@ class TestAccountPairStep:
             None,
         )
         assert results["paired_account_calimero-node-3"]["deviceId"] == init["deviceId"]
+
+    def _account_ns_config(self, value):
+        config = {**self.config, "account_namespace": value}
+        del config["namespaces"]
+        return config
+
+    def test_it_passes_the_account_namespace_through(self):
+        step, new_device, _holder = self._paired(
+            self._init_payload(), config=self._account_ns_config("{{acc_ns}}")
+        )
+        results = {}
+        assert _run(step.execute(results, {"acc_ns": ACCOUNT_NS})) is True
+        new_device.pair_device_init.assert_called_once_with(
+            "cc" * 32, [], account_namespace=ACCOUNT_NS
+        )
+        assert (
+            results["paired_account_calimero-node-3"]["accountNamespace"] == ACCOUNT_NS
+        )
+
+    def test_auto_reads_the_account_namespace_off_the_holder(self):
+        step, new_device, holder = self._paired(
+            self._init_payload(),
+            config=self._account_ns_config("auto"),
+            holder_identity={"accountNamespaceId": ACCOUNT_NS},
+        )
+        assert _run(step.execute({}, {})) is True
+        holder.get_node_identity.assert_called_once_with()
+        new_device.pair_device_init.assert_called_once_with(
+            "cc" * 32, [], account_namespace=ACCOUNT_NS
+        )
+
+    def test_auto_fails_when_the_holder_names_no_account_namespace(self):
+        step, new_device, holder = self._paired(
+            self._init_payload(),
+            config=self._account_ns_config("auto"),
+            holder_identity={"accountId": "aa" * 32},
+        )
+        assert _run(step.execute({}, {})) is False
+        new_device.pair_device_init.assert_not_called()
+        holder.pair_device_complete.assert_not_called()
 
     def test_a_confirmation_code_mismatch_fails_the_step(self):
         """The check a human is supposed to make, made mechanically.
@@ -770,7 +833,12 @@ class TestOutputsAreActuallyExported:
                 "holder": "calimero-node-2",
                 "namespaces": [NAMESPACE],
                 "root_key": "cc" * 32,
-                "outputs": {"paired_device": "deviceId", "delivered": "keyDelivered"},
+                "account_namespace": ACCOUNT_NS,
+                "outputs": {
+                    "paired_device": "deviceId",
+                    "delivered": "keyDelivered",
+                    "account_ns": "accountNamespace",
+                },
             }
         )
         step._client = MagicMock(  # noqa: SLF001
@@ -783,6 +851,7 @@ class TestOutputsAreActuallyExported:
         assert _run(step.execute({}, dynamic_values)) is True
         assert dynamic_values["paired_device"] == "ee" * 32
         assert dynamic_values["delivered"] is True
+        assert dynamic_values["account_ns"] == ACCOUNT_NS
 
     def test_account_revoke_exports_key_rotated(self):
         client = MagicMock()
