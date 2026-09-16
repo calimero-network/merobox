@@ -449,6 +449,12 @@ class CallStep(BaseStepConfig):
     expected_failure: Optional[bool] = Field(
         False, description="Assert the call is rejected/fails rather than succeeds"
     )
+    allow_failure: Optional[bool] = Field(
+        False,
+        description="Pass whether the call succeeds or fails, exporting the error "
+        "fields either way (None on success). For a probe of state that may not "
+        "have propagated yet",
+    )
     unauthenticated: Optional[bool] = Field(
         False,
         description=(

@@ -59,6 +59,17 @@ class ExecuteStep(BaseStep):
                 f"Step '{step_name}': 'expected_failure' must be a boolean"
             )
 
+        if "allow_failure" in self.config:
+            if not isinstance(self.config["allow_failure"], bool):
+                raise ValueError(
+                    f"Step '{step_name}': 'allow_failure' must be a boolean"
+                )
+            if self.config["allow_failure"] and self.config.get("expected_failure"):
+                raise ValueError(
+                    f"Step '{step_name}': 'allow_failure' lets the call go either "
+                    "way, 'expected_failure' says it must fail - set one"
+                )
+
         # Validate unauthenticated is a boolean if provided
         if "unauthenticated" in self.config and not isinstance(
             self.config["unauthenticated"], bool
@@ -133,8 +144,9 @@ class ExecuteStep(BaseStep):
             if not exec_type:
                 exec_type = "function_call"
 
-            # Check if this step expects failure
+            allow_failure = self.config.get("allow_failure", False)
             expected_failure = self.config.get("expected_failure", False)
+            tolerates_failure = expected_failure or allow_failure
 
             max_state_retries = int(
                 self.config.get("state_retry_attempts", STATE_RETRY_ATTEMPTS)
@@ -182,11 +194,9 @@ class ExecuteStep(BaseStep):
                     # Call failed (network/connection/API level failure)
                     error_message = result.get("error", "Unknown error")
 
-                    if expected_failure:
+                    if tolerates_failure:
                         # Structure error information for export
-                        error_info = self._extract_error_info(
-                            result, expected=expected_failure
-                        )
+                        error_info = self._extract_error_info(result, expected=True)
 
                         # Store error information for later use
                         step_key = f"execute_{node_name}_{method}"
@@ -219,8 +229,8 @@ class ExecuteStep(BaseStep):
                             retry_attempt += 1
                             await asyncio.sleep(state_retry_delay)
                             continue
-                        else:
-                            # Exhausted retries for missing state
+                        # A probe allowed to fail records the missing state as its outcome.
+                        if not allow_failure:
                             console.print(
                                 "[red]Execution failed: app state not available after retries[/red]"
                             )
@@ -232,9 +242,9 @@ class ExecuteStep(BaseStep):
 
                     # Handle JSON-RPC error
                     error_info = self._extract_error_info(
-                        result["data"], expected=expected_failure
+                        result["data"], expected=tolerates_failure
                     )
-                    if expected_failure:
+                    if tolerates_failure:
                         step_key = f"execute_{node_name}_{method}"
                         workflow_results[step_key] = error_info
 
@@ -257,13 +267,12 @@ class ExecuteStep(BaseStep):
                 step_key = f"execute_{node_name}_{method}"
                 workflow_results[step_key] = result["data"]
 
-                # `call` alone stays lenient where every other step now fails:
-                # workflows use it as a soft "may not have propagated yet" probe
-                # and depend on the None error exports below.
                 if expected_failure:
-                    console.print(
-                        "[yellow]⚠️  Warning: Expected failure but call succeeded[/yellow]"
-                    )
+                    return self._report_unexpected_success()
+
+                # A probe that may go either way still binds its error captures,
+                # as None, so a later assertion can tell the outcomes apart.
+                if allow_failure:
                     # Create error_info with None values to maintain consistency with actual failures
                     # This ensures error fields are auto-exported even when no outputs are configured
                     error_info = {

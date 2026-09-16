@@ -145,7 +145,7 @@ steps:
         type: wait
         seconds: 8
 
-      # Check Node 2 - use expected_failure to not crash on missing key
+      # Check Node 2 - allow_failure, since the key may not have arrived yet
       - name: "[Check {{iteration}}] Node 2 reads key"
         type: call
         node: dag-node-2
@@ -153,7 +153,7 @@ steps:
         method: get
         args:
           key: "propagation_key_{{iteration}}"
-        expected_failure: true
+        allow_failure: true
         outputs:
           check_n2_result: result
           check_n2_error: error_type
@@ -166,7 +166,7 @@ steps:
         method: get
         args:
           key: "propagation_key_{{iteration}}"
-        expected_failure: true
+        allow_failure: true
         outputs:
           check_n3_result: result
           check_n3_error: error_type
@@ -179,7 +179,7 @@ steps:
         method: get
         args:
           key: "propagation_key_{{iteration}}"
-        expected_failure: true
+        allow_failure: true
         outputs:
           check_n4_result: result
           check_n4_error: error_type
@@ -192,14 +192,14 @@ steps:
         method: get
         args:
           key: "propagation_key_{{iteration}}"
-        expected_failure: true
+        allow_failure: true
         outputs:
           check_n5_result: result
           check_n5_error: error_type
 
   # =============================================================================
   # PHASE 4: Final Verification - Check the last key propagated successfully
-  # These final checks do NOT use expected_failure - we want to fail if
+  # These final checks do NOT use allow_failure - we want to fail if
   # the final key never propagated after ~75 seconds
   # =============================================================================
 

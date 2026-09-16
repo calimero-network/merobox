@@ -403,13 +403,6 @@ steps:
   # `ContextIdentity`, so there is no identity left to execute with and the
   # call is refused rather than quietly served from a stale local state.
   #
-  # `expected_failure` on a `call` does NOT fail the run on its own: alone
-  # among the step types, `call` only warns when the call succeeds anyway
-  # (workflows use it as a soft "may not have propagated yet" probe and
-  # `workflow-negative-testing-example.yml` pins that leniency on purpose).
-  # So the error export is what asserts here, and the `is_set` below is what
-  # turns "the leave did nothing" into a red run.
-  #
   # Captured field is `error`, not `error_message`: `error` is seeded in every
   # failure branch of `_extract_error_info` (the whole rpc error object, or the
   # transport error string), while `error_message` is left None by a JSON-RPC

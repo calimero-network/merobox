@@ -224,7 +224,7 @@ class TestMissingCaptureFailsTheStep:
         assert ok is True
 
 
-class TestExpectedFailureThatSucceeds:
+class TestAllowedFailureThatSucceeds:
     """A protected key is already bound, so nothing may demand it bind twice.
 
     `call` exports the error fields as None, marks them protected, then exports
@@ -235,7 +235,7 @@ class TestExpectedFailureThatSucceeds:
         ok, dynamic = _run_call(
             {"check_error": "error_type", "check_result": "result"},
             {"result": {"output": "v"}},
-            expected_failure=True,
+            allow_failure=True,
         )
         assert ok is True
         # Bound, not absent: the placeholder resolves, so no assertion holding
@@ -251,7 +251,7 @@ class TestExpectedFailureThatSucceeds:
                 "check_result": "result",
             },
             {"result": {"output": "v"}},
-            expected_failure=True,
+            allow_failure=True,
         )
         assert ok is True
         assert dynamic["err_node-1"] is None
@@ -261,7 +261,7 @@ class TestExpectedFailureThatSucceeds:
         ok, _ = _run_call(
             {"fleet_completed_at": "fleet_completed_at"},
             {"result": {"output": "v"}},
-            expected_failure=True,
+            allow_failure=True,
         )
         assert ok is False
 
