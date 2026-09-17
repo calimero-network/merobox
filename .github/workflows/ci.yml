@@ -8,6 +8,9 @@ on:
 
 env:
   CALIMERO_CONTRACTS_VERSION: "latest"
+  # The rolling core-master image the docker lane runs, in one place so the
+  # route probe below and the registry stamps cannot name different builds.
+  EDGE_IMAGE: "ghcr.io/calimero-network/merod:edge"
   # Harden crates.io downloads against transient CI network blips that fail the
   # maturin build of calimero-client-py during `pip install` (seen as
   # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,
@@ -158,8 +161,14 @@ jobs:
           # account. Re-adding is a CI experiment, not a code change — do the
           # four as one PR rather than smuggling it into this one.
           # Docker mode (merod:edge) keeps full coverage meanwhile.
+          # namespace-name asserts a member reads the creator's name, which a
+          # released merod stores locally but does not publish; edge does both.
+          # account-rescope drives a route no merod carries yet - the docker lane
+          # below probes merod:edge and runs it the day the image has it.
           BINARY=$(ls workflow-examples/*.yml | \
             grep -v account-identity | \
+            grep -v account-rescope | \
+            grep -v namespace-name | \
             grep -v non-admin-delete-vs-leave | \
             grep -v delegated-authorship | \
             grep -v fuzzy-kv-store | \
@@ -192,8 +201,32 @@ jobs:
             grep -v example-binary | \
             grep -v fault-injection-tc | \
             grep -v blob-cross-node-download | \
+            grep -v account-rescope | \
             grep -v '/tee-' | \
             jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
+
+          # account-rescope needs a merod carrying the device-scope route, which
+          # none does yet, so ask the image that will run it rather than a list.
+          RESCOPE_WORKFLOW=workflow-examples/workflow-account-rescope-example.yml
+          test -f "$RESCOPE_WORKFLOW"
+          sudo systemctl start docker
+          has_route() {
+            docker run --rm --entrypoint grep "$EDGE_IMAGE" -qaF "$1" /usr/local/bin/merod
+          }
+          # The route it replaces, so an image that answers "no" to everything -
+          # stripped binary, renamed path syntax - fails loudly instead of skipping forever.
+          if ! has_route '/account/devices/{device_id}/relink'; then
+            echo "::error::route probe found no known admin route in $EDGE_IMAGE; it cannot tell a missing feature from a broken probe"
+            exit 1
+          fi
+          if has_route '/account/devices/{device_id}/scope'; then
+            DOCKER=$(jq -c --arg f "$RESCOPE_WORKFLOW" \
+              '. + [{file: $f, name: ($f | split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))}]' \
+              <<<"$DOCKER")
+            echo "$EDGE_IMAGE carries the device-scope route; running $RESCOPE_WORKFLOW"
+          else
+            echo "::warning title=account-rescope-example did not run::$EDGE_IMAGE has no PUT /admin-api/account/devices/{device_id}/scope, so the rescope scenario is skipped; it starts running by itself once the image carries the route"
+          fi
           echo "docker=$DOCKER" >> $GITHUB_OUTPUT
 
           # TEE mode: the ten tee-*.yml mock-TEE admission/replication scenarios
@@ -600,7 +633,7 @@ jobs:
       - name: Serve the bundles over an http registry
         run: |
           url=$(./workflow-examples/scripts/fixture-registry.sh \
-            --stamp ghcr.io/calimero-network/merod:edge)
+            --stamp "$EDGE_IMAGE")
           echo "fixture registry at $url"
 
       - name: Start node log capture
@@ -705,7 +738,7 @@ jobs:
       - name: Serve the bundles over an http registry
         run: |
           url=$(./workflow-examples/scripts/fixture-registry.sh \
-            --stamp ghcr.io/calimero-network/merod:edge)
+            --stamp "$EDGE_IMAGE")
           echo "fixture registry at $url"
 
       - name: Start node log capture
