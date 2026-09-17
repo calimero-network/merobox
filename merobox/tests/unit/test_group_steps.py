@@ -60,6 +60,47 @@ class TestCreateNamespaceStep:
         with pytest.raises(ValueError, match="'application_id' must be a string"):
             self._make_step(config)
 
+    def test_namespace_name_not_string_raises(self):
+        config = {**self.base_config, "namespace_name": 7}
+        with pytest.raises(ValueError, match="'namespace_name' must be a string"):
+            self._make_step(config)
+
+    def test_namespace_name_is_forwarded_as_the_name(self):
+        step = self._make_step({**self.base_config, "namespace_name": "Team {{who}}"})
+        client = MagicMock()
+        client.create_namespace.return_value = {"data": {"namespaceId": "ns1"}}
+        with (
+            patch.object(
+                step, "_resolve_node_for_client", return_value=("http://x", "n1")
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.group_create.get_client_for_rpc_url",
+                return_value=client,
+            ),
+        ):
+            assert asyncio.get_event_loop().run_until_complete(
+                step.execute({}, {"who": "Alpha"})
+            )
+        client.create_namespace.assert_called_once_with(
+            application_id="app123", name="Team Alpha"
+        )
+
+    def test_no_namespace_name_sends_no_name(self):
+        step = self._make_step(self.base_config)
+        client = MagicMock()
+        client.create_namespace.return_value = {"data": {"namespaceId": "ns1"}}
+        with (
+            patch.object(
+                step, "_resolve_node_for_client", return_value=("http://x", "n1")
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.group_create.get_client_for_rpc_url",
+                return_value=client,
+            ),
+        ):
+            assert asyncio.get_event_loop().run_until_complete(step.execute({}, {}))
+        client.create_namespace.assert_called_once_with(application_id="app123")
+
     def test_node_none_raises(self):
         config = {**self.base_config, "node": None}
         with pytest.raises(ValueError, match="node"):

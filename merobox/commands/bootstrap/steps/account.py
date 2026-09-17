@@ -26,11 +26,16 @@ import json
 import re
 from typing import Any
 
+import requests
 from rich.markup import escape
 
 from merobox.commands.bootstrap.steps import body_assert
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import (
+    DEFAULT_CONNECTION_TIMEOUT,
+    DEFAULT_READ_TIMEOUT,
+)
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -39,6 +44,7 @@ _HTTP_STATUS = re.compile(r"HTTP (\d{3})\b")  # what it puts first for a non-2xx
 _AUTO = "auto"  # `account_namespace: auto` reads the id off the holder's identity
 _AWAIT_SELF_READS = 45  # listings await_self reads, as core's account scenarios wait
 _AWAIT_SELF_INTERVAL = 2.0  # seconds between those reads
+_SCOPE_ALL = "all"  # `account_rescope: scope` for every application
 _OFFER_KEYS = {  # account_pair_complete field -> the pair-init answer it carries
     "device_id": "deviceId",
     "kem_public_key": "kemPublicKey",
@@ -805,6 +811,97 @@ class AccountRelinkStep(_AccountStepBase):
             f"across {len(outcomes)} namespace(s)"
         )
         return self._finish(node_name, "relink", data, workflow_results, dynamic_values)
+
+
+class AccountRescopeStep(_AccountStepBase):
+    """Replace the applications a device this account certified may speak in.
+
+    Where `account_relink` only ever widens, this REPLACES: `only: [app]` drops
+    every other application the device held. Driven over the admin API rather
+    than a binding, because calimero-client-py has none for this route yet.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "device_id", "scope"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(("node", "device_id"))
+        self._validate_scope()
+        self._expect_status()
+
+    def _validate_scope(self) -> None:
+        """`all`, or `only:` naming at least one application.
+
+        An empty `only` is refused here rather than sent: on the wire it reads
+        as every application, the opposite of what such a scenario asked for.
+        """
+        scope = self.config["scope"]
+        if scope == _SCOPE_ALL:
+            return
+        if (
+            not isinstance(scope, dict)
+            or set(scope) != {"only"}
+            or not isinstance(scope.get("only"), list)
+            or not scope["only"]
+            or not all(isinstance(app, str) for app in scope["only"])
+        ):
+            raise ValueError(
+                f"Step '{self._get_step_name()}': 'scope' must be '{_SCOPE_ALL}' or "
+                "a mapping 'only:' naming at least one application"
+            )
+
+    def _get_exportable_variables(self):
+        return [
+            (
+                "applications",
+                "rescope_applications_{node_name}",
+                "The device's scope after the replacement",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+        device_id = self._resolved("device_id", dynamic_values)
+        scope = self._resolve_args_recursively(self.config["scope"], dynamic_values)
+
+        try:
+            rpc_url, cache_node_name = self._resolve_node_target(node_name)
+            token = self._resolve_token(
+                cache_node_name, workflow_results, dynamic_values
+            )
+            # Off the loop: `requests` is synchronous, so a `parallel:` sibling
+            # keeps running while this one waits.
+            response = await asyncio.to_thread(
+                requests.put,
+                f"{rpc_url.rstrip('/')}/admin-api/account/devices/{device_id}/scope",
+                json={"scope": scope},
+                headers={"Authorization": f"Bearer {token}"} if token else {},
+                timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT),
+            )
+            if response.status_code != 200:
+                # Raised, and shaped as a client error, so a refusal reaches
+                # `expect_status` by the same path the bindings' refusals do.
+                raise RuntimeError(f"HTTP {response.status_code}: {response.text}")
+            result = ok(self._data(json.loads(response.content)))
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"account rescope failed: {e}", error=e)
+
+        verdict = self._refusal_verdict(
+            result, f"Failed to rescope {device_id} via {node_name}"
+        )
+        if verdict is not None:
+            return verdict
+
+        data = result["data"]
+        console.print(
+            f"[green]✓[/green] {node_name} rescoped device {device_id} to "
+            f"{'every application' if scope == _SCOPE_ALL else scope['only']}"
+        )
+        return self._finish(
+            node_name, "rescope", data, workflow_results, dynamic_values
+        )
 
 
 class AccountDevicesStep(_AccountStepBase):

@@ -16,6 +16,7 @@ loop, per this repo's convention.
 """
 
 import asyncio
+import json
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,6 +30,7 @@ from merobox.commands.bootstrap.steps.account import (
     AccountPairInitStep,
     AccountPairStep,
     AccountRelinkStep,
+    AccountRescopeStep,
     AccountRevokeStep,
     NodeIdentityStep,
     PerformIntentStep,
@@ -38,6 +40,8 @@ from merobox.commands.errors import UnresolvedPlaceholderError
 
 NAMESPACE = "ab" * 32
 ACCOUNT_NS = "4e" * 32
+_MODULE = "merobox.commands.bootstrap.steps.account"
+RPC_URL = "http://localhost:2528"
 
 
 def _run(coro):
@@ -51,6 +55,15 @@ def _run(coro):
 def _envelope(payload):
     """What a binding returns: the api envelope with the payload under `data`."""
     return {"data": payload}
+
+
+def _response(status_code=200, text=None, payload=None):
+    """What `requests` hands back: an api envelope on 200, an error body otherwise."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = text if text is not None else ""
+    resp.content = json.dumps(_envelope(payload or {})).encode()
+    return resp
 
 
 def _client_error(status, body="device is linked to another account"):
@@ -144,6 +157,102 @@ class TestAccountRelinkStep:
 
         dynamic_values = {}
         assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values["scope"] == [APP_ONE]
+
+
+# =============================================================================
+# AccountRescopeStep
+# =============================================================================
+
+
+class TestAccountRescopeStep:
+    """Unlike relink, this step drives the admin API directly, so these mock
+    `requests.put` rather than a binding."""
+
+    def setup_method(self):
+        self.config = {
+            "type": "account_rescope",
+            "name": "Rescope",
+            "node": "calimero-node-1",
+            "device_id": DEVICE,
+            "scope": "all",
+        }
+
+    def _step(self, **overrides):
+        step = AccountRescopeStep({**self.config, **overrides})
+        step._resolve_node_target = lambda node: (RPC_URL, node)  # noqa: SLF001
+        step._resolve_token = lambda *_a, **_k: None  # noqa: SLF001
+        return step
+
+    @pytest.mark.parametrize("field", ["node", "device_id", "scope"])
+    def test_missing_required_field_raises(self, field):
+        config = {**self.config}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            AccountRescopeStep(config)
+
+    @pytest.mark.parametrize("scope", ["all", {"only": [APP_ONE, APP_TWO]}])
+    def test_both_scope_shapes_are_accepted(self, scope):
+        AccountRescopeStep({**self.config, "scope": scope})
+
+    @pytest.mark.parametrize(
+        "scope",
+        [
+            {"only": []},
+            {"only": [APP_ONE], "mode": "replace"},
+            {"every": True},
+            {"only": APP_ONE},
+            {"only": [APP_ONE, 7]},
+            ["all"],
+            "every",
+        ],
+    )
+    def test_a_scope_that_is_neither_shape_is_refused(self, scope):
+        with pytest.raises(ValueError, match="Rescope.*scope"):
+            AccountRescopeStep({**self.config, "scope": scope})
+
+    def test_all_puts_the_string_scope(self):
+        step = self._step()
+        with patch(f"{_MODULE}.requests.put", return_value=_response()) as put:
+            assert _run(step.execute({}, {})) is True
+        put.assert_called_once()
+        assert put.call_args.args[0] == (
+            f"{RPC_URL}/admin-api/account/devices/{DEVICE}/scope"
+        )
+        assert put.call_args.kwargs["json"] == {"scope": "all"}
+
+    def test_only_puts_the_named_applications_with_placeholders_resolved(self):
+        step = self._step(device_id="{{phone}}", scope={"only": ["{{app}}", APP_TWO]})
+        with patch(f"{_MODULE}.requests.put", return_value=_response()) as put:
+            assert _run(step.execute({}, {"phone": DEVICE, "app": APP_ONE})) is True
+        assert put.call_args.args[0] == (
+            f"{RPC_URL}/admin-api/account/devices/{DEVICE}/scope"
+        )
+        assert put.call_args.kwargs["json"] == {"scope": {"only": [APP_ONE, APP_TWO]}}
+
+    def test_a_refused_rescope_fails_the_step(self):
+        step = self._step()
+        with patch(f"{_MODULE}.requests.put", return_value=_response(403, "forbidden")):
+            assert _run(step.execute({}, {})) is False
+
+    def test_expect_status_passes_on_that_status(self):
+        step = self._step(expect_status=403)
+        with patch(f"{_MODULE}.requests.put", return_value=_response(403, "forbidden")):
+            assert _run(step.execute({}, {})) is True
+
+    def test_expect_status_fails_on_a_different_status(self):
+        step = self._step(expect_status=403)
+        with patch(f"{_MODULE}.requests.put", return_value=_response(400, "bad")):
+            assert _run(step.execute({}, {})) is False
+
+    def test_exports_the_scope_the_device_now_has(self):
+        step = self._step(outputs={"scope": "applications"})
+        dynamic_values = {}
+        with patch(
+            f"{_MODULE}.requests.put",
+            return_value=_response(payload={"applications": [APP_ONE]}),
+        ):
+            assert _run(step.execute({}, dynamic_values)) is True
         assert dynamic_values["scope"] == [APP_ONE]
 
 
