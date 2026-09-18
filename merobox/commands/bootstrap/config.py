@@ -59,6 +59,7 @@ VALID_STEP_TYPES = frozenset(
         "account_pair_init",
         "account_pair_complete",
         "account_relink",
+        "account_rescope",
         "account_devices",
         "account_applications",
         "account_revoke",
@@ -1085,9 +1086,10 @@ class CreateNamespaceStepConfig(BaseStepConfig):
             "blob when omitted."
         ),
     )
-    # A namespace's display name (if any) is set afterward via a
-    # set_group_metadata step — there is no namespace-name field here. The
-    # inherited `name` from BaseStepConfig is the step label, nothing more.
+    # Not `name`: that is the step label inherited from BaseStepConfig.
+    namespace_name: Optional[str] = Field(
+        None, description="Display name given to the namespace at creation"
+    )
 
 
 class CreateNamespaceInvitationStepConfig(BaseStepConfig):
@@ -1275,6 +1277,20 @@ class AccountRelinkStepConfig(BaseStepConfig):
         default_factory=list,
         description="Applications to ADD to the stored scope. Empty repairs "
         "without widening, and is not overloaded to mean every application",
+    )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
+
+
+class AccountRescopeStepConfig(BaseStepConfig):
+    """Configuration for account_rescope step."""
+
+    type: Literal["account_rescope"] = "account_rescope"
+    node: str = Field(..., description="Node holding the account root")
+    device_id: str = Field(..., description="Device whose scope is replaced")
+    scope: Union[Literal["all"], dict[str, list[str]]] = Field(
+        ...,
+        description="'all', or 'only:' naming the applications that REPLACE the "
+        "stored scope; an empty 'only' is refused rather than read as 'all'",
     )
     expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
 
@@ -1981,6 +1997,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "account_pair_init": AccountPairInitStepConfig,
     "account_pair_complete": AccountPairCompleteStepConfig,
     "account_relink": AccountRelinkStepConfig,
+    "account_rescope": AccountRescopeStepConfig,
     "account_devices": AccountDevicesStepConfig,
     "account_applications": AccountApplicationsStepConfig,
     "account_revoke": AccountRevokeStepConfig,

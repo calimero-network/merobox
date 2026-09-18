@@ -1173,6 +1173,15 @@ class TestGroupUpgradeStepSchemas:
         }
         assert config_module.validate_workflow_step(step, 0) == []
 
+    def test_valid_create_namespace_with_a_name(self, config_module):
+        step = {
+            "type": "create_namespace",
+            "node": "calimero-node-1",
+            "application_id": "{{app}}",
+            "namespace_name": "Team Alpha",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
     def test_valid_get_migration_status(self, config_module):
         step = {
             "type": "get_migration_status",

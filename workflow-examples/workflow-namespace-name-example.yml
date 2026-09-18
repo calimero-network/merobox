@@ -1,0 +1,71 @@
+description: >
+  A namespace created with a name carries it on the creator, and the member that
+  joins by invitation reads the same name back.
+name: Namespace Name Example
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: nsname-node
+  base_port: 9761
+  base_rpc_port: 9861
+
+steps:
+  - name: Install Application on Node 1
+    type: install_application
+    node: nsname-node-1
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Install Application on Node 2
+    type: install_application
+    node: nsname-node-2
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
+    dev: true
+
+  - name: Create the Namespace With a Name
+    type: create_namespace
+    node: nsname-node-1
+    application_id: '{{app_id}}'
+    namespace_name: shared-room
+    outputs:
+      namespace_id: namespaceId
+
+  # The creator's own row carries the name only if the step forwarded it.
+  - name: The Creator's Listing Names the Namespace
+    type: assert_api_response
+    node: nsname-node-1
+    path: /admin-api/namespaces
+    where:
+      namespaceId: '{{namespace_id}}'
+    match:
+      name: shared-room
+
+  - name: Invite Node 2 to the Namespace
+    type: create_namespace_invitation
+    node: nsname-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - name: Node 2 Joins the Namespace
+    type: join_namespace
+    node: nsname-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  # The name rides the namespace DAG, so the member reads it once it has synced.
+  - name: The Member Reads the Same Name
+    type: assert_api_response
+    node: nsname-node-2
+    path: /admin-api/namespaces
+    where:
+      namespaceId: '{{namespace_id}}'
+    match:
+      name: shared-room
+    retries: 30
+    interval: 2
+
+stop_all_nodes: true

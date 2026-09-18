@@ -31,6 +31,11 @@ class CreateNamespaceStep(BaseStep):
             raise ValueError(
                 f"Step '{step_name}': 'app_key' must be a string if provided"
             )
+        namespace_name = self.config.get("namespace_name")
+        if namespace_name is not None and not isinstance(namespace_name, str):
+            raise ValueError(
+                f"Step '{step_name}': 'namespace_name' must be a string if provided"
+            )
 
     def _get_exportable_variables(self):
         return [
@@ -66,13 +71,16 @@ class CreateNamespaceStep(BaseStep):
             client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
             create_namespace = getattr(client, "create_namespace", None)
             if callable(create_namespace):
-                # A namespace's display name (if any) is set afterward via a
-                # set_group_metadata step — never inferred from this step's label.
-                # `app_key` is only forwarded when provided so the call stays
-                # compatible across client-py versions.
+                # The name comes from `namespace_name`, never from this step's label.
+                # Optional kwargs are only forwarded when given, for older client-py.
                 create_kwargs: dict[str, Any] = {"application_id": application_id}
                 if app_key is not None:
                     create_kwargs["app_key"] = app_key
+                namespace_name = self.config.get("namespace_name")
+                if namespace_name is not None:
+                    create_kwargs["name"] = self._resolve_dynamic_value(
+                        namespace_name, workflow_results, dynamic_values
+                    )
                 api_result = create_namespace(**create_kwargs)
             else:
                 # Backward compatibility for older client versions.

@@ -892,6 +892,38 @@ Both take `expect_status`.
   expect_status: 400
 ```
 
+### account_rescope
+
+Replace what a paired device may speak in, run on the node holding the account.
+This **replaces**: `only:` naming one application drops every other one the device held.
+
+`scope` is either `all` or an `only:` list naming at least one application.
+An empty `only:` is a config error rather than a request, because on the wire it would mean `all` — the opposite of what such a step asks for.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | Node holding the account root. |
+| `device_id` | yes | string | Device whose scope is replaced. |
+| `scope` | yes | `all` or mapping | `all`, or `only:` with the applications that replace the stored scope. |
+| `expect_status` | no | int | Status the call must be refused with, as on the other account steps. |
+
+Outputs: `applications`.
+
+```yaml
+- type: account_rescope
+  node: calimero-node-1
+  device_id: '{{paired_device}}'
+  scope:
+    only:
+      - '{{application_id}}'
+  outputs:
+    scope: applications
+- type: account_rescope
+  node: calimero-node-1
+  device_id: '{{paired_device}}'
+  scope: all
+```
+
 ### account_revoke
 
 Withdraw a device from its account and rotate the scope key, so the revoked device

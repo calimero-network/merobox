@@ -144,6 +144,7 @@ _ACCOUNT_STEP_CLASSES = {
     "account_pair_init": "AccountPairInitStep",
     "account_pair_complete": "AccountPairCompleteStep",
     "account_relink": "AccountRelinkStep",
+    "account_rescope": "AccountRescopeStep",
     "account_devices": "AccountDevicesStep",
     "account_applications": "AccountApplicationsStep",
     "account_revoke": "AccountRevokeStep",

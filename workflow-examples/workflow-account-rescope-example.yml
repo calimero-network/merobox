@@ -1,0 +1,171 @@
+description: >
+  Narrow a paired device to one application and widen it back, and assert the two
+  refusals the route owes: an unknown device, and a call off the account holder.
+name: Account Rescope Example
+
+nodes:
+  count: 2
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: rescope-node
+  base_port: 9861
+  base_rpc_port: 9961
+
+steps:
+  # Two applications, on the holder only: the phone is a member of nothing and
+  # everything it reaches, it reaches as a device of this account.
+  - name: Install App A on the Holder
+    type: install_application
+    node: rescope-node-1
+    path: ./workflow-examples/res/com.calimero.kv-store-1.0.0.mpk
+    dev: true
+    outputs:
+      app_a: applicationId
+
+  - name: Install App B on the Holder
+    type: install_application
+    node: rescope-node-1
+    path: ./workflow-examples/res/com.calimero.kv-store-v2-1.0.0.mpk
+    dev: true
+    outputs:
+      app_b: applicationId
+
+  - name: Two Applications, Not One Installed Twice
+    type: assert
+    statements:
+      - 'is_set({{app_a}})'
+      - 'is_set({{app_b}})'
+      - '{{app_a}} != {{app_b}}'
+
+  - name: Create Namespace A, Targeting App A
+    type: create_namespace
+    node: rescope-node-1
+    application_id: '{{app_a}}'
+    outputs:
+      ns_a: namespaceId
+
+  - name: Create Namespace B, Targeting App B
+    type: create_namespace
+    node: rescope-node-1
+    application_id: '{{app_b}}'
+    outputs:
+      ns_b: namespaceId
+
+  - name: What the Holder Speaks As
+    type: node_identity
+    node: rescope-node-1
+    outputs:
+      holder_root: accountRootPublicKey
+
+  - name: Pair the Phone for Both Applications
+    type: account_pair
+    node: rescope-node-2
+    holder: rescope-node-1
+    root_key: '{{holder_root}}'
+    account_namespace: auto
+    namespaces:
+      - '{{ns_a}}'
+      - '{{ns_b}}'
+    applications:
+      - '{{app_a}}'
+      - '{{app_b}}'
+    await_self: true
+    outputs:
+      phone_device: deviceId
+
+  - name: The Phone Starts Out Bound in Both Namespaces
+    type: assert_api_response
+    node: rescope-node-1
+    path: /admin-api/account/devices
+    where:
+      deviceId: '{{phone_device}}'
+    contains:
+      applications:
+        - '{{app_a}}'
+        - '{{app_b}}'
+      namespaces:
+        - '{{ns_a}}'
+        - '{{ns_b}}'
+
+  # The refusals first, while the pairing stands: a rescoped device would answer
+  # for the replacement rather than for the field under test.
+
+  # 64 hex that decodes and names no device of this account, so the refusal comes
+  # from the certificate lookup rather than the width check.
+  - name: Rescope Refuses a Device This Node Certified Nothing For
+    type: account_rescope
+    node: rescope-node-1
+    device_id: '1111111111111111111111111111111111111111111111111111111111111111'
+    scope: all
+    expect_status: 404
+
+  - name: Rescope Refuses a Call on the Phone Rather Than the Holder
+    type: account_rescope
+    node: rescope-node-2
+    device_id: '{{phone_device}}'
+    scope: all
+    expect_status: 403
+
+  # The subject: a replacement, not a widening, so app B goes away.
+  - name: Narrow the Phone to App A Alone
+    type: account_rescope
+    node: rescope-node-1
+    device_id: '{{phone_device}}'
+    scope:
+      only:
+        - '{{app_a}}'
+    outputs:
+      narrowed_scope: applications
+      descoped_ns: descoped.0.namespaceId
+
+  - name: The Replacement Dropped the Binding in Namespace B
+    type: json_assert
+    statements:
+      - 'json_equal({{narrowed_scope}}, ["{{app_a}}"])'
+      - 'json_equal({{descoped_ns}}, "{{ns_b}}")'
+
+  - name: The Phone Now Reaches Namespace A Alone
+    type: assert_api_response
+    node: rescope-node-1
+    path: /admin-api/account/devices
+    where:
+      deviceId: '{{phone_device}}'
+    match:
+      revoked: false
+      applications.0: '{{app_a}}'
+    contains:
+      namespaces:
+        - '{{ns_a}}'
+    not_contains:
+      namespaces:
+        - '{{ns_b}}'
+    absent:
+      - applications.1
+
+  - name: Widen the Phone Back to Every Application
+    type: account_rescope
+    node: rescope-node-1
+    device_id: '{{phone_device}}'
+    scope: all
+    outputs:
+      relinked_ns: linkedIn.0.namespaceId
+
+  - name: The Widening Re-Linked the Phone Into Namespace B
+    type: json_assert
+    statements:
+      - 'json_equal({{relinked_ns}}, "{{ns_b}}")'
+
+  # An empty scope IS every application on the wire, so the row names none.
+  - name: The Phone Reaches Both Namespaces Again
+    type: assert_api_response
+    node: rescope-node-1
+    path: /admin-api/account/devices
+    where:
+      deviceId: '{{phone_device}}'
+    contains:
+      namespaces:
+        - '{{ns_a}}'
+        - '{{ns_b}}'
+    absent:
+      - applications.0
+
+stop_all_nodes: true
