@@ -1,0 +1,134 @@
+description: >
+  Assert that a node actually DELIVERS an event over its WebSocket — not just
+  that the upgrade handshake succeeded and not just that a write returned 200.
+
+  Before `ws_subscribe` could read frames, the harness could only prove the
+  handshake: no workflow could tell "the write applied and the node told its
+  subscribers" apart from "the write applied and the event stream is dead".
+  This workflow closes that gap on a single local node, with no auth and no
+  TEE involved.
+
+  Shape of the test — a subscriber and a writer running CONCURRENTLY, because
+  events are live, not replayed: a subscriber that connects after the write
+  has already applied sees nothing and would fail for the wrong reason. The
+  `parallel` step gives the overlap; the writer's `wait` gives the subscriber
+  time to finish its handshake and get its subscribe frame in first. (Core
+  documents that events for a context may arrive before the subscribe ack, so
+  the matcher considers every frame from the moment the subscribe is sent.)
+
+  Wire shape being exercised (core `calimero-server-primitives::ws`):
+    → {"id": 1, "method": "subscribe", "params": {"contextIds": ["<hex>"]}}
+      NO `jsonrpc` member — this is not JSON-RPC 2.0 and the node's
+      `deny_unknown_fields` rejects a frame carrying one.
+    ← {"id": 1, "result": {"contextIds": ["<hex>"]}}            (the ack)
+    ← {"id": null, "result": {"contextId": "<hex>",
+        "type": "StateMutation", "data": {"newRoot": "<hex>", ...}}}
+
+  WS auth is `?token=<jwt>` (clients cannot set headers on an upgrade); SSE
+  auth is an `Authorization: Bearer` header at `/sse`. This node runs without
+  auth, hence `unauthenticated: true`.
+
+name: WebSocket StateMutation Event Assertion
+
+force_pull_image: false
+
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: ws-node
+  base_port: 9280
+  base_rpc_port: 9380
+
+steps:
+  - name: Install kv-store
+    type: install_application
+    node: ws-node-1
+    path: ./workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create namespace
+    type: create_namespace
+    node: ws-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create context
+    type: create_context
+    node: ws-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+      member_public_key: memberPublicKey
+
+  # ---------- The assertion proper ----------
+  #
+  # fail-fast so a dead event stream stops the run at the subscriber rather
+  # than waiting out the writer branch.
+  - name: Subscribe, then write, and require the event to arrive
+    type: parallel
+    failure_mode: fail-fast
+    groups:
+      - name: Subscriber
+        steps:
+          - name: Await a StateMutation on the context
+            type: ws_subscribe
+            node: ws-node-1
+            unauthenticated: true
+            subscribe:
+              context_ids:
+                - '{{context_id}}'
+            expect_event:
+              # Untagged-flattened ContextEvent: `type` sits next to
+              # `contextId` inside `result`.
+              path: result.type
+              equals: StateMutation
+            await_seconds: 60
+            outputs:
+              mutated_context: result.contextId
+              new_root: result.data.newRoot
+
+      - name: Writer
+        steps:
+          # Long enough for the subscriber's handshake + subscribe frame.
+          - name: Give the subscriber a head start
+            type: wait
+            seconds: 5
+
+          - name: Write a key (produces the StateMutation)
+            type: call
+            node: ws-node-1
+            context_id: '{{context_id}}'
+            method: set
+            args:
+              key: ws-event-probe
+              value: delivered
+            outputs:
+              set_result: result
+
+  # The event the subscriber matched must belong to the context we wrote to —
+  # a StateMutation from some other context would satisfy the matcher's `type`
+  # check alone and quietly prove nothing.
+  - name: Assert the event was for our context
+    type: assert_equals
+    actual: '{{mutated_context}}'
+    equals: '{{context_id}}'
+    ignore_case: true
+
+  - name: Assert the event carried a new state root
+    type: assert
+    statements:
+      - "is_set({{new_root}})"
+
+  - name: No panics or fatal errors on the node
+    type: assert_log_absent
+    nodes: [ws-node-1]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: true
