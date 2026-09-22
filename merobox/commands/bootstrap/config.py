@@ -119,6 +119,9 @@ VALID_STEP_TYPES = frozenset(
         "start_node",
         "set_tee_admission_policy",
         "tee_fleet_join",
+        "issue_ownership_proof",
+        "cloud_request",
+        "assert_equals",
         "assert_tee_member",
         "assert_not_member",
         "login",
@@ -384,6 +387,23 @@ class WebSocketConnectStepConfig(BaseStepConfig):
     )
     timeout: Optional[float] = Field(
         None, gt=0, description="Handshake timeout in seconds"
+    )
+    subscribe: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Subscribe frame params: {context_ids: [...], group_ids: [...]} "
+            "(sent as camelCase contextIds/groupIds)"
+        ),
+    )
+    expect_event: Optional[dict[str, Any]] = Field(
+        None,
+        description=("Matcher for a received frame: {path, equals} and/or {contains}"),
+    )
+    expect_no_event: Optional[bool] = Field(
+        False, description="Pass only if NO frame matches expect_event"
+    )
+    await_seconds: Optional[float] = Field(
+        None, gt=0, description="How long to read frames for (default 30)"
     )
 
 

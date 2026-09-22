@@ -730,6 +730,19 @@ class ParallelStep(BaseStep):
             from merobox.commands.bootstrap.steps.repeat import RepeatStep
 
             return RepeatStep(step_config, **common_kwargs)
+        elif step_type in ("ws_connect", "ws_subscribe"):
+            # A WS event assertion has to be running *while* the write that
+            # produces the event happens, so the subscriber branch of a
+            # `parallel` step is its natural home.
+            from merobox.commands.bootstrap.steps.websocket import (
+                WebSocketConnectStep,
+            )
+
+            return WebSocketConnectStep(step_config, **common_kwargs)
+        elif step_type == "assert_equals":
+            from merobox.commands.bootstrap.steps.assertion import AssertEqualsStep
+
+            return AssertEqualsStep(step_config, **common_kwargs)
         else:
             console.print(f"[red]Unknown nested step type: {step_type}[/red]")
             return None

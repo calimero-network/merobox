@@ -6,9 +6,13 @@ from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogAbsentStep,
     AssertLogPresentStep,
 )
-from merobox.commands.bootstrap.steps.assertion import AssertStep
+from merobox.commands.bootstrap.steps.assertion import AssertEqualsStep, AssertStep
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.blob import UploadBlobStep
+from merobox.commands.bootstrap.steps.cloud import (
+    CloudRequestStep,
+    IssueOwnershipProofStep,
+)
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.delete_blob import (
     DeleteBlobOnDiskStep,
@@ -169,6 +173,9 @@ __all__ = [
     "HealPeersStep",
     "InjectNetworkFaultStep",
     "AssertStep",
+    "AssertEqualsStep",
+    "CloudRequestStep",
+    "IssueOwnershipProofStep",
     "AssertLogAbsentStep",
     "AssertLogPresentStep",
     "JsonAssertStep",
