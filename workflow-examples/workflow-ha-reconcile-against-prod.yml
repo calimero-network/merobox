@@ -1,0 +1,350 @@
+description: >
+  E2E test for HA fleet-join reconcile against PROD mdma + the real prod
+  fleet node `debug-readonly` @ 34.6.154.211 (image 2.3.44, merod rc.44).
+
+  No mock attestation anywhere. The fleet node is real TDX hardware in
+  prod; the test owner is a merod container in a merobox NAT-cone
+  topology (matches the prod-laptop shape — NAT'd, reaches the public
+  rendezvous/relay outbound, no inbound listener). Coordination happens
+  through the **prod** mdma at https://manager.cloud.calimero.network.
+
+  Today this workflow FAILS at step 'Assert fleet node admitted'. Why:
+
+    1. Test owner creates a fresh namespace and is intentionally
+       disconnected from the gossip network.
+    2. Test enables HA on that namespace via prod cloud API → mdma
+       upserts an active HaRequest for it.
+    3. The real fleet node's sidecar polls /should-join (1s cadence),
+       sees the new assignment, runs `meroctl tee fleet-join` ONCE.
+       Inside core, that call has a hard-coded 30s window
+       (fleet_join.rs:169 MAX_ADMISSION_WAIT). The owner is offline,
+       so the announce reaches no mesh. After 30s the handler returns
+       HTTP 200 with `admitted:false`. The sidecar caches the group
+       in /var/lib/calimero/fleet-assignments.json — STATE_FILE dedup
+       in fleet-sidecar.sh.j2 — and NEVER re-runs fleet-join.
+    4. Test reconnects the owner. Two minutes pass. Nothing happens
+       because no layer of the stack is running a reconcile loop.
+    5. `list_group_members({{ns}})` does NOT contain the fleet peer
+       → the `assert contains(...)` fails. Bug reproduced.
+
+  After the dispatcher-push reconcile ships (mdma controller that
+  re-drives `fleet-join` against assignments that aren't truly
+  members yet), this same workflow PASSES. No YAML change needed.
+
+  Test invariants exercised:
+    - the truthful membership signal (owner's list_group_members)
+    - the late-arriving-owner failure mode (the design's worst case)
+    - the dispatcher reconcile loop (post-fix)
+
+  Required env (export before `merobox run`):
+    MDMA_SESSION    - valid 7-day MDMA session JWT for the test user
+                      (Authorization: Bearer)
+    MDMA_EMAIL      - the email that JWT was issued to. It is the `subject`
+                      of the merod ownership proof, and mdma refuses a proof
+                      whose subject is not the calling account.
+    PROD_MRTD       - published mrtd (hex). Stable across 2.3.40–2.3.45
+                      because it's bootloader-derived. Read from any
+                      `mero-tee-v<X>` release's `published-mrtds.json`
+                      under `.profiles["debug-read-only"].mrtd`.
+  Optional env:
+    MDMA_URL        - cloud base URL; defaults to the PROD manager
+                      (https://manager.cloud.calimero.network).
+
+  Every cloud and admin-API hop below is a typed step, not a shell script.
+  The scripts this file used to call (`set-tee-admission-policy.sh`,
+  `fetch-namespace-proof.sh`, `enable-ha-prod.sh`, `disable-ha-prod.sh`)
+  pushed their HTTP through `curl ... | tee`, where a non-2xx response does
+  NOT trip `set -eu` (no `pipefail` in POSIX sh): the script exited 0 after a
+  401 and the workflow went on to assert against state that was never
+  written. `cloud_request` / `issue_ownership_proof` /
+  `set_tee_admission_policy` check the status code in Python and fail the
+  step. Secrets stay in the environment via `${VAR}` references.
+
+  Cleanup is best-effort: we POST /disable-ha at the end. mdma's
+  freshness-TTL reclaims any leftover fleet_assignments row by
+  design (no DELETE needed).
+
+name: HA Reconcile — Prod mdma + Real Fleet Node
+
+# NO topology block (plain cluster mode). The earlier NAT-cone topology
+# we used here gave the owner a LOCAL boot-node as its only rendezvous
+# (172.22.0.2), while the prod fleet node uses CALIMERO_DEV_BOOT_NODES
+# (the public devnet rendezvous at 63.181.86.34). Two different
+# rendezvous servers => no shared peer discovery => announce never
+# reaches the owner, so admit never happens regardless of the sidecar.
+# `preserve_default_bootstrap: true` below keeps the public devnet
+# boot-node that `merod init` writes — the same one the fleet node
+# uses — so both peers register at the same rendezvous and can
+# discover each other.
+preserve_default_bootstrap: true
+# Explicitly pin the bootstrap to the public devnet rendezvous so a stale
+# ./data/ha-owner-1/config.toml from a previous NAT-topology run can't
+# silently keep us pointed at 172.22.0.2:4001 (the merobox local
+# boot-node). These match CALIMERO_DEV_BOOT_NODES from
+# core/crates/network/primitives/src/config.rs.
+bootstrap_nodes:
+  - "/ip4/63.181.86.34/tcp/4001/p2p/12D3KooWR5V4zmisVtVdGE6i8jfFwtgRNq5t8eDGxfckKuhXu7Eh"
+  - "/ip4/63.181.86.34/udp/4001/quic-v1/p2p/12D3KooWR5V4zmisVtVdGE6i8jfFwtgRNq5t8eDGxfckKuhXu7Eh"
+
+force_pull_image: false
+
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+  prefix: ha-owner
+  base_port: 9080
+  base_rpc_port: 9180
+
+steps:
+  # ---------- Owner-side setup: app + fresh namespace ----------
+  #
+  # The application is just scaffolding so we can create a namespace;
+  # the test does NOT exercise app state, only group membership.
+
+  - name: Install kv-store on owner (scaffolding for namespace creation)
+    type: install_application
+    node: ha-owner-1
+    path: ./workflow-examples/res/kv_store_v2.wasm
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create fresh test namespace
+    type: create_namespace
+    node: ha-owner-1
+    application_id: '{{app_id}}'
+    outputs:
+      ns: namespaceId
+
+  # The owner's TeeAdmissionPolicy gates which TEE quotes it will
+  # admit. It must contain the published mrtd (stable across
+  # 2.3.40–2.3.45) that the real prod fleet node carries — otherwise
+  # verify_attestation succeeds but the admission policy rejects, and
+  # we'd see a different bug than the one we're trying to test.
+  #
+  # `accept_mock: false` — this is real TDX hardware, so a mock quote must
+  # NOT be admitted. `allowed_mrtd` pins the published measurement from the
+  # environment; an unset PROD_MRTD fails the step rather than sending an
+  # empty list, because an empty allowlist means UNCONSTRAINED.
+  #
+  # The RTMR lists stay empty here, matching what this test did by hand —
+  # i.e. runtime measurements are NOT pinned, only the bootloader-derived
+  # MRTD is. That is a known gap, not a recommendation: emptying an RTMR
+  # allowlist to make admission succeed admits a node whose runtime
+  # measurements do not match (mdma#297 / #309). A policy that pins the
+  # profile of the node actually assigned would add
+  # `allowed_rtmr0..3` from the same published-mrtds.json entry.
+  #
+  # `enabled` is not sent: merod DERIVES it and rejects it as unknown.
+  - name: Set owner TeeAdmissionPolicy to accept the published mrtd
+    type: set_tee_admission_policy
+    node: ha-owner-1
+    group_id: '{{ns}}'
+    accept_mock: false
+    allowed_mrtd:
+      - '${PROD_MRTD}'
+
+  # ---------- Issue the namespace ownership proof BEFORE disconnect ----------
+  #
+  # mdma's namespace claim requires a merod-signed namespace ownership proof.
+  # We have to issue it while the owner is still reachable on localhost:9180;
+  # the disconnect step below severs the only Docker network on the container
+  # and the port mapping with it. Once we have the proof bytes, mdma verifies
+  # them cryptographically without ever talking to merod again.
+  #
+  # NOTE: the namespace variant of this endpoint takes NO contextId — sending
+  # one is a 400. The step never sends one.
+  - name: Issue namespace ownership proof from owner merod
+    type: issue_ownership_proof
+    node: ha-owner-1
+    group_id: '{{ns}}'
+    subject: '${MDMA_EMAIL}'
+    outputs:
+      # merod's response VERBATIM (camelCase inner keys). mdma's
+      # OwnershipProof model is populate_by_name and accepts both spellings,
+      # so it forwards as-is — no re-keying step.
+      ownership_proof: proof
+
+  # ---------- Force the bug: isolate owner BEFORE enabling HA ----------
+  #
+  # The fleet sidecar polls /should-join every 1s. Once HA is enabled
+  # below, it will fire its 30s fleet-join window. The pre-2.3.45
+  # sidecar cached the assignment after that single window regardless
+  # of admit success — the bug this whole PR targets. The new
+  # sidecar should retry until the owner is reachable (post-reconnect)
+  # AND the local handler returns admitted=true.
+
+  - name: Network-isolate owner before HA-enable
+    type: disconnect_node
+    node: ha-owner-1
+
+  # ---------- Claim + enable HA on the test namespace via PROD cloud ----------
+  #
+  # Two hops, in this order (mdma#144 split):
+  #   1. POST /api/cloud/namespaces/claim — verifies the merod-signed proof,
+  #      consumes its replay-nonce, writes the UserNamespace row. Idempotent
+  #      for the same user; 409 if another account already claimed it.
+  #   2. POST /api/cloud/namespaces/{ns}/enable-ha — writes the HaRequest.
+  #      404s unless the claim above succeeded, which is exactly why claim
+  #      was the hop this workflow was missing.
+  # The fleet sidecar sees the new assignment within ~1s.
+
+  - name: Claim the test namespace in the cloud
+    type: cloud_request
+    method: POST
+    path: /api/cloud/namespaces/claim
+    body:
+      namespace_id: '{{ns}}'
+      ownership_proof: '{{ownership_proof}}'
+
+  - name: Enable HA on test namespace via prod cloud API
+    type: cloud_request
+    method: POST
+    path: /api/cloud/namespaces/{{ns}}/enable-ha
+
+  # ---------- Burn the sidecar's single window ----------
+  #
+  # MAX_ADMISSION_WAIT in core is 30s; the sidecar's poll interval is
+  # 1s. 45s comfortably covers: pickup (≤1s) + fleet-join window
+  # (30s) + cache-write + a safety margin.
+
+  - name: Let the sidecar burn its one fleet-join window
+    type: wait
+    seconds: 45
+
+  # ---------- Bring owner online — observe whether anything reconciles ----------
+
+  - name: Reconnect owner to gossip
+    type: connect_node
+    node: ha-owner-1
+
+  # 120s is generous for a reconcile loop to: pick up the
+  # not-yet-confirmed assignment, re-issue fleet-join against the
+  # now-reachable owner, run the 30s admit window, owner admits,
+  # mdma's /confirm fires, status flips to 'active'. Today: nothing
+  # happens; this is the empty interval that reveals the missing
+  # controller.
+  - name: Wait for the reconcile loop to do its job (or not)
+    type: wait
+    seconds: 120
+
+  # ---------- Truthful assertion ----------
+  #
+  # `list_group_members` is the only signal that actually proves
+  # membership — handler returns 200+admitted:false even when nothing
+  # admitted, and mdma's `fleet_assignments.status` reflects "we
+  # tried" not "it worked." Trusting either would lie.
+
+  - name: Query owner for actual namespace membership
+    type: list_group_members
+    node: ha-owner-1
+    group_id: '{{ns}}'
+    outputs:
+      members: members
+
+  - name: Assert fleet peer is an admitted member (FAILS today, PASSES post-fix)
+    type: assert_tee_member
+    node: ha-owner-1
+    group_id: '{{ns}}'
+    # The members list contains entries shaped {'identity': '<hex>',
+    # 'role': 'Admin' | 'ReadOnlyTee' | ...}. The owner is always 'Admin'.
+    # An admitted fleet TEE node shows up with role='ReadOnlyTee' — that's
+    # the truthful membership signal (and a per-namespace identity, NOT a
+    # libp2p peer_id, so matching on peer_id wouldn't work anyway).
+    role: ReadOnlyTee
+    # non_blocking: fails loud but the workflow continues to the disable-ha
+    # cleanup, so we don't leak an active ha_request in prod.
+    non_blocking: true
+    outputs:
+      # The admitted member's identity — the left-hand side of the
+      # cross-check against the cloud's executor_account below.
+      fleet_identity: identity
+
+  # ---------- Delegated authorship: grant, then verify the cloud agrees ------
+  #
+  # An admitted ReadOnlyTee replica is a healthy replica that cannot yet
+  # author on anyone's behalf: core implies CAN_AUTHOR_ON_BEHALF from nothing,
+  # so `authorship_ready` starts false by design. The owner grants it, the
+  # node reports it on its next /api/fleet/confirm, and the cloud RELAYS what
+  # the node said — it never decides it.
+  #
+  # 516 = 4 (the capability the admitted member already holds) | 512
+  # (CAN_AUTHOR_ON_BEHALF, 1<<9). The field REPLACES the mask, so the OR has
+  # to be done here; sending a bare 512 would revoke the existing bit.
+  - name: Grant CAN_AUTHOR_ON_BEHALF to the admitted fleet member
+    type: set_member_capabilities
+    node: ha-owner-1
+    group_id: '{{ns}}'
+    member_id: '{{fleet_identity}}'
+    capabilities: 516
+    non_blocking: true
+
+  # The grant has to reach the node, and the node has to report it on its next
+  # confirm before the cloud can echo it back.
+  - name: Let the fleet node observe the grant and re-confirm
+    type: wait
+    seconds: 60
+
+  - name: Read the cloud's relay directory for this namespace
+    type: cloud_request
+    method: GET
+    path: /api/cloud/me/namespaces/{{ns}}/relays
+    non_blocking: true
+    outputs:
+      # {"namespace_id": ..., "relays": [{peer_id, relay_url,
+      #   executor_account, status, authorship_ready, ...}]}
+      # One replica on the free plan, so index 0 is the assignment under test.
+      authorship_ready: relays.0.authorship_ready
+      executor_account: relays.0.executor_account
+
+  - name: Assert the cloud reports authorship_ready
+    type: assert_equals
+    actual: '{{authorship_ready}}'
+    equals: true
+    non_blocking: true
+
+  # The cheapest real end-to-end check available: the identity the OWNER
+  # admitted over p2p and the account the CLOUD advertises as the executor for
+  # this namespace must be the same node. If they diverge, a client would sign
+  # a warrant naming an executor that is not the member holding the group key
+  # — the write would be refused, and neither side alone would show why.
+  - name: Assert the admitted member IS the cloud's executor account
+    type: assert_equals
+    actual: '{{fleet_identity}}'
+    equals: '{{executor_account}}'
+    ignore_case: true
+    non_blocking: true
+
+  # ---------- Best-effort cleanup ----------
+  #
+  # disable_ha_namespace flips HaRequest.status to 'disabled'. The
+  # fleet_assignment row for the test namespace is reclaimed by the
+  # freshness-TTL on the next poll cycle once the assignment goes
+  # quiet — no DELETE needed.
+
+  - name: Disable HA on test namespace (cleanup)
+    type: cloud_request
+    method: POST
+    path: /api/cloud/namespaces/{{ns}}/disable-ha
+    # Cleanup stays best-effort (an end-of-test HTTP hiccup shouldn't fail the
+    # suite) — but the status is still printed, so a silent 401 no longer
+    # looks like a successful disable, which is exactly what the shell version
+    # did until it was taught the http_code dance.
+    non_blocking: true
+
+  # ---------- Regression guards ----------
+
+  - name: No panics or fatal errors on owner
+    type: assert_log_absent
+    nodes: [ha-owner-1]
+    patterns:
+      - "panicked at"
+      - "thread 'main' panicked"
+      - "FATAL"
+
+stop_all_nodes: false  # debug: keep ha-owner-1 alive after the workflow so we
+                       # can `docker logs ha-owner-1` to see if it ever observed
+                       # a TeeAttestationAnnounce — tells us if the failure is
+                       # upstream (announce never arrived) or downstream
+                       # (announce arrived but admission rejected). Remember to
+                       # `docker stop ha-owner-1` manually when done.

@@ -200,7 +200,17 @@ class UpdateMemberRoleStep(BaseStep):
 
 
 class SetMemberCapabilitiesStep(BaseStep):
-    """Set capabilities for a specific member in a group."""
+    """Set capabilities for a specific member in a group.
+
+    `capabilities` is the full u32 bitmask, not a delta: it REPLACES the
+    member's current mask, so a grant must OR the new bit with what the member
+    already holds (e.g. granting CAN_AUTHOR_ON_BEHALF = 1<<9 = 512 to a member
+    holding 4 means sending 516, not 512).
+
+    Optional `non_blocking: true` reports a failure and lets the workflow
+    continue — for workflows that mutate remote state and must reach their
+    cleanup steps.
+    """
 
     def _get_required_fields(self) -> list[str]:
         return ["node", "group_id", "member_id", "capabilities"]
@@ -214,6 +224,10 @@ class SetMemberCapabilitiesStep(BaseStep):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
         if not isinstance(self.config.get("capabilities"), int):
             raise ValueError(f"Step '{step_name}': 'capabilities' must be an integer")
+        if "non_blocking" in self.config and not isinstance(
+            self.config.get("non_blocking"), bool
+        ):
+            raise ValueError(f"Step '{step_name}': 'non_blocking' must be a boolean")
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -243,15 +257,20 @@ class SetMemberCapabilitiesStep(BaseStep):
             if expected_failure:
                 self._report_expected_failure(str(result.get("error", "Unknown error")))
                 return True
-            console.print(
-                f"[red]set_member_capabilities failed on {node_name}: {result.get('error')}[/red]"
+            message = (
+                f"set_member_capabilities failed on {node_name}: "
+                f"{result.get('error')}"
             )
+            if self.config.get("non_blocking", False):
+                console.print(f"[yellow]⚠️  {message} (non_blocking)[/yellow]")
+                return True
+            console.print(f"[red]{message}[/red]")
             return False
         if self._check_jsonrpc_error(result["data"]):
             if expected_failure:
                 self._report_expected_failure("JSON-RPC error returned")
                 return True
-            return False
+            return bool(self.config.get("non_blocking", False))
         workflow_results[f"set_member_capabilities_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Set capabilities for {member_id} in group {group_id} on {node_name}[/green]"

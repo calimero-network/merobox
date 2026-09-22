@@ -425,6 +425,115 @@ See `workflow-examples/workflow-embedded-auth-example.yml` for a full run, or
 `workflow-examples/workflow-websocket-auth-example.yml` for a WebSocket-focused
 one.
 
+#### 5b. WebSocket Event Assertions (`ws_subscribe`)
+
+`ws_connect`/`ws_subscribe` can also **read** frames, which is the only way a
+workflow can assert that a node actually *delivered* an event (as opposed to
+that a write returned 200).
+
+```yaml
+- type: ws_subscribe
+  node: node-1
+  unauthenticated: true            # node without embedded auth
+  subscribe:
+    context_ids: ["{{context_id}}"]
+  expect_event:
+    path: result.type              # dotted path into the decoded frame
+    equals: StateMutation
+    # contains: StateMutation      # or/and: raw-frame substring
+  await_seconds: 60
+  # expect_no_event: true          # invert: pass only if it never arrives
+  outputs:
+    new_root: result.data.newRoot
+```
+
+Wire shape (core `calimero-server-primitives::ws`) — worth knowing because it
+is *not* JSON-RPC 2.0:
+
+- request: `{"id": 1, "method": "subscribe", "params": {"contextIds": [...]}}`
+  — **no `jsonrpc` member**; the node's `deny_unknown_fields` rejects one.
+- ack: `{"id": 1, "result": {"contextIds": [...]}}`
+- pushed event: `{"id": null, "result": {"contextId": "<hex>",
+  "type": "StateMutation", "data": {"newRoot": "<hex>", ...}}}`
+- WS auth is `?token=<jwt>` (clients cannot set headers on an upgrade); SSE
+  auth is an `Authorization: Bearer` header at `/sse`.
+
+Events are live, not replayed: a subscriber that connects after the write has
+already applied sees nothing. Run the subscriber and the writer as two groups
+of one `parallel` step, giving the writer a short `wait` head start — see
+`workflow-examples/workflow-websocket-event-assert.yml`.
+
+#### 5c. Cloud (mdma) Steps (`issue_ownership_proof`, `cloud_request`)
+
+Drive a Calimero Cloud (mdma) deployment from a workflow instead of shelling
+out to `curl` in a `script` step. This matters for more than tidiness: a
+failing `curl` on the left of a pipe does **not** trip `set -eu` (POSIX sh has
+no `pipefail`), so the shell version exited 0 after a 401 and the workflow went
+on to assert against state that was never written. These steps check the status
+code in Python and fail the step.
+
+`issue_ownership_proof` is the merod half: it asks a node for a signed
+namespace ownership proof, the credential the cloud verifies.
+
+```yaml
+- type: issue_ownership_proof
+  node: owner-1
+  group_id: "{{ns}}"               # the namespace id
+  subject: "${MDMA_EMAIL}"         # must equal the calling cloud account
+  outputs:
+    ownership_proof: proof         # merod's object VERBATIM (camelCase)
+```
+
+`cloud_request` is one authenticated HTTP call to mdma:
+
+```yaml
+- type: cloud_request
+  method: POST
+  path: /api/cloud/namespaces/claim
+  # base_url defaults to ${MDMA_URL}, else the prod manager URL
+  # token defaults to ${MDMA_SESSION}; `token: null` sends no Authorization
+  body:
+    namespace_id: "{{ns}}"
+    ownership_proof: "{{ownership_proof}}"   # a dict placeholder forwards as JSON
+  expect_status: 200               # int or list; anything else fails the step
+  # non_blocking: true             # best-effort hops (cleanup) only
+  outputs:
+    authorship_ready: relays.0.authorship_ready
+```
+
+Shape notes that cost real debugging time:
+
+- merod's admin API is camelCase; the proof body is
+  `{audience, subject, nonce, expiresAtMs}`.
+- The **namespace** proof variant takes NO `contextId` — sending one is a 400.
+- mdma's cloud API is snake_case at the top level, but the proof object
+  forwards **verbatim** with its camelCase inner keys (mdma accepts both).
+- The namespace chain is `claim` → `enable-ha`: `enable-ha` 404s until the
+  namespace is claimed.
+
+Secrets never go in YAML: any string in these steps (and in
+`set_tee_admission_policy`'s measurement lists) may reference the environment
+as `${VAR}`. An unset or empty variable **fails the step** — for an MRTD
+allowlist that is the point, since an empty list means *unconstrained*.
+
+Pair with `assert_equals` for typed comparisons that the `assert` statement
+language stringifies away:
+
+```yaml
+- type: assert_equals
+  actual: "{{authorship_ready}}"   # a real JSON bool
+  equals: true
+- type: assert_equals
+  actual: "{{fleet_identity}}"     # admitted member == cloud executor account
+  equals: "{{executor_account}}"
+  ignore_case: true
+```
+
+See `workflow-examples/workflow-ha-reconcile-against-prod.yml` for the full
+chain (namespace → proof → claim → enable-ha → admission → capability grant →
+`authorship_ready`). **That workflow mutates a production cloud account — read
+it, don't run it casually.**
+
 #### 6. Wait Step
 
 Pause execution for a specified duration.
@@ -1280,8 +1389,10 @@ merobox blob delete --node <node> --blob-id <id>   # Delete blob
 
 # Workflow step types
 install_application, create_context, create_identity, join_context, call, wait,
-repeat, script, assert, json_assert, upload_blob, invite_open, join_open, fuzzy_test,
-stop_node, start_node
+repeat, script, assert, assert_equals, json_assert, upload_blob, invite_open,
+join_open, fuzzy_test, stop_node, start_node, login, refresh, ws_connect,
+ws_subscribe, set_tee_admission_policy, tee_fleet_join, assert_tee_member,
+assert_not_member, issue_ownership_proof, cloud_request
 
 # Workflow configuration options
 auth_service, config_path, nuke_on_start, nuke_on_end, force_pull_image,

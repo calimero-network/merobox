@@ -17,7 +17,8 @@ other admin-API helpers (``application.py``, ``join.py``). The merod admin API
 serializes/deserializes in camelCase (serde ``rename_all = "camelCase"``), so the
 admission-policy body must use ``allowedMrtd`` etc., not snake_case — a snake_case
 body silently falls back to the server's empty default policy and rejects the
-quote (see ``workflow-examples/scripts/set-tee-admission-policy.sh``).
+quote. ``enabled`` is DERIVED server-side and is rejected as an unknown field,
+so it is never sent.
 """
 
 import json
@@ -25,6 +26,7 @@ from typing import Any
 
 import requests
 
+from merobox.commands.bootstrap.steps._env import EnvRefError, resolve_env_refs
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import (
     DEFAULT_CONNECTION_TIMEOUT,
@@ -95,7 +97,16 @@ class SetTeeAdmissionPolicyStep(BaseStep):
         values = self.config.get(field, default)
         return [
             (
-                self._resolve_dynamic_value(v, workflow_results, dynamic_values)
+                # `${ENV_VAR}` support so a workflow can pin a real published
+                # measurement (read out of a release artifact into the env at
+                # run time) without either hardcoding it in YAML or dropping to
+                # a `script` step. An unset variable raises, which is the point:
+                # an empty `allowedRtmr*` list means UNCONSTRAINED, so silently
+                # sending an empty list would admit a node whose runtime
+                # measurements do not match (mdma#297 / #309).
+                resolve_env_refs(
+                    self._resolve_dynamic_value(v, workflow_results, dynamic_values)
+                )
                 if isinstance(v, str)
                 else v
             )
@@ -111,27 +122,15 @@ class SetTeeAdmissionPolicyStep(BaseStep):
         )
         accept_mock = self.config.get("accept_mock", True)
 
-        body = {
-            "acceptMock": accept_mock,
-            "allowedMrtd": self._resolve_list(
-                "allowed_mrtd", [ZERO_MRTD], workflow_results, dynamic_values
-            ),
-            "allowedRtmr0": self._resolve_list(
-                "allowed_rtmr0", [], workflow_results, dynamic_values
-            ),
-            "allowedRtmr1": self._resolve_list(
-                "allowed_rtmr1", [], workflow_results, dynamic_values
-            ),
-            "allowedRtmr2": self._resolve_list(
-                "allowed_rtmr2", [], workflow_results, dynamic_values
-            ),
-            "allowedRtmr3": self._resolve_list(
-                "allowed_rtmr3", [], workflow_results, dynamic_values
-            ),
-            "allowedTcbStatuses": self._resolve_list(
-                "allowed_tcb_statuses", [], workflow_results, dynamic_values
-            ),
-        }
+        try:
+            body = self._build_policy_body(
+                accept_mock, workflow_results, dynamic_values
+            )
+        except EnvRefError as e:
+            # A missing measurement must fail the step, never fall back to an
+            # empty (== unconstrained) allowlist.
+            console.print(f"[red]set_tee_admission_policy on {node_name}: {e}[/red]")
+            return False
 
         try:
             admin_url = self._get_node_rpc_url(node_name)
@@ -174,6 +173,39 @@ class SetTeeAdmissionPolicyStep(BaseStep):
         if expected_failure:
             self._report_unexpected_success()
         return True
+
+    def _build_policy_body(
+        self,
+        accept_mock: bool,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build the camelCase policy body.
+
+        ``enabled`` is deliberately absent: merod DERIVES it from the rest of
+        the policy and rejects it as an unknown field.
+        """
+        return {
+            "acceptMock": accept_mock,
+            "allowedMrtd": self._resolve_list(
+                "allowed_mrtd", [ZERO_MRTD], workflow_results, dynamic_values
+            ),
+            "allowedRtmr0": self._resolve_list(
+                "allowed_rtmr0", [], workflow_results, dynamic_values
+            ),
+            "allowedRtmr1": self._resolve_list(
+                "allowed_rtmr1", [], workflow_results, dynamic_values
+            ),
+            "allowedRtmr2": self._resolve_list(
+                "allowed_rtmr2", [], workflow_results, dynamic_values
+            ),
+            "allowedRtmr3": self._resolve_list(
+                "allowed_rtmr3", [], workflow_results, dynamic_values
+            ),
+            "allowedTcbStatuses": self._resolve_list(
+                "allowed_tcb_statuses", [], workflow_results, dynamic_values
+            ),
+        }
 
 
 class TeeFleetJoinStep(BaseStep):
@@ -302,22 +334,47 @@ def _fetch_members(step: BaseStep, node_name: str, group_id: str) -> list[dict]:
 
 
 class AssertTeeMemberStep(BaseStep):
-    """Assert that an identity is present in a group's member list with a role.
+    """Assert a group has a member with a given role (and optionally identity).
 
     Defaults to ``role="ReadOnlyTee"`` — the role a TEE fleet node holds after a
     successful fleet-join admission.
+
+    ``identity`` is OPTIONAL. Omit it to assert only that *some* member holds
+    the role, and export the one that does:
+
+        - name: Assert a fleet node was admitted
+          type: assert_tee_member
+          node: ha-owner-1
+          group_id: "{{ns}}"
+          role: ReadOnlyTee
+          outputs:
+            fleet_identity: identity
+
+    That export is what makes the cloud cross-check possible: the admitted
+    member's identity must equal the cloud's ``executor_account`` for the same
+    namespace, which is the cheapest end-to-end proof that the node the owner
+    admitted and the node the cloud is advertising are the same node.
+
+    When more than one member holds the role the FIRST is exported and the
+    step says so — pass an explicit ``identity`` if a workflow ever needs to
+    disambiguate.
     """
 
     def _get_required_fields(self) -> list[str]:
-        return ["node", "group_id", "identity"]
+        return ["node", "group_id"]
 
     def _validate_field_types(self) -> None:
         step_name = self._get_step_name()
-        for field in ("node", "group_id", "identity"):
+        for field in ("node", "group_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
-        if "role" in self.config and not isinstance(self.config.get("role"), str):
-            raise ValueError(f"Step '{step_name}': 'role' must be a string")
+        for field in ("identity", "role"):
+            if field in self.config and not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        if "non_blocking" in self.config and not isinstance(
+            self.config.get("non_blocking"), bool
+        ):
+            raise ValueError(f"Step '{step_name}': 'non_blocking' must be a boolean")
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -326,8 +383,12 @@ class AssertTeeMemberStep(BaseStep):
         group_id = self._resolve_dynamic_value(
             self.config["group_id"], workflow_results, dynamic_values
         )
-        identity = self._resolve_dynamic_value(
-            self.config["identity"], workflow_results, dynamic_values
+        identity = (
+            self._resolve_dynamic_value(
+                self.config["identity"], workflow_results, dynamic_values
+            )
+            if self.config.get("identity") is not None
+            else None
         )
         role = self._resolve_dynamic_value(
             self.config.get("role", "ReadOnlyTee"), workflow_results, dynamic_values
@@ -342,23 +403,45 @@ class AssertTeeMemberStep(BaseStep):
             )
             return False
 
-        for m in members:
-            if (
-                isinstance(m, dict)
-                and m.get("identity") == identity
-                and m.get("role") == role
-            ):
-                console.print(
-                    f"[green]✓ {identity} is a '{role}' member of group "
-                    f"{group_id} on {node_name}[/green]"
-                )
-                return True
+        matches = [
+            m
+            for m in members
+            if isinstance(m, dict)
+            and m.get("role") == role
+            and (identity is None or m.get("identity") == identity)
+        ]
 
-        console.print(
-            f"[red]assert_tee_member: identity {identity} with role '{role}' "
-            f"NOT found in group {group_id} on {node_name}. "
-            f"Members: {json.dumps(members)}[/red]"
+        if matches:
+            match = matches[0]
+            if identity is None and len(matches) > 1:
+                console.print(
+                    f"[yellow]• {len(matches)} members hold role '{role}' in "
+                    f"group {group_id}; exporting the first "
+                    f"({match.get('identity')})[/yellow]"
+                )
+            workflow_results[f"assert_tee_member_{node_name}"] = match
+            self._export_variables(match, node_name, dynamic_values)
+            console.print(
+                f"[green]✓ {match.get('identity')} is a '{role}' member of group "
+                f"{group_id} on {node_name}[/green]"
+            )
+            return True
+
+        wanted = (
+            f"identity {identity} with role '{role}'" if identity else f"role '{role}'"
         )
+        message = (
+            f"assert_tee_member: no member with {wanted} "
+            f"in group {group_id} on {node_name}. "
+            f"Members: {json.dumps(members)}"
+        )
+        # `non_blocking` exists for the same reason the `assert` step has it:
+        # a workflow that mutates remote state (e.g. a cloud HA request) has to
+        # reach its cleanup steps even when the assertion it came to make fails.
+        if self.config.get("non_blocking", False):
+            console.print(f"[yellow]⚠️  {message} (non_blocking)[/yellow]")
+            return True
+        console.print(f"[red]{message}[/red]")
         return False
 
 

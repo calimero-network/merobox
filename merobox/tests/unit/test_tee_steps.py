@@ -10,6 +10,7 @@ resolution is stubbed.
 
 import asyncio
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -324,3 +325,92 @@ class TestAssertNotMember:
             )
             result = _run(step.execute({}, {}))
         assert result is False
+
+
+# =============================================================================
+# Role-only membership assertion + identity export (the cloud cross-check)
+# =============================================================================
+
+
+class TestAssertTeeMemberRoleOnly:
+    def test_matches_by_role_and_exports_the_identity(self):
+        step = _make_step(
+            AssertTeeMemberStep,
+            type="assert_tee_member",
+            group_id="gid",
+            role="ReadOnlyTee",
+            outputs={"fleet_identity": "identity"},
+        )
+        dynamic = {}
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(
+                200,
+                _members_payload(
+                    {"identity": "owner-key", "role": "Admin"},
+                    {"identity": _TEE_IDENTITY, "role": "ReadOnlyTee"},
+                ),
+            )
+            result = _run(step.execute({}, dynamic))
+
+        assert result is True
+        assert dynamic["fleet_identity"] == _TEE_IDENTITY
+
+    def test_fails_when_no_member_holds_the_role(self):
+        step = _make_step(
+            AssertTeeMemberStep,
+            type="assert_tee_member",
+            group_id="gid",
+            role="ReadOnlyTee",
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(
+                200, _members_payload({"identity": "owner-key", "role": "Admin"})
+            )
+            assert _run(step.execute({}, {})) is False
+
+    def test_non_blocking_reports_but_lets_cleanup_run(self):
+        step = _make_step(
+            AssertTeeMemberStep,
+            type="assert_tee_member",
+            group_id="gid",
+            role="ReadOnlyTee",
+            non_blocking=True,
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(
+                200, _members_payload({"identity": "owner-key", "role": "Admin"})
+            )
+            assert _run(step.execute({}, {})) is True
+
+
+class TestAdmissionPolicyEnvRefs:
+    def test_mrtd_is_read_from_the_environment(self):
+        step = _make_step(
+            SetTeeAdmissionPolicyStep,
+            type="set_tee_admission_policy",
+            group_id="gid",
+            accept_mock=False,
+            allowed_mrtd=["${MEROBOX_TEST_MRTD}"],
+        )
+        with patch.dict(os.environ, {"MEROBOX_TEST_MRTD": "ab" * 48}):
+            with patch(f"{_MODULE}.requests") as req:
+                req.request.return_value = _response(200, {})
+                assert _run(step.execute({}, {})) is True
+        body = req.request.call_args.kwargs["json"]
+        assert body["allowedMrtd"] == ["ab" * 48]
+        assert body["acceptMock"] is False
+        # `enabled` is DERIVED server-side and rejected as an unknown field.
+        assert "enabled" not in body
+
+    def test_unset_mrtd_fails_instead_of_sending_an_empty_allowlist(self):
+        """An empty allowlist means UNCONSTRAINED — never send one by accident."""
+        step = _make_step(
+            SetTeeAdmissionPolicyStep,
+            type="set_tee_admission_policy",
+            group_id="gid",
+            allowed_mrtd=["${MEROBOX_MISSING_MRTD}"],
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            with patch(f"{_MODULE}.requests") as req:
+                assert _run(step.execute({}, {})) is False
+                req.request.assert_not_called()
