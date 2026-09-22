@@ -53,5 +53,10 @@ bundle apps/blobs com.calimero.blobs 1.0.0
 # package and signer, so one package would give both installs a single id.
 bundle apps/kv-store com.calimero.kv-store-v2 1.0.0
 
+# The only fixture with an author-owned map, which is what
+# `delegated-authorship-attribution.yml` needs: `authored_get_owner` is the one
+# read that can tell a delegated write from a relay's own.
+bundle apps/scaffolding-e2e com.calimero.scaffolding-e2e 0.0.0
+
 echo "Done. Bundles in $RES_DIR:"
 ls -1 "$RES_DIR"/*.mpk

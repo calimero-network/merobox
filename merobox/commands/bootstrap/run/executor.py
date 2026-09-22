@@ -151,6 +151,7 @@ _ACCOUNT_STEP_CLASSES = {
     "node_identity": "NodeIdentityStep",
     "sign_warrant": "SignWarrantStep",
     "perform_intent": "PerformIntentStep",
+    "warrant_nonce": "WarrantNonceStep",
 }
 
 

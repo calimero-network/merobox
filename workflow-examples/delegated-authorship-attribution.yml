@@ -1,0 +1,320 @@
+name: Delegated authorship — the write is attributed to the AUTHOR, not the relay
+description: >
+  `delegated-authorship.yml` next door proves a delegated write LANDS: a member
+  with no node signs a warrant, a relay runs the method, and a peer reads the
+  value back. What it cannot show is whose write it is. It uses kv-store, whose
+  `set`/`get` carry no author, and its author is a second device of a node's own
+  account — so a relay that quietly attributed every delegated write to ITSELF
+  would satisfy every assertion in that file.
+
+  That is the failure this scenario guards, and it is the whole point of
+  delegated authorship: the relay executes, the AUTHOR owns the result.
+
+  Two things make the question answerable here:
+
+    * The app is `scaffolding-e2e`, whose `authored_insert` writes into an
+      author-owned map. `authored_get_owner(key)` reports the account the entry
+      is attributed to — the fact a relay cannot fake, because the attribution
+      is folded out of the signed envelope rather than taken from whoever
+      executed.
+
+    * The author account belongs to NO node. It is minted offline from a
+      recovery phrase by real `merod`, so its root has never been in any
+      datastore and it has never joined anything. The relay's own account is
+      read separately and asserted to be a different account, so "the owner is
+      the author" cannot pass by the two being the same principal.
+
+  The three assertions, in the order they matter:
+
+    1. `authored_get_owner` returns the author's account.
+    2. `authored_get_owner` does NOT return the relay's account. Stated
+       separately and negatively, because (1) alone would still pass if the two
+       were ever collapsed.
+    3. `authored_get` returns the value, so the attribution is attached to a
+       write that actually happened.
+
+  Plus the nonce ledger, which is the cheapest evidence the intent was ADMITTED
+  rather than merely answered 2xx: `warrant_nonce` reads where the author device
+  stands before and after. Note the behaviour it depends on — an intent that
+  produces no state change spends NO nonce, because the spend sits inside the
+  causal-delta branch of core's execute handler, after the delta row is
+  persisted. Writing the same key/value twice would leave this reading where it
+  was. Use a distinct value per write if you extend this file.
+
+  RUNNING IT. Binary mode against a locally built merod is the intended loop:
+
+      merobox bootstrap run workflow-examples/delegated-authorship-attribution.yml \
+        --no-docker --binary-path /path/to/core/target/debug/merod
+
+  Needs calimero-client-py >= 0.6.32 for the `sign_warrant` / `perform_intent`
+  bindings, and a merod carrying the intents endpoints. The `warrant_nonce`
+  steps are `optional: true` because that route is newer still: a merod without
+  it answers 404 and those two steps warn and pass, leaving assertions 1–3 — the
+  actual subject — intact. Drop `optional` once a release carries the route, and
+  the ledger becomes load-bearing too.
+
+  ONE NODE, deliberately. The peer-side half — that the network, not just the
+  relay, accepted an envelope whose author is not its signer — is already
+  covered by `delegated-authorship.yml`. Repeating it here would add a sync wait
+  and a second node to a file whose subject is a purely local read. Extending
+  this to two nodes and asserting the OWNER on the peer is the obvious follow-up
+  and the stronger test.
+
+nodes:
+  count: 1
+  prefix: delegated-attrib
+  # Pinned for the Docker path, as every example here is; ignored in binary
+  # mode, which is what the header recommends. Without a pin merobox defaults to
+  # `merod:prerelease`, which carries no intents endpoint until a release does —
+  # and that failure reads as a broken scenario rather than a wrong image.
+  image: ghcr.io/calimero-network/merod:edge
+
+steps:
+  # ── The application, the namespace, the context ────────────────────
+  #
+  # scaffolding-e2e rather than kv-store: it is the only fixture here with an
+  # author-owned map, and without one there is nothing to attribute.
+
+  - name: Install scaffolding-e2e on the relay
+    type: install_application
+    node: delegated-attrib-1
+    path: ./workflow-examples/res/com.calimero.scaffolding-e2e-0.0.0.mpk
+    dev: true
+    outputs:
+      app_id: applicationId
+
+  - name: Create the namespace
+    type: create_namespace
+    node: delegated-attrib-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - name: Create the context
+    type: create_context
+    node: delegated-attrib-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    outputs:
+      context_id: contextId
+
+  # ── The relay's grant ──────────────────────────────────────────────
+  #
+  # Read the relay's account first: the warrant has to name the account that
+  # will actually spend it, and a scenario guessing that mints warrants nothing
+  # can use.
+
+  - name: Who is the relay
+    type: node_identity
+    node: delegated-attrib-1
+    outputs:
+      relay_account: accountId
+
+  # CAN_AUTHOR_ON_BEHALF is bit 9, so 512 on its own — authorship and nothing
+  # else. It is implied by nothing: not by membership, not by admin, and not by
+  # having created the namespace, whose creator is seeded with a mask of 0. The
+  # mask is REPLACED rather than merged, which is why this grants exactly one
+  # capability rather than adding to a set.
+  - name: Grant the relay CAN_AUTHOR_ON_BEHALF
+    type: set_member_capabilities
+    node: delegated-attrib-1
+    group_id: '{{namespace_id}}'
+    member_id: '{{relay_account}}'
+    capabilities: 512
+
+  # ── An author that exists on no node ───────────────────────────────
+  #
+  # `--from` reads the account root out of a recovery phrase instead of the
+  # datastore, so this mints a device for an account this node has never held
+  # and never will. That is what makes the attribution assertion below mean
+  # something: the owner it reports cannot be the relay wearing another hat.
+  #
+  # `allow_running: true` because `--from` skips the datastore entirely — there
+  # is no RocksDB lock to contend for, so the node stays up.
+  #
+  # The phrase is the all-`abandon` BIP39 test vector: public, published in the
+  # spec's own examples, and deliberately NOT a secret. It is here so the author
+  # account is the same on every run, which makes a failure reproducible. Never
+  # put a phrase that guards anything in a workflow file.
+
+  - name: Mint the author's device offline, from a phrase no node holds
+    type: node_exec
+    node: delegated-attrib-1
+    allow_running: true
+    files:
+      /app/data/author-phrase.txt: >-
+        abandon abandon abandon abandon abandon abandon abandon abandon abandon
+        abandon abandon abandon abandon abandon abandon abandon abandon abandon
+        abandon abandon abandon abandon abandon art
+    args:
+      - account
+      - sign-cert
+      - --generate
+      - --from
+      - /app/data/author-phrase.txt
+    capture:
+      # The credential is the first line; the account and the secret follow it
+      # under labels, which is why `stdout_first_line` alone cannot serve this.
+      author_credential: '^([0-9a-f]{100,})$'
+      author_account: '^Account: +([0-9a-f]{64})$'
+      author_secret: '^Secret: +([0-9a-f]{64})$'
+    outputs:
+      author_credential: author_credential
+      author_account: author_account
+      author_secret: author_secret
+
+  # The load-bearing precondition for the negative assertion at the end. If the
+  # author and the relay were the same account, "the owner is the author" would
+  # be true of a relay that ignored attribution entirely.
+  - name: Assert the author is not the relay
+    type: assert
+    statements:
+      - "is_set({{author_account}})"
+      - "not_equal({{author_account}}, {{relay_account}})"
+
+  # The author's ACCOUNT joins the group; its device joins nothing and never
+  # will. Skip this and the relay answers 403 — the author's account is not a
+  # member of the group owning this context.
+  - name: Add the author's account as a member
+    type: add_group_members
+    node: delegated-attrib-1
+    group_id: '{{namespace_id}}'
+    members:
+      - identity: '{{author_account}}'
+        role: Member
+
+  # ── The author consents, offline ───────────────────────────────────
+  #
+  # No `node:` field, and that is the point rather than an omission: this signs
+  # with the device secret and returns bytes. A node that held that key could
+  # forge writes in the author's name, so it never reaches one.
+
+  - name: The author signs a warrant for one insert
+    type: sign_warrant
+    context_id: '{{context_id}}'
+    executor: '{{relay_account}}'
+    method: authored_insert
+    args:
+      key: attribution-probe
+      value: written-by-an-account-with-no-node
+    device_secret: '{{author_secret}}'
+    credential: '{{author_credential}}'
+    nonce: 1
+    outputs:
+      warrant: warrant
+      warrant_author: authorAccount
+      author_device_key: authorDeviceKey
+
+  # Derived from the credential rather than configured, so a drift between the
+  # two shows up here instead of as a 403 several steps later.
+  - name: Assert the warrant speaks for the account that was added
+    type: assert
+    statements:
+      - "equal({{warrant_author}}, {{author_account}})"
+
+  # ── The ledger, before ─────────────────────────────────────────────
+  #
+  # Read here rather than earlier because the key it is indexed by — the
+  # author's device SIGNING key, not its account and not its device id — is
+  # only known once `sign_warrant` has reported it. Nothing has been spent yet,
+  # so `nextNonce` is 0 and the `nonce: 1` above is free.
+
+  - name: The author device has spent nothing in this context yet
+    type: warrant_nonce
+    node: delegated-attrib-1
+    context_id: '{{context_id}}'
+    author_device_key: '{{author_device_key}}'
+    optional: true
+    outputs:
+      nonce_next_before: nextNonce
+
+  # ── The relay runs it ──────────────────────────────────────────────
+  #
+  # `args` must match what the warrant committed to. Both sides re-serialize, so
+  # the spelling does not matter — the values do.
+
+  - name: The relay performs the intent
+    type: perform_intent
+    node: delegated-attrib-1
+    context_id: '{{context_id}}'
+    method: authored_insert
+    args:
+      key: attribution-probe
+      value: written-by-an-account-with-no-node
+    warrant: '{{warrant}}'
+    author_proof: '{{author_credential}}'
+    outputs:
+      intent_root: rootHash
+
+  - name: Assert the intent advanced state
+    type: assert
+    statements:
+      - "is_set({{intent_root}})"
+
+  # ── The ledger, after ──────────────────────────────────────────────
+  #
+  # A spent nonce is the node's own record that it ADMITTED the warrant, not
+  # merely that it answered. `seen` flips and `nextNonce` becomes 2.
+
+  - name: The author device's nonce advanced
+    type: warrant_nonce
+    node: delegated-attrib-1
+    context_id: '{{context_id}}'
+    author_device_key: '{{author_device_key}}'
+    optional: true
+    outputs:
+      nonce_high: highWaterNonce
+      nonce_next: nextNonce
+
+  # Asserted rather than merely printed, so a relay that accepts a warrant
+  # without recording it fails here. Skipped in substance when the route is
+  # absent: the step above warns and exports nothing, and these placeholders
+  # then stay literal — which is why the route should be pinned, not relied on.
+  #
+  # `json_assert`, not `assert`: these are numbers, and `assert`'s equality is
+  # strict — it compares the exported int 1 against the literal text '1' and
+  # fails. `json_equal` parses both sides, so a number compares as one.
+  - name: Assert the nonce ledger advanced by exactly one
+    type: json_assert
+    statements:
+      - "json_equal({{nonce_next_before}}, 0)"
+      - "json_equal({{nonce_high}}, 1)"
+      - "json_equal({{nonce_next}}, 2)"
+
+  # ── THE SUBJECT: who owns the write ────────────────────────────────
+
+  - name: Read who the entry is attributed to
+    type: call
+    node: delegated-attrib-1
+    context_id: '{{context_id}}'
+    method: authored_get_owner
+    args:
+      key: attribution-probe
+    outputs:
+      owner_result: result
+
+  # `outputs: <name>: result` captures merobox's whole result object, so the
+  # captured value is `{"output": …}` — comparing it to a bare account never
+  # matches, which is why these are containment assertions over the envelope.
+  - name: Assert the write is attributed to the AUTHOR, not the relay
+    type: assert
+    statements:
+      - "contains({{owner_result}}, {{author_account}})"
+      - "not_contains({{owner_result}}, {{relay_account}})"
+
+  - name: Read the value back
+    type: call
+    node: delegated-attrib-1
+    context_id: '{{context_id}}'
+    method: authored_get
+    args:
+      key: attribution-probe
+    outputs:
+      value_result: result
+
+  # Attribution attached to a write that never happened would be worthless, so
+  # the value is checked exactly.
+  - name: Assert the delegated write is present
+    type: json_assert
+    statements:
+      - 'json_equal({{value_result}}, {"output": "written-by-an-account-with-no-node"})'

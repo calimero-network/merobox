@@ -1158,6 +1158,72 @@ Outputs: `rootHash`, `returns`.
 Both steps need a `calimero-client-py` carrying the `sign_warrant` and
 `perform_intent` bindings, and a node whose core has the warrant types.
 
+### warrant_nonce
+
+Read where an author device stands in its nonce sequence on one node:
+`GET /admin-api/contexts/{id}/warrant-nonce/{author_device_key}`.
+
+The ledger is keyed by the author's **signing key** — not its account and not its
+`DeviceId`. Two devices of one account hold independent sequences, and a re-keyed
+device starts a fresh one. `sign_warrant` exports exactly this value as
+`authorDeviceKey`.
+
+Asserting the nonce advanced is the cheapest evidence a delegated write was
+*admitted* rather than merely answered `2xx`. It depends on a behaviour worth
+knowing: **an intent that produces no state change spends no nonce**, because the
+spend sits inside the causal-delta branch of core's execute handler, after the
+delta row is persisted. Two identical writes therefore leave this reading exactly
+where it was — use a distinct value per write, or the assertion is false.
+
+`seen: false` is the ordinary state of a device that has not written in this
+context yet, reported as a fact rather than as a 404: "nonce 0 was spent" and
+"nothing has been spent" are different answers a scenario must not have to guess
+apart. When unseen, `nextNonce` is `0`.
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node` | yes | string | The node whose ledger to read. |
+| `context_id` | yes | string | Context the sequence is scoped to. |
+| `author_device_key` | yes | string | The author device's signing key, hex or base58 — `sign_warrant`'s `authorDeviceKey`. |
+| `optional` | no | bool | Treat a 404 as "this merod predates the route" and pass with a warning. Default `false`. |
+
+Outputs: `seen`, `highWaterNonce`, `nextNonce`, `windowWidth`.
+
+```yaml
+- type: warrant_nonce
+  node: calimero-node-1
+  context_id: '{{context_id}}'
+  author_device_key: '{{author_device_key}}'
+  optional: true
+  outputs:
+    high: highWaterNonce
+    next: nextNonce
+```
+
+This route is newer than the two intent endpoints it sits beside, and is on
+merod's **protected** router unlike them. A merod that predates it answers 404,
+with nothing at the status to distinguish that from a bad context — which is what
+`optional` is for. Prefer pinning a build known to carry the route, so the ledger
+assertion stays load-bearing.
+
+Compare exported nonces with `json_assert`, not `assert`: they are numbers, and
+`assert`'s equality is strict, so it compares the exported int `1` against the
+literal text `'1'` and fails.
+
+### Worked examples
+
+`workflow-examples/delegated-authorship.yml` shows the full two-node flow: a
+delegated write reaches a peer and reads back there, which is the half a relay
+cannot fake on its own.
+
+`workflow-examples/delegated-authorship-attribution.yml` asks the other question
+— *whose* write it is. It uses the `scaffolding-e2e` bundle, whose
+`authored_get_owner` reports the account an entry is attributed to, and an author
+account minted offline from a recovery phrase so it exists on no node. It then
+asserts the owner **is** the author and **is not** the relay. A relay that
+quietly attributed every delegated write to itself would pass every assertion in
+the first file and fail this one.
+
 ## Call & auth steps
 
 ### call

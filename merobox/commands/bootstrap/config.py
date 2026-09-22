@@ -66,6 +66,7 @@ VALID_STEP_TYPES = frozenset(
         "node_identity",
         "sign_warrant",
         "perform_intent",
+        "warrant_nonce",
         "node_exec",
         "create_group_in_namespace",
         "list_namespace_groups",
@@ -1384,6 +1385,25 @@ class PerformIntentStepConfig(BaseStepConfig):
     )
 
 
+class WarrantNonceStepConfig(BaseStepConfig):
+    """Configuration for warrant_nonce step."""
+
+    type: Literal["warrant_nonce"] = "warrant_nonce"
+    node: str = Field(..., description="The node whose ledger to read")
+    context_id: str = Field(..., description="Context the sequence is scoped to")
+    author_device_key: str = Field(
+        ...,
+        description="The author device's SIGNING key, hex — sign_warrant's "
+        "authorDeviceKey output. Not the account and not the device id",
+    )
+    optional: Optional[bool] = Field(
+        False,
+        description="Treat a 404 as 'this merod predates the route' and pass "
+        "with a warning, rather than failing",
+    )
+    expect_status: Optional[int] = Field(None, description=EXPECT_STATUS_DESCRIPTION)
+
+
 class NodeIdentityStepConfig(BaseStepConfig):
     """Configuration for node_identity step."""
 
@@ -2003,6 +2023,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "account_revoke": AccountRevokeStepConfig,
     "sign_warrant": SignWarrantStepConfig,
     "perform_intent": PerformIntentStepConfig,
+    "warrant_nonce": WarrantNonceStepConfig,
     "node_identity": NodeIdentityStepConfig,
     "node_exec": NodeExecStepConfig,
     "create_group_in_namespace": CreateGroupInNamespaceStepConfig,

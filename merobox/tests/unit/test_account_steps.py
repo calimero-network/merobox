@@ -35,6 +35,7 @@ from merobox.commands.bootstrap.steps.account import (
     NodeIdentityStep,
     PerformIntentStep,
     SignWarrantStep,
+    WarrantNonceStep,
 )
 from merobox.commands.errors import UnresolvedPlaceholderError
 
@@ -1939,3 +1940,106 @@ class TestExpectStatus:
         assert _run(step.execute(results, dynamic_values)) is True
         assert results == {}
         assert dynamic_values == {}
+
+
+# =============================================================================
+# WarrantNonceStep
+# =============================================================================
+
+CONTEXT = "c1" * 32
+AUTHOR_DEVICE_KEY = "0a" * 32
+
+
+class TestWarrantNonceStep:
+    """Like rescope, this one drives the admin API directly — the bindings do
+    not wrap this route — so these mock `requests.get`."""
+
+    def setup_method(self):
+        self.config = {
+            "type": "warrant_nonce",
+            "name": "Ledger",
+            "node": "calimero-node-1",
+            "context_id": CONTEXT,
+            "author_device_key": AUTHOR_DEVICE_KEY,
+        }
+
+    def _step(self, **overrides):
+        step = WarrantNonceStep({**self.config, **overrides})
+        step._resolve_node_target = lambda node: (RPC_URL, node)  # noqa: SLF001
+        step._resolve_token = lambda *_a, **_k: None  # noqa: SLF001
+        return step
+
+    @pytest.mark.parametrize("field", ["node", "context_id", "author_device_key"])
+    def test_missing_required_field_raises(self, field):
+        config = {**self.config}
+        del config[field]
+        with pytest.raises(ValueError, match=field):
+            WarrantNonceStep(config)
+
+    def test_optional_must_be_a_boolean(self):
+        with pytest.raises(ValueError, match="Ledger.*optional"):
+            WarrantNonceStep({**self.config, "optional": "yes"})
+
+    def test_reads_the_route_keyed_by_the_signing_key(self):
+        step = self._step()
+        with patch(
+            f"{_MODULE}.requests.get",
+            return_value=_response(payload={"seen": False, "nextNonce": 0}),
+        ) as get:
+            assert _run(step.execute({}, {})) is True
+        assert get.call_args.args[0] == (
+            f"{RPC_URL}/admin-api/contexts/{CONTEXT}"
+            f"/warrant-nonce/{AUTHOR_DEVICE_KEY}"
+        )
+
+    def test_resolves_placeholders_in_the_context_and_the_key(self):
+        step = self._step(context_id="{{ctx}}", author_device_key="{{key}}")
+        with patch(
+            f"{_MODULE}.requests.get",
+            return_value=_response(payload={"seen": False, "nextNonce": 0}),
+        ) as get:
+            assert (
+                _run(step.execute({}, {"ctx": CONTEXT, "key": AUTHOR_DEVICE_KEY}))
+                is True
+            )
+        assert get.call_args.args[0].endswith(
+            f"/contexts/{CONTEXT}/warrant-nonce/{AUTHOR_DEVICE_KEY}"
+        )
+
+    def test_exports_the_ledger_fields(self):
+        step = self._step(
+            outputs={"high": "highWaterNonce", "next": "nextNonce", "seen": "seen"}
+        )
+        dynamic_values = {}
+        with patch(
+            f"{_MODULE}.requests.get",
+            return_value=_response(
+                payload={"seen": True, "highWaterNonce": 1, "nextNonce": 2}
+            ),
+        ):
+            assert _run(step.execute({}, dynamic_values)) is True
+        assert dynamic_values["high"] == 1
+        assert dynamic_values["next"] == 2
+        assert dynamic_values["seen"] is True
+
+    def test_a_404_fails_the_step_by_default(self):
+        """The whole point of `optional`: without it, a merod that lacks the
+        route must not look like a device that has spent nothing."""
+        step = self._step()
+        with patch(f"{_MODULE}.requests.get", return_value=_response(404, "no route")):
+            assert _run(step.execute({}, {})) is False
+
+    def test_optional_downgrades_a_404_to_a_warning(self):
+        step = self._step(optional=True)
+        with patch(f"{_MODULE}.requests.get", return_value=_response(404, "no route")):
+            assert _run(step.execute({}, {})) is True
+
+    def test_optional_does_not_excuse_any_other_failure(self):
+        step = self._step(optional=True)
+        with patch(f"{_MODULE}.requests.get", return_value=_response(500, "boom")):
+            assert _run(step.execute({}, {})) is False
+
+    def test_expect_status_passes_on_that_status(self):
+        step = self._step(expect_status=401)
+        with patch(f"{_MODULE}.requests.get", return_value=_response(401, "nope")):
+            assert _run(step.execute({}, {})) is True

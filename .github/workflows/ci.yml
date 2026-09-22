@@ -183,7 +183,20 @@ jobs:
           # installed (the stock image lacks `tc`); skipped in CI.
           # tee-* excluded here too — merod:edge lacks mock-attestation
           # (see the binary-mode note above).
+          # delegated-authorship-attribution is held out of BOTH lanes for now
+          # (binary already drops it via the `delegated-authorship` prefix
+          # above). It has been run green end to end, but only in binary mode
+          # against a merod built from core's `feat/warrant-nonce-discovery` —
+          # the branch that carries GET
+          # /admin-api/contexts/:id/warrant-nonce/:key. Its `warrant_nonce`
+          # steps are `optional: true`, so a merod without that route warns
+          # rather than fails and the attribution assertions still run; what is
+          # unverified is the other new dependency, the scaffolding-e2e bundle
+          # (added to build_res_bundles.sh here) against merod:edge. Re-add to
+          # the docker lane once that pairing has been shown green, and drop
+          # `optional:` once a release carries the route.
           DOCKER=$(ls workflow-examples/*.yml | \
+            grep -v delegated-authorship-attribution | \
             grep -v account-identity | \
             grep -v fuzzy-kv-store | \
             grep -v auth-example | \

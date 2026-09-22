@@ -1365,3 +1365,127 @@ class PerformIntentStep(_AccountStepBase):
         return self._finish(
             node_name, "performed_intent", data, workflow_results, dynamic_values
         )
+
+
+class WarrantNonceStep(_AccountStepBase):
+    """Read where an author device stands in its warrant-nonce sequence.
+
+    `GET /admin-api/contexts/{id}/warrant-nonce/{author_device_key}`. The nonce
+    ledger is what makes a warrant single-use: the signature stays valid forever,
+    so a replay is not a forgery and the envelope check cannot be what stops it.
+
+    The key is the device's **signing key** — not its account and not its
+    `DeviceId`. Two devices of one account hold independent sequences, and a
+    re-keyed device starts a fresh one. `sign_warrant` exports it as
+    `authorDeviceKey` for exactly this read.
+
+    `seen: false` is the ordinary state of a device that has not written in this
+    context yet, reported as a fact rather than as a 404 — "nonce 0 was spent"
+    and "nothing has been spent" are different things a scenario must not have to
+    guess apart. Asserting it advances is the cheapest way to show a delegated
+    write was really *admitted* rather than merely answered 2xx: an intent that
+    produces no state change spends no nonce, because the spend sits inside the
+    causal-delta branch of core's execute handler, after the delta row is
+    persisted. So two identical writes leave this reading unchanged, and a
+    scenario that re-writes the same value and then asserts progress here is
+    asserting something false.
+
+    Unlike the intent pair next door, this route is on merod's **protected**
+    router, so a token is attached where the scenario has one.
+
+    **Availability.** The route is newer than the two intent endpoints it sits
+    beside; a merod that predates it answers 404 with no way to tell that apart
+    from a bad context at the status alone. `optional: true` downgrades a 404 to
+    a warning so a scenario can run against both builds — use it, or pin an image
+    known to carry the route.
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "context_id", "author_device_key"]
+
+    def _validate_field_types(self) -> None:
+        self._require_strings(("node", "context_id", "author_device_key"))
+        if "optional" in self.config and not isinstance(
+            self.config.get("optional"), bool
+        ):
+            step_name = self.config.get(
+                "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+            )
+            raise ValueError(f"Step '{step_name}': 'optional' must be a boolean")
+
+    def _get_exportable_variables(self):
+        return [
+            (
+                "seen",
+                "warrant_nonce_seen_{node_name}",
+                "Whether any warrant from this device has been admitted here",
+            ),
+            (
+                "highWaterNonce",
+                "warrant_nonce_high_{node_name}",
+                "Highest nonce accepted from this device in this context",
+            ),
+            (
+                "nextNonce",
+                "warrant_nonce_next_{node_name}",
+                "The nonce to put in the next warrant — the field to act on",
+            ),
+        ]
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self._resolved("node", dynamic_values)
+        context_id = self._resolved("context_id", dynamic_values)
+        device_key = self._resolved("author_device_key", dynamic_values)
+
+        try:
+            rpc_url, cache_node_name = self._resolve_node_target(node_name)
+            token = self._resolve_token(
+                cache_node_name, workflow_results, dynamic_values
+            )
+            # Off the loop, as the other `requests` step here: it is synchronous,
+            # so a `parallel:` sibling keeps running while this one waits.
+            response = await asyncio.to_thread(
+                requests.get,
+                f"{rpc_url.rstrip('/')}/admin-api/contexts/{context_id}"
+                f"/warrant-nonce/{device_key}",
+                headers={"Authorization": f"Bearer {token}"} if token else {},
+                timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT),
+            )
+            if response.status_code == 404 and self.config.get("optional"):
+                console.print(
+                    f"[yellow]⚠ {node_name} has no warrant-nonce route (404); "
+                    "this merod predates it. Skipping, because optional: true — "
+                    "nothing about the ledger has been checked.[/yellow]"
+                )
+                return True
+            if response.status_code != 200:
+                # Shaped as a client error so a refusal reaches `expect_status`
+                # by the same path the bindings' refusals do.
+                raise RuntimeError(f"HTTP {response.status_code}: {response.text}")
+            result = ok(self._data(json.loads(response.content)))
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            result = fail(f"warrant nonce read failed: {e}", error=e)
+
+        verdict = self._refusal_verdict(
+            result, f"Failed to read {device_key}'s warrant nonce on {node_name}"
+        )
+        if verdict is not None:
+            return verdict
+
+        data = result["data"]
+        if not self._assert_body(node_name, data, workflow_results, dynamic_values):
+            return False
+        console.print(
+            f"[green]✓[/green] {node_name}: device {device_key} is "
+            + (
+                f"at nonce {data.get('highWaterNonce')}, next "
+                f"{data.get('nextNonce')}"
+                if data.get("seen")
+                else "unseen in this context"
+            )
+        )
+        return self._finish(
+            node_name, "warrant_nonce", data, workflow_results, dynamic_values
+        )
