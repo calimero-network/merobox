@@ -454,24 +454,6 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = AssertApiResponseStep
         elif step_type == "set_tee_admission_policy":
             step_class = SetTeeAdmissionPolicyStep
-        elif step_type == "upload_blob":
-            from merobox.commands.bootstrap.steps.blob import UploadBlobStep
-
-            step_class = UploadBlobStep
-        elif step_type in ("ws_connect", "ws_subscribe"):
-            from merobox.commands.bootstrap.steps.websocket import (
-                WebSocketConnectStep,
-            )
-
-            step_class = WebSocketConnectStep
-        elif step_type == "login":
-            from merobox.commands.bootstrap.steps.login import LoginStep
-
-            step_class = LoginStep
-        elif step_type == "refresh":
-            from merobox.commands.bootstrap.steps.refresh import RefreshStep
-
-            step_class = RefreshStep
         elif step_type == "issue_ownership_proof":
             step_class = IssueOwnershipProofStep
         elif step_type == "cloud_request":
