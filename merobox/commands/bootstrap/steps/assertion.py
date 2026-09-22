@@ -410,3 +410,94 @@ class AssertStep(BaseStep):
             return (passed, f"(left={left_val!r}, right={right_val!r})")
 
         return False, "(unrecognized statement)"
+
+
+class AssertEqualsStep(BaseStep):
+    """Assert that two resolved values are equal, across the string/bool boundary.
+
+    Configuration:
+
+    - name: Cloud reports authorship_ready
+      type: assert_equals
+      actual: "{{authorship_ready}}"
+      equals: true
+
+    - name: Admitted member IS the cloud's executor account
+      type: assert_equals
+      actual: "{{fleet_identity}}"
+      equals: "{{executor_account}}"
+      ignore_case: true
+
+    Why this exists next to ``assert``: the ``assert`` step's statement
+    language stringifies operands, so a JSON ``true`` decoded into a Python
+    ``bool`` only matches the literal ``True`` (Python's repr casing) — a
+    comparison that reads like a typo and breaks if a field ever arrives as
+    the string ``"true"``. This step normalises booleans and their string
+    spellings to one canonical form before comparing, and prints both sides
+    on failure.
+
+    Optional fields:
+    - ``ignore_case`` (bool): compare strings case-insensitively (hex ids are
+      rendered in either case by different producers).
+    - ``non_blocking`` (bool): report the mismatch but let the workflow
+      continue (e.g. so a cleanup step still runs).
+    """
+
+    def _get_required_fields(self) -> list[str]:
+        return ["actual", "equals"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("ignore_case", "non_blocking"):
+            if field in self.config and not isinstance(self.config.get(field), bool):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a boolean")
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        step_name = self.config.get("name", "assert_equals")
+        ignore_case = bool(self.config.get("ignore_case", False))
+        non_blocking = bool(self.config.get("non_blocking", False))
+
+        actual = self._resolve_dynamic_value(
+            self.config["actual"], workflow_results, dynamic_values
+        )
+        expected = self._resolve_dynamic_value(
+            self.config["equals"], workflow_results, dynamic_values
+        )
+
+        if _normalize_for_equality(actual, ignore_case) == _normalize_for_equality(
+            expected, ignore_case
+        ):
+            console.print(f"[green]✓ {step_name}: {actual!r} == {expected!r}[/green]")
+            return True
+
+        message = f"{step_name}: expected {expected!r}, got {actual!r}"
+        if non_blocking:
+            console.print(f"[yellow]⚠️  {message} (non_blocking)[/yellow]")
+            return True
+        console.print(f"[red]❌ {message}[/red]")
+        return False
+
+
+def _normalize_for_equality(value: Any, ignore_case: bool) -> Any:
+    """Canonicalise a scalar so YAML, JSON and placeholder spellings agree.
+
+    A value decoded from a JSON response is a real ``bool``; the same value
+    written in YAML is a ``bool`` too, but once it has been through a
+    ``{{placeholder}}`` it may be the string ``"True"`` or ``"true"``. All
+    three collapse to ``"true"`` here. Non-bool, non-string values (ints,
+    lists, dicts) are compared as-is — no stringification, so ``1`` never
+    equals ``"1"`` by accident.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        stripped = value.strip()
+        lowered = stripped.lower()
+        if lowered in ("true", "false"):
+            return lowered
+        return lowered if ignore_case else stripped
+    return value

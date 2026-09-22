@@ -441,6 +441,18 @@ class RepeatStep(BaseStep):
             return GetProposalApproversStep(step_config, **common_kwargs)
         elif step_type == "set_tee_admission_policy":
             return SetTeeAdmissionPolicyStep(step_config, **common_kwargs)
+        elif step_type == "issue_ownership_proof":
+            from merobox.commands.bootstrap.steps.cloud import IssueOwnershipProofStep
+
+            return IssueOwnershipProofStep(step_config, **common_kwargs)
+        elif step_type == "cloud_request":
+            from merobox.commands.bootstrap.steps.cloud import CloudRequestStep
+
+            return CloudRequestStep(step_config, **common_kwargs)
+        elif step_type == "assert_equals":
+            from merobox.commands.bootstrap.steps.assertion import AssertEqualsStep
+
+            return AssertEqualsStep(step_config, **common_kwargs)
         elif step_type == "tee_fleet_join":
             return TeeFleetJoinStep(step_config, **common_kwargs)
         elif step_type == "assert_tee_member":

@@ -27,8 +27,12 @@ from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogAbsentStep,
     AssertLogPresentStep,
 )
-from merobox.commands.bootstrap.steps.assertion import AssertStep
+from merobox.commands.bootstrap.steps.assertion import AssertEqualsStep, AssertStep
 from merobox.commands.bootstrap.steps.blob import UploadBlobStep
+from merobox.commands.bootstrap.steps.cloud import (
+    CloudRequestStep,
+    IssueOwnershipProofStep,
+)
 from merobox.commands.bootstrap.steps.context import CreateContextStep
 from merobox.commands.bootstrap.steps.delete_blob import (
     DeleteBlobOnDiskStep,
@@ -450,6 +454,30 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = AssertApiResponseStep
         elif step_type == "set_tee_admission_policy":
             step_class = SetTeeAdmissionPolicyStep
+        elif step_type == "upload_blob":
+            from merobox.commands.bootstrap.steps.blob import UploadBlobStep
+
+            step_class = UploadBlobStep
+        elif step_type in ("ws_connect", "ws_subscribe"):
+            from merobox.commands.bootstrap.steps.websocket import (
+                WebSocketConnectStep,
+            )
+
+            step_class = WebSocketConnectStep
+        elif step_type == "login":
+            from merobox.commands.bootstrap.steps.login import LoginStep
+
+            step_class = LoginStep
+        elif step_type == "refresh":
+            from merobox.commands.bootstrap.steps.refresh import RefreshStep
+
+            step_class = RefreshStep
+        elif step_type == "issue_ownership_proof":
+            step_class = IssueOwnershipProofStep
+        elif step_type == "cloud_request":
+            step_class = CloudRequestStep
+        elif step_type == "assert_equals":
+            step_class = AssertEqualsStep
         elif step_type == "tee_fleet_join":
             step_class = TeeFleetJoinStep
         elif step_type == "assert_tee_member":
