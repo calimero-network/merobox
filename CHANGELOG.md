@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.78] - 2026-09-24
+
+Entries for 0.6.63 through 0.6.77 were not written; those releases are
+described by their GitHub release notes, which are generated from their
+commits. This one is recorded because all three changes alter what a
+CONSUMER sees rather than only what merobox does.
+
+### Fixed
+
+- **`set_tee_admission_policy` sent `allowedRtmr3: []`, which core now
+  rejects.** Every one of the ten workflows that takes that step had been
+  failing with `HTTP 400: Field 'allowed_rtmr3' has invalid format` since core
+  `0.11.0-rc.42` published on 2026-09-23. The field became mandatory upstream,
+  and because CI resolved the newest core release at run time the break arrived
+  with no merobox commit at all — so the TEE lane went red on every PR, and the
+  ten scenarios silently stopped exercising TEE admission. `allowed_rtmr3` now
+  defaults to the same all-zero measurement `allowed_mrtd` already used; core's
+  mock quote sets every measurement to 48 zero bytes. The other three RTMRs
+  still default to `[]`, because core requires only RTMR3.
+
+### Added
+
+- **`assert_log_present` can wait for a line to appear**, via `timeout` (and
+  `check_interval`, default 2s). It reads the log once with no `timeout`, which
+  is the historical behaviour and is unchanged. A log line appears when the node
+  gets there, not when the workflow reaches the step, so the only way to express
+  "by now" was a fixed sleep in front of the assertion, sized by guess: too
+  short and the gate fails on a system that was merely slow, too long and every
+  run pays the worst case. Polling returns as soon as the line is there, so it
+  replaces that sleep rather than adding to it. Hits are recounted on each poll
+  rather than accumulated — a poll re-reads the whole log, and summing the
+  rounds would let one hit satisfy any `min_matches`.
+
+### Changed
+
+- **CI pins the core release and `calimero-client-py` instead of resolving the
+  newest.** They ship from different repos on different schedules and talk over
+  a wire format, so a momentary disagreement reddened every PR at once, none of
+  which had touched anything related — twice now, on 2026-08-21 and again on
+  2026-09-23. Bumping is a deliberate edit, and the PR that makes it proves the
+  new pair works before it becomes everyone's problem.
+
 ## [0.6.62] - 2026-08-21
 
 ### Fixed
