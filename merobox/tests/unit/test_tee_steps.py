@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from merobox.commands.bootstrap.steps.tee import (
+    ZERO_MEASUREMENT,
     ZERO_MRTD,
     AssertNotMemberStep,
     AssertTeeMemberStep,
@@ -119,8 +120,32 @@ class TestSetTeeAdmissionPolicyExecute:
         assert body["allowedRtmr0"] == []
         assert body["allowedRtmr1"] == []
         assert body["allowedRtmr2"] == []
-        assert body["allowedRtmr3"] == []
+        # Defaulted, unlike the other three RTMRs: core requires at least one
+        # RTMR3 value, so an empty default is a 400 on every workflow that takes
+        # this step rather than a permissive policy.
+        assert body["allowedRtmr3"] == [ZERO_MEASUREMENT]
+        assert body["allowedRtmr3"] == ["0" * 96]
         assert body["allowedTcbStatuses"] == []
+
+    def test_rtmr3_default_can_still_be_overridden(self):
+        """The default must not become a floor.
+
+        A workflow pinning a real image's RTMR3 has to get exactly that, or the
+        all-zero mock value would silently widen a policy meant to be narrow.
+        """
+        step = _make_step(
+            SetTeeAdmissionPolicyStep,
+            type="set_tee_admission_policy",
+            group_id="gid",
+            allowed_rtmr3=["cc" * 48],
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {})
+            assert _run(step.execute({}, {})) is True
+
+        body = req.request.call_args.kwargs["json"]
+        assert body["allowedRtmr3"] == ["cc" * 48]
+        assert ZERO_MEASUREMENT not in body["allowedRtmr3"]
 
     def test_overrides_are_respected(self):
         step = _make_step(
