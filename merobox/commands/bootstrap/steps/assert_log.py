@@ -7,7 +7,9 @@ artefacts and grep them.
 
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 from typing import Any
 
 from rich.markup import escape
@@ -249,6 +251,38 @@ class AssertLogPresentStep(_AssertLogStepBase):
         super()._validate_field_types()
         if "min_matches" in self.config:
             self._validate_integer_field("min_matches", positive=True)
+        # Both are positive-when-present rather than defaulting to something
+        # non-zero: omitting `timeout` keeps the historical single-shot check,
+        # so adding this cannot change what any existing workflow asserts.
+        if "timeout" in self.config:
+            self._validate_integer_field("timeout", positive=True)
+        if "check_interval" in self.config:
+            self._validate_integer_field("check_interval", positive=True)
+
+    def _tally(
+        self, target_nodes: list[str], patterns: list[str], matchers: list
+    ) -> tuple[dict[str, int], dict[str, tuple[str, int, str]], int]:
+        """Count hits for every pattern across one full read of the logs.
+
+        Counted from scratch on each call rather than accumulated across
+        attempts: a poll re-reads the WHOLE log each time, so adding the rounds
+        together would count every existing line again on every pass and let a
+        single hit satisfy any `min_matches`.
+        """
+        hits: dict[str, int] = dict.fromkeys(patterns, 0)
+        sample_hits: dict[str, tuple[str, int, str]] = {}
+        nodes_scanned = 0
+        for node_name in target_nodes:
+            log = self._fetch_log(node_name)
+            if log is None:
+                continue
+            nodes_scanned += 1
+            for line_no, line in enumerate(self._iter_lines(log), start=1):
+                for pattern, matches in matchers:
+                    if matches(line):
+                        hits[pattern] += 1
+                        sample_hits.setdefault(pattern, (node_name, line_no, line))
+        return hits, sample_hits, nodes_scanned
 
     async def execute(
         self,
@@ -270,20 +304,35 @@ class AssertLogPresentStep(_AssertLogStepBase):
         min_matches = int(self.config.get("min_matches", 1))
         matchers = [(p, self._compile_matcher(p)) for p in patterns]
 
-        hits: dict[str, int] = dict.fromkeys(patterns, 0)
-        sample_hits: dict[str, tuple[str, int, str]] = {}
+        # A log line appears when the node gets there, not when the workflow
+        # reaches this step. Without a timeout the only way to express "by now"
+        # is a fixed sleep in front of the assertion, sized by guess: too short
+        # and the gate fails on a system that was merely slow, too long and
+        # every run pays the worst case. Polling replaces the guess — it returns
+        # as soon as the line is there, and only spends the budget when it is
+        # not.
+        timeout = int(self.config.get("timeout", 0))
+        check_interval = int(self.config.get("check_interval", 2))
+        deadline = time.monotonic() + timeout
 
-        nodes_scanned = 0
-        for node_name in target_nodes:
-            log = self._fetch_log(node_name)
-            if log is None:
-                continue
-            nodes_scanned += 1
-            for line_no, line in enumerate(self._iter_lines(log), start=1):
-                for pattern, matches in matchers:
-                    if matches(line):
-                        hits[pattern] += 1
-                        sample_hits.setdefault(pattern, (node_name, line_no, line))
+        attempts = 0
+        while True:
+            attempts += 1
+            hits, sample_hits, nodes_scanned = self._tally(
+                target_nodes, patterns, matchers
+            )
+            satisfied = nodes_scanned > 0 and all(
+                hits[p] >= min_matches for p in patterns
+            )
+            if satisfied or time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(
+                min(check_interval, max(0, deadline - time.monotonic()))
+            )
+
+        waited = ""
+        if timeout:
+            waited = f" after {attempts} check(s) over up to {timeout}s"
 
         # The patterns-missing branch below already fails on zero hits, but a
         # dedicated message makes the no-logs-retrievable mode debuggable
@@ -291,7 +340,7 @@ class AssertLogPresentStep(_AssertLogStepBase):
         if nodes_scanned == 0:
             console.print(
                 f"[red]✗ assert_log_present failed: no logs retrievable "
-                f"from any of {len(target_nodes)} target node(s)[/red]"
+                f"from any of {len(target_nodes)} target node(s){waited}[/red]"
             )
             return False
 
@@ -304,7 +353,7 @@ class AssertLogPresentStep(_AssertLogStepBase):
                 console.print(
                     f"✗ assert_log_present failed: pattern "
                     f"{pattern!r} had {hits[pattern]} hit(s), "
-                    f"expected >= {min_matches}",
+                    f"expected >= {min_matches}{waited}",
                     style="red",
                     markup=False,
                 )
