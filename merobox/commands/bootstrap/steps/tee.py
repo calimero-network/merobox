@@ -36,7 +36,12 @@ from merobox.commands.utils import console
 
 # Mock TDX quote measurements are all zero. MRTD is a 48-byte (SHA-384) value,
 # hex-encoded as 96 characters.
-ZERO_MRTD = "0" * 96
+# Every measurement in core's mock quote is the same 48 zero bytes
+# (`create_mock_quote` in calimero-tee-attestation), so one constant covers MRTD
+# and all four RTMRs.
+ZERO_MEASUREMENT = "0" * 96
+# The historical name, kept because a policy that pins MRTD reads better with it.
+ZERO_MRTD = ZERO_MEASUREMENT
 
 # Fleet-join blocks server-side for one admission window (core MAX_ADMISSION_WAIT
 # ~= 30s) before returning admitted/announced, so allow a generous read timeout.
@@ -59,8 +64,16 @@ class SetTeeAdmissionPolicyStep(BaseStep):
     """Set a namespace root's TeeAdmissionPolicy via the admin API.
 
     Defaults accept mock attestations: ``accept_mock=True`` plus the all-zero
-    mock MRTD (``ZERO_MRTD``). Overriding ``allowed_mrtd`` / ``allowed_rtmrN`` /
-    ``allowed_tcb_statuses`` lets workflows pin real measurements instead.
+    mock MRTD and RTMR3 (``ZERO_MEASUREMENT``). Overriding ``allowed_mrtd`` /
+    ``allowed_rtmrN`` / ``allowed_tcb_statuses`` lets workflows pin real
+    measurements instead.
+
+    RTMR3 is defaulted and the other three RTMRs are not, because core requires
+    at least one RTMR3 value and accepts an empty list for the rest: MRTD
+    identifies the firmware, which every image profile of a release shares, so
+    RTMR3 is the only measurement that says which image ran. A default of ``[]``
+    made every workflow using this step fail with a 400 the moment that check
+    landed.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -127,7 +140,7 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                 "allowed_rtmr2", [], workflow_results, dynamic_values
             ),
             "allowedRtmr3": self._resolve_list(
-                "allowed_rtmr3", [], workflow_results, dynamic_values
+                "allowed_rtmr3", [ZERO_MEASUREMENT], workflow_results, dynamic_values
             ),
             "allowedTcbStatuses": self._resolve_list(
                 "allowed_tcb_statuses", [], workflow_results, dynamic_values
