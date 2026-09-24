@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from merobox.commands.bootstrap.steps import assert_log as assert_log_module
 from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogAbsentStep,
     AssertLogPresentStep,
@@ -582,3 +583,133 @@ class TestFailureReporting:
         captured = capsys.readouterr()
         combined = captured.out + captured.err
         assert "Sync session complete" in combined
+
+
+def _manager_with_changing_logs(node: str, successive: list[str]) -> MagicMock:
+    """A docker-like manager whose log content changes between reads.
+
+    Each `logs(...)` call returns the next entry, holding on the last one. This
+    is what a node actually looks like to a polling assertion: the line is not
+    there, and then it is.
+    """
+    manager = MagicMock()
+    del manager.binary_path
+    state = {"i": 0}
+
+    def _logs(tail="all", timestamps=False):
+        content = successive[min(state["i"], len(successive) - 1)]
+        state["i"] += 1
+        return content.encode("utf-8")
+
+    container = MagicMock()
+    container.logs.side_effect = _logs
+    manager.nodes = {node: container}
+    manager.client.containers.get.side_effect = lambda n: container
+    manager.get_running_nodes.return_value = [node]
+    return manager
+
+
+async def _no_sleep(_seconds):
+    return None
+
+
+class TestAssertLogPresentTimeout:
+    """Polling replaces a fixed sleep in front of the assertion."""
+
+    def test_timeout_must_be_positive(self):
+        with pytest.raises(ValueError):
+            AssertLogPresentStep(
+                {"type": "assert_log_present", "patterns": ["x"], "timeout": 0},
+                MagicMock(),
+                MagicMock(),
+            )
+
+    def test_check_interval_must_be_positive(self):
+        with pytest.raises(ValueError):
+            AssertLogPresentStep(
+                {
+                    "type": "assert_log_present",
+                    "patterns": ["x"],
+                    "check_interval": -1,
+                },
+                MagicMock(),
+                MagicMock(),
+            )
+
+    def test_without_timeout_the_log_is_read_exactly_once(self):
+        """The historical behaviour, pinned.
+
+        Adding polling must not change what a workflow that never asked for it
+        asserts — nor how long it takes.
+        """
+        manager = _manager_with_changing_logs("n1", ["nothing yet", "the line"])
+        step = AssertLogPresentStep(
+            {"type": "assert_log_present", "nodes": ["n1"], "patterns": ["the line"]},
+            manager,
+            MagicMock(),
+        )
+        assert _run(step.execute({}, {})) is False
+        assert manager.nodes["n1"].logs.call_count == 1
+
+    def test_a_line_that_arrives_late_is_waited_for(self):
+        """The flake this exists to remove: the event happened, just not yet."""
+        manager = _manager_with_changing_logs(
+            "n1", ["booting", "still booting", "prefetching announced blob"]
+        )
+        step = AssertLogPresentStep(
+            {
+                "type": "assert_log_present",
+                "nodes": ["n1"],
+                "patterns": ["prefetching announced blob"],
+                "timeout": 30,
+                "check_interval": 1,
+            },
+            manager,
+            MagicMock(),
+        )
+        with patch.object(assert_log_module.asyncio, "sleep", _no_sleep):
+            assert _run(step.execute({}, {})) is True
+        assert manager.nodes["n1"].logs.call_count == 3
+
+    def test_a_line_that_never_arrives_still_fails(self):
+        """A timeout must not turn a real regression into a pass."""
+        manager = _manager_with_changing_logs("n1", ["booting"])
+        step = AssertLogPresentStep(
+            {
+                "type": "assert_log_present",
+                "nodes": ["n1"],
+                "patterns": ["never emitted"],
+                "timeout": 1,
+                "check_interval": 1,
+            },
+            manager,
+            MagicMock(),
+        )
+        with patch.object(assert_log_module.asyncio, "sleep", _no_sleep):
+            assert _run(step.execute({}, {})) is False
+
+    def test_hits_are_not_accumulated_across_polls(self):
+        """The trap in polling: each poll re-reads the WHOLE log.
+
+        One line that is present from the first read must count once, not once
+        per attempt — otherwise any `min_matches` is satisfied by simply waiting
+        long enough, and every count-based gate silently stops counting.
+        """
+        manager = _manager_with_changing_logs("n1", ["synced once"])
+        step = AssertLogPresentStep(
+            {
+                "type": "assert_log_present",
+                "nodes": ["n1"],
+                "patterns": ["synced once"],
+                "min_matches": 3,
+                "timeout": 1,
+                "check_interval": 1,
+            },
+            manager,
+            MagicMock(),
+        )
+        with patch.object(assert_log_module.asyncio, "sleep", _no_sleep):
+            assert _run(step.execute({}, {})) is False
+        assert (
+            manager.nodes["n1"].logs.call_count > 1
+        ), "the step must actually have polled, or this proves nothing"
