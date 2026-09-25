@@ -950,6 +950,16 @@ class AssertLogPresentStepConfig(BaseStepConfig):
     min_matches: Optional[int] = Field(
         1, description="Required hits per pattern, aggregated across nodes"
     )
+    timeout: Optional[int] = Field(
+        None,
+        description=(
+            "Seconds to keep re-reading the log until every pattern is "
+            "satisfied. Omitted, the log is read once."
+        ),
+    )
+    check_interval: Optional[int] = Field(
+        None, description="Seconds between polls when timeout is set (default 2)"
+    )
 
 
 class GetProposalStep(BaseStepConfig):

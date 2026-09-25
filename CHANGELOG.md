@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.79] - 2026-09-25
+
+### Fixed
+
+- **`assert_log_present`'s `timeout` failed workflow validation.** 0.6.78 added
+  the field to the step and not to `AssertLogPresentStepConfig`, and
+  `BaseStepConfig` sets `extra="forbid"` — so every workflow that used it was
+  rejected before running with `unknown field 'timeout' - the step would ignore
+  it`. The feature was unusable in the release that introduced it.
+
+  The whole unit suite stayed green, because the behaviour tests construct a
+  step object directly and never pass through the validator that gates the YAML
+  in front of it. Two tests now close that: one validates a workflow using both
+  fields, and one reads the field names the step pulls out of its config and
+  asserts the schema declares each, so a field added to one and not the other
+  fails here rather than in a consumer's CI.
+
 ## [0.6.78] - 2026-09-24
 
 Entries for 0.6.63 through 0.6.77 were not written; those releases are
