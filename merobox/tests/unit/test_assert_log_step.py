@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from merobox.commands.bootstrap.config import validate_workflow_step
 from merobox.commands.bootstrap.steps import assert_log as assert_log_module
 from merobox.commands.bootstrap.steps.assert_log import (
     AssertLogAbsentStep,
@@ -713,3 +714,59 @@ class TestAssertLogPresentTimeout:
         assert (
             manager.nodes["n1"].logs.call_count > 1
         ), "the step must actually have polled, or this proves nothing"
+
+
+class TestAssertLogPresentSchema:
+    """Every field the step reads must also be declared to the validator.
+
+    These are two separate gates. `_validate_field_types` runs on a step object
+    a test can build directly; `validate_workflow_step` runs over the YAML
+    before any step exists, and `extra="forbid"` means a field it does not
+    declare is a hard error — "unknown field 'timeout' - the step would ignore
+    it".
+
+    0.6.78 shipped `timeout` on the step and not in the schema, so every
+    workflow that used it failed validation while the whole unit suite stayed
+    green: the behaviour tests construct the step and never pass through the
+    gate in front of it. That is the gap this class exists to close, so a field
+    added to one and not the other fails here rather than in a consumer's CI.
+    """
+
+    def test_timeout_and_check_interval_validate(self):
+        assert (
+            validate_workflow_step(
+                {
+                    "type": "assert_log_present",
+                    "name": "waits for a line",
+                    "nodes": ["n1"],
+                    "patterns": ["x"],
+                    "timeout": 60,
+                    "check_interval": 2,
+                },
+                0,
+            )
+            == []
+        )
+
+    def test_every_field_the_step_reads_is_declared(self):
+        """Catches the next one, not just this one.
+
+        Reads the field names `AssertLogPresentStep` pulls out of its config and
+        asserts the schema declares each. A field added to the step alone fails
+        here by construction.
+        """
+        import inspect
+        import re
+
+        from merobox.commands.bootstrap.config import AssertLogPresentStepConfig
+
+        source = inspect.getsource(assert_log_module.AssertLogPresentStep)
+        source += inspect.getsource(assert_log_module._AssertLogStepBase)
+        read = set(re.findall(r"""self\.config(?:\.get\(|\[)["'](\w+)["']""", source))
+        declared = set(AssertLogPresentStepConfig.model_fields)
+        undeclared = read - declared
+        assert not undeclared, (
+            f"the step reads {sorted(undeclared)} but the schema does not declare "
+            f"them, so a workflow using them fails validation with "
+            f"'unknown field'"
+        )
