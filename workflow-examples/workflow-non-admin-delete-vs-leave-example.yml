@@ -26,11 +26,10 @@ description: >
               "identity {id} is not an admin of group {group}"
          delete_group     → NOT require_admin. Admits the subgroup's owner,
               an admin of the namespace root, or a member holding
-              CAN_DELETE_SUBGROUP. It refuses with
-              `CapabilitiesError::Unauthorized`, which `parse_api_error`
-              classifies nowhere — so the client gets a bare
-              "HTTP 500: Internal server error" and the reason stays in the
-              node log. The status is all that can be pinned.
+              CAN_DELETE_SUBGROUP. It refuses with a 403,
+              "... lacks permission to delete subgroup ..." (typed since
+              calimero-network/core#4141 / #4151; before that a bare
+              "HTTP 500: Internal server error").
 
        Each is pinned with `expected_error`, so an unreachable node cannot
        stand in for the refusal under test.
@@ -58,13 +57,9 @@ description: >
   for `MemberJoinedOpen` is validate-only and writes no row — even though
   `list_group_members` DOES report them (it unions the inherited set in),
   so a client reading the member list sees a role and reasonably offers
-  Leave. merod then refuses — but NOT readably: the pre-flight in
-  `leave_group.rs` raises a bare `eyre!` rather than the typed
-  `MembershipError::MemberNotDirect` that `membership_refusal_status`
-  already maps to a 409 with its message, so the caller gets the
-  reason-stripped 500 and the wording exists only in the node log. That is
-  a core defect, not a merobox one, and it is why the step below pins the
-  status; see the comment there. Both subgroup shapes are therefore built
+  Leave. merod then refuses with a 409, "this node is not a direct member
+  of ...; leave the parent group ..." (typed since calimero-network/core#4151;
+  before that a reason-stripped 500). Both subgroup shapes are therefore built
   here: `direct-room`, where node 2 is added by the admin and holds a real
   row, and `open-room`, where it self-joins by inheritance and holds none.
 
@@ -283,30 +278,18 @@ steps:
     expected_failure: true
     expected_error: "is not an admin of group"
 
-  # Different gate, and — MEASURED, not assumed — a refusal the client cannot
-  # read. `delete_group` builds its refusal as a bare
-  # `eyre!("deleting subgroup '{group_id:?}': {e} (or be its owner)")` wrapping
-  # the `CapabilitiesError`, so nothing survives for `parse_api_error` to
-  # downcast: it falls through to the final arm, which deliberately does NOT
-  # echo an untyped message back (it can carry store paths or key material).
-  # The client sees `500 Internal server error` and nothing else; the reason
-  # exists only in the node log. Note that classifying `CapabilitiesError`
-  # alone would NOT fix this — the wrap has to go too.
-  #
-  # So the status is all there is to pin. That still separates a refusal from
-  # the failures that would otherwise satisfy `expected_failure` for the wrong
-  # reason — an unreachable node, a 404 on a bad id, a 403 from the
-  # `MembershipError` family the two steps above assert.
-  #
-  # Tighten this to "lacks permission to delete subgroup" once core raises a
-  # typed refusal here and classifies it, the way master's
-  # `membership_refusal_status` already classifies `MembershipError`.
+  # Different gate: `delete_group` admits the subgroup's owner, an admin of
+  # the namespace root, or a member holding CAN_DELETE_SUBGROUP, so its refusal
+  # is not the `require_admin` wording above. Core now raises it typed and
+  # answers 403 with the reason kept (calimero-network/core#4141, #4151), so the
+  # reason is pinned rather than the bare status it used to be (a
+  # reason-stripped 500).
   - name: Non-Admin Cannot Delete a Subgroup
     type: delete_group
     node: perm-node-2
     group_id: "{{direct_room_id}}"
     expected_failure: true
-    expected_error: "HTTP 500"
+    expected_error: "lacks permission to delete subgroup"
 
   - name: Non-Admin Cannot Delete the Namespace
     type: delete_namespace
@@ -321,30 +304,16 @@ steps:
   # and `leave_group` needs one. A client that decides "Leave" from the
   # member list alone offers a button that lands here.
   #
-  # Pinned by status, for the same reason as `delete_group` above but by a
-  # DIFFERENT mechanism, and this one is a core defect rather than a gap:
-  #
-  #   `crates/governance-store/src/errors.rs` has the typed variant
-  #   `MembershipError::MemberNotDirect`, and master's
-  #   `membership_refusal_status` already classifies it — 409, message kept.
-  #   But the pre-flight in `crates/context/src/handlers/leave_group.rs`
-  #   does not raise it. It builds a bare `eyre::eyre!("this node is not a
-  #   direct member of {:?} …")` instead, which downcasts to nothing, so
-  #   `parse_api_error` falls to its final arm — the one that deliberately
-  #   drops an untyped message because it can carry store paths or key
-  #   material — and answers a bare 500.
-  #
-  # So the refusal a client can actually read is strictly WORSE than the one
-  # core already knows how to send, and the comment above that pre-flight
-  # ("so we surface a friendly error") describes the opposite of the effect.
-  # Raising `MemberNotDirect` there is a one-line change and would let this
-  # step pin the reason; until then the status is all there is.
+  # Core's leave pre-flight now raises the typed
+  # `LeaveGroupNotDirectMember` and answers 409 with the reason kept
+  # (calimero-network/core#4151), where it used to build a bare eyre string that
+  # reached the client as a reason-stripped 500. So the reason is pinned.
   - name: Leaving an Inherited Open Subgroup Is Refused — There Is No Row to Remove
     type: leave_group
     node: perm-node-2
     group_id: "{{open_room_id}}"
     expected_failure: true
-    expected_error: "HTTP 500"
+    expected_error: "is not a direct member of"
 
   # A bare status match would also be satisfied by a `leave_group` that got
   # far enough to publish `MemberLeft` and only then fell over — which is not

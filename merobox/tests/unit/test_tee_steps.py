@@ -95,6 +95,33 @@ class TestSetTeeAdmissionPolicyValidation:
                 manager=MagicMock(),
             )
 
+    @pytest.mark.parametrize("mode", ["replica", "relay"])
+    def test_valid_mode_passes(self, mode):
+        SetTeeAdmissionPolicyStep(
+            {
+                "type": "set_tee_admission_policy",
+                "node": "node-1",
+                "group_id": "g",
+                "mode": mode,
+            },
+            manager=MagicMock(),
+        )
+
+    @pytest.mark.parametrize("mode", ["Relay", "relayer", "", None, True])
+    def test_invalid_mode_raises(self, mode):
+        with pytest.raises(
+            ValueError, match="'mode' must be one of 'replica', 'relay'"
+        ):
+            SetTeeAdmissionPolicyStep(
+                {
+                    "type": "set_tee_admission_policy",
+                    "node": "node-1",
+                    "group_id": "g",
+                    "mode": mode,
+                },
+                manager=MagicMock(),
+            )
+
 
 class TestSetTeeAdmissionPolicyExecute:
     def test_default_body_accepts_mock_and_zero_mrtd(self):
@@ -167,6 +194,49 @@ class TestSetTeeAdmissionPolicyExecute:
         assert body["allowedMrtd"] == ["aa" * 48]
         assert body["allowedRtmr0"] == ["bb"]
         assert body["allowedTcbStatuses"] == ["UpToDate"]
+
+    def test_mode_omitted_sends_no_mode(self):
+        """Core before 0.11.0-rc.61 rejects a body carrying `mode` at all."""
+        step = _make_step(
+            SetTeeAdmissionPolicyStep,
+            type="set_tee_admission_policy",
+            group_id="gid",
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {})
+            assert _run(step.execute({}, {})) is True
+
+        assert "mode" not in req.request.call_args.kwargs["json"]
+
+    @pytest.mark.parametrize("mode", ["replica", "relay"])
+    def test_mode_is_sent_when_set(self, mode):
+        step = _make_step(
+            SetTeeAdmissionPolicyStep,
+            type="set_tee_admission_policy",
+            group_id="gid",
+            mode=mode,
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {})
+            assert _run(step.execute({}, {})) is True
+
+        body = req.request.call_args.kwargs["json"]
+        assert body["mode"] == mode
+        assert f'"mode": "{mode}"' in json.dumps(body)
+
+    def test_mode_rejected_by_old_node_names_the_version(self, capsys):
+        step = _make_step(
+            SetTeeAdmissionPolicyStep,
+            type="set_tee_admission_policy",
+            group_id="gid",
+            mode="relay",
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(
+                400, text="unknown field `mode`, expected one of `allowedMrtd`"
+            )
+            assert _run(step.execute({}, {})) is False
+        assert "0.11.0-rc.61" in capsys.readouterr().out
 
     def test_non_200_fails(self):
         step = _make_step(
@@ -253,6 +323,36 @@ def _members_payload(*members):
     return {"members": list(members)}
 
 
+class TestAssertTeeMemberValidation:
+    @pytest.mark.parametrize(
+        "role", ["Admin", "Member", "ReadOnly", "ReadOnlyTee", "RelayTee", "{{r}}"]
+    )
+    def test_known_role_passes(self, role):
+        AssertTeeMemberStep(
+            {
+                "type": "assert_tee_member",
+                "node": "node-1",
+                "group_id": "g",
+                "account": _TEE_ACCOUNT,
+                "role": role,
+            },
+            manager=MagicMock(),
+        )
+
+    def test_unknown_role_raises(self):
+        with pytest.raises(ValueError, match="'role' must be one of"):
+            AssertTeeMemberStep(
+                {
+                    "type": "assert_tee_member",
+                    "node": "node-1",
+                    "group_id": "g",
+                    "account": _TEE_ACCOUNT,
+                    "role": "RelayTEE",
+                },
+                manager=MagicMock(),
+            )
+
+
 class TestAssertTeeMember:
     def test_passes_when_member_present_with_default_role(self):
         step = _make_step(
@@ -304,6 +404,51 @@ class TestAssertTeeMember:
             )
             result = _run(step.execute({}, {}))
         assert result is False
+
+    def test_default_role_accepts_relay_tee(self):
+        step = _make_step(
+            AssertTeeMemberStep,
+            type="assert_tee_member",
+            group_id="gid",
+            account=_TEE_ACCOUNT,
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(
+                200,
+                _members_payload({"identity": _TEE_ACCOUNT, "role": "RelayTee"}),
+            )
+            assert _run(step.execute({}, {})) is True
+
+    def test_relay_tee_role_respected(self):
+        step = _make_step(
+            AssertTeeMemberStep,
+            type="assert_tee_member",
+            group_id="gid",
+            account=_TEE_ACCOUNT,
+            role="RelayTee",
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(
+                200,
+                _members_payload({"identity": _TEE_ACCOUNT, "role": "RelayTee"}),
+            )
+            assert _run(step.execute({}, {})) is True
+
+    def test_explicit_role_does_not_accept_the_other_tee_role(self):
+        """Pinning a role must tell a replica from a relay."""
+        step = _make_step(
+            AssertTeeMemberStep,
+            type="assert_tee_member",
+            group_id="gid",
+            account=_TEE_ACCOUNT,
+            role="RelayTee",
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(
+                200,
+                _members_payload({"identity": _TEE_ACCOUNT, "role": "ReadOnlyTee"}),
+            )
+            assert _run(step.execute({}, {})) is False
 
     def test_custom_role_respected(self):
         step = _make_step(

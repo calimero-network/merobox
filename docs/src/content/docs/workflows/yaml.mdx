@@ -1928,13 +1928,22 @@ These drive a local mock-TEE fleet against a node's admin API. They require a
 ### set_tee_admission_policy
 
 Set a namespace-root TEE admission policy. Fields: `node`, `group_id`, optional
-`accept_mock` (bool, `true`).
+`accept_mock` (bool, `true`), optional `mode` (`replica` | `relay`).
+
+`mode` decides the role an admitted TEE gets: `replica` admits it as
+`ReadOnlyTee`, `relay` as `RelayTee` — the only role that relays members'
+delegated writes. Setting the policy also converts TEEs already admitted, so
+switching an existing namespace is the same step with `mode: relay`. The field
+is sent only when set; core reads its absence as `replica`. Core before
+`0.11.0-rc.61` rejects any policy carrying `mode` with HTTP 400, so leave it out
+of workflows that must run against older images.
 
 ```yaml
 - type: set_tee_admission_policy
   node: tee-owner
   group_id: '{{namespace_id}}'
   accept_mock: true
+  mode: relay
 ```
 
 ### tee_fleet_join
@@ -1951,7 +1960,10 @@ Blocks server-side for one admission window.
 ### assert_tee_member / assert_not_member
 
 Assert presence / absence of an **account** in a group's member list. Fields:
-`node`, `group_id`, `account`.
+`node`, `group_id`, `account`; `assert_tee_member` also takes an optional
+`role` (`Admin`, `Member`, `ReadOnly`, `ReadOnlyTee` or `RelayTee`). With `role`
+omitted it passes for either TEE role; set it to tell a relay (`RelayTee`) from
+a replica (`ReadOnlyTee`).
 
 Takes the account, not the signing key: membership is recorded against the
 account a key speaks for, so the listing reports accounts and a key matches
@@ -1962,6 +1974,7 @@ nothing. `tee_fleet_join` reports both — capture `account`.
   node: tee-owner
   group_id: '{{namespace_id}}'
   account: '{{replica_account}}'
+  role: RelayTee
 ```
 
 ## See also

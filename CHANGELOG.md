@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.80] - 2026-09-29
+
+### Added
+
+- **`set_tee_admission_policy` takes an optional `mode`: `replica` or
+  `relay`.** Core `0.11.0-rc.61` added it to the namespace TEE admission
+  policy: `relay` admits TEEs as `RelayTee`, the only role that relays members'
+  delegated writes, and `replica` admits them as `ReadOnlyTee`. Setting the
+  policy also converts TEEs already admitted, so switching a namespace is the
+  same step with `mode: relay`. The field goes into the PUT body only when the
+  step sets it, because core before rc.61 rejects a body carrying `mode` with a
+  400; a 400 that names `mode` now says which core version is needed. Any
+  other value fails validation before a container starts.
+- **`assert_tee_member` knows `RelayTee`.** With `role` omitted it now passes
+  for either TEE role, since both are what a fleet-join admission mints; set
+  `role` to tell a relay from a replica. A literal `role` must now be a real
+  group role (`Admin`, `Member`, `ReadOnly`, `ReadOnlyTee`, `RelayTee`), so a
+  typo fails validation instead of reading as "member not found".
+
 ## [0.6.79] - 2026-09-25
 
 ### Fixed
