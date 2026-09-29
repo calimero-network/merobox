@@ -85,7 +85,7 @@ class SetTeeAdmissionPolicyStep(BaseStep):
     landed.
 
     ``mode`` ("replica" | "relay") is sent only when the step sets it. Core
-    before 0.11.0-rc.61 rejects any body carrying ``mode`` (serde
+    before 0.11.0-rc.62 rejects any body carrying ``mode`` (serde
     ``deny_unknown_fields``), so omitting it keeps existing workflows working
     against older images; core reads an absent mode as "replica".
     """
@@ -189,7 +189,7 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                 ):
                     hint = (
                         " (this node predates the policy 'mode' field; "
-                        "admitting relays needs core >= 0.11.0-rc.61)"
+                        "admitting relays needs core >= 0.11.0-rc.62)"
                     )
                 result = fail(
                     f"set_tee_admission_policy returned HTTP {response.status_code}: "

@@ -196,7 +196,7 @@ class TestSetTeeAdmissionPolicyExecute:
         assert body["allowedTcbStatuses"] == ["UpToDate"]
 
     def test_mode_omitted_sends_no_mode(self):
-        """Core before 0.11.0-rc.61 rejects a body carrying `mode` at all."""
+        """Core before 0.11.0-rc.62 rejects a body carrying `mode` at all."""
         step = _make_step(
             SetTeeAdmissionPolicyStep,
             type="set_tee_admission_policy",
@@ -236,7 +236,7 @@ class TestSetTeeAdmissionPolicyExecute:
                 400, text="unknown field `mode`, expected one of `allowedMrtd`"
             )
             assert _run(step.execute({}, {})) is False
-        assert "0.11.0-rc.61" in capsys.readouterr().out
+        assert "0.11.0-rc.62" in capsys.readouterr().out
 
     def test_non_200_fails(self):
         step = _make_step(
