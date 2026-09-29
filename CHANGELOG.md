@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.81] - 2026-09-29
+
+### Fixed
+
+- **A `fuzzy_test` assertion now fails when the call it checks failed.** The
+  pattern runner resolved each step non-strictly before running it, and an
+  unresolved embedded placeholder comes back as its bare name, so
+  `is_set({{w1}})` after a failed call reached the assertion as `is_set(w1)`
+  and passed on the literal text `w1`. A burst of writes to a node that had
+  crashed with SIGSEGV reported every write as fine; only `contains(...)`
+  read-backs against a known value noticed. Assert statements now reach
+  `assert` with their placeholders intact, where resolution is strict and an
+  unbound one is a failed assertion. Random generators (`{{uuid}}`,
+  `{{random_int(...)}}`) in a statement are still expanded, and a statement's
+  `message` is still filled in.
+
 ## [0.6.80] - 2026-09-29
 
 ### Added

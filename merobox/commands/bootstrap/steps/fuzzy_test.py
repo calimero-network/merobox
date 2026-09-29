@@ -363,9 +363,14 @@ class FuzzyTestStep(BaseStep):
                 continue
 
             # Deep copy step config to avoid mutation
-            resolved_step_config = self._resolve_step_config(
-                step_config, workflow_results, pattern_dynamic_values
-            )
+            if step_type == "assert":
+                resolved_step_config = self._resolve_assert_config(
+                    step_config, workflow_results, pattern_dynamic_values
+                )
+            else:
+                resolved_step_config = self._resolve_step_config(
+                    step_config, workflow_results, pattern_dynamic_values
+                )
 
             # For call steps, capture resolved args for use in assertions
             # Store them in pattern_dynamic_values with a special prefix
@@ -471,6 +476,58 @@ class FuzzyTestStep(BaseStep):
             else:
                 resolved[key] = value
 
+        return resolved
+
+    def _resolve_assert_config(
+        self,
+        step_config: dict,
+        workflow_results: dict[str, Any],
+        dynamic_values: dict[str, Any],
+    ) -> dict:
+        """Resolve an assert step's config, leaving its statements' placeholders.
+
+        This step resolves non-strictly, and an unresolved embedded placeholder
+        comes back as its bare name: `is_set({{w1}})` after a failed call
+        became `is_set(w1)`, which passed on the literal text "w1". AssertStep
+        resolves strictly and records an unbound placeholder as a failed
+        assertion, so statements go to it with their placeholders intact.
+        Random generators have no binding for AssertStep to find, so those are
+        still expanded here.
+        """
+        resolved = {}
+        for key, value in step_config.items():
+            if key != "statements" or not isinstance(value, list):
+                resolved[key] = self._resolve_step_config(
+                    {key: value}, workflow_results, dynamic_values
+                )[key]
+                continue
+            statements = []
+            for stmt in value:
+                if isinstance(stmt, str):
+                    statements.append(self._resolve_random_generators(stmt))
+                elif isinstance(stmt, dict):
+                    # The message is only displayed, so it is filled in as
+                    # before; only the statement itself must stay strict.
+                    stmt = {
+                        **self._resolve_step_config(
+                            {k: v for k, v in stmt.items() if k != "statement"},
+                            workflow_results,
+                            dynamic_values,
+                        ),
+                        **(
+                            {"statement": stmt["statement"]}
+                            if "statement" in stmt
+                            else {}
+                        ),
+                    }
+                    if isinstance(stmt.get("statement"), str):
+                        stmt["statement"] = self._resolve_random_generators(
+                            stmt["statement"]
+                        )
+                    statements.append(stmt)
+                else:
+                    statements.append(stmt)
+            resolved[key] = statements
         return resolved
 
     def _resolve_random_generators(self, value: str) -> str:
