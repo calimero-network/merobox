@@ -47,6 +47,15 @@ ZERO_MRTD = ZERO_MEASUREMENT
 # ~= 30s) before returning admitted/announced, so allow a generous read timeout.
 _FLEET_JOIN_READ_TIMEOUT = 60.0
 
+# The admission policy's `mode`: "replica" admits TEEs as ReadOnlyTee, "relay"
+# as RelayTee. Core treats an absent mode as "replica".
+TEE_ADMISSION_MODES = ("replica", "relay")
+
+# Both roles an attestation admission can mint. Only RelayTee relays members'
+# delegated writes; either one is an attested TEE member.
+TEE_ROLES = ("ReadOnlyTee", "RelayTee")
+GROUP_MEMBER_ROLES = ("Admin", "Member", "ReadOnly", *TEE_ROLES)
+
 
 def _admin_request(method: str, url: str, **kwargs) -> requests.Response:
     """Issue an admin-API HTTP request with merobox's default timeouts.
@@ -74,6 +83,11 @@ class SetTeeAdmissionPolicyStep(BaseStep):
     RTMR3 is the only measurement that says which image ran. A default of ``[]``
     made every workflow using this step fail with a 400 the moment that check
     landed.
+
+    ``mode`` ("replica" | "relay") is sent only when the step sets it. Core
+    before 0.11.0-rc.61 rejects any body carrying ``mode`` (serde
+    ``deny_unknown_fields``), so omitting it keeps existing workflows working
+    against older images; core reads an absent mode as "replica".
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -98,6 +112,13 @@ class SetTeeAdmissionPolicyStep(BaseStep):
         ):
             if field in self.config and not isinstance(self.config.get(field), list):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a list")
+        mode = self.config.get("mode")
+        if "mode" in self.config and mode not in TEE_ADMISSION_MODES:
+            raise ValueError(
+                f"Step '{step_name}': 'mode' must be one of "
+                f"{', '.join(repr(m) for m in TEE_ADMISSION_MODES)}, "
+                f"got {mode!r}"
+            )
 
     def _resolve_list(
         self,
@@ -146,6 +167,9 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                 "allowed_tcb_statuses", [], workflow_results, dynamic_values
             ),
         }
+        mode = self.config.get("mode")
+        if mode is not None:
+            body["mode"] = mode
 
         try:
             admin_url = self._get_node_rpc_url(node_name)
@@ -157,9 +181,19 @@ class SetTeeAdmissionPolicyStep(BaseStep):
             # default read timeout is intentional.
             response = _admin_request("PUT", url, json=body)
             if response.status_code != 200:
+                hint = ""
+                if (
+                    mode is not None
+                    and response.status_code == 400
+                    and "mode" in response.text
+                ):
+                    hint = (
+                        " (this node predates the policy 'mode' field; "
+                        "admitting relays needs core >= 0.11.0-rc.61)"
+                    )
                 result = fail(
                     f"set_tee_admission_policy returned HTTP {response.status_code}: "
-                    f"{response.text}"
+                    f"{response.text}{hint}"
                 )
             else:
                 # Tolerate an empty/`null` body (e.g. a bare 200) so downstream
@@ -181,7 +215,8 @@ class SetTeeAdmissionPolicyStep(BaseStep):
 
         workflow_results[f"set_tee_admission_policy_{node_name}"] = result["data"]
         console.print(
-            f"[green]✓ Set TEE admission policy (acceptMock={accept_mock}) "
+            f"[green]✓ Set TEE admission policy (acceptMock={accept_mock}"
+            f"{f', mode={mode}' if mode is not None else ''}) "
             f"for group {group_id} on {node_name}[/green]"
         )
         if expected_failure:
@@ -326,8 +361,9 @@ class AssertTeeMemberStep(BaseStep):
     against the old shape fails required-field validation instead of silently
     comparing a key against an account and reporting the member absent.
 
-    Defaults to ``role="ReadOnlyTee"`` — the role a TEE fleet node holds after a
-    successful fleet-join admission.
+    With ``role`` omitted, either TEE role passes — ``ReadOnlyTee`` (policy
+    mode "replica") or ``RelayTee`` (mode "relay") — since both are what a
+    successful fleet-join admission mints. Set ``role`` to pin one exactly.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -338,8 +374,18 @@ class AssertTeeMemberStep(BaseStep):
         for field in ("node", "group_id", "account"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
-        if "role" in self.config and not isinstance(self.config.get("role"), str):
+        if "role" not in self.config:
+            return
+        role = self.config.get("role")
+        if not isinstance(role, str):
             raise ValueError(f"Step '{step_name}': 'role' must be a string")
+        # A placeholder resolves at run time; a literal must name a real role,
+        # or a typo would only surface as "member not found".
+        if "{{" not in role and role not in GROUP_MEMBER_ROLES:
+            raise ValueError(
+                f"Step '{step_name}': 'role' must be one of "
+                f"{', '.join(GROUP_MEMBER_ROLES)}, got {role!r}"
+            )
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -351,9 +397,14 @@ class AssertTeeMemberStep(BaseStep):
         account = self._resolve_dynamic_value(
             self.config["account"], workflow_results, dynamic_values
         )
-        role = self._resolve_dynamic_value(
-            self.config.get("role", "ReadOnlyTee"), workflow_results, dynamic_values
-        )
+        if "role" in self.config:
+            role = self._resolve_dynamic_value(
+                self.config["role"], workflow_results, dynamic_values
+            )
+            accepted_roles = (role,)
+        else:
+            role = " or ".join(TEE_ROLES)
+            accepted_roles = TEE_ROLES
 
         try:
             members = _fetch_members(self, node_name, group_id)
@@ -368,10 +419,10 @@ class AssertTeeMemberStep(BaseStep):
             if (
                 isinstance(m, dict)
                 and m.get("identity") == account
-                and m.get("role") == role
+                and m.get("role") in accepted_roles
             ):
                 console.print(
-                    f"[green]✓ {account} is a '{role}' member of group "
+                    f"[green]✓ {account} is a '{m.get('role')}' member of group "
                     f"{group_id} on {node_name}[/green]"
                 )
                 return True
