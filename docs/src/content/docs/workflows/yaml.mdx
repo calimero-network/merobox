@@ -1935,7 +1935,7 @@ Set a namespace-root TEE admission policy. Fields: `node`, `group_id`, optional
 delegated writes. Setting the policy also converts TEEs already admitted, so
 switching an existing namespace is the same step with `mode: relay`. The field
 is sent only when set; core reads its absence as `replica`. Core before
-`0.11.0-rc.61` rejects any policy carrying `mode` with HTTP 400, so leave it out
+`0.11.0-rc.62` rejects any policy carrying `mode` with HTTP 400, so leave it out
 of workflows that must run against older images.
 
 ```yaml
