@@ -23,7 +23,7 @@ these build on (context, group, namespace, CRDT), see the
 | **Click** | The Python CLI framework merobox is built on. `merobox/cli.py` defines the command group; each command lives under `commands/`. |
 | **`cluster()`** | Testing context manager (`merobox/testing.py`) that starts N nodes, yields their endpoints, and tears them down — used as a pytest fixture. Returns a `ClusterEnv`. |
 | **ClusterEnv** | `TypedDict` returned by `cluster()`: `nodes` (names), `endpoints` (name→URL map), and `manager` (the `DockerManager`). |
-| **config.toml** | The TOML configuration file for a `merod` node. merobox generates/edits it per node via `commands/config_utils.py` helpers (`apply_bootstrap_nodes`, `apply_e2e_defaults`, `apply_mdns_setting`). |
+| **config.toml** | The TOML configuration file for a `merod` node. merobox generates/edits it per node via `commands/config_utils.py` helpers (`apply_bootstrap_nodes`, `apply_e2e_defaults`, `apply_config_value`). |
 | **context** | A Calimero context — a running instance of a WASM application with its own state. In a workflow the `create_context` step creates one; later steps reference it by `context_id`. |
 | **DockerManager** | The default node backend (`commands/manager.py`). Uses the Docker SDK to pull images and manage the container lifecycle, networking, and (with the auth service) the Traefik stack. |
 | **fixture** | A pytest fixture backed by merobox's testing helpers — `cluster()`, `workflow()`, `nodes()`, or `run_workflow()` — that provides running nodes to a test and cleans up afterward. |

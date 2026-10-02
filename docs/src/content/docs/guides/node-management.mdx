@@ -230,7 +230,9 @@ the helpers in `merobox/commands/config_utils.py`:
 
 - `apply_bootstrap_nodes` — inject bootstrap peer multiaddrs so nodes discover
   each other.
-- `apply_mdns_setting` — toggle mDNS local discovery.
+- `apply_config_value` — set one dotted key, such as `discovery.mdns` to toggle
+  mDNS local discovery. Every launched node also gets `dev = true`, so merod
+  accepts the bundles `cargo mero bundle --dev` signs.
 - `apply_e2e_defaults` — clear inherited public bootstrap nodes and bind for
   isolated, deterministic test runs.
 
