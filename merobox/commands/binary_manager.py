@@ -20,6 +20,7 @@ from rich.console import Console
 from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
+    apply_config_value,
     apply_e2e_defaults,
 )
 from merobox.commands.constants import (
@@ -454,6 +455,11 @@ class BinaryManager(CleanupMixin):
             # Apply bootstrap nodes configuration (works regardless of e2e_mode)
             if bootstrap_nodes:
                 apply_bootstrap_nodes(actual_config_file, node_name, bootstrap_nodes)
+
+            # Every merobox node installs `cargo mero bundle --dev` apps.
+            # Older merod ignores the key.
+            if not apply_config_value(actual_config_file, node_name, "dev", True):
+                return False
 
             # Build run command (ports are taken from config created during init)
             cmd = [

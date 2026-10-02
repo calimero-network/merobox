@@ -23,6 +23,15 @@ _PID = {n: "12D3KooW" + chr(ord("A") + n) * 44 for n in range(1, 5)}
 _IP = {n: f"172.20.0.{n + 1}" for n in range(1, 5)}
 
 
+@pytest.fixture(autouse=True)
+def _node_config_is_writable():
+    """The mocked Docker runs write no config.toml, so the `dev` write has nothing to open."""
+    with patch(
+        "merobox.commands.manager.apply_config_value", return_value=True
+    ) as apply_config_value:
+        yield apply_config_value
+
+
 def _mock_cluster_container(ip, network="merobox-cluster", status="running"):
     """A MagicMock container that reports `ip` on `network` (for IP discovery)."""
     c = MagicMock()
@@ -1691,3 +1700,61 @@ def test_describe_unexpected_exit_names_the_cause(state, expected):
 def test_describe_unexpected_exit_ignores_missing_state():
     """No state captured -> nothing claimed about how the node stopped."""
     assert _describe_unexpected_exit(None) is None
+
+
+@patch("merobox.commands.manager.apply_config_value")
+@patch("docker.from_env")
+def test_run_node_lets_the_node_install_dev_signed_bundles(
+    mock_docker, mock_apply_config_value
+):
+    """Workflows install `cargo mero bundle --dev` apps, which merod refuses without `dev`."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._fix_permissions = MagicMock()
+    client.containers.run.side_effect = _capture_run_config_factory([])
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+
+    manager.run_node("test-node")
+
+    assert any(
+        call.args[1:] == ("test-node", "dev", True)
+        for call in mock_apply_config_value.call_args_list
+    )
+
+
+@patch("merobox.commands.manager.apply_config_value", return_value=False)
+@patch("docker.from_env")
+def test_run_node_fails_when_dev_cannot_be_written(mock_docker, _apply_config_value):
+    """A node that would boot without `dev` fails every dev-bundle install later, so fail the launch."""
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._fix_permissions = MagicMock()
+    container_configs = []
+    client.containers.run.side_effect = _capture_run_config_factory(container_configs)
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+
+    assert manager.run_node("test-node") is False
+    assert not any(c.get("detach") is True for c in container_configs)
+
+
+@pytest.mark.parametrize("mdns,forced", [(False, True), (True, True), (None, False)])
+@patch("docker.from_env")
+def test_run_node_forces_mdns_only_when_the_workflow_sets_it(
+    mock_docker, mdns, forced, _node_config_is_writable
+):
+    client = MagicMock()
+    mock_docker.return_value = client
+    manager = DockerManager(enable_signal_handlers=False)
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._fix_permissions = MagicMock()
+    client.containers.run.side_effect = _capture_run_config_factory([])
+    client.containers.get.side_effect = docker.errors.NotFound("Not found")
+
+    manager.run_node("test-node", mdns=mdns)
+
+    written = [call.args[2:] for call in _node_config_is_writable.call_args_list]
+    assert (("discovery.mdns", mdns) in written) is forced

@@ -22,8 +22,8 @@ from merobox.commands.auth import fetch_access_token_blocking
 from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
+    apply_config_value,
     apply_e2e_defaults,
-    apply_mdns_setting,
     build_sibling_bootstrap_addrs,
     read_bootstrap_nodes,
     read_peer_id,
@@ -905,9 +905,10 @@ class DockerManager(CleanupMixin):
             self.node_config_files[node_name] = os.path.abspath(config_file)
 
             try:
+                self._fix_permissions(node_data_dir)
+
                 # Apply e2e-style configuration for reliable testing (only if e2e_mode is enabled)
                 if e2e_mode:
-                    self._fix_permissions(node_data_dir)
                     apply_e2e_defaults(
                         config_file,
                         node_name,
@@ -921,8 +922,7 @@ class DockerManager(CleanupMixin):
 
                 # Force discovery.mdns if the workflow opted in or out.
                 if mdns is not None:
-                    self._fix_permissions(node_data_dir)
-                    apply_mdns_setting(config_file, node_name, mdns)
+                    apply_config_value(config_file, node_name, "discovery.mdns", mdns)
 
             except Exception:
                 if e2e_mode:
@@ -935,6 +935,11 @@ class DockerManager(CleanupMixin):
                         workflow_id,
                         preserve_default_bootstrap=preserve_default_bootstrap,
                     )
+
+            # Every merobox node installs `cargo mero bundle --dev` apps.
+            # Older merod ignores the key.
+            if not apply_config_value(config_file, node_name, "dev", True):
+                return False
 
             # Now start the actual node
             console.print(f"[yellow]Starting node {node_name}...[/yellow]")
@@ -1764,10 +1769,8 @@ class DockerManager(CleanupMixin):
                 if not addrs:
                     continue
                 # The init container ran as root, so the config file may be
-                # root-owned. In e2e mode run_node already fixed ownership;
-                # otherwise do it here (idempotent, cheap).
-                if not e2e_mode:
-                    self._fix_permissions(os.path.dirname(config_file))
+                # root-owned (idempotent, cheap).
+                self._fix_permissions(os.path.dirname(config_file))
                 apply_bootstrap_nodes(config_file, node_name, addrs)
 
                 container = self._get_node_container(node_name)

@@ -101,18 +101,13 @@ def apply_bootstrap_nodes(
         return False
 
 
-def apply_mdns_setting(
+def apply_config_value(
     config_file: Union[Path, str],
     node_name: str,
-    enabled: bool,
+    key: str,
+    value,
 ) -> bool:
-    """Force discovery.mdns to a specific value in a node's config.toml.
-
-    Without this, a single Docker bridge lets containers find each other via
-    mDNS — relay-recovery test paths become no-ops. Workflows running fault
-    injection should set mdns=false so the rendezvous/relay code path is
-    actually exercised.
-    """
+    """Set one dot-separated key in a node's config.toml."""
     try:
         config_path = Path(config_file)
         if not config_path.exists():
@@ -122,17 +117,17 @@ def apply_mdns_setting(
         with open(config_path, encoding="utf-8") as f:
             config = toml.load(f)
 
-        set_nested_config(config, "discovery.mdns", enabled)
+        set_nested_config(config, key, value)
 
         config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
         with open(config_path, "w", encoding="utf-8") as f:
             toml.dump(config, f)
 
-        console.print(f"[green]✓ Set discovery.mdns={enabled} for {node_name}[/green]")
+        console.print(f"[green]✓ Set {key}={value} for {node_name}[/green]")
         return True
 
     except Exception as e:
-        console.print(f"[red]✗ Failed to set mdns for {node_name}: {e}[/red]")
+        console.print(f"[red]✗ Failed to set {key} for {node_name}: {e}[/red]")
         return False
 
 

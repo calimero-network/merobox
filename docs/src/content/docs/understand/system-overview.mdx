@@ -146,7 +146,7 @@ test suite spins up real nodes as fixtures. See the
 | Result shapes | `commands/result.py` | `ok()` / `fail()` helpers that return standard success/error **dictionaries** (not a result class) |
 | Retries | `commands/retry.py` | `RetryConfig` and the `@with_retry` decorator (exponential backoff); applied to network calls via `NETWORK_RETRY_CONFIG` |
 | Errors | `commands/errors.py` | `MeroboxError` and its subclasses — `NodeResolutionError`, `AuthenticationError`, `WorkflowError` (`StepValidationError`, `StepExecutionError`), `ValidationError`, `ClientError` (`MeroboxTimeoutError`), `ConfigurationError` |
-| Node config | `commands/config_utils.py` | `merod` `config.toml` helpers: `apply_bootstrap_nodes`, `apply_e2e_defaults`, `apply_mdns_setting`, and peer/bootstrap readers |
+| Node config | `commands/config_utils.py` | `merod` `config.toml` helpers: `apply_bootstrap_nodes`, `apply_e2e_defaults`, `apply_config_value`, and peer/bootstrap readers |
 
 The error hierarchy is documented in [error handling](/reference/error-handling/).
 

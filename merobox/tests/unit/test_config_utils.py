@@ -1,8 +1,11 @@
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
+import toml
+
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
+    apply_config_value,
     apply_e2e_defaults,
     build_sibling_bootstrap_addrs,
     read_bootstrap_nodes,
@@ -395,3 +398,25 @@ def test_build_sibling_bootstrap_addrs_appends_to_existing():
     assert f"/ip4/172.20.0.3/tcp/2428/p2p/{PID_2}" in addrs
     # no duplicates
     assert len(addrs) == len(set(addrs))
+
+
+def test_apply_config_value_writes_a_top_level_key(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('mode = "standard"\n\n[discovery]\nmdns = false\n')
+
+    assert apply_config_value(config_file, "node1", "dev", True) is True
+
+    written = toml.loads(config_file.read_text())
+    assert written["dev"] is True
+    assert written["discovery"] == {"mdns": False}
+
+
+def test_dev_survives_the_later_config_rewrites(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('mode = "standard"\n\n[discovery]\nmdns = true\n')
+    apply_config_value(config_file, "node1", "dev", True)
+
+    apply_bootstrap_nodes(config_file, "node1", [f"/ip4/10.0.0.2/tcp/2428/p2p/{PID_2}"])
+    apply_e2e_defaults(config_file, "node1", "wf")
+
+    assert toml.loads(config_file.read_text())["dev"] is True

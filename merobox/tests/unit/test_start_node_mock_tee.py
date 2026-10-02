@@ -74,7 +74,10 @@ def _capture_run_config_factory(container_configs):
 
 def _run_docker_node(mock_tee):
     """Drive DockerManager.run_node and return the main container command."""
-    with patch("docker.from_env") as mock_docker:
+    with (
+        patch("docker.from_env") as mock_docker,
+        patch("merobox.commands.manager.apply_config_value"),
+    ):
         client = MagicMock()
         mock_docker.return_value = client
         manager = DockerManager(enable_signal_handlers=False)
@@ -137,6 +140,7 @@ def _run_binary_node(tmp_path, mock_tee):
     with (
         patch("merobox.commands.binary_manager.subprocess.Popen", fake_popen),
         patch("merobox.commands.binary_manager.time.sleep"),
+        patch("merobox.commands.binary_manager.apply_config_value"),
         patch(
             "merobox.commands.binary_manager.socket.create_connection",
             side_effect=OSError("not listening"),

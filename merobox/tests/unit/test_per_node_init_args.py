@@ -13,9 +13,18 @@ holding the root, in the same workflow.
 from unittest.mock import MagicMock, patch
 
 import docker
+import pytest
 
 from merobox.commands.bootstrap.config import NodesConfig
 from merobox.commands.manager import DockerManager
+
+
+@pytest.fixture(autouse=True)
+def _node_config_is_writable():
+    """The mocked Docker runs write no config.toml, so the `dev` write has nothing to open."""
+    with patch("merobox.commands.manager.apply_config_value", return_value=True):
+        yield
+
 
 # The flags the managers always pass. `init_args` must never displace these.
 _MANDATORY = ["--server-port", "--swarm-port"]

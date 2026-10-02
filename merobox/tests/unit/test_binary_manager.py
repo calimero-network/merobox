@@ -281,6 +281,7 @@ def test_run_node_records_where_the_node_config_lives(tmp_path, monkeypatch):
         patch("merobox.commands.binary_manager.subprocess.run"),
         patch("merobox.commands.binary_manager.subprocess.Popen") as popen,
         patch("merobox.commands.binary_manager.time.sleep"),
+        patch("merobox.commands.binary_manager.apply_config_value"),
         patch.object(manager, "_is_process_running", return_value=True),
     ):
         popen.return_value.pid = 4242
@@ -288,3 +289,39 @@ def test_run_node_records_where_the_node_config_lives(tmp_path, monkeypatch):
     assert manager.node_config_files == {
         "n1": str((data_dir / "n1" / "n1" / "config.toml").absolute())
     }
+
+
+def test_run_node_lets_the_node_install_dev_signed_bundles(tmp_path, monkeypatch):
+    """Workflows install `cargo mero bundle --dev` apps, which merod refuses without `dev`."""
+    monkeypatch.chdir(tmp_path)
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+    with (
+        patch("merobox.commands.binary_manager.subprocess.run"),
+        patch("merobox.commands.binary_manager.subprocess.Popen") as popen,
+        patch("merobox.commands.binary_manager.time.sleep"),
+        patch("merobox.commands.binary_manager.apply_config_value") as apply_value,
+        patch.object(manager, "_is_process_running", return_value=True),
+    ):
+        popen.return_value.pid = 4242
+        assert manager.run_node("n1", data_dir=str(tmp_path / "d")) is True
+    apply_value.assert_any_call(
+        tmp_path / "d" / "n1" / "n1" / "config.toml", "n1", "dev", True
+    )
+
+
+def test_run_node_fails_when_dev_cannot_be_written(tmp_path, monkeypatch):
+    """A node that would boot without `dev` fails every dev-bundle install later, so fail the launch."""
+    monkeypatch.chdir(tmp_path)
+    manager = BinaryManager(
+        binary_path="merod", require_binary=False, enable_signal_handlers=False
+    )
+    with (
+        patch("merobox.commands.binary_manager.subprocess.run"),
+        patch("merobox.commands.binary_manager.subprocess.Popen") as popen,
+        patch("merobox.commands.binary_manager.time.sleep"),
+        patch("merobox.commands.binary_manager.apply_config_value", return_value=False),
+    ):
+        assert manager.run_node("n1", data_dir=str(tmp_path / "d")) is False
+    popen.assert_not_called()
