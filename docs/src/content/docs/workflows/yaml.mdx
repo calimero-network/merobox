@@ -1949,7 +1949,9 @@ of workflows that must run against older images.
 ### tee_fleet_join
 
 Run a mock-TEE fleet join against a namespace root. Fields: `node`, `group_id`.
-Blocks server-side for one admission window.
+Blocks server-side for one admission window. The step waits up to 3 minutes for
+the answer, the same bound `meroctl tee fleet-join` uses: the node replies only
+after its direct admission request, the admission window and its context joins.
 
 ```yaml
 - type: tee_fleet_join

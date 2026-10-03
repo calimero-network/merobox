@@ -43,9 +43,14 @@ ZERO_MEASUREMENT = "0" * 96
 # The historical name, kept because a policy that pins MRTD reads better with it.
 ZERO_MRTD = ZERO_MEASUREMENT
 
-# Fleet-join blocks server-side for one admission window (core MAX_ADMISSION_WAIT
-# ~= 30s) before returning admitted/announced, so allow a generous read timeout.
-_FLEET_JOIN_READ_TIMEOUT = 60.0
+# How long to wait for the fleet-join response. The node answers only after its
+# own bounded waits: a direct admission request (up to ~35 s since core
+# 0.11.0-rc.79), then up to 30 s for admission (MAX_ADMISSION_WAIT), then joining
+# the group's contexts and publishing auto-follow. That can legitimately run past
+# a minute, so 60 s cut off a join the node was still completing. This matches
+# core's own client (`FLEET_JOIN_REQUEST_TIMEOUT`, 3 min, core#4455), so a step
+# gives up no sooner than `meroctl tee fleet-join` does.
+_FLEET_JOIN_READ_TIMEOUT = 180.0
 
 # The admission policy's `mode`: "replica" admits TEEs as ReadOnlyTee, "relay"
 # as RelayTee. Core treats an absent mode as "replica".

@@ -309,6 +309,20 @@ class TestTeeFleetJoinExecute:
             result = _run(step.execute({}, {}))
         assert result is False
 
+    def test_waits_as_long_as_core_client_does(self):
+        # Core's client gives fleet-join 3 min (FLEET_JOIN_REQUEST_TIMEOUT,
+        # core#4455): the node answers only after a direct admission request
+        # (~35 s), the admission window (30 s) and its context joins. A shorter
+        # read timeout gives up on a join the node is still completing, which
+        # the 60 s this step used to wait could do.
+        step = _make_step(TeeFleetJoinStep, type="tee_fleet_join", group_id="gid")
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {"admitted": True})
+            _run(step.execute({}, {}))
+
+        _connect, read = req.request.call_args.kwargs["timeout"]
+        assert read >= 180
+
 
 # =============================================================================
 # AssertTeeMemberStep / AssertNotMemberStep
