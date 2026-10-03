@@ -3,12 +3,13 @@ Script execution step for bootstrap workflow.
 """
 
 import io
+import json
 import os
 import shutil
 import subprocess
 import tarfile
 import time
-from typing import Any
+from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import DEFAULT_IMAGE, SCRIPT_CONTAINER_STOP_TIMEOUT
@@ -185,6 +186,15 @@ class ScriptStep(BaseStep):
                     f"Step '{step_name}': 'args' must be a list of strings"
                 )
 
+        if "json_output" in self.config:
+            if not isinstance(self.config["json_output"], bool):
+                raise ValueError(f"Step '{step_name}': 'json_output' must be a boolean")
+            if self.config["json_output"] and self.config.get("target") != "local":
+                raise ValueError(
+                    f"Step '{step_name}': 'json_output' is only supported with "
+                    "target: local"
+                )
+
     def _get_exportable_variables(self):
         """
         Define which variables this step can export.
@@ -335,12 +345,42 @@ class ScriptStep(BaseStep):
             self._export_script_results(
                 "local", completed.returncode, output, execution_time, dynamic_values
             )
+            if self.config.get("json_output", False):
+                parsed = self._parse_last_json_line(output)
+                if parsed is None:
+                    console.print(
+                        "[red]json_output: the script's last output line is not "
+                        "a JSON object[/red]"
+                    )
+                    return False
+                workflow_results[f"script_json_{self._get_step_name()}"] = parsed
+                self._export_variables(parsed, "local", dynamic_values)
             console.print("[green]✓ Local script executed successfully[/green]")
             return True
 
         except Exception as e:
             console.print(f"[red]Failed to execute local script: {str(e)}[/red]")
             return False
+
+    @staticmethod
+    def _parse_last_json_line(output: str) -> Optional[dict[str, Any]]:
+        """The script's last non-empty output line, parsed as a JSON object.
+
+        ``json_output: true`` is how a local script hands values to the
+        workflow: it prints whatever it likes, then one JSON object as its
+        final line, and ``outputs:`` captures fields of that object exactly as
+        it would from an API response. Only the last line is read, so progress
+        output above it never has to be valid JSON.
+        """
+        for line in reversed(output.splitlines()):
+            if not line.strip():
+                continue
+            try:
+                parsed = json.loads(line)
+            except ValueError:
+                return None
+            return parsed if isinstance(parsed, dict) else None
+        return None
 
     def _export_script_results(
         self,

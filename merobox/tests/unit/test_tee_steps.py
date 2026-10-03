@@ -339,6 +339,70 @@ class TestTeeFleetJoinExecute:
         _connect, read = req.request.call_args.kwargs["timeout"]
         assert read >= 180
 
+    def test_admitter_addrs_are_sent_camel_case(self):
+        addr = "/ip4/10.0.0.1/tcp/2428/p2p/12D3KooWRelay"
+        step = _make_step(
+            TeeFleetJoinStep,
+            type="tee_fleet_join",
+            group_id="gid",
+            admitter_addrs=[addr],
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {"admitted": True})
+            assert _run(step.execute({}, {})) is True
+        assert req.request.call_args.kwargs["json"] == {
+            "groupId": "gid",
+            "admitterAddrs": [addr],
+        }
+
+    def test_admitter_nodes_resolve_to_loopback_from_config(self, tmp_path):
+        from merobox.commands.binary_manager import BinaryManager
+
+        config = tmp_path / "config.toml"
+        config.write_text(
+            '[identity]\npeer_id = "12D3KooWRelay"\n\n'
+            '[swarm]\nlisten = ["/ip4/0.0.0.0/udp/7380/quic-v1", '
+            '"/ip4/0.0.0.0/tcp/7380"]\n'
+        )
+        manager = MagicMock(spec=BinaryManager)
+        manager.node_config_files = {"relay": str(config)}
+        step = _make_step(
+            TeeFleetJoinStep,
+            type="tee_fleet_join",
+            group_id="gid",
+            admitter_nodes=["relay"],
+        )
+        step.manager = manager
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {"admitted": True})
+            assert _run(step.execute({}, {})) is True
+        assert req.request.call_args.kwargs["json"]["admitterAddrs"] == [
+            "/ip4/127.0.0.1/tcp/7380/p2p/12D3KooWRelay"
+        ]
+
+    def test_admitter_nodes_outside_binary_mode_fail_without_calling(self):
+        step = _make_step(
+            TeeFleetJoinStep,
+            type="tee_fleet_join",
+            group_id="gid",
+            admitter_nodes=["relay"],
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            assert _run(step.execute({}, {})) is False
+        req.request.assert_not_called()
+
+    def test_admitter_addrs_must_be_a_list_of_strings(self):
+        with pytest.raises(ValueError, match="admitter_addrs"):
+            TeeFleetJoinStep(
+                {
+                    "type": "tee_fleet_join",
+                    "node": "node-1",
+                    "group_id": "g",
+                    "admitter_addrs": "/ip4/1.2.3.4/tcp/1/p2p/x",
+                },
+                manager=MagicMock(),
+            )
+
 
 # =============================================================================
 # AssertTeeMemberStep / AssertNotMemberStep

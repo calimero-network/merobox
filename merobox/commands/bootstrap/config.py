@@ -757,6 +757,13 @@ class ScriptStep(BaseStepConfig):
     args: Optional[list[Any]] = Field(
         None, description="Arguments passed to the script"
     )
+    json_output: Optional[bool] = Field(
+        None,
+        description=(
+            "target: local only. Parse the script's last output line as a JSON "
+            "object so `outputs:` can capture its fields"
+        ),
+    )
 
 
 class PauseContainerStepConfig(BaseStepConfig):
