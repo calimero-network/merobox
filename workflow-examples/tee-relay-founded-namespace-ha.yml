@@ -46,7 +46,7 @@
 # Run (binary mode, against core built with mock attestation):
 #
 #   cargo build --release -p merod --features merod/mock-attestation   # in core
-#   merobox bootstrap run workflow-examples/relay-founded-namespace-ha.yml \
+#   merobox bootstrap run workflow-examples/tee-relay-founded-namespace-ha.yml \
 #     --no-docker --binary-path <core>/target/release/merod
 #
 # Needs node >= 20 and npm; the script installs its pinned mero-js on first use.

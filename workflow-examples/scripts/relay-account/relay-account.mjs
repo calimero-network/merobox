@@ -1,4 +1,4 @@
-// The nodeless-account half of `relay-founded-namespace-ha.yml`.
+// The nodeless-account half of `tee-relay-founded-namespace-ha.yml`.
 //
 // merobox drives nodes; an account with NO node is a key held in a client, so
 // its half of the scenario runs here, through mero-js — the client the relay's

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Run one subcommand of relay-account/relay-account.mjs (the nodeless-account
-# half of relay-founded-namespace-ha.yml), installing its pinned mero-js on
+# half of tee-relay-founded-namespace-ha.yml), installing its pinned mero-js on
 # first use. Needs node >= 20 and npm.
 set -eu
 

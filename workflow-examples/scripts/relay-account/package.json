@@ -1,7 +1,7 @@
 {
   "name": "merobox-relay-account",
   "private": true,
-  "description": "The nodeless-account half of relay-founded-namespace-ha.yml: founds, invites and claims through mero-js, which is the client these relay endpoints are built for.",
+  "description": "The nodeless-account half of tee-relay-founded-namespace-ha.yml: founds, invites and claims through mero-js, which is the client these relay endpoints are built for.",
   "type": "module",
   "dependencies": {
     "@calimero-network/mero-js": "23.6.0"
