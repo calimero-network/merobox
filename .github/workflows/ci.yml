@@ -29,9 +29,10 @@ env:
   # new pair works before it becomes everyone's problem. calimero-network/core
   # pinned merobox for the mirror-image reason (calimero-network/core#3609).
   #
-  # Pinned to what the `--limit 1` resolution currently returns, so landing this
-  # changes nothing about what CI tests today — only about when it changes next.
-  CORE_VERSION: "0.11.0-rc.42"
+  # Moves with the client-py pin in requirements.txt: calimero-client-py 0.8.1 is
+  # compiled against core 0.11.0-rc.79 (its Cargo.lock), so the release lanes run
+  # the node that client was built for.
+  CORE_VERSION: "0.11.0-rc.79"
   # Harden crates.io downloads against transient CI network blips that fail the
   # maturin build of calimero-client-py during `pip install` (seen as
   # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,

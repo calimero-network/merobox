@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Requires `calimero-client-py==0.8.1`, built on core `0.11.0-rc.79`.** The
+  previous pin, 0.7.1, was compiled against a core commit from before rc.38, so
+  a run against a current node used a client with none of the changes since
+  then. 0.7.1 to 0.8.1 adds to the Python API and removes nothing: sealed
+  requests to TEE nodes, request signing with a device key, `TeePolicy`,
+  `sign_request`, and canonical key order for intent arguments. merobox uses
+  none of the additions and needed no change for them. CI's `CORE_VERSION`
+  moves to `0.11.0-rc.79` with it, so the release lanes run the node that
+  client was built for.
+- **Client calls are now bounded, and a timeout says it is a timeout.** Since
+  core#4455 the client gives up on a request after 30 s, after 5 min for joins,
+  syncs, registry installs, context creation and JSON-RPC, and after 1 h for
+  blobs. It reports an expired bound as `error sending request for url (...)`,
+  which is also what a refused connection says. The client merobox creates now
+  times each call. A call that failed that way after running for the bound gets
+  a line saying the client stopped waiting and that the node may still finish
+  the call. It is still raised as a `RuntimeError`, so the retry helpers do not
+  repeat a write that may be about to land.
+
+### Fixed
+
+- **`tee_fleet_join` stopped waiting after 60 s, before the node answered.** The
+  node replies only after a direct admission request (up to about 35 s), the
+  30 s admission window and its context joins, so a fleet-join that was going
+  to succeed could take longer than a minute. The step now waits 3 minutes, the
+  same as core's own client (`FLEET_JOIN_REQUEST_TIMEOUT`).
+
 ## [0.6.81] - 2026-09-29
 
 ### Fixed
