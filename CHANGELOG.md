@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.83] - 2026-10-04
+
+### Added
+
+- **`tee_fleet_join` names its admitters.** `admitter_addrs` takes literal
+  `/p2p/` multiaddrs and `admitter_nodes` takes workflow node names, resolved in
+  binary mode to each node's loopback `/ip4/127.0.0.1/tcp/<swarm>/p2p/<peer id>`
+  from its `config.toml`; both are sent as core's `admitterAddrs`, so a fleet
+  node asks a named admitter directly instead of relying on discovery.
+- **A local `script` step can hand values to later steps.** With
+  `json_output: true` the script's last stdout line is parsed as JSON, and
+  `outputs:` can export its fields.
+- **`tee-relay-founded-namespace-ha`**, a scenario for HA on a namespace an
+  account with no node founded through a relay: the account founds through the
+  relay, a TEE fleet node is admitted by that relay and recovers the
+  namespace's key (core#4434), and invitations minted before and after HA are
+  claimed through the relay and the fleet node, with a pre-HA invitation
+  refused by the fleet node. The account half runs through mero-js.
+
 ### Changed
 
 - **Requires `calimero-client-py==0.8.1`, built on core `0.11.0-rc.79`.** The
