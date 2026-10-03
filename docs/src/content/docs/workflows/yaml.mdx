@@ -1561,6 +1561,18 @@ Run a shell script.
 | `script` | yes | string | Path to the script. |
 | `target` | no | `image`\|`nodes`\|`local` (`image`) | Where to run: inside the image build, on running nodes, or on the host. |
 | `description` | no | string | Human label. |
+| `args` | no | list of strings | Arguments passed to the script; `{{var}}` placeholders resolve. |
+| `json_output` | no | bool (`false`) | `target: local` only. Parse the script's last output line as a JSON object so `outputs:` captures its fields. |
+
+```yaml
+- type: script
+  target: local
+  script: ./workflow-examples/scripts/relay-account.sh
+  args: ['found', 'http://127.0.0.1:7480', './data/state.json']
+  json_output: true
+  outputs:
+    ns: namespaceId
+```
 
 ```yaml
 - type: script
@@ -1959,10 +1971,17 @@ Blocks server-side for one admission window. The step waits up to 3 minutes for
 the answer, the same bound `meroctl tee fleet-join` uses: the node replies only
 after its direct admission request, the admission window and its context joins.
 
+To also ask specific peers for admission directly (core's `admitterAddrs`),
+name them with `admitter_addrs` (literal multiaddrs ending in `/p2p/<peer id>`)
+and/or `admitter_nodes` (workflow node names; binary mode only, resolved to
+`/ip4/127.0.0.1/tcp/<swarm port>/p2p/<peer id>` from the node's `config.toml`).
+With neither, no `admitterAddrs` is sent and the join is broadcast-only.
+
 ```yaml
 - type: tee_fleet_join
   node: tee-replica
   group_id: '{{namespace_id}}'
+  admitter_nodes: [relay]
 ```
 
 ### assert_tee_member / assert_not_member

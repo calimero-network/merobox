@@ -90,3 +90,5 @@ example-project/res/*.wasm
 fixture-registry/
 workflow-examples/.core-repo/
 .claude/
+# npm deps of the nodeless-account script (installed on first run)
+workflow-examples/scripts/relay-account/node_modules/

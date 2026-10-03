@@ -21,9 +21,11 @@ quote (see ``workflow-examples/scripts/set-tee-admission-policy.sh``).
 """
 
 import json
+import re
 from typing import Any
 
 import requests
+import toml
 from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
@@ -231,6 +233,40 @@ class SetTeeAdmissionPolicyStep(BaseStep):
         return True
 
 
+_TCP_LISTEN = re.compile(r"^/ip4/[^/]+/tcp/(\d+)$")
+
+
+def _loopback_p2p_addr(manager: Any, node_name: str) -> str:
+    """``/ip4/127.0.0.1/tcp/<swarm port>/p2p/<peer id>`` for a local binary node.
+
+    Read from the node's own ``config.toml`` (``identity.peer_id`` and the TCP
+    entry of ``swarm.listen``), which ``merod init`` wrote before the node ever
+    ran — so it names the port the node really listens on, not the one the
+    workflow asked for. Binary mode only: a Docker node is reached on its
+    container IP, which this does not resolve; pass ``admitter_addrs`` there.
+    """
+    from merobox.commands.binary_manager import BinaryManager
+
+    if not isinstance(manager, BinaryManager):
+        raise ValueError(
+            f"admitter_nodes: cannot resolve '{node_name}' outside binary mode "
+            "(--no-docker); pass its multiaddr in admitter_addrs instead"
+        )
+    config_file = getattr(manager, "node_config_files", {}).get(node_name)
+    if not config_file:
+        raise ValueError(f"admitter_nodes: '{node_name}' has no recorded config.toml")
+    with open(config_file, encoding="utf-8") as f:
+        config = toml.load(f)
+    peer_id = config.get("identity", {}).get("peer_id")
+    if not peer_id:
+        raise ValueError(f"admitter_nodes: no identity.peer_id in {config_file}")
+    for listen in config.get("swarm", {}).get("listen", []):
+        match = _TCP_LISTEN.match(str(listen))
+        if match:
+            return f"/ip4/127.0.0.1/tcp/{match.group(1)}/p2p/{peer_id}"
+    raise ValueError(f"admitter_nodes: no TCP swarm.listen entry in {config_file}")
+
+
 class TeeFleetJoinStep(BaseStep):
     """Run fleet-join from a TEE replica (``meroctl tee fleet-join``).
 
@@ -243,6 +279,17 @@ class TeeFleetJoinStep(BaseStep):
     ``admitted=False`` — a single window simply may not have admitted yet. Use
     ``assert_tee_member`` as the authoritative admission gate, not the per-call
     ``admitted`` flag.
+
+    Direct admission (``admitterAddrs``): besides the gossip broadcast, the
+    replica can ask named peers for admission directly. Name them as
+
+    - ``admitter_addrs`` — literal libp2p multiaddrs ending in ``/p2p/<peer>``;
+    - ``admitter_nodes`` — workflow node names, resolved (binary mode only) to
+      ``/ip4/127.0.0.1/tcp/<swarm port>/p2p/<peer id>`` from the node's own
+      ``config.toml``.
+
+    Both may be combined. Omitting both sends no ``admitterAddrs`` at all, so
+    the body stays byte-for-byte what older steps sent (broadcast only).
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -253,6 +300,26 @@ class TeeFleetJoinStep(BaseStep):
         for field in ("node", "group_id"):
             if not isinstance(self.config.get(field), str):
                 raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+        for field in ("admitter_addrs", "admitter_nodes"):
+            value = self.config.get(field)
+            if value is not None and not (
+                isinstance(value, list) and all(isinstance(v, str) for v in value)
+            ):
+                raise ValueError(
+                    f"Step '{step_name}': '{field}' must be a list of strings"
+                )
+
+    def _admitter_addrs(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> list[str]:
+        """The literal addresses, then one per named node, in that order."""
+        addrs = [
+            self._resolve_dynamic_value(a, workflow_results, dynamic_values)
+            for a in self.config.get("admitter_addrs") or []
+        ]
+        for node in self.config.get("admitter_nodes") or []:
+            addrs.append(_loopback_p2p_addr(self.manager, node))
+        return addrs
 
     async def execute(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -263,6 +330,14 @@ class TeeFleetJoinStep(BaseStep):
         )
 
         try:
+            body: dict[str, Any] = {"groupId": group_id}
+            admitter_addrs = self._admitter_addrs(workflow_results, dynamic_values)
+            if admitter_addrs:
+                body["admitterAddrs"] = admitter_addrs
+                console.print(
+                    f"[cyan]tee_fleet_join on {node_name}: asking admitters "
+                    f"{escape(str(admitter_addrs))} directly[/cyan]"
+                )
             admin_url = self._get_node_rpc_url(node_name)
             url = f"{admin_url}/admin-api/tee/fleet-join"
             # The admin API deserializes camelCase (serde rename_all =
@@ -271,7 +346,7 @@ class TeeFleetJoinStep(BaseStep):
             response = _admin_request(
                 "POST",
                 url,
-                json={"groupId": group_id},
+                json=body,
                 timeout=(DEFAULT_CONNECTION_TIMEOUT, _FLEET_JOIN_READ_TIMEOUT),
             )
             if response.status_code != 200:

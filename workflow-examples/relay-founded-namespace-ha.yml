@@ -1,0 +1,215 @@
+# =============================================================================
+# Relay-founded namespace, then HA: a TEE fleet node admitted by the FOUNDING
+# RELAY, and a nodeless account joining through either of them
+# =============================================================================
+#
+# Local, mock-TEE, two nodes, no MDMA, no real TDX:
+#
+#   relay  merod --mock-tee. Serves delegated governance for an account with no
+#          node, so it founds that account's namespace (core #4212).
+#   fleet  merod --mock-tee. The HA replica the namespace takes on later.
+#
+# The accounts have NO node. Each is a key in a client, so their half runs in
+# `scripts/relay-account/relay-account.mjs` through mero-js (the client the
+# relay's `governance-intents` and `namespaces/:id/admit` endpoints exist for).
+# merobox drives the nodes and makes the TEE assertions through typed steps.
+#
+# What it proves, in order:
+#
+#   1. Account A founds namespace N through the relay. The founding reports
+#      teeEnabled=true and the relay is seated as RelayTee: its own mock quote
+#      became N's first TEE admission policy (`FoundingRelayAttested`).
+#   2. Invitation I1 is minted by A's device BEFORE HA. Its admitters are what
+#      core names by default — the admins plus the TEE members — read off the
+#      member list: {A, relay}.
+#   3. The fleet node fleet-joins N naming the relay's p2p address as its
+#      admitter, and is admitted as RelayTee (the founding policy is in relay
+#      mode). The relay is the only node in N that can admit it: A has no node.
+#   4. Invitation I2 is minted AFTER HA: {A, relay, fleet}.
+#   5. Account B1 claims I1 through the relay; the fleet node sees B1 (it syncs
+#      N).
+#   6. Account B2 presents I1 to the fleet node and is refused "not an
+#      admitter": admitters are a snapshot signed into the invitation, so a TEE
+#      admitted later cannot admit claims of an earlier one.
+#   7. B3 claims I2 through the relay (control: I2 itself is good), and B2
+#      claims I2 through the fleet node; the relay sees B2.
+#
+# Three joiner accounts rather than one "B": an account joins a namespace
+# once, so each claim that must succeed needs its own.
+#
+# KNOWN RED against core master e3bb965a3 — stops at "The fleet node holds N
+# itself". The relay admits the fleet node (it is RelayTee in the relay's
+# member list) but the fleet node never gets N's group key: the only node
+# holding it is the relay, and the relay becomes a trusted anchor only through
+# `FoundingRelayAttested`, a GroupOp encrypted under that same key. A newcomer
+# that can decrypt nothing sees the relay as a plain Member, so it refuses the
+# relay's key (namespace_sync.rs "group-key recovery refused this responder"),
+# and the founder — the one anchor it can see — has no node. Everything up to
+# and including the relay-side admission passes; 5-7 are what a fix unlocks
+# (on that build the fleet node also answers I2 with 409 "holds no namespace
+# identity bound to that account", the same root cause).
+#
+# Run (binary mode, against core master built with mock attestation):
+#
+#   cargo build --release -p merod --features merod/mock-attestation   # in core
+#   merobox bootstrap run workflow-examples/relay-founded-namespace-ha.yml \
+#     --no-docker --binary-path <core>/target/release/merod
+#
+# Needs node >= 20 and npm; the script installs its pinned mero-js on first use.
+# =============================================================================
+
+name: Relay-founded namespace — fleet admitted by the founding relay
+
+force_pull_image: false
+
+# Private rendezvous + mDNS, so the two nodes find each other in seconds
+# instead of through the public devnet (see tee-g1 for why that matters to
+# the admission window).
+e2e_mode: true
+
+nodes:
+  relay:
+    port: 7380
+    rpc_port: 7480
+    mock_tee: true
+  fleet:
+    port: 7381
+    rpc_port: 7481
+    mock_tee: true
+
+steps:
+
+  # ---------- 1. A founds N through the relay ----------
+  - name: Account A (no node) founds a namespace through the relay
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/relay-account.sh
+    args: ['found', 'http://127.0.0.1:7480', './data/relay-founded-ha.state.json']
+    json_output: true
+    outputs:
+      ns: namespaceId
+      relay_account: relayAccount
+      founder_account: founderAccount
+      tee_enabled: teeEnabled
+
+  - name: The founding reported TEE enabled
+    type: assert
+    statements:
+      - "{{tee_enabled}} == True"
+
+  - name: The relay is the namespace's RelayTee
+    type: assert_tee_member
+    node: relay
+    group_id: '{{ns}}'
+    account: '{{relay_account}}'
+    role: RelayTee
+
+  # ---------- 2. I1, minted before HA ----------
+  - name: A mints invitation I1 (pre-HA)
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/relay-account.sh
+    args: ['invite', 'http://127.0.0.1:7480', './data/relay-founded-ha.state.json', 'pre-ha']
+    json_output: true
+    outputs:
+      i1_admitters: admitters
+      i1_admitter_count: admitterCount
+
+  - name: I1 names exactly the founder and the relay
+    type: assert
+    statements:
+      - "{{i1_admitter_count}} == 2"
+      - "contains({{i1_admitters}}, {{relay_account}})"
+      - "contains({{i1_admitters}}, {{founder_account}})"
+
+  # ---------- 3. The fleet node joins, admitted by the relay ----------
+  # One call covers one admission window (~30s) and answers 200 either way;
+  # assert_tee_member below is the gate, not the per-call `admitted` flag.
+  - name: Fleet-join, asking the founding relay directly (attempt 1)
+    type: tee_fleet_join
+    node: fleet
+    group_id: '{{ns}}'
+    admitter_nodes: [relay]
+    outputs:
+      fleet_pk: public_key
+      fleet_account: account
+
+  - name: Fleet-join (attempt 2, only matters if attempt 1 missed its window)
+    type: tee_fleet_join
+    node: fleet
+    group_id: '{{ns}}'
+    admitter_nodes: [relay]
+    outputs:
+      fleet_pk: public_key
+      fleet_account: account
+
+  - name: The relay admitted the fleet node as RelayTee
+    type: assert_tee_member
+    node: relay
+    group_id: '{{ns}}'
+    account: '{{fleet_account}}'
+    role: RelayTee
+
+  - name: Let the fleet node fold N's governance
+    type: wait
+    seconds: 10
+
+  - name: The fleet node holds N itself (it synced the namespace)
+    type: assert_tee_member
+    node: fleet
+    group_id: '{{ns}}'
+    account: '{{founder_account}}'
+    role: Admin
+
+  # ---------- 4. I2, minted after HA ----------
+  - name: A mints invitation I2 (post-HA)
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/relay-account.sh
+    args: ['invite', 'http://127.0.0.1:7480', './data/relay-founded-ha.state.json', 'post-ha']
+    json_output: true
+    outputs:
+      i2_admitters: admitters
+      i2_admitter_count: admitterCount
+
+  - name: I2 also names the fleet node
+    type: assert
+    statements:
+      - "{{i2_admitter_count}} == 3"
+      - "contains({{i2_admitters}}, {{fleet_account}})"
+
+  # ---------- 5. B1 claims I1 through the relay ----------
+  - name: B1 claims I1 through the relay, and the fleet node sees B1
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/relay-account.sh
+    args: ['claim', 'http://127.0.0.1:7480', './data/relay-founded-ha.state.json', 'pre-ha', 'b1', '1', '--seen-on', 'http://127.0.0.1:7481']
+
+  # ---------- 6. I1 at the fleet node: refused, it is not I1's admitter ----------
+  - name: B2 presents I1 to the fleet node and is refused (snapshot admitters)
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/relay-account.sh
+    args: ['claim', 'http://127.0.0.1:7481', './data/relay-founded-ha.state.json', 'pre-ha', 'b2', '1', '--refused', 'not an admitter']
+
+  # ---------- 7. I2 through the relay (control), then through the fleet node ----------
+  - name: B3 claims I2 through the relay (I2 itself is admissible)
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/relay-account.sh
+    args: ['claim', 'http://127.0.0.1:7480', './data/relay-founded-ha.state.json', 'post-ha', 'b3', '1']
+
+  - name: B2 claims I2 through the fleet node, and the relay sees B2
+    type: script
+    target: local
+    script: ./workflow-examples/scripts/relay-account.sh
+    args: ['claim', 'http://127.0.0.1:7481', './data/relay-founded-ha.state.json', 'post-ha', 'b2', '2', '--seen-on', 'http://127.0.0.1:7480']
+
+  - name: No panics on either node
+    type: assert_log_absent
+    nodes: [relay, fleet]
+    patterns:
+      - "panicked at"
+      - "FATAL"
+
+stop_all_nodes: true
