@@ -9,7 +9,7 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
-from merobox.commands.client import create_client, create_connection
+from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.manager import DockerManager
 from merobox.commands.result import fail, ok
 from merobox.commands.retry import NETWORK_RETRY_CONFIG, with_retry
@@ -31,8 +31,7 @@ async def _call_function_with_retry(
     node_name: Optional[str] = None,
 ) -> dict:
     """Internal function that performs the actual API call with retry support."""
-    connection = create_connection(rpc_url, node_name=node_name)
-    client = create_client(connection)
+    client = get_client_for_rpc_url(rpc_url, node_name=node_name)
 
     encoded_args = ensure_json_string(args or {})
     result = client.execute_function(

@@ -145,14 +145,30 @@ class TestSetTeeAdmissionPolicyExecute:
         assert body["allowedMrtd"] == [ZERO_MRTD]
         assert body["allowedMrtd"] == ["0" * 96]
         assert body["allowedRtmr0"] == []
-        assert body["allowedRtmr1"] == []
-        assert body["allowedRtmr2"] == []
-        # Defaulted, unlike the other three RTMRs: core requires at least one
-        # RTMR3 value, so an empty default is a 400 on every workflow that takes
-        # this step rather than a permissive policy.
+        # Defaulted, unlike RTMR0: core requires at least one value for each of
+        # RTMR3 (rc.42) and RTMR1/RTMR2 (rc.45, core#4062), so an empty default
+        # is a 400 on every workflow that takes this step rather than a
+        # permissive policy.
+        assert body["allowedRtmr1"] == [ZERO_MEASUREMENT]
+        assert body["allowedRtmr2"] == [ZERO_MEASUREMENT]
         assert body["allowedRtmr3"] == [ZERO_MEASUREMENT]
         assert body["allowedRtmr3"] == ["0" * 96]
         assert body["allowedTcbStatuses"] == []
+
+    @pytest.mark.parametrize("field", ["allowed_rtmr1", "allowed_rtmr2"])
+    def test_rtmr1_and_rtmr2_defaults_can_still_be_overridden(self, field):
+        step = _make_step(
+            SetTeeAdmissionPolicyStep,
+            type="set_tee_admission_policy",
+            group_id="gid",
+            **{field: ["dd" * 48]},
+        )
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {})
+            assert _run(step.execute({}, {})) is True
+
+        wire = "allowedRtmr" + field[-1]
+        assert req.request.call_args.kwargs["json"][wire] == ["dd" * 48]
 
     def test_rtmr3_default_can_still_be_overridden(self):
         """The default must not become a floor.
@@ -308,6 +324,20 @@ class TestTeeFleetJoinExecute:
             req.request.return_value = _response(500, text="boom")
             result = _run(step.execute({}, {}))
         assert result is False
+
+    def test_waits_as_long_as_core_client_does(self):
+        # Core's client gives fleet-join 3 min (FLEET_JOIN_REQUEST_TIMEOUT,
+        # core#4455): the node answers only after a direct admission request
+        # (~35 s), the admission window (30 s) and its context joins. A shorter
+        # read timeout gives up on a join the node is still completing, which
+        # the 60 s this step used to wait could do.
+        step = _make_step(TeeFleetJoinStep, type="tee_fleet_join", group_id="gid")
+        with patch(f"{_MODULE}.requests") as req:
+            req.request.return_value = _response(200, {"admitted": True})
+            _run(step.execute({}, {}))
+
+        _connect, read = req.request.call_args.kwargs["timeout"]
+        assert read >= 180
 
 
 # =============================================================================

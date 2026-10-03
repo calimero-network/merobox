@@ -43,9 +43,14 @@ ZERO_MEASUREMENT = "0" * 96
 # The historical name, kept because a policy that pins MRTD reads better with it.
 ZERO_MRTD = ZERO_MEASUREMENT
 
-# Fleet-join blocks server-side for one admission window (core MAX_ADMISSION_WAIT
-# ~= 30s) before returning admitted/announced, so allow a generous read timeout.
-_FLEET_JOIN_READ_TIMEOUT = 60.0
+# How long to wait for the fleet-join response. The node answers only after its
+# own bounded waits: a direct admission request (up to ~35 s since core
+# 0.11.0-rc.79), then up to 30 s for admission (MAX_ADMISSION_WAIT), then joining
+# the group's contexts and publishing auto-follow. That can legitimately run past
+# a minute, so 60 s cut off a join the node was still completing. This matches
+# core's own client (`FLEET_JOIN_REQUEST_TIMEOUT`, 3 min, core#4455), so a step
+# gives up no sooner than `meroctl tee fleet-join` does.
+_FLEET_JOIN_READ_TIMEOUT = 180.0
 
 # The admission policy's `mode`: "replica" admits TEEs as ReadOnlyTee, "relay"
 # as RelayTee. Core treats an absent mode as "replica".
@@ -73,15 +78,17 @@ class SetTeeAdmissionPolicyStep(BaseStep):
     """Set a namespace root's TeeAdmissionPolicy via the admin API.
 
     Defaults accept mock attestations: ``accept_mock=True`` plus the all-zero
-    mock MRTD and RTMR3 (``ZERO_MEASUREMENT``). Overriding ``allowed_mrtd`` /
-    ``allowed_rtmrN`` / ``allowed_tcb_statuses`` lets workflows pin real
-    measurements instead.
+    mock MRTD, RTMR1, RTMR2 and RTMR3 (``ZERO_MEASUREMENT``). Overriding
+    ``allowed_mrtd`` / ``allowed_rtmrN`` / ``allowed_tcb_statuses`` lets
+    workflows pin real measurements instead.
 
-    RTMR3 is defaulted and the other three RTMRs are not, because core requires
-    at least one RTMR3 value and accepts an empty list for the rest: MRTD
+    RTMR1-3 are defaulted and RTMR0 is not, because core requires at least one
+    value for each of RTMR1-3 and accepts an empty list for RTMR0. MRTD
     identifies the firmware, which every image profile of a release shares, so
-    RTMR3 is the only measurement that says which image ran. A default of ``[]``
-    made every workflow using this step fail with a 400 the moment that check
+    the image is in RTMR1-3: RTMR3 since core 0.11.0-rc.42, and RTMR1 (the
+    kernel) and RTMR2 (the command line and initrd) since rc.45 (core#4062),
+    because RTMR3 alone is reproducible by a custom kernel. A default of ``[]``
+    made every workflow using this step fail with a 400 the moment each check
     landed.
 
     ``mode`` ("replica" | "relay") is sent only when the step sets it. Core
@@ -155,10 +162,10 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                 "allowed_rtmr0", [], workflow_results, dynamic_values
             ),
             "allowedRtmr1": self._resolve_list(
-                "allowed_rtmr1", [], workflow_results, dynamic_values
+                "allowed_rtmr1", [ZERO_MEASUREMENT], workflow_results, dynamic_values
             ),
             "allowedRtmr2": self._resolve_list(
-                "allowed_rtmr2", [], workflow_results, dynamic_values
+                "allowed_rtmr2", [ZERO_MEASUREMENT], workflow_results, dynamic_values
             ),
             "allowedRtmr3": self._resolve_list(
                 "allowed_rtmr3", [ZERO_MEASUREMENT], workflow_results, dynamic_values

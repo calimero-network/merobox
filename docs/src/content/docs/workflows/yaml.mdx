@@ -1928,7 +1928,13 @@ These drive a local mock-TEE fleet against a node's admin API. They require a
 ### set_tee_admission_policy
 
 Set a namespace-root TEE admission policy. Fields: `node`, `group_id`, optional
-`accept_mock` (bool, `true`), optional `mode` (`replica` | `relay`).
+`accept_mock` (bool, `true`), optional `mode` (`replica` | `relay`), optional
+`allowed_mrtd` and `allowed_rtmr0`..`allowed_rtmr3` (lists of hex measurements).
+
+`allowed_mrtd` and `allowed_rtmr1`..`allowed_rtmr3` default to the all-zero
+measurement of core's mock quote, because core requires at least one value for
+each (RTMR3 since `0.11.0-rc.42`, RTMR1 and RTMR2 since `0.11.0-rc.45`).
+`allowed_rtmr0` defaults to empty. Set them to pin a real image.
 
 `mode` decides the role an admitted TEE gets: `replica` admits it as
 `ReadOnlyTee`, `relay` as `RelayTee` — the only role that relays members'
@@ -1949,7 +1955,9 @@ of workflows that must run against older images.
 ### tee_fleet_join
 
 Run a mock-TEE fleet join against a namespace root. Fields: `node`, `group_id`.
-Blocks server-side for one admission window.
+Blocks server-side for one admission window. The step waits up to 3 minutes for
+the answer, the same bound `meroctl tee fleet-join` uses: the node replies only
+after its direct admission request, the admission window and its context joins.
 
 ```yaml
 - type: tee_fleet_join
