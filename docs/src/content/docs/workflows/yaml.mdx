@@ -1928,7 +1928,13 @@ These drive a local mock-TEE fleet against a node's admin API. They require a
 ### set_tee_admission_policy
 
 Set a namespace-root TEE admission policy. Fields: `node`, `group_id`, optional
-`accept_mock` (bool, `true`), optional `mode` (`replica` | `relay`).
+`accept_mock` (bool, `true`), optional `mode` (`replica` | `relay`), optional
+`allowed_mrtd` and `allowed_rtmr0`..`allowed_rtmr3` (lists of hex measurements).
+
+`allowed_mrtd` and `allowed_rtmr1`..`allowed_rtmr3` default to the all-zero
+measurement of core's mock quote, because core requires at least one value for
+each (RTMR3 since `0.11.0-rc.42`, RTMR1 and RTMR2 since `0.11.0-rc.45`).
+`allowed_rtmr0` defaults to empty. Set them to pin a real image.
 
 `mode` decides the role an admitted TEE gets: `replica` admits it as
 `ReadOnlyTee`, `relay` as `RelayTee` — the only role that relays members'

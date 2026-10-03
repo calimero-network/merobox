@@ -78,15 +78,17 @@ class SetTeeAdmissionPolicyStep(BaseStep):
     """Set a namespace root's TeeAdmissionPolicy via the admin API.
 
     Defaults accept mock attestations: ``accept_mock=True`` plus the all-zero
-    mock MRTD and RTMR3 (``ZERO_MEASUREMENT``). Overriding ``allowed_mrtd`` /
-    ``allowed_rtmrN`` / ``allowed_tcb_statuses`` lets workflows pin real
-    measurements instead.
+    mock MRTD, RTMR1, RTMR2 and RTMR3 (``ZERO_MEASUREMENT``). Overriding
+    ``allowed_mrtd`` / ``allowed_rtmrN`` / ``allowed_tcb_statuses`` lets
+    workflows pin real measurements instead.
 
-    RTMR3 is defaulted and the other three RTMRs are not, because core requires
-    at least one RTMR3 value and accepts an empty list for the rest: MRTD
+    RTMR1-3 are defaulted and RTMR0 is not, because core requires at least one
+    value for each of RTMR1-3 and accepts an empty list for RTMR0. MRTD
     identifies the firmware, which every image profile of a release shares, so
-    RTMR3 is the only measurement that says which image ran. A default of ``[]``
-    made every workflow using this step fail with a 400 the moment that check
+    the image is in RTMR1-3: RTMR3 since core 0.11.0-rc.42, and RTMR1 (the
+    kernel) and RTMR2 (the command line and initrd) since rc.45 (core#4062),
+    because RTMR3 alone is reproducible by a custom kernel. A default of ``[]``
+    made every workflow using this step fail with a 400 the moment each check
     landed.
 
     ``mode`` ("replica" | "relay") is sent only when the step sets it. Core
@@ -160,10 +162,10 @@ class SetTeeAdmissionPolicyStep(BaseStep):
                 "allowed_rtmr0", [], workflow_results, dynamic_values
             ),
             "allowedRtmr1": self._resolve_list(
-                "allowed_rtmr1", [], workflow_results, dynamic_values
+                "allowed_rtmr1", [ZERO_MEASUREMENT], workflow_results, dynamic_values
             ),
             "allowedRtmr2": self._resolve_list(
-                "allowed_rtmr2", [], workflow_results, dynamic_values
+                "allowed_rtmr2", [ZERO_MEASUREMENT], workflow_results, dynamic_values
             ),
             "allowedRtmr3": self._resolve_list(
                 "allowed_rtmr3", [ZERO_MEASUREMENT], workflow_results, dynamic_values

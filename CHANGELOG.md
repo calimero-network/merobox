@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`set_tee_admission_policy` sent empty `allowedRtmr1` and `allowedRtmr2`,
+  which core rejects from `0.11.0-rc.45`.** core#4062 made both mandatory
+  (RTMR3 alone can be reproduced by a custom kernel or initrd), so every TEE
+  scenario failed with `HTTP 400: Field 'allowed_rtmr1' has invalid format`
+  against any later node. CI did not see it because it was pinned to rc.42.
+  Both now default to the same all-zero measurement as MRTD and RTMR3, and a
+  workflow can still set them to pin a real image. RTMR0 still defaults to
+  `[]`.
 - **`tee_fleet_join` stopped waiting after 60 s, before the node answered.** The
   node replies only after a direct admission request (up to about 35 s), the
   30 s admission window and its context joins, so a fleet-join that was going
