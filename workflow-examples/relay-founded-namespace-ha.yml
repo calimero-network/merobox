@@ -37,19 +37,13 @@
 # Three joiner accounts rather than one "B": an account joins a namespace
 # once, so each claim that must succeed needs its own.
 #
-# KNOWN RED against core master e3bb965a3 — stops at "The fleet node holds N
-# itself". The relay admits the fleet node (it is RelayTee in the relay's
-# member list) but the fleet node never gets N's group key: the only node
-# holding it is the relay, and the relay becomes a trusted anchor only through
-# `FoundingRelayAttested`, a GroupOp encrypted under that same key. A newcomer
-# that can decrypt nothing sees the relay as a plain Member, so it refuses the
-# relay's key (namespace_sync.rs "group-key recovery refused this responder"),
-# and the founder — the one anchor it can see — has no node. Everything up to
-# and including the relay-side admission passes; 5-7 are what a fix unlocks
-# (on that build the fleet node also answers I2 with 409 "holds no namespace
-# identity bound to that account", the same root cause).
+# Needs core with calimero-network/core#4434 (the founding relay is a key
+# anchor of its namespace's root from the cleartext genesis). On earlier core
+# the fleet node is admitted but never gets N's group key: the relay became an
+# anchor only through `FoundingRelayAttested`, a GroupOp sealed under that key,
+# so the run stops at "The fleet node holds N itself".
 #
-# Run (binary mode, against core master built with mock attestation):
+# Run (binary mode, against core built with mock attestation):
 #
 #   cargo build --release -p merod --features merod/mock-attestation   # in core
 #   merobox bootstrap run workflow-examples/relay-founded-namespace-ha.yml \
