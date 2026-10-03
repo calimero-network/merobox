@@ -284,6 +284,29 @@ merobox health
 For raw node (`merod`) output, raise `--log-level` (it maps to `RUST_LOG`) and
 read the node's logs with `merobox logs <node> --follow`.
 
+### A step says the client "stopped waiting"
+
+`calimero-client-py` 0.8.1 and later (built on core 0.11.0-rc.79) bound every
+request, and the bounds cannot be changed from merobox:
+
+| Bound | Calls |
+| --- | --- |
+| 5 min | `install_application` from a registry, creating/joining/syncing/resyncing a context, joining a namespace or a subgroup by inheritance, syncing and upgrading a group, JSON-RPC (`call`/`execute`) |
+| 1 h | blob upload and download |
+| 30 s | everything else, including `install_application` with a `path`, `create_namespace`, invitations, membership and role changes, leaves, deletes, account pairing and `perform_intent` |
+| 10 s | connecting |
+
+The client reports an expired bound as `error sending request for url (...)`,
+which is also what a refused connection says. merobox tells them apart by how
+long the call ran: a call that failed after the bound gets
+`` `<method>` had no answer after Ns, so calimero-client-py stopped waiting ``
+appended. The node may still finish the operation, so check its state (or its
+log) before repeating the step. merobox does not retry it for you, because the
+call may be a write that is about to land.
+
+`tee_fleet_join` talks to the node directly and waits up to 3 minutes, the same
+as `meroctl tee fleet-join`.
+
 ---
 
 ## Unsupported Python version
