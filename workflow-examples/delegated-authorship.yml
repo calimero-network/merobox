@@ -145,8 +145,8 @@ steps:
 
   # ── Phase 3: the relay is granted authorship ──────────────────────
   #
-  # Read the relay's own account first: the warrant has to name the account that
-  # will actually spend it, and a scenario guessing that would mint warrants
+  # Read the relay's own account and device key first: the warrant has to name
+  # what will actually spend it, and a scenario guessing that would mint warrants
   # nothing can use.
 
   - name: Who is the relay

@@ -1151,8 +1151,8 @@ class SignWarrantStep(_AccountStepBase):
     is read out of `credential` rather than configured, because a scenario that
     states it separately is one that can state it inconsistently.
 
-    Requires calimero-client-py with the `sign_warrant` binding, and core with
-    the warrant types.
+    Requires a calimero-client-py whose `sign_warrant` takes `executor_key`, and
+    core with the warrant types.
     """
 
     def _get_required_fields(self) -> list[str]:
