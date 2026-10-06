@@ -92,6 +92,7 @@ steps:
     node: tee-owner
     namespace_id: '{{ns}}'
     group_name: 'restricted-sub-1'
+    visibility: restricted
     outputs:
       sub1: groupId
 
@@ -137,6 +138,7 @@ steps:
     node: tee-owner
     namespace_id: '{{ns}}'
     group_name: 'restricted-sub-offline'
+    visibility: restricted
     outputs:
       sub2: groupId
 

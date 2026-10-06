@@ -94,8 +94,8 @@ steps:
     seconds: 5
 
   # ---------- Owner creates a Restricted subgroup FIRST ----------
-  # Subgroups default to Restricted visibility. Creating it now serves two
-  # purposes:
+  # Named Restricted, since the server default is Open. Creating it now serves
+  # two purposes:
   #   (a) it subscribes the OWNER to the namespace gossipsub topic
   #       (create_group_in_namespace -> subscribe_namespace in core), which is
   #       what lets the replica's TeeAttestationAnnounce actually reach a
@@ -108,6 +108,7 @@ steps:
     node: tee-owner
     namespace_id: '{{ns}}'
     group_name: 'restricted-sub'
+    visibility: restricted
     outputs:
       sub: groupId
 
