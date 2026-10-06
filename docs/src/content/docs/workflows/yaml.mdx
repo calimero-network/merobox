@@ -1077,14 +1077,15 @@ The key material comes from the scenario. merobox cannot mint it and should not:
 either a fixed test credential or one minted out-of-band with
 `merod account sign-cert`.
 
-Note the encodings, which are core's and are not interchangeable: `context_id` is
-base58, `executor` is hex. The author's account is read out of `credential`
-rather than configured, so it cannot disagree with the key that signs.
+Every id is 64 hex.
+The warrant names the relay's account (`executor`) and its device signing key (`executor_key`), so only that device can spend it.
+The author's account is read out of `credential` rather than configured, so it cannot disagree with the key that signs.
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
-| `context_id` | yes | string | Context the intent runs in, base58. |
-| `executor` | yes | string | Account allowed to spend it, hex — the relay's, from `node_identity`. |
+| `context_id` | yes | string | Context the intent runs in, hex. |
+| `executor` | yes | string | Account allowed to spend it, hex: the relay's, from `node_identity`'s `accountId`. |
+| `executor_key` | yes | string | The one device of that account that may spend it, hex: the relay's signing key, from `node_identity`'s `publicKey`. |
 | `method` | yes | string | Method the warrant authorises. |
 | `args` | no | mapping | Arguments it commits to. Placeholders resolve. |
 | `device_secret` | yes | string | The author's device signing secret, 64 hex chars. Never sent. |
@@ -1102,6 +1103,7 @@ and its arguments stay sealed and only their hash travels in the clear.
 - type: sign_warrant
   context_id: '{{context_id}}'
   executor: '{{identity_account_id_calimero-node-1}}'
+  executor_key: '{{identity_public_key_calimero-node-1}}'
   method: set
   args:
     key: delegated
@@ -1121,9 +1123,8 @@ envelope with its own key; the change is attributed to the **author**, and both
 halves travel together so every peer re-checks that the member consented rather
 than taking the relay's word.
 
-Only the author's half is sent. The node attaches its own credential, so a
-scenario never learns which of the node's processes runs the intent, and a re-key
-on its side does not void a warrant already minted.
+Only the author's half is sent. The node attaches its own credential, and
+refuses a warrant naming another account or device key.
 
 `rootHash` is exported because it is the node's own claim that the run changed
 something. Assert on it rather than on the status: an accepted intent that
@@ -1155,8 +1156,8 @@ Outputs: `rootHash`, `returns`.
     root: rootHash
 ```
 
-Both steps need a `calimero-client-py` carrying the `sign_warrant` and
-`perform_intent` bindings, and a node whose core has the warrant types.
+Both steps need a `calimero-client-py` whose `sign_warrant` takes `executor_key`,
+and a node whose warrant names the executor key.
 
 ## Call & auth steps
 

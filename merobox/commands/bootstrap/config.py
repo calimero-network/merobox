@@ -1348,13 +1348,16 @@ class SignWarrantStepConfig(BaseStepConfig):
     """Configuration for sign_warrant step."""
 
     type: Literal["sign_warrant"] = "sign_warrant"
-    context_id: str = Field(
-        ..., description="Context the intent runs in, base58 (not hex)"
-    )
+    context_id: str = Field(..., description="Context the intent runs in, hex")
     executor: str = Field(
         ...,
         description="Account allowed to spend this warrant, hex — the relay's, "
         "from node_identity's accountId output",
+    )
+    executor_key: str = Field(
+        ...,
+        description="The one device of that account that may spend it, hex: the "
+        "relay's signing key, from node_identity's publicKey output",
     )
     method: str = Field(..., description="The method the warrant authorises")
     args: Optional[dict] = Field(

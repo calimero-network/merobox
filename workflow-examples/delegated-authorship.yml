@@ -154,6 +154,7 @@ steps:
     node: delegated-demo-1
     outputs:
       relay_account: accountId
+      relay_key: publicKey
 
   # CAN_AUTHOR_ON_BEHALF is bit 9, so 512 on its own — granting authorship and
   # nothing else, which is the posture the capability exists to make possible.
@@ -229,6 +230,7 @@ steps:
     type: sign_warrant
     context_id: '{{context_id}}'
     executor: '{{relay_account}}'
+    executor_key: '{{relay_key}}'
     method: set
     args:
       key: delegated

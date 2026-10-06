@@ -1145,21 +1145,36 @@ class SignWarrantStep(_AccountStepBase):
     providing the keys is the right split — merobox is the channel, not the
     holder.
 
-    Note the encodings, which are core's and are not interchangeable:
-    `context_id` is base58 and `executor` is hex. The author's account is read
-    out of `credential` rather than configured, because a scenario that states it
-    separately is one that can state it inconsistently.
+    Every id is 64 hex. `executor` is the relay's account and `executor_key` its
+    device signing key (`node_identity`'s `accountId` and `publicKey`): the
+    warrant names both, so only that device can spend it. The author's account
+    is read out of `credential` rather than configured, because a scenario that
+    states it separately is one that can state it inconsistently.
 
     Requires calimero-client-py with the `sign_warrant` binding, and core with
     the warrant types.
     """
 
     def _get_required_fields(self) -> list[str]:
-        return ["context_id", "executor", "method", "device_secret", "credential"]
+        return [
+            "context_id",
+            "executor",
+            "executor_key",
+            "method",
+            "device_secret",
+            "credential",
+        ]
 
     def _validate_field_types(self) -> None:
         self._require_strings(
-            ("context_id", "executor", "method", "device_secret", "credential")
+            (
+                "context_id",
+                "executor",
+                "executor_key",
+                "method",
+                "device_secret",
+                "credential",
+            )
         )
         self._require_args_mapping()
 
@@ -1197,6 +1212,7 @@ class SignWarrantStep(_AccountStepBase):
     ) -> bool:
         context_id = self._resolved("context_id", dynamic_values)
         executor = self._resolved("executor", dynamic_values)
+        executor_key = self._resolved("executor_key", dynamic_values)
         method = self._resolved("method", dynamic_values)
         device_secret = self._resolved("device_secret", dynamic_values)
         credential = self._resolved("credential", dynamic_values)
@@ -1211,6 +1227,7 @@ class SignWarrantStep(_AccountStepBase):
                 sign_warrant(
                     context_id=context_id,
                     executor=executor,
+                    executor_key=executor_key,
                     method=method,
                     args=args,
                     nonce=nonce,
