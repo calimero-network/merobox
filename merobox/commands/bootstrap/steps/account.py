@@ -1151,8 +1151,12 @@ class SignWarrantStep(_AccountStepBase):
     is read out of `credential` rather than configured, because a scenario that
     states it separately is one that can state it inconsistently.
 
-    Requires a calimero-client-py whose `sign_warrant` takes `executor_key`, and
-    core with the warrant types.
+    The warrant also pins the release the relay runs: `release_bytecode_id` (64
+    hex, the group's `appKey` from `get_group_info`, which the relay also reports
+    as `releaseBytecodeId`) and its semver `release_version`, signed but never
+    compared, so it may be left empty.
+
+    Requires calimero-client-py 0.9.0 or later, and core with core#4517.
     """
 
     def _get_required_fields(self) -> list[str]:
@@ -1160,6 +1164,7 @@ class SignWarrantStep(_AccountStepBase):
             "context_id",
             "executor",
             "executor_key",
+            "release_bytecode_id",
             "method",
             "device_secret",
             "credential",
@@ -1171,11 +1176,15 @@ class SignWarrantStep(_AccountStepBase):
                 "context_id",
                 "executor",
                 "executor_key",
+                "release_bytecode_id",
                 "method",
                 "device_secret",
                 "credential",
             )
         )
+        if not isinstance(self.config.get("release_version", ""), str):
+            step_name = self.config.get("name", "Unnamed sign_warrant step")
+            raise ValueError(f"Step '{step_name}': 'release_version' must be a string")
         self._require_args_mapping()
 
     def _get_exportable_variables(self):
@@ -1213,6 +1222,12 @@ class SignWarrantStep(_AccountStepBase):
         context_id = self._resolved("context_id", dynamic_values)
         executor = self._resolved("executor", dynamic_values)
         executor_key = self._resolved("executor_key", dynamic_values)
+        release_bytecode_id = self._resolved("release_bytecode_id", dynamic_values)
+        release_version = (
+            self._resolved("release_version", dynamic_values)
+            if "release_version" in self.config
+            else ""
+        )
         method = self._resolved("method", dynamic_values)
         device_secret = self._resolved("device_secret", dynamic_values)
         credential = self._resolved("credential", dynamic_values)
@@ -1228,6 +1243,8 @@ class SignWarrantStep(_AccountStepBase):
                     context_id=context_id,
                     executor=executor,
                     executor_key=executor_key,
+                    release_bytecode_id=release_bytecode_id,
+                    release_version=release_version,
                     method=method,
                     args=args,
                     nonce=nonce,

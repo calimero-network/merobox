@@ -1433,6 +1433,8 @@ WARRANT_SECRET = "4987ccd0fb7ef36bf7f61e8f99fd150d33e6adac47649f23bfd7109c2e36a3
 WARRANT_ACCOUNT = "0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30"
 #: The relay device that may spend the warrant; any 32 bytes, the binding is mocked.
 WARRANT_EXECUTOR_KEY = "77" * 32
+#: The release the warrant pins; any 32 bytes, the binding is mocked.
+WARRANT_RELEASE = "44" * 32
 WARRANT_CONTEXT = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 
 
@@ -1460,6 +1462,7 @@ class TestSignWarrantStep:
             "context_id": WARRANT_CONTEXT,
             "executor": WARRANT_ACCOUNT,
             "executor_key": WARRANT_EXECUTOR_KEY,
+            "release_bytecode_id": WARRANT_RELEASE,
             "method": "set",
             "args": {"key": "k", "value": "v"},
             "device_secret": WARRANT_SECRET,
@@ -1491,6 +1494,7 @@ class TestSignWarrantStep:
             "context_id",
             "executor",
             "executor_key",
+            "release_bytecode_id",
             "method",
             "device_secret",
             "credential",
@@ -1524,6 +1528,8 @@ class TestSignWarrantStep:
             context_id=WARRANT_CONTEXT,
             executor=WARRANT_ACCOUNT,
             executor_key=WARRANT_EXECUTOR_KEY,
+            release_bytecode_id=WARRANT_RELEASE,
+            release_version="",
             method="set",
             args='{"key": "k", "value": "v"}',
             nonce=1,
@@ -1534,6 +1540,16 @@ class TestSignWarrantStep:
         # Keyed on the executor, not a node: this step has no node, and two
         # warrants in one scenario are told apart by who may spend them.
         assert results[f"signed_warrant_{WARRANT_ACCOUNT}"] == self.payload
+
+    def test_release_version_is_passed_through_when_named(self):
+        step, minter, patcher = self._patched(release_version="1.2.0")
+        with patcher:
+            assert _run(step.execute({}, {})) is True
+        assert minter.call_args.kwargs["release_version"] == "1.2.0"
+
+    def test_release_version_must_be_a_string(self):
+        with pytest.raises(ValueError, match="release_version"):
+            SignWarrantStep({**self.config, "release_version": 1})
 
     def test_nonce_and_validity_are_passed_through_as_numbers(self):
         step, minter, patcher = self._patched(nonce=7, valid_for=60)
@@ -1720,6 +1736,7 @@ class TestSignWarrantExpectedFailure:
                 "context_id": WARRANT_CONTEXT,
                 "executor": WARRANT_ACCOUNT,
                 "executor_key": WARRANT_EXECUTOR_KEY,
+                "release_bytecode_id": WARRANT_RELEASE,
                 "method": "set",
                 "device_secret": WARRANT_SECRET,
                 "credential": WARRANT_CREDENTIAL,

@@ -226,11 +226,22 @@ steps:
   # to, never the plaintext — the envelope it rides in is readable by anything
   # subscribed to the context's topic.
 
+  # The release the warrant pins: the bytecode id the group names, which the
+  # relay also reports as `releaseBytecodeId`. A warrant for any other release
+  # is refused.
+  - name: Read the release the warrant pins
+    type: get_group_info
+    node: delegated-demo-1
+    group_id: '{{namespace_id}}'
+    outputs:
+      release: appKey
+
   - name: The author mints a warrant
     type: sign_warrant
     context_id: '{{context_id}}'
     executor: '{{relay_account}}'
     executor_key: '{{relay_key}}'
+    release_bytecode_id: '{{release}}'
     method: set
     args:
       key: delegated

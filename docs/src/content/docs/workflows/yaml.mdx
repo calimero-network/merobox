@@ -1086,6 +1086,8 @@ The author's account is read out of `credential` rather than configured, so it c
 | `context_id` | yes | string | Context the intent runs in, hex. |
 | `executor` | yes | string | Account allowed to spend it, hex: the relay's, from `node_identity`'s `accountId`. |
 | `executor_key` | yes | string | The one device of that account that may spend it, hex: the relay's signing key, from `node_identity`'s `publicKey`. |
+| `release_bytecode_id` | yes | string | The release the relay must run, hex: the group's `appKey` from `get_group_info`. A warrant for another release is refused. |
+| `release_version` | no | string | That release's semver. Signed, never compared; empty by default. |
 | `method` | yes | string | Method the warrant authorises. |
 | `args` | no | mapping | Arguments it commits to. Placeholders resolve. |
 | `device_secret` | yes | string | The author's device signing secret, 64 hex chars. Never sent. |
@@ -1104,6 +1106,7 @@ and its arguments stay sealed and only their hash travels in the clear.
   context_id: '{{context_id}}'
   executor: '{{identity_account_id_calimero-node-1}}'
   executor_key: '{{identity_public_key_calimero-node-1}}'
+  release_bytecode_id: '{{release}}'
   method: set
   args:
     key: delegated
@@ -1156,8 +1159,8 @@ Outputs: `rootHash`, `returns`.
     root: rootHash
 ```
 
-Both steps need a `calimero-client-py` whose `sign_warrant` takes `executor_key`,
-and a node whose warrant names the executor key.
+Both steps need calimero-client-py 0.9.0 or later, whose `sign_warrant` takes
+`executor_key` and the release, and a node with core#4517.
 
 ## Call & auth steps
 

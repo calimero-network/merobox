@@ -1359,6 +1359,15 @@ class SignWarrantStepConfig(BaseStepConfig):
         description="The one device of that account that may spend it, hex: the "
         "relay's signing key, from node_identity's publicKey output",
     )
+    release_bytecode_id: str = Field(
+        ...,
+        description="The release the relay must run, 64 hex: the group's appKey "
+        "from get_group_info (the relay's releaseBytecodeId)",
+    )
+    release_version: Optional[str] = Field(
+        "",
+        description="That release's semver; signed, never compared, may be empty",
+    )
     method: str = Field(..., description="The method the warrant authorises")
     args: Optional[dict] = Field(
         None, description="Arguments the warrant commits to, as a mapping"
