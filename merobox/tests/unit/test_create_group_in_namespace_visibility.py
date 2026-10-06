@@ -67,13 +67,26 @@ class TestVisibilityValidation:
 # -----------------------------------------------------------------------------
 
 
-class TestVisibilityBody:
-    def _exec(self, step):
+class _StepRunner:
+    def _exec(self, step, token=None):
+        auth = MagicMock()
+        auth.get_cached_token.return_value = (
+            MagicMock(access_token=token) if token else None
+        )
         with (
             patch.object(
                 step,
                 "_resolve_node_for_client",
                 return_value=("http://localhost:7180", "n1"),
+            ),
+            patch.object(
+                step,
+                "_resolve_node_target",
+                return_value=("http://localhost:7180", "n1"),
+            ),
+            patch(
+                "merobox.commands.bootstrap.steps.base.AuthManager",
+                return_value=auth,
             ),
             patch.object(step, "_resolve_dynamic_value", side_effect=lambda v, *_: v),
             patch(
@@ -96,8 +109,11 @@ class TestVisibilityBody:
             mock_get_client.return_value = mock_client
 
             result = _run(step.execute({}, {}))
+            self.auth = auth
             return result, mock_post, mock_client
 
+
+class TestVisibilityBody(_StepRunner):
     def test_visibility_open_posts_with_visibility_in_body(self):
         step = CreateGroupInNamespaceStep(_base_config(visibility="open"))
         result, mock_post, mock_client = self._exec(step)
@@ -142,3 +158,28 @@ class TestVisibilityBody:
         mock_client.create_group_in_namespace.assert_called_once()
         _, kwargs = mock_client.create_group_in_namespace.call_args
         assert "visibility" not in kwargs
+
+
+# -----------------------------------------------------------------------------
+# Execute: auth (embedded auth mode refuses an unauthenticated POST with 401)
+# -----------------------------------------------------------------------------
+
+
+class TestVisibilityAuth(_StepRunner):
+    def test_cached_token_is_attached_as_bearer_header(self):
+        step = CreateGroupInNamespaceStep(_base_config(visibility="restricted"))
+        result, mock_post, _ = self._exec(step, token="acc.jwt.tok")
+
+        assert result is True
+        self.auth.get_cached_token.assert_called_once_with("n1")
+        assert mock_post.call_args[1]["headers"] == {
+            "Authorization": "Bearer acc.jwt.tok"
+        }
+
+    def test_no_cached_token_sends_no_authorization_header(self):
+        # A node running without auth issues no token; the POST goes out bare.
+        step = CreateGroupInNamespaceStep(_base_config(visibility="open"))
+        result, mock_post, _ = self._exec(step)
+
+        assert result is True
+        assert mock_post.call_args[1]["headers"] == {}
