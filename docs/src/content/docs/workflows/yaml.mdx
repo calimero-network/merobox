@@ -435,7 +435,7 @@ Create a subgroup under a namespace.
 | `node` | yes | string | Target node. |
 | `namespace_id` | yes | string | Parent namespace. |
 | `group_name` | no | string | Subgroup display name. |
-| `visibility` | no | `open`\|`restricted` | Birth visibility (default: server default `restricted`). |
+| `visibility` | no | `open`\|`restricted` | Birth visibility. Omitted, the server picks: `open` from core 0.11.0-rc.83, `restricted` before. |
 
 ```yaml
 - type: create_group_in_namespace

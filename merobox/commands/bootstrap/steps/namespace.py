@@ -86,7 +86,12 @@ class CreateGroupInNamespaceStep(BaseStep):
                 )
 
     def _create_via_http(
-        self, rpc_url: str, namespace_id: str, group_name, visibility: str
+        self,
+        rpc_url: str,
+        token: str | None,
+        namespace_id: str,
+        group_name,
+        visibility: str,
     ) -> dict[str, Any]:
         """Create a born-visibility subgroup via the raw admin-api REST call.
 
@@ -94,11 +99,8 @@ class CreateGroupInNamespaceStep(BaseStep):
         forward the `visibility` body field (#2771), so when visibility is set we
         POST the admin-api endpoint directly. The body is camelCase to match
         `CreateGroupInNamespaceBody` and the response is returned verbatim so the
-        normal `data.groupId` export path keeps working.
-
-        Like the other raw admin-API helpers in the harness, this assumes the
-        node's admin API is reachable on loopback without auth (local mock-TEE /
-        e2e workflows). It attaches no Authorization header.
+        normal `data.groupId` export path keeps working. It carries the node's
+        cached token, if any, the way the compiled client would.
         """
         url = f"{rpc_url.rstrip('/')}/admin-api/namespaces/{namespace_id}/groups"
         # `_validate_field_types` accepts visibility case-insensitively, so
@@ -108,7 +110,10 @@ class CreateGroupInNamespaceStep(BaseStep):
         if group_name is not None:
             body["groupName"] = group_name
         resp = requests.post(
-            url, json=body, timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT)
+            url,
+            json=body,
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+            timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT),
         )
         if resp.status_code != 200:
             # Surface the server's error body (raise_for_status would drop it),
@@ -136,15 +141,21 @@ class CreateGroupInNamespaceStep(BaseStep):
                 self.config["visibility"], workflow_results, dynamic_values
             )
         try:
-            rpc_url, client_node_name = self._resolve_node_for_client(node_name)
             if visibility is not None:
                 # Born-visibility create: drive the REST endpoint directly so the
                 # `visibility` field reaches the server (the compiled client does
                 # not forward it yet — #2771).
+                rpc_url, cache_node_name = self._resolve_node_target(node_name)
+                token = self._resolve_token(
+                    cache_node_name, workflow_results, dynamic_values
+                )
                 result = ok(
-                    self._create_via_http(rpc_url, namespace_id, group_name, visibility)
+                    self._create_via_http(
+                        rpc_url, token, namespace_id, group_name, visibility
+                    )
                 )
             else:
+                rpc_url, client_node_name = self._resolve_node_for_client(node_name)
                 client = get_client_for_rpc_url(rpc_url, node_name=client_node_name)
                 create_group_in_namespace = getattr(
                     client, "create_group_in_namespace", None
