@@ -68,13 +68,19 @@ class TestVisibilityValidation:
 
 
 class TestVisibilityBody:
-    def _exec(self, step):
+    def _exec(self, step, token=None):
         with (
             patch.object(
                 step,
                 "_resolve_node_for_client",
                 return_value=("http://localhost:7180", "n1"),
             ),
+            patch.object(
+                step,
+                "_resolve_node_target",
+                return_value=("http://localhost:7180", "n1"),
+            ),
+            patch.object(step, "_resolve_token", return_value=token),
             patch.object(step, "_resolve_dynamic_value", side_effect=lambda v, *_: v),
             patch(
                 "merobox.commands.bootstrap.steps.namespace.requests.post"
@@ -131,6 +137,20 @@ class TestVisibilityBody:
         assert result is True
         body = mock_post.call_args[1]["json"]
         assert body["visibility"] == "open"
+
+    def test_visibility_post_carries_the_cached_token(self):
+        step = CreateGroupInNamespaceStep(_base_config(visibility="restricted"))
+        result, mock_post, _ = self._exec(step, token="jwt")
+
+        assert result is True
+        assert mock_post.call_args[1]["headers"] == {"Authorization": "Bearer jwt"}
+
+    def test_visibility_post_without_a_token_sends_no_auth_header(self):
+        step = CreateGroupInNamespaceStep(_base_config(visibility="open"))
+        result, mock_post, _ = self._exec(step)
+
+        assert result is True
+        assert mock_post.call_args[1]["headers"] == {}
 
     def test_no_visibility_uses_client_and_omits_body(self):
         step = CreateGroupInNamespaceStep(_base_config())
