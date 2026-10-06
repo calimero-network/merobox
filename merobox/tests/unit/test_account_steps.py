@@ -1447,7 +1447,7 @@ class TestSignWarrantStep:
 
     The properties that actually matter cryptographically — that reformatting an
     intent's arguments cannot change what the signature commits to, that a
-    credential must certify the signing key, that every id is hex — are
+    credential must certify the signing key, that every id is hex - are
     asserted in calimero-client-py, in Rust and in pytest, where the real
     binding runs. Re-asserting them against a mock here would prove only that
     the mock agrees with itself.
