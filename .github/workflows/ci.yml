@@ -30,11 +30,11 @@ env:
   # pinned merobox for the mirror-image reason (calimero-network/core#3609).
   #
   # Moves with the client-py pin in requirements.txt where a core release allows.
-  # calimero-client-py 0.9.0 is compiled against core master 6811e566, which no
-  # core release carries yet (rc.82 predates it), so the release lanes stay on
-  # rc.79. Only the warrant layout differs for merobox, and delegated-authorship
-  # runs in the Docker lanes on merod:edge alone.
-  CORE_VERSION: "0.11.0-rc.79"
+  # calimero-client-py 0.9.0 is compiled against core master 6811e566; rc.83 is
+  # the first release that carries it, with core#4517 (warrants pin the release)
+  # and core#4508 (a namespace subgroup is born Open unless asked otherwise), so
+  # the release lanes and merod:edge agree on both again.
+  CORE_VERSION: "0.11.0-rc.83"
   # Harden crates.io downloads against transient CI network blips that fail the
   # maturin build of calimero-client-py during `pip install` (seen as
   # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,
