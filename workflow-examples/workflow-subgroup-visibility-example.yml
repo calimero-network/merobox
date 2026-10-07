@@ -2,9 +2,7 @@ description: >
   Pins subgroup birth visibility. `create_group_in_namespace` takes an optional
   `visibility`, and an absent one means the server default - so a node that
   stops reading the field, and a change to what the default is, both surface
-  here rather than in whichever scenario happens to lean on them. The default
-  is asserted loosely for now, because the lanes run cores on either side of
-  core#4508; see that assertion.
+  here rather than in whichever scenario happens to lean on them.
 name: Subgroup Birth Visibility Example
 
 force_pull_image: true
@@ -85,12 +83,9 @@ steps:
       - "is_set({{namespace_id}})"
       - "equals({{open_visibility}}, open)"
       - "equals({{restricted_visibility}}, restricted)"
-      # The default is the server's, so it is read back rather than assumed.
-      # core#4508 (0.11.0-rc.83) made it open; earlier releases make it
-      # restricted. The Docker lanes run merod:edge and the release lanes run
-      # CORE_VERSION, so the two disagree until CORE_VERSION reaches rc.83.
-      # Tighten this to equals(..., open) then.
-      - "regex({{default_visibility}}, ^(open|restricted)$)"
+      # The default is the server's, so it is read back rather than assumed:
+      # open since core#4508 (0.11.0-rc.83), restricted before it.
+      - "equals({{default_visibility}}, open)"
       - "{{open_subgroup_id}} != {{restricted_subgroup_id}}"
 
 stop_all_nodes: true
