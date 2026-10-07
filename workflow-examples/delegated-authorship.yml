@@ -145,8 +145,8 @@ steps:
 
   # ── Phase 3: the relay is granted authorship ──────────────────────
   #
-  # Read the relay's own account first: the warrant has to name the account that
-  # will actually spend it, and a scenario guessing that would mint warrants
+  # Read the relay's own account and device key first: the warrant has to name
+  # what will actually spend it, and a scenario guessing that would mint warrants
   # nothing can use.
 
   - name: Who is the relay
@@ -154,6 +154,7 @@ steps:
     node: delegated-demo-1
     outputs:
       relay_account: accountId
+      relay_key: publicKey
 
   # CAN_AUTHOR_ON_BEHALF is bit 9, so 512 on its own — granting authorship and
   # nothing else, which is the posture the capability exists to make possible.
@@ -225,10 +226,22 @@ steps:
   # to, never the plaintext — the envelope it rides in is readable by anything
   # subscribed to the context's topic.
 
+  # The release the warrant pins: the bytecode id the group names, which the
+  # relay also reports as `releaseBytecodeId`. A warrant for any other release
+  # is refused.
+  - name: Read the release the warrant pins
+    type: get_group_info
+    node: delegated-demo-1
+    group_id: '{{namespace_id}}'
+    outputs:
+      release: appKey
+
   - name: The author mints a warrant
     type: sign_warrant
     context_id: '{{context_id}}'
     executor: '{{relay_account}}'
+    executor_key: '{{relay_key}}'
+    release_bytecode_id: '{{release}}'
     method: set
     args:
       key: delegated

@@ -1431,8 +1431,11 @@ WARRANT_CREDENTIAL = (
 )
 WARRANT_SECRET = "4987ccd0fb7ef36bf7f61e8f99fd150d33e6adac47649f23bfd7109c2e36a3ba"
 WARRANT_ACCOUNT = "0e2cd2d3dc84e1db5088e32510ca45bc491e4033bbb0f6bbb733bc0c7b7f5e30"
-#: Base58, because a context id is one. An account id, above, is hex.
-WARRANT_CONTEXT = "1thX6LZfHDZZKUs92febYZhYRcXddmzfzF2NvTkPNE"
+#: The relay device that may spend the warrant; any 32 bytes, the binding is mocked.
+WARRANT_EXECUTOR_KEY = "77" * 32
+#: The release the warrant pins; any 32 bytes, the binding is mocked.
+WARRANT_RELEASE = "44" * 32
+WARRANT_CONTEXT = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 
 
 class TestSignWarrantStep:
@@ -1446,10 +1449,10 @@ class TestSignWarrantStep:
 
     The properties that actually matter cryptographically — that reformatting an
     intent's arguments cannot change what the signature commits to, that a
-    credential must certify the signing key, that a context is base58 and an
-    account hex — are asserted in calimero-client-py, in Rust and in pytest,
-    where the real binding runs. Re-asserting them against a mock here would
-    prove only that the mock agrees with itself.
+    credential must certify the signing key, that every id is hex - are
+    asserted in calimero-client-py, in Rust and in pytest, where the real
+    binding runs. Re-asserting them against a mock here would prove only that
+    the mock agrees with itself.
     """
 
     def setup_method(self):
@@ -1458,6 +1461,8 @@ class TestSignWarrantStep:
             "name": "Mint",
             "context_id": WARRANT_CONTEXT,
             "executor": WARRANT_ACCOUNT,
+            "executor_key": WARRANT_EXECUTOR_KEY,
+            "release_bytecode_id": WARRANT_RELEASE,
             "method": "set",
             "args": {"key": "k", "value": "v"},
             "device_secret": WARRANT_SECRET,
@@ -1484,7 +1489,16 @@ class TestSignWarrantStep:
         SignWarrantStep(self.config)
 
     @pytest.mark.parametrize(
-        "field", ["context_id", "executor", "method", "device_secret", "credential"]
+        "field",
+        [
+            "context_id",
+            "executor",
+            "executor_key",
+            "release_bytecode_id",
+            "method",
+            "device_secret",
+            "credential",
+        ],
     )
     def test_missing_required_field_raises(self, field):
         config = {**self.config}
@@ -1513,6 +1527,9 @@ class TestSignWarrantStep:
         minter.assert_called_once_with(
             context_id=WARRANT_CONTEXT,
             executor=WARRANT_ACCOUNT,
+            executor_key=WARRANT_EXECUTOR_KEY,
+            release_bytecode_id=WARRANT_RELEASE,
+            release_version="",
             method="set",
             args='{"key": "k", "value": "v"}',
             nonce=1,
@@ -1523,6 +1540,16 @@ class TestSignWarrantStep:
         # Keyed on the executor, not a node: this step has no node, and two
         # warrants in one scenario are told apart by who may spend them.
         assert results[f"signed_warrant_{WARRANT_ACCOUNT}"] == self.payload
+
+    def test_release_version_is_passed_through_when_named(self):
+        step, minter, patcher = self._patched(release_version="1.2.0")
+        with patcher:
+            assert _run(step.execute({}, {})) is True
+        assert minter.call_args.kwargs["release_version"] == "1.2.0"
+
+    def test_release_version_must_be_a_string(self):
+        with pytest.raises(ValueError, match="release_version"):
+            SignWarrantStep({**self.config, "release_version": 1})
 
     def test_nonce_and_validity_are_passed_through_as_numbers(self):
         step, minter, patcher = self._patched(nonce=7, valid_for=60)
@@ -1708,6 +1735,8 @@ class TestSignWarrantExpectedFailure:
                 "name": "Mint",
                 "context_id": WARRANT_CONTEXT,
                 "executor": WARRANT_ACCOUNT,
+                "executor_key": WARRANT_EXECUTOR_KEY,
+                "release_bytecode_id": WARRANT_RELEASE,
                 "method": "set",
                 "device_secret": WARRANT_SECRET,
                 "credential": WARRANT_CREDENTIAL,
