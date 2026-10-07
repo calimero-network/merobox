@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.84] - 2026-10-07
+
+### Changed
+
+- **Requires `calimero-client-py==0.9.0`**, built on core master `6811e566`
+  (core#4505, core#4517). Its `sign_warrant` signs the warrant layout core now
+  requires, which names the executor device and pins the release; warrants
+  signed by 0.8.1 are refused by such a node with `warrant is not a valid
+  statement`.
+- **`sign_warrant` takes `executor_key` and the release (breaking).**
+  `executor_key` (the relay's `node_identity` `publicKey`) and
+  `release_bytecode_id` (the group's `appKey` from `get_group_info`) are
+  required; `release_version` is optional, signed and never compared.
+  `delegated-authorship.yml` shows the full flow.
+
+### Fixed
+
+- **`create_group_in_namespace` with `visibility` sends the node's token.** The
+  raw admin-API call it makes for a born-visibility subgroup carried no
+  `Authorization` header, so an embedded-auth node refused it with 401.
+- **The TEE examples that relied on a Restricted default name it.** core#4508
+  creates a namespace subgroup Open when no visibility is given, so `tee-g1`,
+  `tee-g3` and `tee-r1` set `visibility: restricted`, and
+  `workflow-subgroup-visibility-example` accepts either default until CI's
+  release lanes run a core with core#4508.
+
 ## [0.6.83] - 2026-10-04
 
 ### Added
