@@ -769,3 +769,35 @@ def test_a_step_refuses_a_resolved_path_under_dot_git(tmp_path, monkeypatch):
     )
     assert not ok
     download.assert_not_called()
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """`<tmp>/home` is $HOME, and a git checkout, as a dotfiles repo makes it."""
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".git").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+
+def test_a_dotfiles_home_is_never_the_root(run, home):
+    steps = step("upload_blob", file_path="../.bashrc")
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow="home/proj/wf.yml", cwd="home/proj"),
+        "file_path",
+    )
+
+
+def test_a_project_under_home_still_confines_to_itself(run, home):
+    steps = step("upload_blob", file_path="blob.bin")
+    ok, *_ = run(
+        NODES + "steps:\n" + steps, workflow="home/proj/wf.yml", cwd="home/proj"
+    )
+    assert ok
+
+
+@pytest.mark.parametrize("workflow", ["home/wf.yml", "wf.yml"])
+def test_a_workflow_at_or_above_home_gets_no_host_paths(run, home, workflow):
+    steps = step("upload_blob", file_path="home/blob.bin")
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow=workflow, cwd="."), "file_path"
+    )

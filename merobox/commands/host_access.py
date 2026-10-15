@@ -190,14 +190,23 @@ def _path_refusals(config: dict[str, Any], workflow_dir: str) -> list[str]:
 
 def workflow_root(workflow_dir: str) -> str:
     """The directory YAML host paths must stay in: the git checkout holding the
-    workflow, else the workflow's own directory (never the cwd, which may be $HOME)."""
+    workflow below $HOME, else the workflow's own directory (never the cwd)."""
+    home = os.path.realpath(os.path.expanduser("~"))
     current = os.path.realpath(workflow_dir)
-    while not os.path.exists(os.path.join(current, ".git")):
+    while current != home:
+        if os.path.exists(os.path.join(current, ".git")):
+            return current
         parent = os.path.dirname(current)
         if parent == current:
-            return workflow_dir
+            break
         current = parent
-    return current
+    return workflow_dir
+
+
+def _holds_home(root: str) -> bool:
+    home = os.path.realpath(os.path.expanduser("~"))
+    real_root = os.path.realpath(root)
+    return home == real_root or home.startswith(real_root.rstrip(os.sep) + os.sep)
 
 
 def host_path_refusal(path: Any, root: str, relative_to: str) -> Optional[str]:
@@ -208,6 +217,8 @@ def host_path_refusal(path: Any, root: str, relative_to: str) -> Optional[str]:
     path = os.path.expanduser(str(path))
     if "{{" in path:
         return f"'{path}' is only known at run time"
+    if _holds_home(root):
+        return f"'{path}' cannot be confined: {root} holds your home directory"
     joined = os.path.join(relative_to, path)
     ok, _ = validate_path_within(joined, root, allow_parent_refs=True)
     if not ok:
