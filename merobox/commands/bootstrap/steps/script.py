@@ -580,6 +580,9 @@ class ScriptStep(BaseStep):
             containers = manager.client.containers.list(
                 filters={"label": "calimero.node=true"}
             )
+            containers = [
+                c for c in containers if not self._refuse_foreign_container(c.name)
+            ]
 
             if not containers:
                 console.print(

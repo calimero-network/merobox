@@ -16,8 +16,19 @@ from merobox.commands.bootstrap.run import run as run_module
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.download_blob import DownloadBlobStep
+from merobox.commands.bootstrap.steps.fault import InjectNetworkFaultStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
+from merobox.commands.bootstrap.steps.network import (
+    ConnectNodeStep,
+    DisconnectNodeStep,
+    PartitionPeersStep,
+)
 from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
+from merobox.commands.bootstrap.steps.pause import (
+    PauseContainerStep,
+    UnpauseContainerStep,
+)
+from merobox.commands.bootstrap.steps.restart import RestartContainerStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.errors import NodeResolutionError
 from merobox.commands.manager import DockerManager
@@ -303,7 +314,7 @@ def test_step_naming_a_cli_remote_node_needs_no_trust(user_registry):
 
 def test_local_node_shadowed_by_a_user_registry_name_still_resolves(user_registry):
     resolver = resolver_for({"name": "t"})
-    resolver.docker_manager = object()
+    resolver.docker_manager = MagicMock(nodes={"prod": MagicMock()})
     with patch.object(
         resolver, "_resolve_docker_node", return_value="http://localhost:2528"
     ):
@@ -1137,3 +1148,92 @@ def test_yaml_nuke_needs_trust(run, key):
     assert_refused(run(NODES + f"{key}: true\n"), key)
     ok, *_ = run(NODES + f"{key}: true\n", trust_workflow=True)
     assert ok
+
+
+def docker_manager(started=()):
+    """A Docker manager that started `started` this run; any other name exists too."""
+    manager = MagicMock(binary_path=None)
+    manager.nodes = {name: MagicMock(name=name) for name in started}
+    return manager
+
+
+CONTAINER_STEPS = [
+    (PauseContainerStep, {"type": "pause_container", "container": "other"}),
+    (UnpauseContainerStep, {"type": "unpause_container", "container": "other"}),
+    (RestartContainerStep, {"type": "restart_container", "container": "other"}),
+    (
+        InjectNetworkFaultStep,
+        {
+            "type": "inject_network_fault",
+            "container": "other",
+            "fault": "loss",
+            "duration": 1,
+            "percent": 10,
+        },
+    ),
+    (DisconnectNodeStep, {"type": "disconnect_node", "node": "other"}),
+    (ConnectNodeStep, {"type": "connect_node", "node": "other"}),
+    (
+        PartitionPeersStep,
+        {"type": "partition_peers", "node": "other", "peers": ["calimero-node-1"]},
+    ),
+]
+
+
+@pytest.mark.parametrize("step_class,config", CONTAINER_STEPS)
+@pytest.mark.parametrize("given_root", [True, False])
+def test_untrusted_container_steps_only_touch_this_runs_nodes(
+    tmp_path, step_class, config, given_root
+):
+    manager = docker_manager(started=["calimero-node-1"])
+    kwargs = {"host_root": str(tmp_path)} if given_root else {}
+    step_ = step_class(config, manager=manager, **kwargs)
+    with patch("merobox.commands.bootstrap.steps._docker_utils.docker.from_env"):
+        assert not asyncio.run(step_.execute({}, {}))
+    manager.client.containers.get.assert_not_called()
+
+
+def test_untrusted_connect_node_may_not_pick_a_network(tmp_path):
+    manager = docker_manager(started=["calimero-node-1"])
+    step_ = ConnectNodeStep(
+        {"type": "connect_node", "node": "calimero-node-1", "network": "other_net"},
+        manager=manager,
+        host_root=str(tmp_path),
+    )
+    assert not asyncio.run(step_.execute({}, {}))
+    manager.client.networks.get.assert_not_called()
+
+
+def test_untrusted_node_scripts_skip_containers_this_run_did_not_start(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "s.sh").write_text("true\n")
+    ours, theirs = MagicMock(), MagicMock()
+    ours.name, theirs.name = "calimero-node-1", "someone-else"
+    for container in (ours, theirs):
+        container.exec_run.return_value = MagicMock(exit_code=0, output=b"")
+    manager = docker_manager(started=["calimero-node-1"])
+    del manager.binary_path  # the script step reads its presence as binary mode
+    manager.client.containers.list.return_value = [ours, theirs]
+    step_ = ScriptStep(
+        {"type": "script", "target": "nodes", "script": "s.sh"},
+        manager=manager,
+        host_root=str(tmp_path),
+    )
+    asyncio.run(step_.execute({}, {}))
+    assert ours.put_archive.called
+    theirs.put_archive.assert_not_called()
+    theirs.exec_run.assert_not_called()
+
+
+def test_untrusted_resolver_only_finds_this_runs_containers(empty_registry, tmp_path):
+    manager = docker_manager(started=["calimero-node-1"])
+    executor = WorkflowExecutor({"name": "t"}, manager, workflow_dir=str(tmp_path))
+    executor._setup_resolver()
+    with patch.object(
+        executor.resolver, "_resolve_docker_node", return_value="http://localhost:1"
+    ):
+        assert executor.resolver.resolve_sync("calimero-node-1", skip_auth=True)
+        with pytest.raises(NodeResolutionError):
+            executor.resolver.resolve_sync("someone-else", skip_auth=True)

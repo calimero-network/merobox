@@ -27,7 +27,6 @@ from rich.markup import escape
 
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
-    resolve_container,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
@@ -152,7 +151,7 @@ class DeleteBlobOnDiskStep(BaseStep):
                 expected_failure,
             )
 
-        container = resolve_container(self.manager, node_name)
+        container = self._run_container(node_name)
         if container is None:
             return self._fail(f"container '{node_name}' not found", expected_failure)
 

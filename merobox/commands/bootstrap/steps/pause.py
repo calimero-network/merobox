@@ -10,7 +10,6 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
-    resolve_container,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.utils import console
@@ -40,7 +39,7 @@ class PauseContainerStep(BaseStep):
         )
         console.print(f"[yellow]Pausing container {container_name}...[/yellow]")
 
-        container = resolve_container(self.manager, container_name)
+        container = self._run_container(container_name)
         if container is None:
             return False
 
@@ -78,7 +77,7 @@ class UnpauseContainerStep(BaseStep):
         )
         console.print(f"[yellow]Unpausing container {container_name}...[/yellow]")
 
-        container = resolve_container(self.manager, container_name)
+        container = self._run_container(container_name)
         if container is None:
             return False
 

@@ -27,7 +27,6 @@ from merobox.commands import safe_fs
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
     reinject_nat_default_route,
-    resolve_container,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import (
@@ -95,7 +94,7 @@ class RestartContainerStep(BaseStep):
 
         console.print(f"[yellow]Restarting container {container_name}...[/yellow]")
 
-        container = resolve_container(self.manager, container_name)
+        container = self._run_container(container_name)
         if container is None:
             return False
 

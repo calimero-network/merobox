@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from rich.markup import escape
 
 from merobox.commands.auth import AuthManager
+from merobox.commands.bootstrap.steps._docker_utils import resolve_container
 from merobox.commands.errors import OutputCaptureError, UnresolvedPlaceholderError
 from merobox.commands.host_access import (
     ROOT_NOT_GIVEN,
@@ -112,6 +113,27 @@ class BaseStep:
                 "this workflow[/red]"
             )
         return reason is not None
+
+    def _refuse_foreign_container(self, name: str) -> bool:
+        """Report and return True if an untrusted run may not act on the container
+        `name`; its own are the ones this run's manager started."""
+        if self.host_root is None:
+            return False
+        started = getattr(self.manager, "nodes", None) or {}
+        if self.host_root is not ROOT_NOT_GIVEN and name in started:
+            return False
+        console.print(
+            f"[red]Step '{escape(self._get_step_name())}': container "
+            f"'{escape(name)}' was not started by this run; rerun with "
+            f"{TRUST_WORKFLOW_FLAG} if you trust this workflow[/red]"
+        )
+        return True
+
+    def _run_container(self, name: str) -> Any:
+        """The container `name`, if this run may act on it; None after a diagnostic."""
+        if self._refuse_foreign_container(name):
+            return None
+        return resolve_container(self.manager, name)
 
     def _get_exportable_variables(self) -> list[tuple[str, str, str]]:
         """

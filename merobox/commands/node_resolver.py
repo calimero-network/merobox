@@ -91,7 +91,8 @@ class NodeResolver:
             docker_manager: Manager for Docker nodes.
             binary_manager: Manager for binary nodes.
             only_registered_this_run: Refuse URLs and registry nodes that were not
-                registered through this resolver.
+                registered through this resolver, and containers its Docker
+                manager did not start.
         """
         self.remote_manager = remote_manager or RemoteNodeManager()
         self.auth_manager = auth_manager or AuthManager()
@@ -221,8 +222,11 @@ class NodeResolver:
                 source="url",
             )
 
-        # 3. Check Docker nodes
-        if self.docker_manager:
+        # 3. Check Docker nodes; an untrusted run only reaches the ones it started.
+        started = getattr(self.docker_manager, "nodes", None) or {}
+        if self.docker_manager and (
+            not self.only_registered_this_run or node_ref in started
+        ):
             docker_url = self._resolve_docker_node(node_ref)
             if docker_url:
                 return ResolvedNode(
