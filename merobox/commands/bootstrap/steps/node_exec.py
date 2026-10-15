@@ -34,6 +34,7 @@ from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps._docker_utils import is_binary_mode
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.constants import SAFE_NAME_RE
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -359,6 +360,10 @@ class NodeExecStep(BaseStep):
             for path, content in (self.config.get("files") or {}).items()
         }
         allow_running = bool(self.config.get("allow_running", False))
+        # The node name becomes a host path component below (home, input files).
+        if not SAFE_NAME_RE.match(node_name):
+            console.print(f"[red]node_exec: unsafe node name {node_name!r}[/red]")
+            return False
         if self._refuse_host_path("data_dir", self.config.get("data_dir")):
             return False
 

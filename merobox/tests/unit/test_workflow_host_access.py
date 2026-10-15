@@ -492,3 +492,31 @@ def test_executor_hands_the_root_to_every_step(tmp_path):
     install = {"type": "install_application", "node": "n", "path": "x"}
     nested = repeat._create_nested_step_executor("install_application", install)
     assert nested.host_root == str(tmp_path)
+
+
+@pytest.mark.parametrize("node", ["/home/u/.ssh", "../../etc", "{{target}}"])
+def test_node_exec_refuses_a_node_name_that_is_a_path(tmp_path, node):
+    manager = MagicMock(binary_path=None)
+    step_ = NodeExecStep(
+        {"type": "node_exec", "node": node, "args": ["x"]}, manager=manager
+    )
+    assert not asyncio.run(step_.execute({}, {"target": "/home/u/.ssh"}))
+    manager.is_node_running.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "yaml_text",
+    [
+        "nodes:\n  count: 1\n  prefix: ../../evil\n",
+        "nodes:\n  /home/u/.ssh:\n    port: 2428\n",
+        "nodes:\n  ../escape:\n    port: 2428\n",
+    ],
+)
+@pytest.mark.parametrize("trusted", [False, True])
+def test_node_names_that_are_paths_are_refused_even_when_trusted(
+    run, yaml_text, trusted
+):
+    ok, executor, _, printed = run(yaml_text, trust_workflow=trusted)
+    assert not ok
+    assert "node name" in printed
+    executor.assert_not_called()

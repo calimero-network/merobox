@@ -31,6 +31,7 @@ from merobox.commands.bootstrap.steps._docker_utils import (
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import SAFE_NAME_RE
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -39,9 +40,6 @@ from merobox.commands.utils import console
 _DEFAULT_DATA_DIR = "/app/data"
 _DEFAULT_BLOBS_SUBDIR = "blobs"
 
-# Node/container names: same restriction merobox's manager applies, so an
-# interpolated value can't path-traverse out of the data dir in the exec path.
-_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 # A blob id is a hex-encoded 32-byte hash: 64 characters of [0-9a-f]. Validated
 # so the id can't smuggle a path separator / shell metachar into the exec target
 # even though we already pass argv as a list (defence in depth).
@@ -133,7 +131,7 @@ class DeleteBlobOnDiskStep(BaseStep):
         # a crafted value before building it. With data_dir/blobs_subdir also
         # `..`-validated (see _validate_field_types) the whole path is traversal-
         # free; argv is a list so there's no shell-injection surface either.
-        if not _SAFE_NAME_RE.match(str(node_name)):
+        if not SAFE_NAME_RE.match(str(node_name)):
             return self._fail(f"unsafe node name {node_name!r}", expected_failure)
         if not _HEX_ID_RE.match(str(blob_id)):
             return self._fail(

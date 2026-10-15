@@ -37,6 +37,7 @@ from merobox.commands.constants import (
     NODE_STARTUP_DELAY,
     P2P_PORT_BINDING,
     RPC_PORT_BINDING,
+    SAFE_NAME_RE,
     CleanupResult,
     resolved_drain_timeout,
     resolved_stop_timeout,
@@ -1147,11 +1148,6 @@ class DockerManager(CleanupMixin):
     CLUSTER_PEER_TIMEOUT_ENV = "MEROBOX_CLUSTER_PEER_TIMEOUT"
     DEFAULT_CLUSTER_PEER_TIMEOUT = 60.0
 
-    # Safe container/node name: no path-traversal, no separators — a subset of
-    # Docker's own container-name rules. Used before interpolating node names
-    # into filesystem paths or multiaddrs.
-    SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-
     def _ensure_cluster_network(self) -> Optional[str]:
         """Ensure the user-defined bridge for multi-node clusters exists.
 
@@ -1637,7 +1633,7 @@ class DockerManager(CleanupMixin):
         and custom ``data_dir``); falls back to the default ``./data/`` layout.
         Returns ``None`` if ``node_name`` isn't a safe path component.
         """
-        if not self.SAFE_NAME_RE.match(node_name):
+        if not SAFE_NAME_RE.match(node_name):
             console.print(
                 f"[yellow]⚠️  Skipping unsafe node name: {node_name!r}[/yellow]"
             )

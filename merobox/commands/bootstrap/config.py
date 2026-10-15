@@ -18,7 +18,11 @@ from pydantic import (
     model_validator,
 )
 
-from merobox.commands.constants import DEFAULT_IMAGE
+from merobox.commands.constants import (
+    DEFAULT_IMAGE,
+    RESERVED_NODE_CONFIG_KEYS,
+    SAFE_NAME_RE,
+)
 from merobox.commands.utils import console
 
 # Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
@@ -2514,6 +2518,8 @@ def validate_workflow_config(config: dict[str, Any]) -> list[str]:
             "Workflow config: At least one of 'nodes' or 'remote_nodes' must be specified"
         )
 
+    errors.extend(_unsafe_node_name_errors(config.get("nodes")))
+
     # Validate each step (handle None value when key exists but has no value)
     steps = config.get("steps") or []
     for i, step in enumerate(steps):
@@ -2521,6 +2527,23 @@ def validate_workflow_config(config: dict[str, Any]) -> list[str]:
         errors.extend(step_errors)
 
     return errors
+
+
+def _unsafe_node_name_errors(nodes: Any) -> list[str]:
+    """Node names and the count-mode prefix become host path components, so
+    they must be one safe component whatever the workflow is trusted with."""
+    if isinstance(nodes, dict):
+        names = [k for k in nodes if k not in RESERVED_NODE_CONFIG_KEYS]
+        names += [nodes["prefix"]] if "prefix" in nodes else []
+    elif isinstance(nodes, list):
+        names = nodes
+    else:
+        names = []
+    return [
+        f"Workflow config: node name {name!r} must match {SAFE_NAME_RE.pattern}"
+        for name in names
+        if not SAFE_NAME_RE.match(str(name))
+    ]
 
 
 def format_validation_errors(errors: list[str]) -> str:

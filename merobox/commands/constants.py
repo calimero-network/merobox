@@ -3,6 +3,7 @@ Constants and configuration values used across the merobox codebase.
 """
 
 import os
+import re
 from enum import Enum, auto
 
 
@@ -166,6 +167,7 @@ INSTALL_TIMEOUT = 30  # seconds
 # For a reproducible run, pin at the call site — `--image`, or `image:` in the
 # workflow. Every example workflow does.
 DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:prerelease"
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")  # one path component
 DEFAULT_NODE_PREFIX = "calimero-node"
 DEFAULT_DATA_DIR_PREFIX = "data"
 

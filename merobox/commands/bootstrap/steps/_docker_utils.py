@@ -13,6 +13,7 @@ from typing import Any
 import docker.errors
 from rich.markup import escape
 
+from merobox.commands.constants import SAFE_NAME_RE
 from merobox.commands.utils import console
 
 # Modern multi-node clusters (run_multiple_nodes path) attach nodes to this
@@ -48,11 +49,6 @@ _SKIP_NETWORKS = frozenset({"host", "none"})
 # (whitespace, case) so a stylistic difference in someone's config.toml
 # can't silently suppress the relay-bypass warning.
 _MDNS_FALSE_RE = re.compile(r"(?im)^\s*mdns\s*=\s*false\s*(?:#.*)?$")
-# Same restriction merobox's manager applies to node names. Used here to
-# guard node-name → container-path interpolation (e.g. warn_if_mdns_enabled
-# reads /app/data/<node_name>/config.toml). A crafted name like
-# `../../etc` would otherwise read arbitrary files inside the container.
-_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def is_binary_mode(manager: Any) -> bool:
@@ -186,7 +182,7 @@ def warn_if_mdns_enabled(container: Any, node_name: str) -> None:
     # per-node config at $CALIMERO_HOME/<node_name>/config.toml. Validate
     # node_name against the same safe-name pattern manager uses, so a crafted
     # workflow value can't path-traverse out of the data dir.
-    if not _SAFE_NAME_RE.match(node_name):
+    if not SAFE_NAME_RE.match(node_name):
         return
 
     # exec_run blocks indefinitely on a paused container (the process is
