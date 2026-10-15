@@ -42,14 +42,15 @@ workflow can mix locally-managed and remote nodes in one run.
    merobox remote test prod
    ```
 
-4. **Use it in a workflow** — reference `prod` as a step's `node:` (see
+4. **Use it in a workflow** - reference `prod` as a step's `node:` (see
    [below](#referencing-remote-nodes-in-workflows)). A workflow may act on a node
-   from your registry only when you allow it, so run a workflow you trust with
-   `--trust-workflow`, or name the node for this run on the command line:
+   from your registry only when you allow it, so name the node for this run with
+   a bare `--remote-node prod`, which uses the saved entry and its login as they
+   are, or run a workflow you trust with `--trust-workflow`:
 
    ```bash
+   merobox bootstrap run workflow.yml --remote-node prod
    merobox bootstrap run workflow.yml --trust-workflow
-   merobox bootstrap run workflow.yml --remote-node prod=https://node.example.com
    ```
 
 </Steps>
@@ -181,7 +182,8 @@ merobox bootstrap run workflow.yml \
   --remote-auth staging=apikey:sk-xxx
 ```
 
-- `--remote-node NAME=URL` — repeatable.
+- `--remote-node NAME=URL` — repeatable. A bare `--remote-node NAME` uses the
+  node saved under that name in your registry, without changing its entry.
 - `--remote-auth NAME=user:pass` or `NAME=apikey:KEY` — repeatable; credentials
   are inline in the value.
 - `--api-key KEY` — default API key for remotes without explicit auth.

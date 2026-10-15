@@ -2167,6 +2167,11 @@ class WorkflowExecutor:
                     continue
 
                 url = node_config.get("url")
+                if not url and self.resolver.allow_registered(node_name):
+                    console.print(
+                        f"[cyan]Using registered remote node: {node_name}[/cyan]"
+                    )
+                    continue
                 if not url:
                     console.print(
                         f"[yellow]Warning: Remote node '{node_name}' has no URL, skipping[/yellow]"

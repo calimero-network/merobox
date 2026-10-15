@@ -765,6 +765,13 @@ class NodeResolver:
             self._registered_this_run.add(name)
         return registered
 
+    def allow_registered(self, name: str) -> bool:
+        """Let this run use the registry entry `name` as saved; False if absent."""
+        if self.remote_manager.get(name) is None:
+            return False
+        self._registered_this_run.add(name)
+        return True
+
     def _usable(self, entry: Optional[Any]) -> Optional[Any]:
         """`entry`, unless this resolver only trusts nodes registered through it."""
         if entry and self.only_registered_this_run:

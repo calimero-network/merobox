@@ -28,17 +28,18 @@ def parse_remote_nodes(remote_node_args: tuple[str, ...]) -> dict[str, dict[str,
     """Parse --remote-node arguments into a config dict.
 
     Args:
-        remote_node_args: Tuple of "name=url" strings.
+        remote_node_args: Tuple of "name=url" strings, or a bare "name" for a
+            node already in the remote registry, used as saved.
 
     Returns:
-        Dict mapping node names to their config: {name: {"url": url, "auth": {...}}}
+        Dict mapping node names to their config: {name: {"url": url, "auth": {...}}},
+        or {name: {}} for a bare name
     """
     remote_nodes = {}
     for arg in remote_node_args:
         if "=" not in arg:
-            console.print(
-                f"[yellow]Warning: Invalid --remote-node format '{arg}', expected 'name=url'[/yellow]"
-            )
+            if arg.strip():
+                remote_nodes[arg.strip()] = {}
             continue
         name, url = arg.split("=", 1)
         name = name.strip()
@@ -214,8 +215,8 @@ def bootstrap():
 @click.option(
     "--remote-node",
     multiple=True,
-    metavar="NAME=URL",
-    help="Register a remote node for this workflow run. Format: name=url (e.g., 'prod=https://node.example.com'). Can be specified multiple times.",
+    metavar="NAME[=URL]",
+    help="Register a remote node for this workflow run. Format: name=url (e.g., 'prod=https://node.example.com'), or a bare name to use a node already saved with `merobox remote register`, unchanged. Can be specified multiple times.",
 )
 @click.option(
     "--remote-auth",

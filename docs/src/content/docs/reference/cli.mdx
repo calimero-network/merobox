@@ -234,7 +234,7 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 | `--binary-path`            | search `PATH`    | Path to the `merod` binary (binary mode).                              |
 | `--merod-args`             | —                | Extra arguments passed to `merod run`. Binary mode only (ignored otherwise). |
 | `--e2e-mode`               | off              | Aggressive-sync e2e test mode with unique rendezvous namespaces and no bootstrap nodes. |
-| `--remote-node`            | —                | Register a remote node for this run: `name=url`. Repeatable.            |
+| `--remote-node`            | —                | Register a remote node for this run: `name=url`, or a bare `name` to use a registry entry as saved. Repeatable. |
 | `--remote-auth`            | —                | Auth for a remote node: `name=user:pass` or `name=apikey:KEY`. Repeatable. |
 | `--api-key`                | —                | Default API key for remote nodes without explicit auth.                |
 | `--auth-mode`              | `proxy`          | `embedded` or `proxy` authentication mode for `merod`.                  |

@@ -547,3 +547,30 @@ def test_yaml_calimero_service_images_need_no_trust(run):
         "    image: ghcr.io/calimero-network/boot-node:latest\n"
     )
     assert ok
+
+
+def test_cli_remote_node_name_alone_means_the_saved_registry_entry():
+    assert bootstrap_module.parse_remote_nodes(("prod",)) == {"prod": {}}
+
+
+def test_cli_remote_node_name_alone_allows_the_entry_without_rewriting_it(
+    user_registry, tmp_path
+):
+    registry = tmp_path / "remote_nodes.json"
+    RemoteNodeManager().register(
+        "prod", "https://prod.example", auth_method="user_password", username="me"
+    )
+    saved = registry.read_text()
+    resolver = resolver_for({"name": "t", "remote_nodes": {"prod": {}}})
+    resolved = resolver.resolve_sync("prod", skip_auth=True)
+    assert resolved.url == "https://prod.example"
+    assert resolved.auth_method == "user_password"
+    assert registry.read_text() == saved
+
+
+def test_cli_remote_node_name_alone_that_is_not_registered_stays_refused(
+    empty_registry,
+):
+    resolver = resolver_for({"name": "t", "remote_nodes": {"prod": {}}})
+    with pytest.raises(NodeResolutionError):
+        resolver.resolve_sync("prod", skip_auth=True)
