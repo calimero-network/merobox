@@ -183,7 +183,8 @@ merobox bootstrap run workflow.yml \
 ```
 
 - `--remote-node NAME=URL` - repeatable. A bare `--remote-node NAME` uses the
-  node saved under that name in your registry, without changing its entry.
+  node saved under that name in your registry, with its saved login and without
+  changing its entry; `--remote-auth` and `--api-key` are refused for it.
 - `--remote-auth NAME=user:pass` or `NAME=apikey:KEY` — repeatable; credentials
   are inline in the value.
 - `--api-key KEY` — default API key for remotes without explicit auth.

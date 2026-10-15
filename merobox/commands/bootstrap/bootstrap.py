@@ -36,13 +36,13 @@ def parse_remote_nodes(remote_node_args: tuple[str, ...]) -> dict[str, dict[str,
 
     Returns:
         Dict mapping node names to their config: {name: {"url": url, "auth": {...}}},
-        or {name: {}} for a bare name
+        or {name: {"use_registry_entry": True}} for a bare name
     """
     remote_nodes = {}
     for arg in remote_node_args:
         if "=" not in arg:
             if arg.strip():
-                remote_nodes[arg.strip()] = {}
+                remote_nodes[arg.strip()] = {"use_registry_entry": True}
             continue
         name, url = arg.split("=", 1)
         name = name.strip()
@@ -90,6 +90,13 @@ def parse_remote_auth(
             )
             continue
 
+        if remote_nodes.get(name, {}).get("use_registry_entry"):
+            raise click.UsageError(
+                f"--remote-auth {name}=...: a bare --remote-node {name} uses the "
+                "login saved in your remote registry; pass --remote-node "
+                f"{name}=URL to give this run its own credentials"
+            )
+
         # Create node entry if it doesn't exist yet
         if name not in remote_nodes:
             console.print(
@@ -120,6 +127,12 @@ def parse_remote_auth(
 
     # Apply default API key to nodes without explicit auth
     if default_api_key:
+        bare = [n for n, c in remote_nodes.items() if c.get("use_registry_entry")]
+        if bare:
+            raise click.UsageError(
+                f"--api-key does not apply to a bare --remote-node ({', '.join(bare)}), "
+                "which uses the login saved in your remote registry"
+            )
         for name, config in remote_nodes.items():
             auth = config.get("auth", {})
             if auth.get("method") == "none" or not auth.get("method"):

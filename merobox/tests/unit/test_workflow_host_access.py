@@ -552,8 +552,11 @@ def test_yaml_calimero_service_images_need_no_trust(run):
     assert ok
 
 
+BARE = {"use_registry_entry": True}
+
+
 def test_cli_remote_node_name_alone_means_the_saved_registry_entry():
-    assert bootstrap_module.parse_remote_nodes(("prod",)) == {"prod": {}}
+    assert bootstrap_module.parse_remote_nodes(("prod",)) == {"prod": BARE}
 
 
 def test_cli_remote_node_name_alone_allows_the_entry_without_rewriting_it(
@@ -564,7 +567,7 @@ def test_cli_remote_node_name_alone_allows_the_entry_without_rewriting_it(
         "prod", "https://prod.example", auth_method="user_password", username="me"
     )
     saved = registry.read_text()
-    resolver = resolver_for({"name": "t", "remote_nodes": {"prod": {}}})
+    resolver = resolver_for({"name": "t", "remote_nodes": {"prod": BARE}})
     resolved = resolver.resolve_sync("prod", skip_auth=True)
     assert resolved.url == "https://prod.example"
     assert resolved.auth_method == "user_password"
@@ -574,7 +577,7 @@ def test_cli_remote_node_name_alone_allows_the_entry_without_rewriting_it(
 def test_cli_remote_node_name_alone_that_is_not_registered_stays_refused(
     empty_registry,
 ):
-    resolver = resolver_for({"name": "t", "remote_nodes": {"prod": {}}})
+    resolver = resolver_for({"name": "t", "remote_nodes": {"prod": BARE}})
     with pytest.raises(NodeResolutionError):
         resolver.resolve_sync("prod", skip_auth=True)
 
@@ -887,3 +890,29 @@ def test_node_exec_refuses_binary_mode_unless_trusted(tmp_path, given_root):
         assert not asyncio.run(step_.execute({}, {}))
     sh.assert_not_called()
     manager.is_node_running.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--remote-node", "prod", "--remote-auth", "prod=me:secret"],
+        ["--remote-node", "prod", "--api-key", "sk-1"],
+    ],
+)
+def test_cli_credentials_for_a_bare_remote_node_are_refused(tmp_path, args):
+    workflow = tmp_path / "wf.yml"
+    workflow.write_text("name: t\n")
+    with patch.object(bootstrap_module, "run_workflow_sync") as runner:
+        result = CliRunner().invoke(
+            bootstrap_module.bootstrap, ["run", str(workflow), *args]
+        )
+    assert result.exit_code != 0
+    assert "prod" in result.output and "saved" in result.output
+    runner.assert_not_called()
+
+
+def test_cli_remote_auth_alone_does_not_unlock_a_registry_node(user_registry):
+    auth = {"auth": {"method": "user_password", "username": "u", "password": "p"}}
+    resolver = resolver_for({"name": "t", "remote_nodes": {"prod": auth}})
+    with pytest.raises(NodeResolutionError, match="--trust-workflow"):
+        resolver.resolve_sync("prod", skip_auth=True)
