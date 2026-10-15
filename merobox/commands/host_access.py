@@ -93,7 +93,8 @@ def _host_process_refusals(
     config: dict[str, Any], cli_no_docker: bool, cli_binary_path: bool
 ) -> list[str]:
     refused = []
-    if config.get("no_docker") and not cli_no_docker:
+    # --binary-path on the CLI is the runner choosing a host merod already.
+    if config.get("no_docker") and not (cli_no_docker or cli_binary_path):
         refused.append("no_docker: runs merod as a host process")
     if config.get("binary_path") and not cli_binary_path:
         refused.append(f"binary_path: runs the host binary '{config['binary_path']}'")

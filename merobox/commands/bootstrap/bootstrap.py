@@ -10,10 +10,12 @@ The bootstrap command is designed as a Click command group to provide
 a clean, organized interface for workflow management.
 """
 
+import os
 import sys
 from typing import Any
 
 import click
+from rich.markup import escape
 
 from merobox.commands.bootstrap.config import (
     create_sample_workflow_config,
@@ -21,6 +23,7 @@ from merobox.commands.bootstrap.config import (
 )
 from merobox.commands.bootstrap.run import run_workflow_sync
 from merobox.commands.bootstrap.validate import validate_workflow_config
+from merobox.commands.host_access import check_host_access
 from merobox.commands.utils import console
 
 
@@ -380,6 +383,10 @@ def validate(config_file, verbose):
             console.print(
                 "\n[bold green]✅ Workflow configuration is valid![/bold green]"
             )
+            try:
+                check_host_access(config, os.path.dirname(os.path.abspath(config_file)))
+            except ValueError as refusal:
+                console.print(f"[yellow]{escape(str(refusal))}[/yellow]")
             if verbose:
                 console.print("\n[bold]Configuration Summary:[/bold]")
                 console.print(f"  Name: {config.get('name', 'Unnamed')}")

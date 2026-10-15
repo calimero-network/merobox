@@ -574,3 +574,17 @@ def test_cli_remote_node_name_alone_that_is_not_registered_stays_refused(
     resolver = resolver_for({"name": "t", "remote_nodes": {"prod": {}}})
     with pytest.raises(NodeResolutionError):
         resolver.resolve_sync("prod", skip_auth=True)
+
+
+def test_cli_binary_path_counts_as_consent_to_yaml_no_docker(run):
+    ok, _, binary, _ = run(NODES + "no_docker: true\n", binary_path="/usr/bin/merod")
+    assert ok
+    binary.assert_called_once_with(binary_path="/usr/bin/merod")
+
+
+def test_validate_reports_what_a_run_would_refuse(tmp_path):
+    workflow = tmp_path / "wf.yml"
+    workflow.write_text("name: t\n" + NODES + "steps:\n" + UPLOAD_OUTSIDE)
+    result = CliRunner().invoke(bootstrap_module.bootstrap, ["validate", str(workflow)])
+    assert "file_path" in result.output
+    assert "--trust-workflow" in result.output
