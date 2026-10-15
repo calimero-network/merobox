@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from click.testing import CliRunner
 
+from merobox import testing
 from merobox.commands.bootstrap.run import run as run_module
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.errors import NodeResolutionError
@@ -244,3 +245,35 @@ def test_yaml_step_paths_inside_the_workflow_dir_need_no_trust(run):
 def test_yaml_step_host_access_runs_when_trusted(run):
     ok, *_ = run(NODES + "steps:\n" + UPLOAD_OUTSIDE, trust_workflow=True)
     assert ok
+
+
+@pytest.fixture
+def python_api(tmp_path):
+    """Run a workflow through merobox.testing.workflow with Docker stubbed out."""
+
+    def _run(yaml_text, **kwargs):
+        workflow = tmp_path / "wf.yml"
+        workflow.write_text("name: t\n" + yaml_text)
+        with (
+            patch.object(testing, "WorkflowExecutor") as executor,
+            patch.object(testing, "DockerManager") as manager,
+        ):
+            executor.return_value.execute_workflow = AsyncMock(return_value=True)
+            executor.return_value.dynamic_values = {}
+            manager.return_value.get_running_nodes.return_value = []
+            with testing.workflow(workflow, wait_for_ready=False, **kwargs):
+                pass
+        return executor
+
+    return _run
+
+
+def test_python_api_refuses_untrusted_host_access(python_api):
+    with pytest.raises(ValueError, match="--trust-workflow"):
+        python_api(REMOTE)
+
+
+def test_python_api_runs_trusted_host_access(python_api, tmp_path):
+    executor = python_api(REMOTE, trust_workflow=True)
+    assert executor.call_args.kwargs["trust_workflow"] is True
+    assert executor.call_args.kwargs["workflow_dir"] == str(tmp_path)
