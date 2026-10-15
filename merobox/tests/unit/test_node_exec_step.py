@@ -93,7 +93,7 @@ class TestNodeExecExecution:
         }
 
     def _step(self, manager, config=None):
-        return NodeExecStep(config or self.config, manager=manager)
+        return NodeExecStep(config or self.config, manager=manager, host_root=None)
 
     def test_refuses_while_the_node_is_running(self, tmp_path):
         """RocksDB's lock is exclusive, so this must fail loudly up front.
@@ -201,7 +201,7 @@ class TestNodeExecExecution:
         assert _run(step.execute({}, {})) is False
 
     def test_fails_for_a_remote_node_with_no_docker_manager(self):
-        step = NodeExecStep(self.config, manager=None)
+        step = NodeExecStep(self.config, manager=None, host_root=None)
         assert _run(step.execute({}, {})) is False
 
 
@@ -243,7 +243,7 @@ class TestNodeExecExpectedFailure:
 
     def test_a_refused_command_passes_the_step(self, tmp_path):
         manager = _manager(tmp_path)
-        step = NodeExecStep(self.config, manager=manager)
+        step = NodeExecStep(self.config, manager=manager, host_root=None)
         stub = _stub_container(stderr="already has an account root", exit_code=1)
         with patch.object(manager.client.containers, "create", return_value=stub):
             assert _run(step.execute({}, {})) is True
@@ -251,7 +251,7 @@ class TestNodeExecExpectedFailure:
     def test_an_unexpected_success_fails_the_step(self, tmp_path):
         """The half that makes the assertion mean something."""
         manager = _manager(tmp_path)
-        step = NodeExecStep(self.config, manager=manager)
+        step = NodeExecStep(self.config, manager=manager, host_root=None)
         with patch.object(
             manager.client.containers, "create", return_value=_stub_container()
         ):
@@ -275,6 +275,7 @@ def test_node_exec_exports_its_outputs(tmp_path):
             "outputs": {"phrase": "stdout_first_line", "code": "exit_code"},
         },
         manager=manager,
+        host_root=None,
     )
     stub = _stub_container(stdout="word word word\nAccount root public key: X\n")
     with patch.object(manager.client.containers, "create", return_value=stub):
@@ -411,6 +412,7 @@ class TestNodeExecUsesTheRecordedDataDir:
                 "args": ["account", "export"],
             },
             manager=manager,
+            host_root=None,
         )
         with patch.object(
             manager.client.containers, "create", return_value=_stub_container()
@@ -441,6 +443,7 @@ class TestNodeExecUsesTheRecordedDataDir:
                 "data_dir": str(empty),
             },
             manager=manager,
+            host_root=None,
         )
         assert _run(step.execute({}, {})) is False
         manager.client.containers.create.assert_not_called()
@@ -501,7 +504,7 @@ class TestNodeExecCapture:
         }
 
     def _step(self, manager, config=None):
-        return NodeExecStep(config or self.config, manager=manager)
+        return NodeExecStep(config or self.config, manager=manager, host_root=None)
 
     def test_it_pulls_every_named_field_out_of_stdout(self, tmp_path):
         manager = _manager(tmp_path)

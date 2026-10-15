@@ -23,6 +23,7 @@ from merobox.commands.constants import (
     RESERVED_NODE_CONFIG_KEYS,
     SAFE_NAME_RE,
 )
+from merobox.commands.host_access import iter_steps
 from merobox.commands.utils import console
 
 # Pattern to match ${ENV_VAR} or ${ENV_VAR:-default} syntax
@@ -2519,6 +2520,7 @@ def validate_workflow_config(config: dict[str, Any]) -> list[str]:
         )
 
     errors.extend(_unsafe_node_name_errors(config.get("nodes")))
+    errors.extend(_unsafe_step_node_name_errors(config.get("steps")))
 
     # Validate each step (handle None value when key exists but has no value)
     steps = config.get("steps") or []
@@ -2543,6 +2545,27 @@ def _unsafe_node_name_errors(nodes: Any) -> list[str]:
         f"Workflow config: node name {name!r} must match {SAFE_NAME_RE.pattern}"
         for name in names
         if not SAFE_NAME_RE.match(str(name))
+    ]
+
+
+def _unsafe_step_node_name_errors(steps: Any) -> list[str]:
+    """A step's literal node name reaches the same host paths; URLs name remote
+    nodes and placeholders are checked once they resolve."""
+    names = []
+    for step in iter_steps(steps):
+        nodes = step.get("nodes")
+        refs = [step.get("node")] + ([nodes] if isinstance(nodes, str) else nodes or [])
+        names += [
+            ref
+            for ref in refs
+            if isinstance(ref, str)
+            and "{{" not in ref
+            and not ref.startswith(("http://", "https://"))
+        ]
+    return [
+        f"Workflow config: node name {name!r} must match {SAFE_NAME_RE.pattern}"
+        for name in names
+        if not SAFE_NAME_RE.match(name)
     ]
 
 

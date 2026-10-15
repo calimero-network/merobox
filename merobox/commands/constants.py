@@ -174,6 +174,7 @@ PID_FILE_DIR = os.path.join(DEFAULT_DATA_DIR_PREFIX, ".pids")  # binary-mode pid
 # Per-container logs, kept stable so CI can collect data/container-logs/*.log.
 CONTAINER_LOG_DIR = os.path.join(DEFAULT_DATA_DIR_PREFIX, "container-logs")
 RESTART_LOG_DIR_DEFAULT = "docker-logs"  # restart_container's log snapshots
+CONTAINER_HOME = "/app/data"  # a node container's CALIMERO_HOME
 
 # Workflow node configuration - reserved keys
 # These keys in the nodes config dict are configuration parameters, not node names

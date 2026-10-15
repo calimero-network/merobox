@@ -1,11 +1,13 @@
 """What a workflow YAML may reach on the host that runs it."""
 
 import os
+import posixpath
 from collections.abc import Iterable
 from typing import Any, Optional
 
 from merobox.commands import safe_fs
 from merobox.commands.constants import (
+    CONTAINER_HOME,
     CONTAINER_LOG_DIR,
     DEFAULT_DATA_DIR_PREFIX,
     DEFAULT_IMAGE,
@@ -23,7 +25,6 @@ STEP_HOST_PATHS = {  # step keys naming a host path, opened from the cwd
     "upload_blob": ("file_path",),
     "download_blob": ("output_path",),
     "install_application": ("path",),
-    "node_exec": ("data_dir",),
     "script": ("script",),
 }
 STEP_WRITE_PATHS = {("download_blob", "output_path")}  # step keys merobox writes to
@@ -105,6 +106,7 @@ def check_host_access(
         *_remote_refusals(config, set(cli_remote_nodes)),
         *_image_refusals(config),
         *_path_refusals(config, workflow_dir),
+        *_node_exec_refusals(config, workflow_dir, cli_no_docker),
     ]
     if refused:
         raise ValueError(
@@ -174,12 +176,6 @@ def _host_process_refusals(
             for where, scope in _node_scopes(nodes)
             if scope.get("config_path")
         ]
-        refused += [
-            f"step '{step.get('name', step['type'])}' node_exec: runs merod on the "
-            "host with the step's arguments"
-            for step in _steps(config.get("steps"))
-            if step["type"] == "node_exec"
-        ]
     refused += [
         f"step '{step.get('name', step['type'])}' target local: runs a script "
         "as a host process"
@@ -199,6 +195,19 @@ def _remote_refusals(config: dict[str, Any], cli_names: set[str]) -> list[str]:
     ]
 
 
+def _node_exec_refusals(
+    config: dict[str, Any], workflow_dir: str, cli_no_docker: bool
+) -> list[str]:
+    binary = bool(cli_no_docker or config.get("no_docker"))
+    root, cwd = workflow_root(workflow_dir), os.getcwd()
+    return [
+        f"step '{step.get('name', step['type'])}' node_exec: {reason}"
+        for step in _steps(config.get("steps"))
+        if step["type"] == "node_exec"
+        for reason in node_exec_refusals(step, binary, root, cwd)
+    ]
+
+
 def _image_refusals(config: dict[str, Any]) -> list[str]:
     """Images the workflow picks for containers merobox runs as root."""
     topology = config.get("topology")
@@ -206,10 +215,6 @@ def _image_refusals(config: dict[str, Any]) -> list[str]:
     images = [
         (f"{where}.image", scope.get("image"))
         for where, scope in _node_scopes(config.get("nodes"))
-    ]
-    images += [
-        (f"step '{step.get('name', step['type'])}' image", step.get("image"))
-        for step in _steps(config.get("steps"))
     ]
     images += [
         ("auth_image", config.get("auth_image")),
@@ -294,11 +299,68 @@ def host_path_refusal(
     ok, _ = validate_path_within(joined, root, allow_parent_refs=True)
     if not ok:
         return f"'{path}' is outside {root}"
+    # A write or mount goes through the link, not where it points today.
+    if writes or mounts:
+        try:
+            safe_fs.refuse_symlinks(joined, root)
+        except safe_fs.SymlinkedPathError:
+            return f"'{path}' runs through a symlink"
     inside = os.path.relpath(os.path.realpath(joined), os.path.realpath(root))
     if mounts and inside == os.curdir:
         return f"'{path}' would mount the whole of {root}, .git included"
     reason = git_path_refusal(inside.split(os.sep), writes)
     return reason and f"'{path}' {reason}"
+
+
+def node_exec_refusals(
+    step: dict[str, Any], binary: bool, root: str, cwd: str
+) -> list[str]:
+    """Why an untrusted node_exec step may not run; the same check runs up front
+    on the YAML and in the step on its resolved values."""
+    refused = []
+    image = step.get("image")
+    if image and not str(image).startswith(TRUSTED_IMAGE_PREFIX):
+        refused.append(f"image '{image}' is not a Calimero image")
+    if binary:
+        refused.append("runs merod on the host with the step's arguments")
+    reason = host_path_refusal(step.get("data_dir"), root, cwd, mounts=True)
+    if reason:
+        refused.append(f"data_dir {reason}")
+    try:
+        targets = container_file_targets(step.get("files") or {})
+    except ValueError as error:
+        return refused + [f"files: {error}"]
+    for relative in targets:
+        reason = git_path_refusal(relative.split("/"), writes=True)
+        if reason:
+            refused.append(f"files: '{relative}' {reason}")
+    return refused
+
+
+def container_file_targets(files: dict[str, Any]) -> dict[str, Any]:
+    """Each `/app/data/...` input file keyed by the normalised path below the node
+    home it is written to; ValueError for any target that is not such a file."""
+    targets = {}
+    for container_path, content in files.items():
+        container_path = str(container_path)
+        relative = posixpath.normpath(container_path[len(CONTAINER_HOME) + 1 :])
+        if (
+            not container_path.startswith(f"{CONTAINER_HOME}/")
+            or "\\" in container_path
+            or relative in (posixpath.curdir, posixpath.pardir)
+            or relative.startswith(("/", posixpath.pardir + "/"))
+        ):
+            raise ValueError(
+                f"'{container_path}' is not a file under {CONTAINER_HOME}, so merod "
+                "would not see it"
+            )
+        targets[relative] = content
+    return targets
+
+
+def iter_steps(value: Any):
+    """Every step under `value`, including those nested in parallel and repeat."""
+    yield from _steps(value)
 
 
 def git_path_refusal(parts: list[str], writes: bool) -> Optional[str]:

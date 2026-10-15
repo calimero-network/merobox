@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import os
 import textwrap
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -997,3 +998,135 @@ def test_executor_applies_the_host_access_check_itself(tmp_path):
             MagicMock(binary_path=None),
             workflow_dir=str(tmp_path),
         )
+
+
+def exec_step(tmp_path, monkeypatch, **config):
+    """An untrusted node_exec step against `<tmp>/data/n`, Docker mode, node stopped."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data" / "n").mkdir(parents=True, exist_ok=True)
+    manager = MagicMock(binary_path=None)
+    manager.is_node_running.return_value = False
+    step_ = NodeExecStep(
+        {"type": "node_exec", "node": "n", "args": ["x"], "data_dir": "data", **config},
+        manager=manager,
+        host_root=str(tmp_path),
+    )
+    return step_, manager
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/app/data/a/../.git/config",
+        "/app/data//HEAD",
+        "/app/data/x\\y",
+        "/app/data",
+        "/app/data/",
+        "/app/data/../escape",
+        "/app/datax/f",
+    ],
+)
+def test_node_exec_refuses_input_targets_before_running(tmp_path, monkeypatch, target):
+    step_, manager = exec_step(tmp_path, monkeypatch, files={target: "s"})
+    assert not asyncio.run(step_.execute({}, {}))
+    manager.is_node_running.assert_not_called()
+
+
+def test_node_exec_writes_input_files_where_it_validated_them(tmp_path, monkeypatch):
+    step_, manager = exec_step(
+        tmp_path, monkeypatch, files={"/app/data/in//phrase.txt": "s"}
+    )
+    seen = {}
+
+    def create(**kwargs):
+        home = next(iter(kwargs["volumes"]))
+        seen["content"] = (Path(home) / "in" / "phrase.txt").read_text()
+        return MagicMock(
+            **{"wait.return_value": {"StatusCode": 0}, "logs.return_value": b""}
+        )
+
+    manager.client.containers.create.side_effect = create
+    manager.client.containers.get.side_effect = Exception("gone")
+    manager.node_images = {"n": "ghcr.io/calimero-network/merod:edge"}
+    assert asyncio.run(step_.execute({}, {}))
+    assert seen["content"] == "s\n"
+    assert not (tmp_path / "data" / "n" / "in" / "phrase.txt").exists()
+
+
+def test_node_exec_input_dirs_are_not_created_through_a_symlink(tmp_path, monkeypatch):
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "data" / "n").mkdir(parents=True)
+    # data_dir `data` is the home node_exec hands merod, so /app/data/x is data/x.
+    os.symlink(tmp_path / "outside", tmp_path / "data" / "x")
+    step_, manager = exec_step(tmp_path, monkeypatch, files={"/app/data/x/y/f": "s"})
+    manager.client.containers.get.side_effect = Exception("gone")
+    manager.node_images = {"n": "ghcr.io/calimero-network/merod:edge"}
+    assert not asyncio.run(step_.execute({}, {}))
+    assert os.listdir(tmp_path / "outside") == []
+    manager.client.containers.create.assert_not_called()
+
+
+def test_node_exec_refuses_a_non_calimero_image_at_run_time(tmp_path, monkeypatch):
+    step_, manager = exec_step(tmp_path, monkeypatch, image="alpine")
+    assert not asyncio.run(step_.execute({}, {}))
+    manager.is_node_running.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "extra,key",
+    [
+        ("    files:\n      /app/data/.git/config: x\n", "files"),
+        ("    files:\n      /app/data/../escape: x\n", "files"),
+    ],
+)
+def test_node_exec_inputs_are_refused_up_front_too(run, extra, key):
+    steps = step("node_exec", args="[account, export]") + extra
+    assert_refused(run(NODES + "steps:\n" + steps), key)
+
+
+def test_node_exec_node_name_is_refused_up_front_too(run):
+    steps = step("node_exec", args="[x]").replace(
+        "node: calimero-node-1", "node: ../../escape"
+    )
+    ok, executor, _, printed = run(NODES + "steps:\n" + steps, trust_workflow=True)
+    assert not ok and "node name" in printed
+    executor.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["../../outside", ".git", "sub"],
+    ids=["points-outside", "points-at-dot-git", "points-inside"],
+)
+def test_write_paths_through_a_symlink_in_the_checkout_are_refused(
+    run, git_repo, tmp_path, target
+):
+    repo = tmp_path / "repo"
+    (tmp_path / "outside").mkdir()
+    (repo / ".git").unlink()
+    (repo / ".git").mkdir()
+    (repo / "sub").mkdir()
+    os.symlink(target, repo / "link")
+    steps = step("download_blob", blob_id="b", output_path="link/config.bin")
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd="repo"),
+        "output_path",
+    )
+
+
+def test_a_step_refuses_to_write_through_a_symlink_inside_the_root(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "sub").mkdir()
+    os.symlink("sub", tmp_path / "link")
+    download = AsyncMock(return_value={"success": True, "data": b"x"})
+    ok, _ = run_step(
+        DownloadBlobStep,
+        {"type": "download_blob", "node": "n", "blob_id": "b", "output_path": "{{o}}"},
+        {"o": "link/out.bin"},
+        str(tmp_path),
+        _download_blob_from_node=download,
+    )
+    assert not ok
+    download.assert_not_called()
