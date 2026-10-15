@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import sys
 import time
 import uuid
@@ -18,6 +17,7 @@ import requests
 from rich.console import Console
 from rich.table import Table
 
+from merobox.commands import safe_fs
 from merobox.commands.auth import fetch_access_token_blocking
 from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
@@ -129,7 +129,7 @@ def _dump_container_log(container, container_name: str, log_dir: str) -> bool:
     try:
         log_content = container.logs(timestamps=True).decode("utf-8", errors="replace")
         log_file = os.path.join(log_dir, f"{container_name}.log")
-        with open(log_file, "w") as f:
+        with safe_fs.open_for_write(log_file) as f:
             f.write(log_content)
         return True
     except Exception:
@@ -201,7 +201,7 @@ def _dump_container_state(
             "finished_at": state.get("FinishedAt"),
         }
         state_file = os.path.join(log_dir, f"{container_name}.state.json")
-        with open(state_file, "w") as f:
+        with safe_fs.open_for_write(state_file) as f:
             json.dump(summary, f, indent=2, sort_keys=True)
         return summary
     except Exception:
@@ -588,7 +588,7 @@ class DockerManager(CleanupMixin):
 
                 config_dest = os.path.join(node_data_dir, "config.toml")
                 try:
-                    shutil.copy2(config_source, config_dest)
+                    safe_fs.copy_file(config_source, config_dest)
                     console.print(
                         f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
                     )

@@ -198,7 +198,8 @@ def _path_refusals(config: dict[str, Any], workflow_dir: str) -> list[str]:
             if is_step and "{{" in str(path):
                 continue
             writes = (scope.get("type"), key) in STEP_WRITE_PATHS
-            reason = host_path_refusal(path, root, relative_to, writes)
+            mounts = key == "data_dir"
+            reason = host_path_refusal(path, root, relative_to, writes, mounts)
             if reason:
                 refused.append(f"{where} {key}: {reason}")
     return refused
@@ -226,10 +227,10 @@ def _holds_home(root: str) -> bool:
 
 
 def host_path_refusal(
-    path: Any, root: str, relative_to: str, writes: bool = False
+    path: Any, root: str, relative_to: str, writes: bool = False, mounts: bool = False
 ) -> Optional[str]:
-    """Why `path`, opened from `relative_to` (and written if `writes`), may not be
-    used under `root`; None if it may. A placeholder cannot be checked."""
+    """Why `path`, opened from `relative_to` (written if `writes`, bind-mounted if
+    `mounts`), may not be used under `root`; None if it may."""
     if path is None:
         return None
     path = os.path.expanduser(str(path))
@@ -241,20 +242,23 @@ def host_path_refusal(
     ok, _ = validate_path_within(joined, root, allow_parent_refs=True)
     if not ok:
         return f"'{path}' is outside {root}"
-    # Git runs code from these (fsmonitor, hooks, filters) and .git holds the
-    # checkout token; names are lowered for case-insensitive filesystems.
-    parts = [
-        part.lower()
-        for part in os.path.relpath(
-            os.path.realpath(joined), os.path.realpath(root)
-        ).split(os.sep)
-    ]
+    inside = os.path.relpath(os.path.realpath(joined), os.path.realpath(root))
+    if mounts and inside == os.curdir:
+        return f"'{path}' would mount the whole of {root}, .git included"
+    reason = git_path_refusal(inside.split(os.sep), writes)
+    return reason and f"'{path}' {reason}"
+
+
+def git_path_refusal(parts: list[str], writes: bool) -> Optional[str]:
+    """Why the path made of `parts` must not be used (written if `writes`) inside
+    a checkout; None if it may. Git runs code from what these names hold."""
+    parts = [part.lower() for part in parts]  # case-insensitive filesystems
     if GIT_CONTROL_NAMES.intersection(parts):
-        return f"'{path}' is a git control file or inside .git"
+        return "is a git control file or inside .git"
     if writes and (
         parts[-1] in GIT_LAYOUT_FILES or GIT_LAYOUT_DIRS.intersection(parts[:-1])
     ):
-        return f"'{path}' could plant a git directory"
+        return "could plant a git directory"
     return None
 
 

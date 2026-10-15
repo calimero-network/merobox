@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from rich.markup import escape
 
+from merobox.commands import safe_fs
 from merobox.commands.bootstrap.config import validate_workflow_step
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
@@ -84,7 +85,7 @@ class InstallApplicationStep(BaseStep):
         try:
             os.makedirs(container_data_dir, exist_ok=True)
             container_file_path = os.path.join(container_data_dir, filename)
-            shutil.copy2(source_path, container_file_path)
+            safe_fs.copy_file(source_path, container_file_path)
             console.print(
                 f"[blue]Copied file to container data directory: {container_file_path}[/blue]"
             )

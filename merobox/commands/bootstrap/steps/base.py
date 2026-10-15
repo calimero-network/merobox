@@ -93,7 +93,9 @@ class BaseStep:
         self._validate_expected_error()
         self._expected_error = self.config.get("expected_error")
 
-    def _refuse_host_path(self, key: str, path: Any, writes: bool = False) -> bool:
+    def _refuse_host_path(
+        self, key: str, path: Any, writes: bool = False, mounts: bool = False
+    ) -> bool:
         """Report and return True if this step may not open (or, with `writes`,
         write) the host `path` it read from `key`. Pass the value it will use."""
         if self.host_root is None or path is None:
@@ -101,7 +103,7 @@ class BaseStep:
         reason = (
             "cannot be checked: the step was given no confinement root"
             if self.host_root is ROOT_NOT_GIVEN
-            else host_path_refusal(path, self.host_root, os.getcwd(), writes)
+            else host_path_refusal(path, self.host_root, os.getcwd(), writes, mounts)
         )
         if reason:
             console.print(

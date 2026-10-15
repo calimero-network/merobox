@@ -23,6 +23,7 @@ from typing import Any
 
 import aiohttp
 
+from merobox.commands import safe_fs
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
     reinject_nat_default_route,
@@ -261,7 +262,7 @@ class RestartContainerStep(BaseStep):
             log_text = str(log_bytes)
 
         try:
-            with open(log_path, "w", encoding="utf-8") as f:
+            with safe_fs.open_for_write(log_path) as f:
                 f.write(log_text)
         except OSError as exc:
             console.print(

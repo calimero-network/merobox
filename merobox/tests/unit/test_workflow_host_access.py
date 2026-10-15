@@ -916,3 +916,49 @@ def test_cli_remote_auth_alone_does_not_unlock_a_registry_node(user_registry):
     resolver = resolver_for({"name": "t", "remote_nodes": {"prod": auth}})
     with pytest.raises(NodeResolutionError, match="--trust-workflow"):
         resolver.resolve_sync("prod", skip_auth=True)
+
+
+@pytest.mark.parametrize(
+    "target", ["/app/data/x/.git/config", "/app/data/HEAD", "/app/data/refs/heads/m"]
+)
+def test_node_exec_input_files_follow_the_git_rules(tmp_path, monkeypatch, target):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data" / "n").mkdir(parents=True)
+    manager = MagicMock(binary_path=None)
+    manager.is_node_running.return_value = False
+    step_ = NodeExecStep(
+        {
+            "type": "node_exec",
+            "node": "n",
+            "args": ["x"],
+            "data_dir": "data",
+            "files": {target: "pwned"},
+        },
+        manager=manager,
+        host_root=str(tmp_path),
+    )
+    assert not asyncio.run(step_.execute({}, {}))
+    manager.client.containers.create.assert_not_called()
+    assert not list((tmp_path / "data").rglob("config")) + list(
+        (tmp_path / "data").rglob("HEAD")
+    )
+
+
+def test_node_exec_data_dir_may_not_be_the_root(run, git_repo):
+    steps = step("node_exec", args="[account, export]", data_dir=".")
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd="repo"),
+        "data_dir",
+    )
+
+
+def test_node_exec_refuses_the_root_as_data_dir_at_run_time(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    manager = MagicMock(binary_path=None)
+    step_ = NodeExecStep(
+        {"type": "node_exec", "node": "n", "args": ["x"], "data_dir": "."},
+        manager=manager,
+        host_root=str(tmp_path),
+    )
+    assert not asyncio.run(step_.execute({}, {}))
+    manager.is_node_running.assert_not_called()

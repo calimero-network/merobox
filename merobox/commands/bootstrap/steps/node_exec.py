@@ -34,10 +34,11 @@ from typing import Any, Optional
 
 from rich.markup import escape
 
+from merobox.commands import safe_fs
 from merobox.commands.bootstrap.steps._docker_utils import is_binary_mode
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import SAFE_NAME_RE
-from merobox.commands.host_access import TRUST_WORKFLOW_FLAG
+from merobox.commands.host_access import TRUST_WORKFLOW_FLAG, git_path_refusal
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -268,8 +269,7 @@ class NodeExecStep(BaseStep):
         written = []
         for host_path, content in targets.items():
             os.makedirs(os.path.dirname(host_path), mode=0o700, exist_ok=True)
-            fd = os.open(host_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with open(fd, "w", encoding="utf-8") as handle:
+            with safe_fs.open_for_write(host_path, perms=0o600) as handle:
                 handle.write(content if content.endswith("\n") else content + "\n")
             os.chmod(host_path, 0o600)
             written.append(host_path)
@@ -367,8 +367,18 @@ class NodeExecStep(BaseStep):
         if not SAFE_NAME_RE.match(node_name):
             console.print(f"[red]node_exec: unsafe node name {node_name!r}[/red]")
             return False
-        if self._refuse_host_path("data_dir", self.config.get("data_dir")):
+        if self._refuse_host_path("data_dir", self.config.get("data_dir"), mounts=True):
             return False
+        if self.host_root is not None:
+            for target in files:
+                reason = git_path_refusal(target.split("/"), writes=True)
+                if reason:
+                    console.print(
+                        f"[red]node_exec: input file {escape(target)} {reason}; "
+                        f"rerun with {TRUST_WORKFLOW_FLAG} if you trust this "
+                        "workflow[/red]"
+                    )
+                    return False
 
         binary = is_binary_mode(self.manager)
         # In binary mode the args reach a host merod, so only a trusted run (None).
@@ -408,7 +418,7 @@ class NodeExecStep(BaseStep):
                 # An input is often a recovery phrase, which must not outlive the command.
                 for path in written:
                     with contextlib.suppress(FileNotFoundError):
-                        os.remove(path)
+                        safe_fs.remove(path)
 
             if exit_code != 0:
                 raise RuntimeError(

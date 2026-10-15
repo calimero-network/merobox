@@ -5,7 +5,6 @@ Binary Manager - Manages Calimero nodes as native processes (no Docker).
 import os
 import re
 import shlex
-import shutil
 import signal
 import socket
 import subprocess
@@ -17,6 +16,7 @@ from typing import Optional
 
 from rich.console import Console
 
+from merobox.commands import safe_fs
 from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
     apply_bootstrap_nodes,
@@ -248,24 +248,24 @@ class BinaryManager(CleanupMixin):
 
     def _save_pid(self, node_name: str, pid: int):
         """Save process PID to file."""
-        pid_file = self._get_pid_file(node_name)
-        pid_file.write_text(str(pid))
+        with safe_fs.open_for_write(self._get_pid_file(node_name)) as f:
+            f.write(str(pid))
 
     def _load_pid(self, node_name: str) -> Optional[int]:
         """Load process PID from file."""
         pid_file = self._get_pid_file(node_name)
-        if pid_file.exists():
-            try:
-                return int(pid_file.read_text().strip())
-            except (ValueError, OSError):
-                return None
-        return None
+        try:
+            # A pid read through a symlink could name any process to signal.
+            safe_fs.refuse_symlinks(pid_file)
+            return int(pid_file.read_text().strip())
+        except (ValueError, OSError):
+            return None
 
     def _remove_pid_file(self, node_name: str):
         """Remove PID file."""
         pid_file = self._get_pid_file(node_name)
-        if pid_file.exists():
-            pid_file.unlink()
+        if pid_file.exists() or pid_file.is_symlink():
+            safe_fs.remove(pid_file)
 
     def _is_process_running(self, pid: int) -> bool:
         """Check if a process with given PID is running."""
@@ -356,7 +356,7 @@ class BinaryManager(CleanupMixin):
                 config_dest_dir.mkdir(parents=True, exist_ok=True)
                 config_dest = config_dest_dir / "config.toml"
                 try:
-                    shutil.copy2(config_source, config_dest)
+                    safe_fs.copy_file(config_source, config_dest)
                     console.print(
                         f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
                     )
@@ -420,7 +420,7 @@ class BinaryManager(CleanupMixin):
                     # ports merobox assigned.
                     if init_args:
                         init_cmd.extend(init_args)
-                    with open(log_file, "a", encoding="utf-8") as log_f:
+                    with safe_fs.open_for_write(log_file, append=True) as log_f:
                         try:
                             subprocess.run(
                                 init_cmd,
@@ -520,7 +520,7 @@ class BinaryManager(CleanupMixin):
                 # For e2e mode, don't create new session to match e2e test behavior
                 # (process should be managed together with parent, not detached)
                 # For regular mode, create new session so process survives parent death
-                with open(log_file, "a", encoding="utf-8") as log_f:
+                with safe_fs.open_for_write(log_file, append=True) as log_f:
                     popen_kwargs = {
                         "env": env,
                         # Windows keeps the write end so it can be closed to ask
