@@ -131,7 +131,7 @@ with only `remote_nodes` runs in remote-only mode (no local node lifecycle).
 so `bootstrap run` refuses it unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). To run a workflow you did
 not write against your own servers, register them on the CLI with
 `--remote-node name=url` instead; the same applies to a step whose `node:` is a
-URL.
+URL or a node from your `merobox remote` registry.
 
 ```yaml
 remote_nodes:

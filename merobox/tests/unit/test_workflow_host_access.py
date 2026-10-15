@@ -12,6 +12,7 @@ from merobox import testing
 from merobox.commands.bootstrap.run import run as run_module
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.errors import NodeResolutionError
+from merobox.commands.remote_nodes import RemoteNodeManager
 
 bootstrap_module = importlib.import_module("merobox.commands.bootstrap.bootstrap")
 
@@ -245,6 +246,40 @@ def test_yaml_step_paths_inside_the_workflow_dir_need_no_trust(run):
 def test_yaml_step_host_access_runs_when_trusted(run):
     ok, *_ = run(NODES + "steps:\n" + UPLOAD_OUTSIDE, trust_workflow=True)
     assert ok
+
+
+@pytest.fixture
+def user_registry(empty_registry):
+    """The user's own registry already holds `prod`, as `merobox remote register` leaves it."""
+    RemoteNodeManager().register("prod", "https://prod.example")
+
+
+@pytest.mark.parametrize("ref", ["prod", "https://prod.example"])
+def test_step_naming_a_user_registry_node_is_refused(user_registry, ref):
+    with pytest.raises(NodeResolutionError, match="--trust-workflow"):
+        resolver_for({"name": "t"}).resolve_sync(ref, skip_auth=True)
+
+
+@pytest.mark.parametrize("ref", ["prod", "https://prod.example"])
+def test_step_naming_a_user_registry_node_resolves_when_trusted(user_registry, ref):
+    resolver = resolver_for({"name": "t"}, trust_workflow=True)
+    assert resolver.resolve_sync(ref, skip_auth=True).node_name == "prod"
+
+
+def test_step_naming_a_cli_remote_node_needs_no_trust(user_registry):
+    remote = {"prod": {"url": "https://prod.example", "auth": {"method": "none"}}}
+    resolver = resolver_for({"name": "t", "remote_nodes": remote})
+    assert resolver.resolve_sync("prod", skip_auth=True).url == "https://prod.example"
+
+
+def test_local_node_shadowed_by_a_user_registry_name_still_resolves(user_registry):
+    resolver = resolver_for({"name": "t"})
+    resolver.docker_manager = object()
+    with patch.object(
+        resolver, "_resolve_docker_node", return_value="http://localhost:2528"
+    ):
+        resolved = resolver.resolve_sync("prod", skip_auth=True)
+    assert (resolved.source, resolved.url) == ("docker", "http://localhost:2528")
 
 
 @pytest.fixture

@@ -258,6 +258,7 @@ A workflow file is often written by someone other than the person running it, so
 | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | `no_docker`, `binary_path`                                               | Runs a host process.                                            |
 | `remote_nodes`, or a step `node:` that is an `http(s)://` URL            | Sends requests, files and credentials to a server the workflow names. |
+| A step `node:` naming a node in your `merobox remote` registry           | Acts on your real node with your cached token.                 |
 | `nodes.image`, a per-node `image`, `node_exec.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as root with a host directory mounted. |
 | `data_dir`, `config_path` (shared or per-node), `node_exec.data_dir`     | Mounts or copies a host path into a node.                       |
 | `upload_blob.file_path`, `install_application.path`, `download_blob.output_path` | Reads or writes a host file.                            |

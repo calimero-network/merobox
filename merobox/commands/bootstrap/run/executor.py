@@ -2140,19 +2140,19 @@ class WorkflowExecutor:
             self.resolver = get_resolver(
                 docker_manager=None,
                 binary_manager=None,
-                allow_direct_urls=self.trust_workflow,
+                only_registered_this_run=not self.trust_workflow,
             )
         elif self.is_binary_mode:
             self.resolver = get_resolver(
                 docker_manager=None,
                 binary_manager=self.manager,
-                allow_direct_urls=self.trust_workflow,
+                only_registered_this_run=not self.trust_workflow,
             )
         else:
             self.resolver = get_resolver(
                 docker_manager=self.manager,
                 binary_manager=None,
-                allow_direct_urls=self.trust_workflow,
+                only_registered_this_run=not self.trust_workflow,
             )
 
         # Register remote nodes from workflow config
