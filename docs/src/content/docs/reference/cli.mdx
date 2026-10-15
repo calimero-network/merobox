@@ -252,7 +252,7 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 #### Trusting a workflow
 
 A workflow file is often written by someone other than the person running it.
-By default `bootstrap run` refuses the keys below, which run host processes, contact servers, run images from outside Calimero, or open host paths outside the workflow's checkout (the git checkout holding the workflow file, or its directory when it is not in one).
+By default `bootstrap run` refuses the keys below, which run host processes, contact servers, run images from outside Calimero, or open host paths outside the workflow's checkout (the git checkout holding the workflow file below your home directory, or the workflow's own directory when it is not in one).
 The refusal comes before any node starts and names each key; pass `--trust-workflow` to allow them.
 `bootstrap validate` lists the same keys.
 
@@ -267,12 +267,14 @@ The refusal comes before any node starts and names each key; pass `--trust-workf
 | `nodes.image`, a per-node `image`, `node_exec.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as root with a host directory mounted. |
 | `auth_image`, `topology.boot_node.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as a long-lived container on your Docker host. |
 | `data_dir`, `config_path` (shared or per-node), `node_exec.data_dir`     | Mounts or copies a host path into a node.                       |
-| `upload_blob.file_path`, `install_application.path`, `download_blob.output_path` | Reads or writes a host file.                            |
+| `upload_blob.file_path`, `install_application.path`, `download_blob.output_path`, `script` | Reads or writes a host file.                            |
 
 The path keys are accepted without the flag when they resolve inside the workflow's checkout; `..` is fine as long as the result stays inside.
+Even inside it, a path may not name a git control file (`.git`, `.gitmodules`, `.gitattributes`, `.gitconfig`, at any depth and any case), and a written path may not be a `HEAD`, `config` or `packed-refs` file or sit under `objects/`, `refs/` or `hooks/`, since git would run code from either.
+A workflow whose directory is your home directory, or above it, gets no host paths at all without the flag.
 Each step checks the exact path it is about to open, after `{{placeholders}}` resolve.
 The same settings given as CLI flags (`--no-docker`, `--binary-path`, `--image`, `--remote-node`) are yours and need no trust.
-Node names and `nodes.prefix` must be a single path component (`[A-Za-z0-9][A-Za-z0-9_.-]*`) whatever you pass.
+Node names, wherever a workflow gives them (`nodes`, `nodes.prefix`, a step's `node:` or `nodes:`), must be a single path component (`[A-Za-z0-9][A-Za-z0-9_.-]*`) whatever you pass.
 The Python API takes the same opt-in as `merobox.testing.workflow(..., trust_workflow=True)`.
 
 <Aside type="caution" title="Local scripts are host code">
