@@ -75,28 +75,80 @@ def check_host_access(
     """Raise ValueError naming every YAML key that reaches the host outside
     `workflow_root(workflow_dir)`. Keys the CLI already overrides are not the
     YAML's choice."""
-    root = workflow_root(workflow_dir)
+    refused = [
+        *_host_process_refusals(config, cli_no_docker, cli_binary_path),
+        *_remote_refusals(config),
+        *_image_refusals(config),
+        *_path_refusals(config, workflow_dir),
+    ]
+    if refused:
+        raise ValueError(
+            "This workflow asks for access to the host outside its directory; "
+            f"rerun with {TRUST_WORKFLOW_FLAG} if you trust it:\n  - "
+            + "\n  - ".join(refused)
+        )
+
+
+def _host_process_refusals(
+    config: dict[str, Any], cli_no_docker: bool, cli_binary_path: bool
+) -> list[str]:
     refused = []
     if config.get("no_docker") and not cli_no_docker:
         refused.append("no_docker: runs merod as a host process")
     if config.get("binary_path") and not cli_binary_path:
         refused.append(f"binary_path: runs the host binary '{config['binary_path']}'")
-    if config.get("remote_nodes"):
-        refused.append(
-            "remote_nodes: sends requests, files and ${ENV} credentials to "
-            f"{', '.join(map(str, config['remote_nodes']))}, and saves them to "
-            "your remote node registry"
-        )
     nodes = config.get("nodes")
     # In binary mode these flags reach a host merod; any of them may bind or write.
     binary_mode = cli_no_docker or config.get("no_docker")
     if binary_mode and isinstance(nodes, dict) and nodes.get("init_args"):
         refused.append("nodes.init_args: passes flags to merod on the host")
+    return refused
+
+
+def _remote_refusals(config: dict[str, Any]) -> list[str]:
+    if not config.get("remote_nodes"):
+        return []
+    return [
+        "remote_nodes: sends requests, files and ${ENV} credentials to "
+        f"{', '.join(map(str, config['remote_nodes']))}, and saves them to "
+        "your remote node registry"
+    ]
+
+
+def _image_refusals(config: dict[str, Any]) -> list[str]:
+    """Images the workflow picks for containers merobox runs as root."""
+    topology = config.get("topology")
+    boot_node = topology.get("boot_node") if isinstance(topology, dict) else None
+    images = [
+        (f"{where}.image", scope.get("image"))
+        for where, scope in _node_scopes(config.get("nodes"))
+    ]
+    images += [
+        (f"step '{step.get('name', step['type'])}' image", step.get("image"))
+        for step in _steps(config.get("steps"))
+    ]
+    images += [
+        ("auth_image", config.get("auth_image")),
+        (
+            "topology.boot_node.image",
+            boot_node.get("image") if isinstance(boot_node, dict) else None,
+        ),
+    ]
+    return [
+        f"{where}: runs '{image}', which is not a Calimero image "
+        f"({TRUSTED_IMAGE_PREFIX}*)"
+        for where, image in images
+        if image and not str(image).startswith(TRUSTED_IMAGE_PREFIX)
+    ]
+
+
+def _path_refusals(config: dict[str, Any], workflow_dir: str) -> list[str]:
+    root = workflow_root(workflow_dir)
     cwd = os.getcwd()
     # Each scope: where it sits, its keys, and where merobox resolves its paths from.
     scopes = [
         (where, scope, {"data_dir": cwd, "config_path": workflow_dir})
-        for where, scope in _node_scopes(nodes)
+        for where, scope in _node_scopes(config.get("nodes"))
     ] + [
         (
             f"step '{step.get('name', step['type'])}'",
@@ -105,14 +157,9 @@ def check_host_access(
         )
         for step in _steps(config.get("steps"))
     ]
+    refused = []
     for where, scope, paths in scopes:
         is_step = where.startswith("step ")
-        image = scope.get("image")
-        if image and not str(image).startswith(TRUSTED_IMAGE_PREFIX):
-            refused.append(
-                f"{where} image: runs '{image}' as root with a host directory "
-                f"mounted (only {TRUSTED_IMAGE_PREFIX}* images are trusted)"
-            )
         for key, relative_to in paths.items():
             path = strip_literal_quotes(scope.get(key))
             # A step re-checks its paths once placeholders resolve.
@@ -121,12 +168,7 @@ def check_host_access(
             reason = host_path_refusal(path, root, relative_to)
             if reason:
                 refused.append(f"{where} {key}: {reason}")
-    if refused:
-        raise ValueError(
-            "This workflow asks for access to the host outside its directory; "
-            f"rerun with {TRUST_WORKFLOW_FLAG} if you trust it:\n  - "
-            + "\n  - ".join(refused)
-        )
+    return refused
 
 
 def workflow_root(workflow_dir: str) -> str:

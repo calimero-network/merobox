@@ -56,7 +56,7 @@ steps:
 | `wait_timeout` | no | int (`60`) | Default timeout (seconds) for waiting operations. |
 | `force_pull_image` | no | bool (`false`) | Re-pull Docker images before the run (Docker mode only). |
 | `auth_service` | no | bool (`false`) | Run a mero-auth container behind a Traefik proxy (Docker mode only). |
-| `auth_image` | no | string | Custom auth-service image. |
+| `auth_image` | no | string | Custom auth-service image. Images outside `ghcr.io/calimero-network/` need [`--trust-workflow`](/reference/cli/#trusting-a-workflow); so does such a `topology.boot_node.image`. |
 | `auth_use_cached` | no | bool (`false`) | Use a cached auth frontend. |
 | `webui_use_cached` | no | bool (`false`) | Use a cached WebUI frontend. |
 | `auth_mode` | no | string | Node auth mode, e.g. `embedded`, enabling [`login`](#login)/[`refresh`](#refresh)/[`ws_connect`](#ws_connect) steps. |

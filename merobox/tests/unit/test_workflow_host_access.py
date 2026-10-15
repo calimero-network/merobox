@@ -520,3 +520,30 @@ def test_node_names_that_are_paths_are_refused_even_when_trusted(
     assert not ok
     assert "node name" in printed
     executor.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "yaml_text,key",
+    [
+        ("auth_image: evil.example/mero-auth\n", "auth_image"),
+        (
+            "topology:\n  type: nat\n  boot_node:\n    image: evil.example/boot\n",
+            "topology.boot_node.image",
+        ),
+        (
+            "topology:\n  type: bootstrap\n  boot_node:\n    image: alpine\n",
+            "topology.boot_node.image",
+        ),
+    ],
+)
+def test_yaml_service_images_outside_calimero_are_refused(run, yaml_text, key):
+    assert_refused(run(NODES + yaml_text), key)
+
+
+def test_yaml_calimero_service_images_need_no_trust(run):
+    ok, *_ = run(
+        NODES + "auth_image: ghcr.io/calimero-network/mero-auth:edge\n"
+        "topology:\n  type: nat\n  boot_node:\n"
+        "    image: ghcr.io/calimero-network/boot-node:latest\n"
+    )
+    assert ok

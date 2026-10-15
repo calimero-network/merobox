@@ -261,6 +261,7 @@ A workflow file is often written by someone other than the person running it, so
 | A step `node:` naming a node in your `merobox remote` registry           | Acts on your real node with your cached token.                 |
 | `nodes.init_args` in binary mode (`--no-docker`)                         | Passes flags such as `--server-host` or `--home` to a host `merod`. |
 | `nodes.image`, a per-node `image`, `node_exec.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as root with a host directory mounted. |
+| `auth_image`, `topology.boot_node.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as a long-lived container on your Docker host. |
 | `data_dir`, `config_path` (shared or per-node), `node_exec.data_dir`     | Mounts or copies a host path into a node.                       |
 | `upload_blob.file_path`, `install_application.path`, `download_blob.output_path` | Reads or writes a host file.                            |
 
