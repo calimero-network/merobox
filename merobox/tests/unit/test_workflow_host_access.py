@@ -165,6 +165,23 @@ def test_step_node_url_registered_on_the_cli_needs_no_trust(empty_registry):
     assert resolved.node_name == "prod"
 
 
+INIT_ARGS = NODES + "  init_args:\n    calimero-node-1: [--server-host, 0.0.0.0]\n"
+
+
+def test_yaml_init_args_in_binary_mode_are_refused(run):
+    assert_refused(run(INIT_ARGS, no_docker=True), "init_args")
+
+
+def test_yaml_init_args_in_binary_mode_run_when_trusted(run):
+    ok, *_ = run(INIT_ARGS, no_docker=True, trust_workflow=True)
+    assert ok
+
+
+def test_yaml_init_args_in_docker_mode_need_no_trust(run):
+    ok, *_ = run(INIT_ARGS)
+    assert ok
+
+
 def node(**keys):
     lines = "".join(f"    {k}: {v}\n" for k, v in keys.items())
     return f"nodes:\n  image: ghcr.io/calimero-network/merod:edge\n  n1:\n{lines}"

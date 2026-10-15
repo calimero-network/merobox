@@ -71,11 +71,16 @@ def check_host_access(
             f"{', '.join(map(str, config['remote_nodes']))}, and saves them to "
             "your remote node registry"
         )
+    nodes = config.get("nodes")
+    # In binary mode these flags reach a host merod; any of them may bind or write.
+    binary_mode = cli_no_docker or config.get("no_docker")
+    if binary_mode and isinstance(nodes, dict) and nodes.get("init_args"):
+        refused.append("nodes.init_args: passes flags to merod on the host")
     cwd = os.getcwd()
     # Each scope: where it sits, its keys, and where merobox resolves its paths from.
     scopes = [
         (where, scope, {"data_dir": cwd, "config_path": workflow_dir})
-        for where, scope in _node_scopes(config.get("nodes"))
+        for where, scope in _node_scopes(nodes)
     ] + [
         (
             f"step '{step.get('name', step['type'])}'",

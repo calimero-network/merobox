@@ -95,6 +95,7 @@ nodes:
 | `use_image_entrypoint` | no | bool (`false`) | Use the Docker image's entrypoint. |
 | `mdns` | no | bool | Force `discovery.mdns` on/off (set `false` to exercise the rendezvous/relay path). |
 | `network_admin` | no | bool (`true`) | Add `NET_ADMIN` capability so `inject_network_fault` works. |
+| `init_args` | no | map | Extra `merod init` flags keyed by full node name, appended after merobox's own. In binary mode they reach a host `merod`, so they need [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 
 ### Explicit mode
 
