@@ -143,3 +143,15 @@ def test_binary_config_copy_does_not_follow_a_symlink(repo):
     with patch("merobox.commands.binary_manager.subprocess"):
         manager.run_node("n", config_path="c.toml")
     assert victim(repo) == PRECIOUS
+
+
+def test_node_config_writes_leave_a_symlink_target_mode_alone(repo):
+    target = repo / "outside" / "victim"
+    target.write_text("[a]\nb = 0\n")
+    target.chmod(0o444)
+    (repo / "repo" / "n").mkdir()
+    os.symlink(target, repo / "repo" / "n" / "config.toml")
+    config_utils.apply_config_value(
+        str(repo / "repo" / "n" / "config.toml"), "n", "a.b", 1
+    )
+    assert target.stat().st_mode & 0o777 == 0o444

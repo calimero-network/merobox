@@ -86,6 +86,7 @@ def apply_bootstrap_nodes(
         set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
 
         # Ensure file is writable
+        safe_fs.refuse_symlinks(config_path)
         config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
 
         with safe_fs.open_for_write(config_path) as f:
@@ -121,6 +122,7 @@ def apply_config_value(
 
         set_nested_config(config, key, value)
 
+        safe_fs.refuse_symlinks(config_path)
         config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
         with safe_fs.open_for_write(config_path) as f:
             toml.dump(config, f)
@@ -341,6 +343,7 @@ def apply_e2e_defaults(
             set_nested_config(config, key, value)
 
         # Ensure file is writable
+        safe_fs.refuse_symlinks(config_path)
         config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
 
         # Write back to file
