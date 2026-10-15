@@ -151,10 +151,10 @@ merobox bootstrap create-sample
 merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
   --merod-args="--sync-strategy delta --state-sync-strategy hash"
 
-# Let the YAML reach the host outside its directory (refused by default):
-# no_docker/binary_path, remote_nodes, URL or user-registry nodes, non-Calimero
-# node images, init_args in binary mode, and data_dir/config_path/file_path/
-# output_path/install paths outside it
+# Allow YAML keys that reach the host (refused by default): no_docker/binary_path,
+# remote_nodes, URL or user-registry nodes, non-Calimero images, init_args in
+# binary mode, and data_dir/config_path/file_path/output_path/install paths
+# outside the git checkout holding the workflow. Script steps are not covered.
 merobox bootstrap run workflow.yml --trust-workflow
 ```
 

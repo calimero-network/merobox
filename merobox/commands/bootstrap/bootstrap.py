@@ -253,10 +253,12 @@ def bootstrap():
 @click.option(
     "--trust-workflow",
     is_flag=True,
-    help="Let the workflow YAML reach the host outside its own directory: run host "
-    "binaries (no_docker, binary_path), contact servers it names (remote_nodes, "
-    "URL nodes), use non-Calimero node images, and read or write paths outside the "
-    "workflow directory. Refused by default; pass only for workflows you trust.",
+    help="Allow workflow YAML keys that reach the host, refused by default: host "
+    "merod (no_docker, binary_path, init_args in binary mode), servers and registry "
+    "nodes it names (remote_nodes, URL nodes), non-Calimero images, and paths "
+    "outside the git checkout holding the workflow. Script steps always run local "
+    "code (confined to the current directory) and are not covered by this flag, "
+    "so review them before running a workflow.",
 )
 def run(
     config_file,

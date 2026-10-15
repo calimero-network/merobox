@@ -241,7 +241,7 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 | `--auth-username`          | —                | Username for embedded auth. Must be paired with `--auth-password`.      |
 | `--auth-password`          | —                | Password for embedded auth. Must be paired with `--auth-username`.      |
 | `--dry-run`                | off              | Validate the workflow (config, variables, node config) without executing. |
-| `--trust-workflow`         | off              | Let the workflow YAML reach the host outside its directory. See below.  |
+| `--trust-workflow`         | off              | Allow the workflow YAML keys listed below. Does not cover `script` steps. |
 
 <Aside type="note">
   `--auth-username` and `--auth-password` must be supplied together under
@@ -251,8 +251,10 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 
 #### Trusting a workflow
 
-A workflow file is often written by someone other than the person running it, so by default it cannot reach the host outside its own directory.
-`bootstrap run` refuses the workflow before starting any node, naming each key below, unless you pass `--trust-workflow`:
+A workflow file is often written by someone other than the person running it.
+By default `bootstrap run` refuses the keys below, which run host processes, contact servers, run images from outside Calimero, or open host paths outside the workflow's checkout (the git checkout holding the workflow file, or its directory when it is not in one).
+The refusal comes before any node starts and names each key; pass `--trust-workflow` to allow them.
+`bootstrap validate` lists the same keys.
 
 | YAML key                                                                 | Why it needs trust                                              |
 | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
@@ -265,9 +267,17 @@ A workflow file is often written by someone other than the person running it, so
 | `data_dir`, `config_path` (shared or per-node), `node_exec.data_dir`     | Mounts or copies a host path into a node.                       |
 | `upload_blob.file_path`, `install_application.path`, `download_blob.output_path` | Reads or writes a host file.                            |
 
-The path keys are accepted without the flag when they resolve inside the workflow file's directory; a `{{placeholder}}` in one of them is only known at run time, so it always needs the flag.
+The path keys are accepted without the flag when they resolve inside the workflow's checkout; `..` is fine as long as the result stays inside.
+Each step checks the exact path it is about to open, after `{{placeholders}}` resolve.
 The same settings given as CLI flags (`--no-docker`, `--binary-path`, `--image`, `--remote-node`) are yours and need no trust.
+Node names and `nodes.prefix` must be a single path component (`[A-Za-z0-9][A-Za-z0-9_.-]*`) whatever you pass.
 The Python API takes the same opt-in as `merobox.testing.workflow(..., trust_workflow=True)`.
+
+<Aside type="caution" title="Script steps are not covered">
+  A `script` step always runs its script as local code, on the host or in a node container, and `--trust-workflow` does not gate it.
+  Its only limit is that the script file must sit under the current directory.
+  Read every `script` step, and the script it names, before running a workflow you did not write.
+</Aside>
 
 ### bootstrap validate
 

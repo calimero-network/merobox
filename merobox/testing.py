@@ -130,7 +130,7 @@ def workflow(
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.
         wait_for_ready: Whether to wait for nodes to be ready after workflow execution.
-        trust_workflow: Let the YAML reach the host outside its directory, as
+        trust_workflow: Allow YAML keys that reach the host, as
             `bootstrap run --trust-workflow` does.
 
     Yields:

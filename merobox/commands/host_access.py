@@ -83,7 +83,7 @@ def check_host_access(
     ]
     if refused:
         raise ValueError(
-            "This workflow asks for access to the host outside its directory; "
+            "This workflow asks for host access that needs your consent; "
             f"rerun with {TRUST_WORKFLOW_FLAG} if you trust it:\n  - "
             + "\n  - ".join(refused)
         )

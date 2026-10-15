@@ -1,4 +1,4 @@
-"""A workflow YAML reaches the host outside its directory only with --trust-workflow."""
+"""Workflow YAML keys that reach the host are refused without --trust-workflow."""
 
 import asyncio
 import importlib

@@ -91,7 +91,7 @@ nodes:
 | `image` | no | string | Docker image for the nodes. Images outside `ghcr.io/calimero-network/` need [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `base_port` | no | int | Server port of the first node (increments). |
 | `base_rpc_port` | no | int | RPC port of the first node (increments). |
-| `config_path` | no | string | Shared `config.toml` for all nodes (skips init). Resolved from the workflow directory, and must stay inside it unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
+| `config_path` | no | string | Shared `config.toml` for all nodes (skips init). Resolved from the workflow directory, and must stay inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `use_image_entrypoint` | no | bool (`false`) | Use the Docker image's entrypoint. |
 | `mdns` | no | bool | Force `discovery.mdns` on/off (set `false` to exercise the rendezvous/relay path). |
 | `network_admin` | no | bool (`true`) | Add `NET_ADMIN` capability so `inject_network_fault` works. |
@@ -115,7 +115,7 @@ nodes:
 
 Per-node keys include `port`, `rpc_port`, `config_path` (per-node override),
 `image`, `data_dir`, and `mock_tee`. Explicit mode is mutually exclusive with
-`count`. A per-node `data_dir` must resolve inside the workflow directory unless
+`count`. A per-node `data_dir` must resolve inside the workflow's checkout unless
 you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow).
 
 :::caution
@@ -242,7 +242,7 @@ node is configured with. Name exactly one source: `path`, or `package` plus
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `node` | yes | string | Target node. |
-| `path` | no | string | Path to a local `.mpk` bundle, inside the workflow directory unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
+| `path` | no | string | Path to a local `.mpk` bundle, inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `package` | no | string | Registry package to install. |
 | `version` | no | string | Version of that package. |
 | `dev` | no | bool (`false`) | Accepted and ignored; a `path` install is always local. |
@@ -1020,7 +1020,7 @@ yields an opaque lock error several layers down, which reads like a node fault.
 | `args` | yes | list[string] | Subcommand and flags, e.g. `['account', 'export']`. |
 | `files` | no | map | `/app/data/…` path → contents, written into the node's home before running and removed once it exits. Other paths are refused. |
 | `capture` | no | map | Name → regex with one capturing group, pulled out of stdout. |
-| `data_dir` | no | string | The directory holding `<node>/config.toml`, when merobox has no record of it. Inside the workflow directory unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
+| `data_dir` | no | string | The directory holding `<node>/config.toml`, when merobox has no record of it. Inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `image` | no | string | Docker only: the image to run when the container is gone and merobox has no record. Outside `ghcr.io/calimero-network/` it needs [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `allow_running` | no | bool | Run even if the node is up. Unsafe for anything that opens the datastore. |
 | `expected_failure` | no | bool | Assert the command is refused rather than succeeding. |
@@ -1423,7 +1423,7 @@ Proposals are *created and approved* via ordinary [`call`](#call) steps
 
 Upload a file to a node's blob store. Fields: `node`, `file_path`, optional
 `context_id`. `file_path` is opened from the current directory and must resolve
-inside the workflow directory unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow); the same holds for
+inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow); the same holds for
 `download_blob`'s `output_path`.
 
 ```yaml

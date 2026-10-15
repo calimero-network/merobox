@@ -115,7 +115,7 @@ async def run_workflow(
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps
-        trust_workflow: Let the YAML reach the host outside its directory
+        trust_workflow: Allow YAML keys that reach the host (see --trust-workflow)
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -285,7 +285,7 @@ def run_workflow_sync(
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps
-        trust_workflow: Let the YAML reach the host outside its directory
+        trust_workflow: Allow YAML keys that reach the host (see --trust-workflow)
 
     Returns:
         True if workflow completed successfully, False otherwise
