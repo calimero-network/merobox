@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
-from merobox.commands.host_access import check_host_access
+from merobox.commands.host_access import check_host_access, check_state_dirs
 from merobox.commands.utils import (
     LOG_LEVEL_VERBOSE,
     console,
@@ -128,6 +128,7 @@ async def run_workflow(
         # Load configuration
         config = load_workflow_config(config_file)
         workflow_dir = os.path.dirname(os.path.abspath(config_file))
+        check_state_dirs(config)
         if not trust_workflow:
             check_host_access(
                 config,
@@ -222,6 +223,7 @@ async def run_workflow(
             dry_run=dry_run,
             merod_args=merod_args,
             trust_workflow=trust_workflow,
+            cli_remote_nodes=(cli_remote_nodes or {}).keys(),
         )
 
         # Execute workflow

@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib
+import os
 import textwrap
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -149,6 +150,8 @@ def empty_registry(tmp_path, monkeypatch):
 
 
 def resolver_for(config, **kwargs):
+    """The run's resolver, with any remote_nodes registered as the CLI's."""
+    kwargs.setdefault("cli_remote_nodes", (config.get("remote_nodes") or {}).keys())
     executor = WorkflowExecutor(config, None, **kwargs)
     executor._setup_resolver()
     return executor.resolver
@@ -962,3 +965,35 @@ def test_node_exec_refuses_the_root_as_data_dir_at_run_time(tmp_path, monkeypatc
     )
     assert not asyncio.run(step_.execute({}, {}))
     manager.is_node_running.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "state_dir",
+    [
+        "data",
+        "data/.pids",
+        "data/container-logs",
+        "docker-logs",
+        "data/calimero-node-1",
+        "data/calimero-node-1/calimero-node-1",
+    ],
+)
+@pytest.mark.parametrize("trusted", [False, True])
+def test_symlinked_state_dirs_refuse_the_run(run, tmp_path, state_dir, trusted):
+    (tmp_path / "outside").mkdir()
+    link = tmp_path / state_dir
+    link.parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(tmp_path / "outside", link)
+    ok, executor, binary, printed = run(NODES, trust_workflow=trusted)
+    assert not ok
+    assert state_dir in printed and "symlink" in printed
+    binary.assert_not_called()
+
+
+def test_executor_applies_the_host_access_check_itself(tmp_path):
+    with pytest.raises(ValueError, match="--trust-workflow"):
+        WorkflowExecutor(
+            {"name": "t", "remote_nodes": {"p": {"url": "https://p.example"}}},
+            MagicMock(binary_path=None),
+            workflow_dir=str(tmp_path),
+        )

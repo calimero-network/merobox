@@ -1,9 +1,20 @@
 """What a workflow YAML may reach on the host that runs it."""
 
 import os
+from collections.abc import Iterable
 from typing import Any, Optional
 
-from merobox.commands.constants import DEFAULT_IMAGE, SAFE_NAME_RE
+from merobox.commands import safe_fs
+from merobox.commands.constants import (
+    CONTAINER_LOG_DIR,
+    DEFAULT_DATA_DIR_PREFIX,
+    DEFAULT_IMAGE,
+    DEFAULT_NODE_PREFIX,
+    PID_FILE_DIR,
+    RESERVED_NODE_CONFIG_KEYS,
+    RESTART_LOG_DIR_DEFAULT,
+    SAFE_NAME_RE,
+)
 
 TRUST_WORKFLOW_FLAG = "--trust-workflow"
 ROOT_NOT_GIVEN = object()  # a step built without a root refuses host paths
@@ -85,12 +96,13 @@ def check_host_access(
     *,
     cli_no_docker: bool = False,
     cli_binary_path: bool = False,
+    cli_remote_nodes: Iterable[str] = (),
 ) -> None:
     """Raise ValueError naming every YAML key that needs --trust-workflow; keys
     the CLI already overrides are the runner's choice, not the YAML's."""
     refused = [
         *_host_process_refusals(config, cli_no_docker, cli_binary_path),
-        *_remote_refusals(config),
+        *_remote_refusals(config, set(cli_remote_nodes)),
         *_image_refusals(config),
         *_path_refusals(config, workflow_dir),
     ]
@@ -100,6 +112,46 @@ def check_host_access(
             f"rerun with {TRUST_WORKFLOW_FLAG} if you trust it:\n  - "
             + "\n  - ".join(refused)
         )
+
+
+def check_state_dirs(config: dict[str, Any]) -> None:
+    """Raise ValueError if a directory merobox writes under the cwd for this run
+    is a symlink or leaves the cwd, as a checked-out repo could arrange."""
+    dirs = [DEFAULT_DATA_DIR_PREFIX, PID_FILE_DIR, CONTAINER_LOG_DIR]
+    dirs.append(RESTART_LOG_DIR_DEFAULT)
+    for name in _node_names(config.get("nodes")):
+        dirs += [
+            os.path.join(DEFAULT_DATA_DIR_PREFIX, name),
+            os.path.join(DEFAULT_DATA_DIR_PREFIX, name, name),
+        ]
+    cwd = os.path.realpath(os.getcwd())
+    refused = []
+    for path in dirs:
+        if not os.path.lexists(path):
+            continue
+        try:
+            safe_fs.refuse_symlinks(path)
+        except safe_fs.SymlinkedPathError as error:
+            refused.append(str(error))
+            continue
+        if not os.path.realpath(path).startswith(cwd + os.sep):
+            refused.append(f"{path} resolves outside {cwd}")
+    if refused:
+        raise ValueError(
+            "merobox state directories here are unsafe to write; remove them:\n  - "
+            + "\n  - ".join(refused)
+        )
+
+
+def _node_names(nodes: Any) -> list[str]:
+    if isinstance(nodes, list):
+        return [str(name) for name in nodes]
+    if not isinstance(nodes, dict):
+        return []
+    if isinstance(nodes.get("count"), int):
+        prefix = nodes.get("prefix") or DEFAULT_NODE_PREFIX
+        return [f"{prefix}-{index}" for index in range(1, nodes["count"] + 1)]
+    return [str(key) for key in nodes if key not in RESERVED_NODE_CONFIG_KEYS]
 
 
 def _host_process_refusals(
@@ -137,13 +189,13 @@ def _host_process_refusals(
     return refused
 
 
-def _remote_refusals(config: dict[str, Any]) -> list[str]:
-    if not config.get("remote_nodes"):
+def _remote_refusals(config: dict[str, Any], cli_names: set[str]) -> list[str]:
+    names = [str(n) for n in config.get("remote_nodes") or {} if n not in cli_names]
+    if not names:
         return []
     return [
         "remote_nodes: sends requests, files and ${ENV} credentials to "
-        f"{', '.join(map(str, config['remote_nodes']))}, and saves them to "
-        "your remote node registry"
+        f"{', '.join(names)}, and saves them to your remote node registry"
     ]
 
 

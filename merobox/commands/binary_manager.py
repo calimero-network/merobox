@@ -26,6 +26,7 @@ from merobox.commands.config_utils import (
 from merobox.commands.constants import (
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
+    PID_FILE_DIR,
     PROCESS_WAIT_TIMEOUT,
     SAFE_NAME_RE,
     SOCKET_CONNECTION_TIMEOUT,
@@ -161,7 +162,7 @@ class BinaryManager(CleanupMixin):
         self.processes = {}  # node_name -> subprocess.Popen
         self.node_rpc_ports: dict[str, int] = {}
         self.node_config_files: dict[str, str] = {}
-        self.pid_file_dir = Path("./data/.pids")
+        self.pid_file_dir = Path(PID_FILE_DIR)
         self.pid_file_dir.mkdir(parents=True, exist_ok=True)
 
         if enable_signal_handlers:

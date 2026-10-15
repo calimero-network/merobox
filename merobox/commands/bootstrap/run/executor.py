@@ -7,6 +7,7 @@ import os
 import re
 import time
 import uuid
+from collections.abc import Iterable
 from typing import Any, Optional
 
 import docker
@@ -123,7 +124,11 @@ from merobox.commands.constants import (
     RESERVED_NODE_CONFIG_KEYS,
 )
 from merobox.commands.health import check_node_health
-from merobox.commands.host_access import workflow_root
+from merobox.commands.host_access import (
+    check_host_access,
+    check_state_dirs,
+    workflow_root,
+)
 from merobox.commands.manager import DockerManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import (
@@ -177,9 +182,21 @@ class WorkflowExecutor:
         dry_run: bool = False,
         merod_args: Optional[str] = None,
         trust_workflow: bool = False,
+        cli_remote_nodes: Iterable[str] = (),
     ):
         self.config = config
         self.trust_workflow = trust_workflow
+        check_state_dirs(config)
+        if not trust_workflow:
+            # The caller picked the manager, so binary mode is its choice, not the YAML's.
+            binary = getattr(manager, "binary_path", None) is not None
+            check_host_access(
+                config,
+                workflow_dir or ".",
+                cli_no_docker=binary,
+                cli_binary_path=binary,
+                cli_remote_nodes=cli_remote_nodes,
+            )
         self.host_root = None if trust_workflow else workflow_root(workflow_dir or ".")
         self.manager = manager
         self.workflow_dir = workflow_dir or "."

@@ -29,6 +29,7 @@ from merobox.commands.config_utils import (
     read_peer_id,
 )
 from merobox.commands.constants import (
+    CONTAINER_LOG_DIR,
     CONTAINER_STOP_TIMEOUT,
     DEFAULT_IMAGE,
     DEFAULT_P2P_PORT,
@@ -110,12 +111,6 @@ def _get_node_hostname(node_name: str) -> str:
         The transformed hostname (e.g., 'node1')
     """
     return node_name.replace("calimero-", "").replace("-", "")
-
-
-# Directory, relative to the workflow's working directory, where per-container
-# logs are persisted. Kept stable so CI can collect ``data/container-logs/*.log``
-# as build artifacts regardless of the ``stop_all_nodes`` setting.
-CONTAINER_LOG_DIR = os.path.join("data", "container-logs")
 
 
 def _dump_container_log(container, container_name: str, log_dir: str) -> bool:

@@ -30,7 +30,11 @@ from merobox.commands.bootstrap.steps._docker_utils import (
     resolve_container,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.constants import HEALTH_CHECK_TIMEOUT, NODE_READY_TIMEOUT
+from merobox.commands.constants import (
+    HEALTH_CHECK_TIMEOUT,
+    NODE_READY_TIMEOUT,
+    RESTART_LOG_DIR_DEFAULT,
+)
 from merobox.commands.utils import console, get_node_rpc_url
 
 # Directory where pre/post-restart log snapshots get written. CI
@@ -49,7 +53,6 @@ from merobox.commands.utils import console, get_node_rpc_url
 # precedence if both are set.
 _RESTART_LOG_DIR_ENV = "MEROBOX_RESTART_LOG_DIR"
 _RESTART_LOG_DIR_ENV_LEGACY = "MEROBOX_PRE_RESTART_LOG_DIR"
-_RESTART_LOG_DIR_DEFAULT = "docker-logs"
 
 
 class RestartContainerStep(BaseStep):
@@ -224,7 +227,7 @@ class RestartContainerStep(BaseStep):
         """
         log_dir = os.environ.get(
             _RESTART_LOG_DIR_ENV,
-            os.environ.get(_RESTART_LOG_DIR_ENV_LEGACY, _RESTART_LOG_DIR_DEFAULT),
+            os.environ.get(_RESTART_LOG_DIR_ENV_LEGACY, RESTART_LOG_DIR_DEFAULT),
         )
         try:
             os.makedirs(log_dir, exist_ok=True)
