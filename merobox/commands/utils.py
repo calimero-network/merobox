@@ -4,12 +4,14 @@ Shared utilities for Calimero CLI commands.
 
 import asyncio
 import contextvars
+import ipaddress
 import json
 import logging
 import os
 import sys
 from typing import Any, Optional
 
+import click
 import docker
 from rich import box
 from rich.console import Console
@@ -257,6 +259,31 @@ def validate_port(port_str: str, port_name: str) -> int:
     except ValueError as e:
         console.print(f"[red]Error: Invalid {port_name} '{port_str}'. {str(e)}[/red]")
         sys.exit(1)
+
+
+def _validate_bind_host(ctx, param, value: Optional[str]) -> Optional[str]:
+    """Accept only hosts merobox's own localhost clients can still reach."""
+    if value is None:
+        return None
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        raise click.BadParameter(f"'{value}' is not an IP address.") from None
+    if not (address.is_unspecified or str(address) in ("127.0.0.1", "::1")):
+        raise click.BadParameter(
+            f"'{value}' is not reachable via localhost, which merobox uses to "
+            "reach its nodes. Use 127.0.0.1, ::1, 0.0.0.0 or ::."
+        )
+    return value
+
+
+bind_host_option = click.option(
+    "--bind-host",
+    callback=_validate_bind_host,
+    help="Host interface to publish Docker node and proxy ports on (default: "
+    "127.0.0.1). Use 0.0.0.0 to expose them to other machines; the admin API is "
+    "unauthenticated unless --auth-mode=embedded. Docker mode only.",
+)
 
 
 def format_file_size(size_bytes: int) -> str:

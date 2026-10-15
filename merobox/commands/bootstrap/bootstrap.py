@@ -21,7 +21,7 @@ from merobox.commands.bootstrap.config import (
 )
 from merobox.commands.bootstrap.run import run_workflow_sync
 from merobox.commands.bootstrap.validate import validate_workflow_config
-from merobox.commands.utils import console
+from merobox.commands.utils import bind_host_option, console
 
 
 def parse_remote_nodes(remote_node_args: tuple[str, ...]) -> dict[str, dict[str, Any]]:
@@ -246,12 +246,7 @@ def bootstrap():
     is_flag=True,
     help="Validate workflow without executing. Checks config, resolves variables, and checks node configuration.",
 )
-@click.option(
-    "--bind-host",
-    help="Host interface to publish Docker node and proxy ports on (default: 127.0.0.1). "
-    "Use 0.0.0.0 to expose them to other machines; the admin API is unauthenticated "
-    "unless --auth-mode=embedded. Docker mode only.",
-)
+@bind_host_option
 def run(
     config_file,
     verbose,

@@ -11,7 +11,7 @@ from rich.console import Console
 
 from merobox.commands.binary_manager import BinaryManager
 from merobox.commands.manager import DockerManager
-from merobox.commands.utils import validate_port
+from merobox.commands.utils import bind_host_option, validate_port
 
 console = Console()
 
@@ -88,12 +88,7 @@ console = Console()
     default=None,
     help="Authentication mode for merod (binary and Docker mode). 'embedded' enables built-in auth with JWT protection on all endpoints. Default is 'proxy' (no embedded auth).",
 )
-@click.option(
-    "--bind-host",
-    help="Host interface to publish Docker node and proxy ports on (default: 127.0.0.1). "
-    "Use 0.0.0.0 to expose them to other machines; the admin API is unauthenticated "
-    "unless --auth-mode=embedded. Docker mode only.",
-)
+@bind_host_option
 def run(
     count,
     base_port,

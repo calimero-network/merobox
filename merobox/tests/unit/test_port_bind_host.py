@@ -174,3 +174,35 @@ def test_bootstrap_cli_warns_that_bind_host_is_ignored_in_binary_mode(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "--bind-host is only supported in Docker mode" in result.output
+
+
+@pytest.mark.parametrize("value", ["127.0.0.1", "::1", "0.0.0.0", "::"])
+def test_bind_host_accepts_loopback_and_all_interfaces(value):
+    with patch("merobox.commands.run.DockerManager") as manager_cls:
+        manager_cls.return_value.run_node.return_value = True
+        result = CliRunner().invoke(run_command, ["--bind-host", value])
+
+    assert result.exit_code == 0, result.output
+    manager_cls.assert_called_once_with(bind_host=value)
+
+
+@pytest.mark.parametrize("value", ["192.168.1.10", "127.0.0.2", "localhost", "0.0.0"])
+@pytest.mark.parametrize("command", ["run", "bootstrap"])
+def test_bind_host_rejects_addresses_merobox_cannot_reach(value, command, tmp_path):
+    workflow = tmp_path / "wf.yml"
+    workflow.touch()
+    cli, args = (
+        (run_command, ["--bind-host", value])
+        if command == "run"
+        else (bootstrap, ["run", str(workflow), "--bind-host", value])
+    )
+    with (
+        patch("merobox.commands.run.DockerManager") as manager_cls,
+        patch("merobox.commands.bootstrap.bootstrap.run_workflow_sync") as workflow_run,
+    ):
+        result = CliRunner().invoke(cli, args)
+
+    assert result.exit_code == 2, result.output
+    assert "Invalid value for '--bind-host'" in result.output
+    manager_cls.assert_not_called()
+    workflow_run.assert_not_called()
