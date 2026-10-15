@@ -20,6 +20,7 @@ import pytest
 import yaml
 
 from merobox.commands.bootstrap.config import validate_workflow_config
+from merobox.commands.host_access import check_host_access
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _WORKFLOW_GLOB = os.path.join(_REPO_ROOT, "workflow-examples", "*.yml")
@@ -46,3 +47,15 @@ def test_shipped_workflow_passes_the_schema_gate(workflow_path):
     assert errors == [], "{} would be rejected by `bootstrap run`:\n  {}".format(
         os.path.basename(workflow_path), "\n  ".join(errors)
     )
+
+
+@pytest.mark.parametrize(
+    "workflow_path", _workflow_files(), ids=lambda p: os.path.basename(p)
+)
+def test_shipped_workflow_runs_without_trust(workflow_path, monkeypatch):
+    """CI runs every example from the repo root without --trust-workflow; the
+    binary lanes pass --no-docker themselves."""
+    monkeypatch.chdir(_REPO_ROOT)
+    with open(workflow_path) as f:
+        config = yaml.safe_load(f)
+    check_host_access(config, os.path.dirname(workflow_path), cli_no_docker=True)

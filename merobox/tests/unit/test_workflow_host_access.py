@@ -160,3 +160,37 @@ def test_step_node_url_registered_on_the_cli_needs_no_trust(empty_registry):
     resolver = resolver_for({"name": "t", "remote_nodes": remote})
     resolved = resolver.resolve_sync("https://node.example", skip_auth=True)
     assert resolved.node_name == "prod"
+
+
+def node(**keys):
+    lines = "".join(f"    {k}: {v}\n" for k, v in keys.items())
+    return f"nodes:\n  image: ghcr.io/calimero-network/merod:edge\n  n1:\n{lines}"
+
+
+@pytest.mark.parametrize(
+    "yaml_text,key",
+    [
+        (node(data_dir="/"), "data_dir"),
+        (node(data_dir="wf/../.."), "data_dir"),
+        (node(config_path="../config.toml"), "config_path"),
+        (
+            NODES.replace("count: 1", "count: 1\n  config_path: /etc/hosts"),
+            "config_path",
+        ),
+        (NODES.replace("ghcr.io/calimero-network/merod:edge", "alpine"), "image"),
+        (node(image="evil.example/merod:edge"), "image"),
+        (node(image="ghcr.io/calimero-network-evil/merod"), "image"),
+    ],
+)
+def test_yaml_node_host_access_is_refused(run, yaml_text, key):
+    assert_refused(run(yaml_text), key)
+
+
+def test_yaml_node_paths_inside_the_workflow_dir_need_no_trust(run):
+    ok, *_ = run(node(data_dir="wf/data", config_path="config.toml"))
+    assert ok
+
+
+def test_yaml_node_host_access_runs_when_trusted(run):
+    ok, *_ = run(node(data_dir="/", image="alpine"), trust_workflow=True)
+    assert ok

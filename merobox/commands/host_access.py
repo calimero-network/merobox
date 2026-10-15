@@ -1,9 +1,12 @@
 """What a workflow YAML may reach on the host that runs it."""
 
 import os
-from typing import Any
+from typing import Any, Optional
+
+from merobox.commands.constants import DEFAULT_IMAGE
 
 TRUST_WORKFLOW_FLAG = "--trust-workflow"
+TRUSTED_IMAGE_PREFIX = DEFAULT_IMAGE.rsplit("/", 1)[0] + "/"  # Calimero's own images
 
 
 def validate_path_within(path: str, allowed_dir: str) -> tuple[bool, str]:
@@ -62,9 +65,43 @@ def check_host_access(
             f"{', '.join(map(str, config['remote_nodes']))}, and saves them to "
             "your remote node registry"
         )
+    nodes = config.get("nodes")
+    if isinstance(nodes, dict):
+        scopes = [("nodes", nodes)] + [
+            (f"nodes.{name}", scope)
+            for name, scope in nodes.items()
+            if isinstance(scope, dict)
+        ]
+        for where, scope in scopes:
+            image = scope.get("image")
+            if image and not str(image).startswith(TRUSTED_IMAGE_PREFIX):
+                refused.append(
+                    f"{where}.image: runs '{image}' as root with a host directory "
+                    f"mounted (only {TRUSTED_IMAGE_PREFIX}* images are trusted)"
+                )
+            # merobox opens data_dir from the cwd and config_path from the workflow dir.
+            for key, relative_to in (
+                ("data_dir", os.getcwd()),
+                ("config_path", workflow_dir),
+            ):
+                reason = _outside(scope.get(key), workflow_dir, relative_to)
+                if reason:
+                    refused.append(f"{where}.{key}: {reason}")
     if refused:
         raise ValueError(
             "This workflow asks for access to the host outside its directory; "
             f"rerun with {TRUST_WORKFLOW_FLAG} if you trust it:\n  - "
             + "\n  - ".join(refused)
         )
+
+
+def _outside(path: Any, workflow_dir: str, relative_to: str) -> Optional[str]:
+    """Why `path`, resolved from `relative_to`, is not inside `workflow_dir`; None
+    if it is. A placeholder resolves at run time, so it cannot be checked."""
+    if path is None:
+        return None
+    path = os.path.expanduser(str(path))
+    if "{{" in path:
+        return f"'{path}' is only known at run time"
+    ok, error = validate_path_within(os.path.join(relative_to, path), workflow_dir)
+    return None if ok else error
