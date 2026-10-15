@@ -246,6 +246,12 @@ def bootstrap():
     is_flag=True,
     help="Validate workflow without executing. Checks config, resolves variables, and checks node configuration.",
 )
+@click.option(
+    "--bind-host",
+    help="Host interface to publish Docker node and proxy ports on (default: 127.0.0.1). "
+    "Use 0.0.0.0 to expose them to other machines; the admin API is unauthenticated "
+    "unless --auth-mode=embedded. Docker mode only.",
+)
 def run(
     config_file,
     verbose,
@@ -268,6 +274,7 @@ def run(
     auth_username,
     auth_password,
     dry_run,
+    bind_host,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -314,6 +321,12 @@ def run(
         )
         merod_args = None
 
+    if bind_host and no_docker:
+        console.print(
+            "[yellow]--bind-host is only supported in Docker mode. "
+            "Flag will be ignored.[/yellow]"
+        )
+
     # Parse remote node CLI options
     cli_remote_nodes = parse_remote_nodes(remote_node)
     cli_remote_nodes = parse_remote_auth(remote_auth, cli_remote_nodes, api_key)
@@ -338,6 +351,7 @@ def run(
         auth_username=auth_username,
         auth_password=auth_password,
         dry_run=dry_run,
+        bind_host=bind_host,
     )
     if not success:
         sys.exit(1)

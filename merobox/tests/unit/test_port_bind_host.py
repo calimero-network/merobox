@@ -1,12 +1,17 @@
 """Published container ports bind to loopback unless the operator opts in."""
 
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import docker
 import pytest
+from click.testing import CliRunner
 
+from merobox.commands.bootstrap.bootstrap import bootstrap
+from merobox.commands.bootstrap.run.run import run_workflow
 from merobox.commands.constants import P2P_PORT_BINDING, RPC_PORT_BINDING
 from merobox.commands.manager import DockerManager
+from merobox.commands.run import run as run_command
 
 
 def _manager(client, **kwargs):
@@ -65,3 +70,70 @@ def test_traefik_ports_bind_to_chosen_host(kwargs, host):
     assert manager._start_traefik_container()
 
     assert configs[0]["ports"] == {"80/tcp": (host, 80), "8080/tcp": (host, 8080)}
+
+
+@pytest.mark.parametrize(
+    "args, expected", [([], None), (["--bind-host", "0.0.0.0"], "0.0.0.0")]
+)
+def test_run_cli_passes_bind_host_to_docker_manager(args, expected):
+    with patch("merobox.commands.run.DockerManager") as manager_cls:
+        manager_cls.return_value.run_node.return_value = True
+        result = CliRunner().invoke(run_command, args)
+
+    assert result.exit_code == 0, result.output
+    manager_cls.assert_called_once_with(bind_host=expected)
+
+
+def test_bootstrap_cli_passes_bind_host_to_workflow(tmp_path):
+    workflow = tmp_path / "wf.yml"
+    workflow.touch()
+    with patch(
+        "merobox.commands.bootstrap.bootstrap.run_workflow_sync", return_value=True
+    ) as run_workflow_sync:
+        result = CliRunner().invoke(
+            bootstrap, ["run", str(workflow), "--bind-host", "0.0.0.0"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert run_workflow_sync.call_args.kwargs["bind_host"] == "0.0.0.0"
+
+
+def test_run_workflow_passes_bind_host_to_docker_manager():
+    with (
+        patch(
+            "merobox.commands.bootstrap.run.run.load_workflow_config",
+            return_value={"nodes": {"count": 1}},
+        ),
+        patch("merobox.commands.manager.DockerManager") as manager_cls,
+        patch("merobox.commands.bootstrap.run.run.WorkflowExecutor") as executor,
+    ):
+        executor.return_value.execute_workflow = AsyncMock(return_value=True)
+        assert asyncio.run(run_workflow("wf.yml", bind_host="0.0.0.0"))
+
+    manager_cls.assert_called_once_with(bind_host="0.0.0.0")
+
+
+def test_run_cli_warns_that_bind_host_is_ignored_in_binary_mode():
+    with patch("merobox.commands.run.BinaryManager") as manager_cls:
+        manager_cls.return_value.run_node.return_value = True
+        result = CliRunner().invoke(
+            run_command, ["--no-docker", "--bind-host", "0.0.0.0"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "--bind-host is only supported in Docker mode" in result.output
+    manager_cls.assert_called_once_with(binary_path=None)
+
+
+def test_bootstrap_cli_warns_that_bind_host_is_ignored_in_binary_mode(tmp_path):
+    workflow = tmp_path / "wf.yml"
+    workflow.touch()
+    with patch(
+        "merobox.commands.bootstrap.bootstrap.run_workflow_sync", return_value=True
+    ):
+        result = CliRunner().invoke(
+            bootstrap, ["run", str(workflow), "--no-docker", "--bind-host", "0.0.0.0"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "--bind-host is only supported in Docker mode" in result.output

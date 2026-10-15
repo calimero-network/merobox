@@ -88,6 +88,12 @@ console = Console()
     default=None,
     help="Authentication mode for merod (binary and Docker mode). 'embedded' enables built-in auth with JWT protection on all endpoints. Default is 'proxy' (no embedded auth).",
 )
+@click.option(
+    "--bind-host",
+    help="Host interface to publish Docker node and proxy ports on (default: 127.0.0.1). "
+    "Use 0.0.0.0 to expose them to other machines; the admin API is unauthenticated "
+    "unless --auth-mode=embedded. Docker mode only.",
+)
 def run(
     count,
     base_port,
@@ -107,13 +113,19 @@ def run(
     foreground,
     use_image_entrypoint,
     auth_mode,
+    bind_host,
 ):
     """Run Calimero node(s)."""
     # Select manager based on mode
     if no_docker:
+        if bind_host:
+            console.print(
+                "[yellow]--bind-host is only supported in Docker mode. "
+                "Flag will be ignored.[/yellow]"
+            )
         calimero_manager = BinaryManager(binary_path=binary_path)
     else:
-        calimero_manager = DockerManager()
+        calimero_manager = DockerManager(bind_host=bind_host)
 
     # Handle force pull if specified (Docker mode only)
     if not no_docker and force_pull and image:
