@@ -294,7 +294,7 @@ class TestNodeExecAfterTheContainerIsGone:
     """
 
     def _step(self, config, manager):
-        return NodeExecStep(config, manager=manager)
+        return NodeExecStep(config, manager=manager, host_root=None)
 
     def _gone(self, tmp_path, node_images=None):
         """A manager whose container lookup raises, as docker-py does for a
@@ -590,6 +590,7 @@ class TestNodeExecBinaryMode:
                 **extra,
             },
             manager=manager,
+            host_root=None,
         )
 
     def test_it_runs_merod_on_the_conventional_home(self, tmp_path, monkeypatch):

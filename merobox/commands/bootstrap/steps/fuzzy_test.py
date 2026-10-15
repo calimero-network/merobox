@@ -42,6 +42,7 @@ from merobox.commands.bootstrap.steps.assertion import (
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.bootstrap.steps.execute import ExecuteStep
 from merobox.commands.bootstrap.steps.wait import WaitStep
+from merobox.commands.host_access import ROOT_NOT_GIVEN
 from merobox.commands.utils import console
 
 
@@ -54,7 +55,7 @@ class FuzzyTestStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
-        host_root: str | None = None,
+        host_root: Any = ROOT_NOT_GIVEN,
     ):
         # Initialize instance attributes used during execution
         self._context_id: str = ""

@@ -6,6 +6,7 @@ from typing import Any, Optional
 from merobox.commands.constants import DEFAULT_IMAGE
 
 TRUST_WORKFLOW_FLAG = "--trust-workflow"
+ROOT_NOT_GIVEN = object()  # a step built without a root refuses host paths
 TRUSTED_IMAGE_PREFIX = DEFAULT_IMAGE.rsplit("/", 1)[0] + "/"  # Calimero's own images
 STEP_HOST_PATHS = {  # step keys naming a host path, opened from the cwd
     "upload_blob": ("file_path",),

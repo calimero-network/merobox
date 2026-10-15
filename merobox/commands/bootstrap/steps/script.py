@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import DEFAULT_IMAGE, SCRIPT_CONTAINER_STOP_TIMEOUT
-from merobox.commands.host_access import validate_path_within
+from merobox.commands.host_access import ROOT_NOT_GIVEN, validate_path_within
 from merobox.commands.utils import console
 
 
@@ -50,7 +50,7 @@ class ScriptStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
-        host_root: str | None = None,
+        host_root: Any = ROOT_NOT_GIVEN,
     ):
         super().__init__(
             config, manager, resolver, auth_mode=auth_mode, host_root=host_root

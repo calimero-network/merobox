@@ -13,6 +13,7 @@ from rich.markup import escape
 from merobox.commands.auth import AuthManager
 from merobox.commands.errors import OutputCaptureError, UnresolvedPlaceholderError
 from merobox.commands.host_access import (
+    ROOT_NOT_GIVEN,
     TRUST_WORKFLOW_FLAG,
     host_path_refusal,
     strip_literal_quotes,
@@ -71,7 +72,7 @@ class BaseStep:
         manager: object | None = None,
         resolver: Optional["NodeResolver"] = None,
         auth_mode: Optional[str] = None,
-        host_root: Optional[str] = None,
+        host_root: Any = ROOT_NOT_GIVEN,
     ):
         self.config = config
         # Host paths this step names must stay inside this; None trusts the workflow.
@@ -97,7 +98,11 @@ class BaseStep:
         read from `key`. Call with the value the step is about to use."""
         if self.host_root is None or path is None:
             return False
-        reason = host_path_refusal(path, self.host_root, os.getcwd())
+        reason = (
+            "cannot be checked: the step was given no confinement root"
+            if self.host_root is ROOT_NOT_GIVEN
+            else host_path_refusal(path, self.host_root, os.getcwd())
+        )
         if reason:
             console.print(
                 f"[red]Step '{escape(self._get_step_name())}': '{key}' "

@@ -588,3 +588,33 @@ def test_validate_reports_what_a_run_would_refuse(tmp_path):
     result = CliRunner().invoke(bootstrap_module.bootstrap, ["validate", str(workflow)])
     assert "file_path" in result.output
     assert "--trust-workflow" in result.output
+
+
+def test_a_step_built_without_a_root_refuses_host_paths(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "blob.bin").write_bytes(b"x")
+    step_ = UploadBlobStep(
+        {"type": "upload_blob", "node": "n", "file_path": "blob.bin"}
+    )
+    upload = AsyncMock(return_value={"success": False, "error": "stub"})
+    with (
+        patch.object(step_, "_upload_blob_to_node", upload),
+        patch.object(
+            step_, "_resolve_node_for_client", return_value=("http://n", None)
+        ),
+    ):
+        assert not asyncio.run(step_.execute({}, {}))
+    upload.assert_not_called()
+
+
+def test_parallel_hands_the_root_to_its_steps(tmp_path):
+    executor = WorkflowExecutor(
+        {"name": "t"}, MagicMock(binary_path=None), workflow_dir=str(tmp_path)
+    )
+    install = {"type": "install_application", "node": "n", "path": "x"}
+    parallel = executor._create_step_executor(
+        "parallel",
+        {"type": "parallel", "groups": [{"name": "g", "steps": [install]}]},
+    )
+    nested = parallel._create_nested_step_executor("install_application", install)
+    assert nested.host_root == str(tmp_path)
