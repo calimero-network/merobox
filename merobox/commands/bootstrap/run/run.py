@@ -221,6 +221,7 @@ async def run_workflow(
             auth_password=auth_password,
             dry_run=dry_run,
             merod_args=merod_args,
+            trust_workflow=trust_workflow,
         )
 
         # Execute workflow

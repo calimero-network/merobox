@@ -38,6 +38,7 @@ from merobox.commands.constants import (
     RPC_PORT_BINDING,
 )
 from merobox.commands.errors import AuthenticationError, NodeResolutionError
+from merobox.commands.host_access import TRUST_WORKFLOW_FLAG
 from merobox.commands.remote_nodes import RemoteNodeManager
 
 console = Console()
@@ -80,6 +81,7 @@ class NodeResolver:
         auth_manager: Optional[AuthManager] = None,
         docker_manager: Optional[Any] = None,
         binary_manager: Optional[Any] = None,
+        allow_direct_urls: bool = True,
     ):
         """Initialize NodeResolver.
 
@@ -88,11 +90,13 @@ class NodeResolver:
             auth_manager: Manager for authentication.
             docker_manager: Manager for Docker nodes.
             binary_manager: Manager for binary nodes.
+            allow_direct_urls: Resolve a URL that is not a registered node.
         """
         self.remote_manager = remote_manager or RemoteNodeManager()
         self.auth_manager = auth_manager or AuthManager()
         self.docker_manager = docker_manager
         self.binary_manager = binary_manager
+        self.allow_direct_urls = allow_direct_urls
 
     async def resolve(
         self,
@@ -200,7 +204,12 @@ class NodeResolver:
                     source="remote",
                 )
 
-            # Direct URL not registered
+            if not self.allow_direct_urls:
+                raise NodeResolutionError(
+                    f"Node '{node_ref}' is a server the workflow names directly; "
+                    f"rerun with {TRUST_WORKFLOW_FLAG} if you trust it, or "
+                    "register it with --remote-node"
+                )
             normalized_url = node_ref.rstrip("/")
             return ResolvedNode(
                 url=normalized_url,
@@ -753,12 +762,14 @@ class NodeResolver:
 def get_resolver(
     docker_manager: Optional[Any] = None,
     binary_manager: Optional[Any] = None,
+    allow_direct_urls: bool = True,
 ) -> NodeResolver:
     """Create a NodeResolver with appropriate managers.
 
     Args:
         docker_manager: Docker manager (or None to skip Docker resolution).
         binary_manager: Binary manager (or None to skip binary resolution).
+        allow_direct_urls: Resolve a URL that is not a registered node.
 
     Returns:
         Configured NodeResolver instance.
@@ -768,4 +779,5 @@ def get_resolver(
         auth_manager=AuthManager(),
         docker_manager=docker_manager,
         binary_manager=binary_manager,
+        allow_direct_urls=allow_direct_urls,
     )

@@ -8,6 +8,8 @@ import pytest
 from click.testing import CliRunner
 
 from merobox.commands.bootstrap.run import run as run_module
+from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+from merobox.commands.errors import NodeResolutionError
 
 bootstrap_module = importlib.import_module("merobox.commands.bootstrap.bootstrap")
 
@@ -67,11 +69,12 @@ def test_yaml_binary_path_is_refused_under_cli_no_docker(run):
 
 
 def test_yaml_host_binary_runs_when_trusted(run):
-    ok, _, binary, _ = run(
+    ok, executor, binary, _ = run(
         NODES + "no_docker: true\nbinary_path: /bin/echo\n", trust_workflow=True
     )
     assert ok
     binary.assert_called_once_with(binary_path="/bin/echo")
+    assert executor.call_args.kwargs["trust_workflow"] is True
 
 
 def test_cli_no_docker_and_binary_path_need_no_trust(run):
@@ -123,3 +126,37 @@ def test_cli_remote_nodes_need_no_trust(run):
     ok, executor, _, _ = run(NODES, cli_remote_nodes=cli)
     assert ok
     assert executor.call_args.args[0]["remote_nodes"] == cli
+
+
+@pytest.fixture
+def empty_registry(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "merobox.commands.remote_nodes.DEFAULT_REGISTRY_PATH",
+        tmp_path / "remote_nodes.json",
+    )
+
+
+def resolver_for(config, **kwargs):
+    executor = WorkflowExecutor(config, None, **kwargs)
+    executor._setup_resolver()
+    return executor.resolver
+
+
+def test_step_node_url_is_refused(empty_registry):
+    with pytest.raises(NodeResolutionError, match="--trust-workflow"):
+        resolver_for({"name": "t"}).resolve_sync(
+            "https://collector.example", skip_auth=True
+        )
+
+
+def test_step_node_url_resolves_when_trusted(empty_registry):
+    resolver = resolver_for({"name": "t"}, trust_workflow=True)
+    resolved = resolver.resolve_sync("https://collector.example", skip_auth=True)
+    assert resolved.url == "https://collector.example"
+
+
+def test_step_node_url_registered_on_the_cli_needs_no_trust(empty_registry):
+    remote = {"prod": {"url": "https://node.example", "auth": {"method": "none"}}}
+    resolver = resolver_for({"name": "t", "remote_nodes": remote})
+    resolved = resolver.resolve_sync("https://node.example", skip_auth=True)
+    assert resolved.node_name == "prod"
