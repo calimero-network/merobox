@@ -216,7 +216,7 @@ def test_run_workflow_warns_that_bind_host_is_ignored_for_yaml_binary_mode():
     assert "--bind-host is only supported in Docker mode" in printed
 
 
-@pytest.mark.parametrize("value", ["127.0.0.1", "::1", "0.0.0.0", "::"])
+@pytest.mark.parametrize("value", ["127.0.0.1", "0.0.0.0"])
 def test_bind_host_accepts_loopback_and_all_interfaces(value):
     with patch("merobox.commands.run.DockerManager") as manager_cls:
         manager_cls.return_value.run_node.return_value = True
@@ -226,7 +226,9 @@ def test_bind_host_accepts_loopback_and_all_interfaces(value):
     manager_cls.assert_called_once_with(bind_host=value)
 
 
-@pytest.mark.parametrize("value", ["192.168.1.10", "127.0.0.2", "localhost", "0.0.0"])
+@pytest.mark.parametrize(
+    "value", ["192.168.1.10", "127.0.0.2", "localhost", "0.0.0", "::1", "::"]
+)
 @pytest.mark.parametrize("command", ["run", "bootstrap"])
 def test_bind_host_rejects_addresses_merobox_cannot_reach(value, command, tmp_path):
     workflow = tmp_path / "wf.yml"

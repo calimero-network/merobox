@@ -4,7 +4,6 @@ Shared utilities for Calimero CLI commands.
 
 import asyncio
 import contextvars
-import ipaddress
 import json
 import logging
 import os
@@ -261,25 +260,10 @@ def validate_port(port_str: str, port_name: str) -> int:
         sys.exit(1)
 
 
-def _validate_bind_host(ctx, param, value: Optional[str]) -> Optional[str]:
-    """Accept only hosts merobox's own localhost clients can still reach."""
-    if value is None:
-        return None
-    try:
-        address = ipaddress.ip_address(value)
-    except ValueError:
-        raise click.BadParameter(f"'{value}' is not an IP address.") from None
-    if not (address.is_unspecified or str(address) in ("127.0.0.1", "::1")):
-        raise click.BadParameter(
-            f"'{value}' is not reachable via localhost, which merobox uses to "
-            "reach its nodes. Use 127.0.0.1, ::1, 0.0.0.0 or ::."
-        )
-    return value
-
-
+# merobox reaches its nodes via IPv4 localhost and nip.io, so only these hosts keep it working.
 bind_host_option = click.option(
     "--bind-host",
-    callback=_validate_bind_host,
+    type=click.Choice(["127.0.0.1", "0.0.0.0"]),
     help="Host interface to publish Docker node and proxy ports on (default: "
     "127.0.0.1). Use 0.0.0.0 to expose them to other machines; the admin API is "
     "unauthenticated unless --auth-mode=embedded. Docker mode only.",

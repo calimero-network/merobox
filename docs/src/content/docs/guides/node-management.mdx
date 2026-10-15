@@ -54,7 +54,7 @@ In Docker mode these ports, and the Traefik proxy started by `--auth-service`, a
 They are published on IPv4 loopback, so a client that resolves `localhost` to `::1` and does not fall back should connect to `127.0.0.1` instead.
 Under the default `proxy` auth mode the admin API authenticates nobody, so anything that can reach the port controls the node.
 To reach nodes from another machine (for example a multi-host P2P setup), opt in with `--bind-host`, ideally together with `--auth-mode embedded`.
-It accepts `127.0.0.1`, `::1`, `0.0.0.0` or `::`, since merobox itself reaches its nodes via `localhost`:
+It accepts only `127.0.0.1` or `0.0.0.0`, since merobox itself reaches its nodes over IPv4 `localhost`:
 
 ```bash
 merobox run --count 2 --bind-host 0.0.0.0 --auth-mode embedded
