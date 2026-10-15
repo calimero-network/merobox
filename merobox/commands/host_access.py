@@ -115,8 +115,20 @@ def _host_process_refusals(
     nodes = config.get("nodes")
     # In binary mode these flags reach a host merod; any of them may bind or write.
     binary_mode = cli_no_docker or config.get("no_docker")
-    if binary_mode and isinstance(nodes, dict) and nodes.get("init_args"):
-        refused.append("nodes.init_args: passes flags to merod on the host")
+    if binary_mode:
+        if isinstance(nodes, dict) and nodes.get("init_args"):
+            refused.append("nodes.init_args: passes flags to merod on the host")
+        refused += [
+            f"{where}.config_path: hands merod on the host a whole config.toml"
+            for where, scope in _node_scopes(nodes)
+            if scope.get("config_path")
+        ]
+        refused += [
+            f"step '{step.get('name', step['type'])}' node_exec: runs merod on the "
+            "host with the step's arguments"
+            for step in _steps(config.get("steps"))
+            if step["type"] == "node_exec"
+        ]
     refused += [
         f"step '{step.get('name', step['type'])}' target local: runs a script "
         "as a host process"

@@ -852,3 +852,38 @@ def test_reads_may_name_git_layout_files(run, git_repo):
     steps = step("upload_blob", file_path="fixtures/config")
     ok, *_ = run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd="repo")
     assert ok
+
+
+NODE_EXEC = step("node_exec", args="[config, server.listen=0.0.0.0]")
+
+
+@pytest.mark.parametrize(
+    "yaml_text,key",
+    [
+        (node(config_path="config.toml"), "config_path"),
+        (NODES.replace("count: 1", "count: 1\n  config_path: c.toml"), "config_path"),
+        (NODES + "steps:\n" + NODE_EXEC, "node_exec"),
+    ],
+)
+def test_yaml_merod_config_in_binary_mode_is_refused(run, yaml_text, key):
+    assert_refused(run(yaml_text, no_docker=True), key)
+
+
+def test_yaml_merod_config_in_docker_mode_needs_no_trust(run):
+    ok, *_ = run(node(config_path="config.toml") + "steps:\n" + NODE_EXEC)
+    assert ok
+
+
+@pytest.mark.parametrize("given_root", [True, False])
+def test_node_exec_refuses_binary_mode_unless_trusted(tmp_path, given_root):
+    manager = MagicMock(binary_path="/usr/bin/true")
+    kwargs = {"host_root": str(tmp_path)} if given_root else {}
+    step_ = NodeExecStep(
+        {"type": "node_exec", "node": "n", "args": ["config", "x=y"]},
+        manager=manager,
+        **kwargs,
+    )
+    with patch("merobox.commands.bootstrap.steps.node_exec.subprocess.run") as sh:
+        assert not asyncio.run(step_.execute({}, {}))
+    sh.assert_not_called()
+    manager.is_node_running.assert_not_called()

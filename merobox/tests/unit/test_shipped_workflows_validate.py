@@ -67,25 +67,32 @@ def _ci_lanes() -> list[tuple[str, bool]]:
     ids=lambda v: os.path.basename(v) if isinstance(v, str) else f"no_docker={v}",
 )
 def test_shipped_workflow_runs_without_trust(workflow_path, no_docker, monkeypatch):
-    """Apart from local script steps, which run_with_retry.sh trusts, every
+    """Apart from the host-process steps run_with_retry.sh trusts them with, every
     example passes the host-access check as CI runs it, from the repo root."""
     monkeypatch.chdir(_REPO_ROOT)
     with open(workflow_path) as f:
-        config = _without_local_scripts(yaml.safe_load(f))
+        config = _without_host_process_steps(yaml.safe_load(f), no_docker)
     check_host_access(config, os.path.dirname(workflow_path), cli_no_docker=no_docker)
 
 
-def _without_local_scripts(value):
+def _runs_a_host_process(step, no_docker: bool) -> bool:
+    if not isinstance(step, dict):
+        return False
+    if step.get("type") == "script" and step.get("target") == "local":
+        return True
+    return no_docker and step.get("type") == "node_exec"
+
+
+def _without_host_process_steps(value, no_docker: bool):
     if isinstance(value, list):
         return [
-            _without_local_scripts(item)
+            _without_host_process_steps(item, no_docker)
             for item in value
-            if not (
-                isinstance(item, dict)
-                and item.get("type") == "script"
-                and item.get("target") == "local"
-            )
+            if not _runs_a_host_process(item, no_docker)
         ]
     if isinstance(value, dict):
-        return {key: _without_local_scripts(item) for key, item in value.items()}
+        return {
+            key: _without_host_process_steps(item, no_docker)
+            for key, item in value.items()
+        }
     return value

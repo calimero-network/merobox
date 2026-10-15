@@ -32,9 +32,12 @@ import subprocess
 from functools import partial
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps._docker_utils import is_binary_mode
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import SAFE_NAME_RE
+from merobox.commands.host_access import TRUST_WORKFLOW_FLAG
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -368,6 +371,14 @@ class NodeExecStep(BaseStep):
             return False
 
         binary = is_binary_mode(self.manager)
+        # In binary mode the args reach a host merod, so only a trusted run (None).
+        if binary and self.host_root is not None:
+            console.print(
+                f"[red]node_exec on {escape(node_name)}: in binary mode it runs merod "
+                f"on the host; rerun with {TRUST_WORKFLOW_FLAG} if you trust this "
+                "workflow[/red]"
+            )
+            return False
         if self.manager is None or not (binary or hasattr(self.manager, "client")):
             console.print(
                 "[red]node_exec needs a local node merobox started, in binary or "
