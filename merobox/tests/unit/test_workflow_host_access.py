@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib
+import textwrap
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -193,4 +194,53 @@ def test_yaml_node_paths_inside_the_workflow_dir_need_no_trust(run):
 
 def test_yaml_node_host_access_runs_when_trusted(run):
     ok, *_ = run(node(data_dir="/", image="alpine"), trust_workflow=True)
+    assert ok
+
+
+def step(type_, **keys):
+    lines = "".join(f"    {k}: {v}\n" for k, v in keys.items())
+    return f"  - name: s\n    type: {type_}\n    node: calimero-node-1\n{lines}"
+
+
+UPLOAD_OUTSIDE = step("upload_blob", file_path="/etc/hosts")
+
+
+@pytest.mark.parametrize(
+    "steps,key",
+    [
+        (UPLOAD_OUTSIDE, "file_path"),
+        (step("upload_blob", file_path="'{{secret_path}}'"), "file_path"),
+        (step("download_blob", blob_id="b", output_path="out.bin"), "output_path"),
+        (step("install_application", path="~/.ssh/id_rsa"), "path"),
+        (step("node_exec", args="[account, export]", data_dir="/"), "data_dir"),
+        (step("node_exec", args="[account, export]", image="alpine"), "image"),
+        (
+            "  - name: p\n    type: parallel\n    groups:\n      - name: g\n"
+            "        steps:\n" + textwrap.indent(UPLOAD_OUTSIDE, " " * 6),
+            "file_path",
+        ),
+        (
+            "  - name: r\n    type: repeat\n    count: 1\n    steps:\n"
+            + textwrap.indent(UPLOAD_OUTSIDE, " " * 2),
+            "file_path",
+        ),
+    ],
+)
+def test_yaml_step_host_access_is_refused(run, steps, key):
+    assert_refused(run(NODES + "steps:\n" + steps), key)
+
+
+def test_yaml_step_paths_inside_the_workflow_dir_need_no_trust(run):
+    steps = (
+        step("upload_blob", file_path="wf/blob.bin")
+        + step("download_blob", blob_id="b", output_path="wf/out/blob.bin")
+        + step("install_application", path="./wf/app.mpk")
+        + step("node_exec", args="[account, export]", data_dir="wf/data")
+    )
+    ok, *_ = run(NODES + "steps:\n" + steps)
+    assert ok
+
+
+def test_yaml_step_host_access_runs_when_trusted(run):
+    ok, *_ = run(NODES + "steps:\n" + UPLOAD_OUTSIDE, trust_workflow=True)
     assert ok

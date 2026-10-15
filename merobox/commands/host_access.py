@@ -7,6 +7,12 @@ from merobox.commands.constants import DEFAULT_IMAGE
 
 TRUST_WORKFLOW_FLAG = "--trust-workflow"
 TRUSTED_IMAGE_PREFIX = DEFAULT_IMAGE.rsplit("/", 1)[0] + "/"  # Calimero's own images
+STEP_HOST_PATHS = {  # step keys naming a host path, opened from the cwd
+    "upload_blob": ("file_path",),
+    "download_blob": ("output_path",),
+    "install_application": ("path",),
+    "node_exec": ("data_dir",),
+}
 
 
 def validate_path_within(path: str, allowed_dir: str) -> tuple[bool, str]:
@@ -65,28 +71,30 @@ def check_host_access(
             f"{', '.join(map(str, config['remote_nodes']))}, and saves them to "
             "your remote node registry"
         )
-    nodes = config.get("nodes")
-    if isinstance(nodes, dict):
-        scopes = [("nodes", nodes)] + [
-            (f"nodes.{name}", scope)
-            for name, scope in nodes.items()
-            if isinstance(scope, dict)
-        ]
-        for where, scope in scopes:
-            image = scope.get("image")
-            if image and not str(image).startswith(TRUSTED_IMAGE_PREFIX):
-                refused.append(
-                    f"{where}.image: runs '{image}' as root with a host directory "
-                    f"mounted (only {TRUSTED_IMAGE_PREFIX}* images are trusted)"
-                )
-            # merobox opens data_dir from the cwd and config_path from the workflow dir.
-            for key, relative_to in (
-                ("data_dir", os.getcwd()),
-                ("config_path", workflow_dir),
-            ):
-                reason = _outside(scope.get(key), workflow_dir, relative_to)
-                if reason:
-                    refused.append(f"{where}.{key}: {reason}")
+    cwd = os.getcwd()
+    # Each scope: where it sits, its keys, and where merobox resolves its paths from.
+    scopes = [
+        (where, scope, {"data_dir": cwd, "config_path": workflow_dir})
+        for where, scope in _node_scopes(config.get("nodes"))
+    ] + [
+        (
+            f"step '{step.get('name', step['type'])}'",
+            step,
+            dict.fromkeys(STEP_HOST_PATHS.get(step["type"], ()), cwd),
+        )
+        for step in _steps(config.get("steps"))
+    ]
+    for where, scope, paths in scopes:
+        image = scope.get("image")
+        if image and not str(image).startswith(TRUSTED_IMAGE_PREFIX):
+            refused.append(
+                f"{where} image: runs '{image}' as root with a host directory "
+                f"mounted (only {TRUSTED_IMAGE_PREFIX}* images are trusted)"
+            )
+        for key, relative_to in paths.items():
+            reason = _outside(scope.get(key), workflow_dir, relative_to)
+            if reason:
+                refused.append(f"{where} {key}: {reason}")
     if refused:
         raise ValueError(
             "This workflow asks for access to the host outside its directory; "
@@ -103,5 +111,27 @@ def _outside(path: Any, workflow_dir: str, relative_to: str) -> Optional[str]:
     path = os.path.expanduser(str(path))
     if "{{" in path:
         return f"'{path}' is only known at run time"
-    ok, error = validate_path_within(os.path.join(relative_to, path), workflow_dir)
-    return None if ok else error
+    ok, _ = validate_path_within(os.path.join(relative_to, path), workflow_dir)
+    return None if ok else f"'{path}' is outside the workflow directory {workflow_dir}"
+
+
+def _node_scopes(nodes: Any):
+    """The nodes block and each per-node block, with where each sits."""
+    if not isinstance(nodes, dict):
+        return
+    yield "nodes", nodes
+    for name, scope in nodes.items():
+        if isinstance(scope, dict):
+            yield f"nodes.{name}", scope
+
+
+def _steps(value: Any):
+    """Every step under `value`, including those nested in parallel and repeat."""
+    if isinstance(value, dict):
+        if isinstance(value.get("type"), str):
+            yield value
+        for nested in value.values():
+            yield from _steps(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _steps(nested)

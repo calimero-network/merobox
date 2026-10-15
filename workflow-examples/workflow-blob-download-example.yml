@@ -95,7 +95,7 @@ steps:
     node: calimero-node-1
     blob_id: "{{png_blob_id}}"
     expected_size: "{{png_blob_size}}"
-    output_path: ./data/blob-download-example/screenshot.png
+    output_path: ./workflow-examples/data/blob-download-example/screenshot.png
     outputs:
       png_downloaded_sha256: sha256
 
