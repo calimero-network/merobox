@@ -86,9 +86,8 @@ def check_host_access(
     cli_no_docker: bool = False,
     cli_binary_path: bool = False,
 ) -> None:
-    """Raise ValueError naming every YAML key that reaches the host outside
-    `workflow_root(workflow_dir)`. Keys the CLI already overrides are not the
-    YAML's choice."""
+    """Raise ValueError naming every YAML key that needs --trust-workflow; keys
+    the CLI already overrides are the runner's choice, not the YAML's."""
     refused = [
         *_host_process_refusals(config, cli_no_docker, cli_binary_path),
         *_remote_refusals(config),

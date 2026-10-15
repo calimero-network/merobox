@@ -134,7 +134,7 @@ steps:
     context_id: "{{context_id}}"
     expected_size: "{{blob_size}}"
     expected_sha256: "{{source_sha256}}"
-    output_path: ./workflow-examples/data/blob-cross-node/received.pdf
+    output_path: ./data/blob-cross-node/received.pdf
     outputs:
       received_size: size
       received_sha256: sha256
