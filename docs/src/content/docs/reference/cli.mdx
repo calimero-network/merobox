@@ -241,7 +241,7 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 | `--auth-username`          | —                | Username for embedded auth. Must be paired with `--auth-password`.      |
 | `--auth-password`          | —                | Password for embedded auth. Must be paired with `--auth-username`.      |
 | `--dry-run`                | off              | Validate the workflow (config, variables, node config) without executing. |
-| `--trust-workflow`         | off              | Allow the workflow YAML keys listed below. Does not cover `script` steps. |
+| `--trust-workflow`         | off              | Allow the workflow YAML keys listed below, including local `script` steps. |
 
 <Aside type="note">
   `--auth-username` and `--auth-password` must be supplied together under
@@ -259,6 +259,7 @@ The refusal comes before any node starts and names each key; pass `--trust-workf
 | YAML key                                                                 | Why it needs trust                                              |
 | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | `no_docker`, `binary_path`                                               | Runs a host process.                                            |
+| A `script` step with `target: local`                                     | Runs the script as a host process, with your environment.      |
 | `remote_nodes`, or a step `node:` that is an `http(s)://` URL            | Sends requests, files and credentials to a server the workflow names. |
 | A step `node:` naming a node in your `merobox remote` registry           | Acts on your real node with your cached token.                 |
 | `nodes.init_args` in binary mode (`--no-docker`)                         | Passes flags such as `--server-host` or `--home` to a host `merod`. |
@@ -273,10 +274,10 @@ The same settings given as CLI flags (`--no-docker`, `--binary-path`, `--image`,
 Node names and `nodes.prefix` must be a single path component (`[A-Za-z0-9][A-Za-z0-9_.-]*`) whatever you pass.
 The Python API takes the same opt-in as `merobox.testing.workflow(..., trust_workflow=True)`.
 
-<Aside type="caution" title="Script steps are not covered">
-  A `script` step always runs its script as local code, on the host or in a node container, and `--trust-workflow` does not gate it.
-  Its only limit is that the script file must sit under the current directory.
-  Read every `script` step, and the script it names, before running a workflow you did not write.
+<Aside type="caution" title="Local scripts are host code">
+  A `script` step with `target: local` runs any file it names as a shell script on your machine, including the workflow YAML itself, so it always needs `--trust-workflow`.
+  Steps with `target: image` or `target: nodes` run inside a container; their script file must still sit inside the workflow's checkout.
+  Read every script step, and the file it names, before trusting a workflow you did not write.
 </Aside>
 
 ### bootstrap validate

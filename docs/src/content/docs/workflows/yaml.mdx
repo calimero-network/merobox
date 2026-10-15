@@ -1573,8 +1573,8 @@ Run a shell script.
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
-| `script` | yes | string | Path to the script. |
-| `target` | no | `image`\|`nodes`\|`local` (`image`) | Where to run: inside the image build, on running nodes, or on the host. |
+| `script` | yes | string | Path to the script, under the current directory and inside the workflow's checkout. |
+| `target` | no | `image`\|`nodes`\|`local` (`image`) | Where to run: inside the image build, on running nodes, or on the host. `local` is host code and needs [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `description` | no | string | Human label. |
 | `args` | no | list of strings | Arguments passed to the script; `{{var}}` placeholders resolve. |
 | `json_output` | no | bool (`false`) | `target: local` only. Parse the script's last output line as a JSON object so `outputs:` captures its fields. |

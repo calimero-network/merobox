@@ -33,6 +33,9 @@ merobox bootstrap run workflow-examples/workflow-example.yml --dry-run
 Some workflows document their own switches in a top-of-file comment — e.g. the
 open-invitation example expects `--e2e-mode`, and the binary/auth examples run
 in native (`--no-docker`) mode. Read the header before running.
+Examples with a `target: local` script step (the TEE, fault-injection and
+benchmark workflows, among others) run that script on your machine, so they
+need [`--trust-workflow`](/reference/cli/#trusting-a-workflow).
 
 When you're done, stop the nodes the run left behind:
 

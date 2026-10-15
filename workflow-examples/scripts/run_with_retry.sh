@@ -18,7 +18,8 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
         sleep 2
     fi
 
-    if merobox bootstrap run "$WORKFLOW_FILE" $EXTRA_ARGS --e2e-mode; then
+    # These are the repo's own examples, and several run local script steps.
+    if merobox bootstrap run "$WORKFLOW_FILE" $EXTRA_ARGS --e2e-mode --trust-workflow; then
         echo "✅ $WORKFLOW_NAME passed"
         merobox stop --all $EXTRA_ARGS || true
         merobox nuke -f || true

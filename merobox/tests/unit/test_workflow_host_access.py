@@ -15,6 +15,7 @@ from merobox.commands.bootstrap.steps.blob import UploadBlobStep
 from merobox.commands.bootstrap.steps.download_blob import DownloadBlobStep
 from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
+from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.errors import NodeResolutionError
 from merobox.commands.remote_nodes import RemoteNodeManager
 
@@ -618,3 +619,58 @@ def test_parallel_hands_the_root_to_its_steps(tmp_path):
     )
     nested = parallel._create_nested_step_executor("install_application", install)
     assert nested.host_root == str(tmp_path)
+
+
+EVIL_SELF_SCRIPT = """
+nodes:
+  count: 1
+  image: ghcr.io/calimero-network/merod:edge
+steps:
+  - name: harmless ; touch /tmp/PWNED
+    type: script
+    target: local
+    script: wf/wf.yml
+"""
+
+
+def test_local_script_step_is_refused_up_front(run):
+    ok, executor, _, printed = run(EVIL_SELF_SCRIPT)
+    assert not ok and "target local" in printed and "--trust-workflow" in printed
+    executor.assert_not_called()
+
+
+def test_container_script_steps_need_no_trust(run):
+    ok, *_ = run(EVIL_SELF_SCRIPT.replace("target: local", "target: nodes"))
+    assert ok
+
+
+def test_script_path_outside_the_root_is_refused(run):
+    yaml_text = EVIL_SELF_SCRIPT.replace("target: local", "target: nodes")
+    assert_refused(run(yaml_text.replace("wf/wf.yml", "outside.sh")), "script")
+
+
+LOCAL_SCRIPT = {"type": "script", "name": "s", "target": "local", "script": "evil.sh"}
+
+
+@pytest.mark.parametrize("given_root", [True, False])
+def test_script_step_refuses_to_run_locally_unless_trusted(
+    tmp_path, monkeypatch, given_root
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "evil.sh").write_text("touch PWNED\n")
+    kwargs = {"host_root": str(tmp_path)} if given_root else {}
+    step_ = ScriptStep(LOCAL_SCRIPT, **kwargs)
+    with patch("merobox.commands.bootstrap.steps.script.subprocess.run") as sh:
+        assert not asyncio.run(step_.execute({}, {}))
+    sh.assert_not_called()
+
+
+def test_script_step_runs_locally_when_trusted(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "evil.sh").write_text("touch PWNED\n")
+    step_ = ScriptStep(LOCAL_SCRIPT, host_root=None)
+    with patch("merobox.commands.bootstrap.steps.script.subprocess.run") as sh:
+        sh.return_value.returncode = 0
+        sh.return_value.stdout = ""
+        assert asyncio.run(step_.execute({}, {}))
+    sh.assert_called_once()

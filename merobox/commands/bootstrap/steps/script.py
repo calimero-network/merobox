@@ -11,9 +11,15 @@ import tarfile
 import time
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import DEFAULT_IMAGE, SCRIPT_CONTAINER_STOP_TIMEOUT
-from merobox.commands.host_access import ROOT_NOT_GIVEN, validate_path_within
+from merobox.commands.host_access import (
+    ROOT_NOT_GIVEN,
+    TRUST_WORKFLOW_FLAG,
+    validate_path_within,
+)
 from merobox.commands.utils import console
 
 
@@ -179,6 +185,16 @@ class ScriptStep(BaseStep):
         is_valid, error_message = self._validate_script_path(self.script_path)
         if not is_valid:
             console.print(f"[red]❌ {error_message}[/red]")
+            return False
+        if self._refuse_host_path("script", self.script_path):
+            return False
+        # Only an explicitly trusted run (host_root None) may run host code.
+        if self.target == "local" and self.host_root is not None:
+            console.print(
+                f"[red]Step '{escape(self._get_step_name())}': target local runs the "
+                f"script as a host process; rerun with {TRUST_WORKFLOW_FLAG} if "
+                "you trust this workflow[/red]"
+            )
             return False
 
         if not os.path.exists(self.script_path):

@@ -13,6 +13,7 @@ STEP_HOST_PATHS = {  # step keys naming a host path, opened from the cwd
     "download_blob": ("output_path",),
     "install_application": ("path",),
     "node_exec": ("data_dir",),
+    "script": ("script",),
 }
 
 
@@ -104,6 +105,12 @@ def _host_process_refusals(
     binary_mode = cli_no_docker or config.get("no_docker")
     if binary_mode and isinstance(nodes, dict) and nodes.get("init_args"):
         refused.append("nodes.init_args: passes flags to merod on the host")
+    refused += [
+        f"step '{step.get('name', step['type'])}' target local: runs a script "
+        "as a host process"
+        for step in _steps(config.get("steps"))
+        if step["type"] == "script" and step.get("target") == "local"
+    ]
     return refused
 
 
