@@ -15,6 +15,10 @@ STEP_HOST_PATHS = {  # step keys naming a host path, opened from the cwd
     "node_exec": ("data_dir",),
     "script": ("script",),
 }
+STEP_WRITE_PATHS = {("download_blob", "output_path")}  # step keys merobox writes to
+GIT_CONTROL_NAMES = {".git", ".gitmodules", ".gitattributes", ".gitconfig"}  # run code
+GIT_LAYOUT_FILES = {"head", "config", "packed-refs"}  # written, these make a git dir
+GIT_LAYOUT_DIRS = {"objects", "refs", "hooks"}  # whose config git obeys
 
 
 def validate_path_within(
@@ -182,7 +186,8 @@ def _path_refusals(config: dict[str, Any], workflow_dir: str) -> list[str]:
             # A step re-checks its paths once placeholders resolve.
             if is_step and "{{" in str(path):
                 continue
-            reason = host_path_refusal(path, root, relative_to)
+            writes = (scope.get("type"), key) in STEP_WRITE_PATHS
+            reason = host_path_refusal(path, root, relative_to, writes)
             if reason:
                 refused.append(f"{where} {key}: {reason}")
     return refused
@@ -209,9 +214,11 @@ def _holds_home(root: str) -> bool:
     return home == real_root or home.startswith(real_root.rstrip(os.sep) + os.sep)
 
 
-def host_path_refusal(path: Any, root: str, relative_to: str) -> Optional[str]:
-    """Why `path`, opened from `relative_to`, is not inside `root`; None if it is.
-    A placeholder resolves at run time, so it cannot be checked."""
+def host_path_refusal(
+    path: Any, root: str, relative_to: str, writes: bool = False
+) -> Optional[str]:
+    """Why `path`, opened from `relative_to` (and written if `writes`), may not be
+    used under `root`; None if it may. A placeholder cannot be checked."""
     if path is None:
         return None
     path = os.path.expanduser(str(path))
@@ -223,10 +230,20 @@ def host_path_refusal(path: Any, root: str, relative_to: str) -> Optional[str]:
     ok, _ = validate_path_within(joined, root, allow_parent_refs=True)
     if not ok:
         return f"'{path}' is outside {root}"
-    # Git config and hooks run code and hold credentials (fsmonitor, checkout token).
-    inside = os.path.relpath(os.path.realpath(joined), os.path.realpath(root))
-    if ".git" in (part.lower() for part in inside.split(os.sep)):
-        return f"'{path}' is inside a .git directory"
+    # Git runs code from these (fsmonitor, hooks, filters) and .git holds the
+    # checkout token; names are lowered for case-insensitive filesystems.
+    parts = [
+        part.lower()
+        for part in os.path.relpath(
+            os.path.realpath(joined), os.path.realpath(root)
+        ).split(os.sep)
+    ]
+    if GIT_CONTROL_NAMES.intersection(parts):
+        return f"'{path}' is a git control file or inside .git"
+    if writes and (
+        parts[-1] in GIT_LAYOUT_FILES or GIT_LAYOUT_DIRS.intersection(parts[:-1])
+    ):
+        return f"'{path}' could plant a git directory"
     return None
 
 

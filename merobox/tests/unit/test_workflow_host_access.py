@@ -801,3 +801,54 @@ def test_a_workflow_at_or_above_home_gets_no_host_paths(run, home, workflow):
     assert_refused(
         run(NODES + "steps:\n" + steps, workflow=workflow, cwd="."), "file_path"
     )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".GIT/config",
+        ".Git/hooks/pre-commit",
+        ".git",
+        "vendor/.gitmodules",
+        ".gitattributes",
+        "sub/.gitconfig",
+    ],
+)
+def test_git_control_files_are_refused_at_any_depth(run, git_repo, path):
+    steps = step("upload_blob", file_path=path)
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd="repo"),
+        "file_path",
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["out/HEAD", "out/config", "out/packed-refs", "out/objects/x", "out/refs/heads/m"],
+)
+def test_writes_cannot_plant_a_git_directory(run, git_repo, path):
+    steps = step("download_blob", blob_id="b", output_path=path)
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd="repo"),
+        "output_path",
+    )
+
+
+def test_a_step_refuses_to_write_a_git_layout_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    download = AsyncMock(return_value={"success": True, "data": b"x"})
+    ok, _ = run_step(
+        DownloadBlobStep,
+        {"type": "download_blob", "node": "n", "blob_id": "b", "output_path": "{{o}}"},
+        {"o": "planted/HEAD"},
+        str(tmp_path),
+        _download_blob_from_node=download,
+    )
+    assert not ok
+    download.assert_not_called()
+
+
+def test_reads_may_name_git_layout_files(run, git_repo):
+    steps = step("upload_blob", file_path="fixtures/config")
+    ok, *_ = run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd="repo")
+    assert ok

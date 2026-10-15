@@ -182,7 +182,7 @@ class DownloadBlobStep(BaseStep):
             output_path = self._resolve_dynamic_value(
                 output_path, workflow_results, dynamic_values
             )
-            if self._refuse_host_path("output_path", output_path):
+            if self._refuse_host_path("output_path", output_path, writes=True):
                 return False
 
         expected_size = self.config.get("expected_size")
