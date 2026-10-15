@@ -54,13 +54,16 @@ class FuzzyTestStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
+        host_root: str | None = None,
     ):
         # Initialize instance attributes used during execution
         self._context_id: str = ""
         self._nodes: list[dict] = []
         self._operations: list[dict] = []
         self._total_weight: float = 0
-        super().__init__(config, manager, resolver, auth_mode=auth_mode)
+        super().__init__(
+            config, manager, resolver, auth_mode=auth_mode, host_root=host_root
+        )
 
     def _get_required_fields(self) -> list[str]:
         """Define required fields for this step."""

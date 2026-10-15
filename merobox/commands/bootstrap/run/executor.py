@@ -123,6 +123,7 @@ from merobox.commands.constants import (
     RESERVED_NODE_CONFIG_KEYS,
 )
 from merobox.commands.health import check_node_health
+from merobox.commands.host_access import workflow_root
 from merobox.commands.manager import DockerManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import (
@@ -179,6 +180,7 @@ class WorkflowExecutor:
     ):
         self.config = config
         self.trust_workflow = trust_workflow
+        self.host_root = None if trust_workflow else workflow_root(workflow_dir or ".")
         self.manager = manager
         self.workflow_dir = workflow_dir or "."
         self.dry_run = dry_run
@@ -2320,6 +2322,7 @@ class WorkflowExecutor:
             "manager": self.manager,
             "resolver": self.resolver,
             "auth_mode": self.auth_mode,
+            "host_root": self.host_root,
         }
 
         if step_type in _ACCOUNT_STEP_CLASSES:

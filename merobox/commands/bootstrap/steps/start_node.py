@@ -26,10 +26,13 @@ class StartNodeStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
+        host_root: str | None = None,
         workflow_config: dict[str, Any] | None = None,
         start_node_fn: Optional[StartNodeFn] = None,
     ):
-        super().__init__(config, manager, resolver, auth_mode=auth_mode)
+        super().__init__(
+            config, manager, resolver, auth_mode=auth_mode, host_root=host_root
+        )
         self.workflow_config = workflow_config or {}
         # Callable that actually starts a node (the executor's node-startup
         # logic); kept as a plain callable so the step doesn't hold a back-

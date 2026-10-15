@@ -3,7 +3,7 @@
 import asyncio
 import importlib
 import textwrap
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -11,6 +11,10 @@ from click.testing import CliRunner
 from merobox import testing
 from merobox.commands.bootstrap.run import run as run_module
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+from merobox.commands.bootstrap.steps.blob import UploadBlobStep
+from merobox.commands.bootstrap.steps.download_blob import DownloadBlobStep
+from merobox.commands.bootstrap.steps.install import InstallApplicationStep
+from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
 from merobox.commands.errors import NodeResolutionError
 from merobox.commands.remote_nodes import RemoteNodeManager
 
@@ -230,7 +234,6 @@ UPLOAD_OUTSIDE = step("upload_blob", file_path="/etc/hosts")
     "steps,key",
     [
         (UPLOAD_OUTSIDE, "file_path"),
-        (step("upload_blob", file_path="'{{secret_path}}'"), "file_path"),
         (step("download_blob", blob_id="b", output_path="out.bin"), "output_path"),
         (step("install_application", path="~/.ssh/id_rsa"), "path"),
         (step("node_exec", args="[account, export]", data_dir="/"), "data_dir"),
@@ -365,3 +368,127 @@ def test_paths_leaving_the_git_checkout_are_refused(run, git_repo, path, cwd):
     assert_refused(
         run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd=cwd), "path"
     )
+
+
+@pytest.mark.parametrize(
+    "steps,key",
+    [
+        (step("upload_blob", file_path="\"'/etc/passwd'\""), "file_path"),
+        (
+            step("download_blob", blob_id="b", output_path="\"'/tmp/merobox-x'\""),
+            "output_path",
+        ),
+    ],
+)
+def test_quoted_path_literals_are_refused_up_front(run, steps, key):
+    # From inside the root, the quoted text read as a relative name would pass.
+    assert_refused(run(NODES + "steps:\n" + steps, cwd="wf"), key)
+
+
+def test_placeholder_step_paths_are_left_to_the_step(run):
+    steps = step("upload_blob", file_path="'{{blob_path}}'")
+    ok, *_ = run(NODES + "steps:\n" + steps)
+    assert ok
+
+
+def run_step(step_class, config, dynamic_values, host_root, **patches):
+    """Execute a step as a workflow would, with every node call stubbed."""
+    step_ = step_class(config, manager=MagicMock(binary_path=None), host_root=host_root)
+    with (
+        patch.object(step_, "_resolve_node_for_client") as resolve,
+        patch.object(step_, "_validate_export_config", return_value=True),
+    ):
+        resolve.return_value = ("http://localhost:2528", None)
+        for name, value in patches.items():
+            setattr(step_, name, value)
+        ok = asyncio.run(step_.execute({}, dynamic_values))
+    return ok, resolve
+
+
+@pytest.mark.parametrize(
+    "path", ["{{blob_path}}", "'{{blob_path}}'", "\"'{{blob_path}}'\""]
+)
+def test_upload_blob_refuses_a_resolved_path_outside_the_root(tmp_path, path):
+    ok, resolve = run_step(
+        UploadBlobStep,
+        {"type": "upload_blob", "node": "n", "file_path": path},
+        {"blob_path": "/etc/hosts"},
+        str(tmp_path),
+    )
+    assert not ok
+    resolve.assert_not_called()
+
+
+def test_upload_blob_reads_a_resolved_path_inside_the_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "blob.bin").write_bytes(b"x")
+    upload = AsyncMock(return_value={"success": False, "error": "stub"})
+    ok, resolve = run_step(
+        UploadBlobStep,
+        {"type": "upload_blob", "node": "n", "file_path": "{{blob_path}}"},
+        {"blob_path": "blob.bin"},
+        str(tmp_path),
+        _upload_blob_to_node=upload,
+    )
+    upload.assert_called_once()
+
+
+def test_download_blob_refuses_a_resolved_output_outside_the_root(tmp_path):
+    target = tmp_path.parent / f"{tmp_path.name}-escape.bin"
+    download = AsyncMock(return_value={"success": True, "data": b"payload"})
+    ok, _ = run_step(
+        DownloadBlobStep,
+        {
+            "type": "download_blob",
+            "node": "n",
+            "blob_id": "b",
+            "output_path": "{{out}}",
+        },
+        {"out": str(target)},
+        str(tmp_path),
+        _download_blob_from_node=download,
+    )
+    assert not ok
+    assert not target.exists()
+    download.assert_not_called()
+
+
+def test_install_refuses_a_path_outside_the_root(tmp_path):
+    ok, resolve = run_step(
+        InstallApplicationStep,
+        {"type": "install_application", "node": "n", "path": "/etc/hosts"},
+        {},
+        str(tmp_path),
+    )
+    assert not ok
+    resolve.assert_not_called()
+
+
+def test_node_exec_refuses_a_data_dir_outside_the_root(tmp_path):
+    manager = MagicMock(binary_path=None)
+    step_ = NodeExecStep(
+        {"type": "node_exec", "node": "n", "args": ["x"], "data_dir": "/"},
+        manager=manager,
+        host_root=str(tmp_path),
+    )
+    assert not asyncio.run(step_.execute({}, {}))
+    manager.is_node_running.assert_not_called()
+
+
+def test_executor_hands_the_root_to_every_step(tmp_path):
+    manager = MagicMock(binary_path=None)
+    upload = {"type": "upload_blob", "node": "n", "file_path": "x"}
+    untrusted = WorkflowExecutor({"name": "t"}, manager, workflow_dir=str(tmp_path))
+    trusted = WorkflowExecutor(
+        {"name": "t"}, manager, workflow_dir=str(tmp_path), trust_workflow=True
+    )
+    assert untrusted._create_step_executor("upload_blob", upload).host_root == str(
+        tmp_path
+    )
+    assert trusted._create_step_executor("upload_blob", upload).host_root is None
+    repeat = untrusted._create_step_executor(
+        "repeat", {"type": "repeat", "count": 1, "steps": [upload]}
+    )
+    install = {"type": "install_application", "node": "n", "path": "x"}
+    nested = repeat._create_nested_step_executor("install_application", install)
+    assert nested.host_root == str(tmp_path)

@@ -50,8 +50,11 @@ class ScriptStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
+        host_root: str | None = None,
     ):
-        super().__init__(config, manager, resolver, auth_mode=auth_mode)
+        super().__init__(
+            config, manager, resolver, auth_mode=auth_mode, host_root=host_root
+        )
         self.script_path = config.get("script")
         self.target = config.get("target", "image")  # 'image' or 'nodes'
         self.description = config.get(

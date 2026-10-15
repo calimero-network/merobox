@@ -69,9 +69,14 @@ class JsonAssertStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
+        host_root: str | None = None,
     ):
         super().__init__(
-            config, manager=manager, resolver=resolver, auth_mode=auth_mode
+            config,
+            manager=manager,
+            resolver=resolver,
+            auth_mode=auth_mode,
+            host_root=host_root,
         )
 
     def _validate_field_types(self) -> None:

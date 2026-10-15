@@ -105,6 +105,8 @@ class InstallApplicationStep(BaseStep):
             if raw_application_path
             else None
         )
+        if self._refuse_host_path("path", application_path):
+            return False
         package = self.config.get("package")
         version = self.config.get("version")
 

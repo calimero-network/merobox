@@ -51,6 +51,20 @@ def validate_path_within(
     return True, ""
 
 
+def strip_literal_quotes(value: Any) -> Any:
+    """`'x'` or `"x"` -> `x`, as steps read a quoted literal; placeholders stay."""
+    if (
+        isinstance(value, str)
+        and len(value) >= 2
+        and value[0] == value[-1]
+        and value[0] in "'\""
+        and "{{" not in value
+        and "}}" not in value
+    ):
+        return value[1:-1]
+    return value
+
+
 def check_host_access(
     config: dict[str, Any],
     workflow_dir: str,
@@ -92,6 +106,7 @@ def check_host_access(
         for step in _steps(config.get("steps"))
     ]
     for where, scope, paths in scopes:
+        is_step = where.startswith("step ")
         image = scope.get("image")
         if image and not str(image).startswith(TRUSTED_IMAGE_PREFIX):
             refused.append(
@@ -99,7 +114,11 @@ def check_host_access(
                 f"mounted (only {TRUSTED_IMAGE_PREFIX}* images are trusted)"
             )
         for key, relative_to in paths.items():
-            reason = host_path_refusal(scope.get(key), root, relative_to)
+            path = strip_literal_quotes(scope.get(key))
+            # A step re-checks its paths once placeholders resolve.
+            if is_step and "{{" in str(path):
+                continue
+            reason = host_path_refusal(path, root, relative_to)
             if reason:
                 refused.append(f"{where} {key}: {reason}")
     if refused:

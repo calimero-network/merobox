@@ -359,6 +359,8 @@ class NodeExecStep(BaseStep):
             for path, content in (self.config.get("files") or {}).items()
         }
         allow_running = bool(self.config.get("allow_running", False))
+        if self._refuse_host_path("data_dir", self.config.get("data_dir")):
+            return False
 
         binary = is_binary_mode(self.manager)
         if self.manager is None or not (binary or hasattr(self.manager, "client")):
