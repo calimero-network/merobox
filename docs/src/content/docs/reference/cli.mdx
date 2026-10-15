@@ -267,15 +267,23 @@ The refusal comes before any node starts and names each key; pass `--trust-workf
 | `nodes.image`, a per-node `image`, `node_exec.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as root with a host directory mounted. |
 | `auth_image`, `topology.boot_node.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as a long-lived container on your Docker host. |
 | `data_dir`, `config_path` (shared or per-node), `node_exec.data_dir`     | Mounts or copies a host path into a node.                       |
+| `node_exec.files`                                                        | Writes files into the node's home on the host.                  |
+| `nuke_on_start`, `nuke_on_end`                                           | Deletes node data under the current directory and stops its nodes. |
+| A container step (`pause_container`, `restart_container`, `connect_node`, ...) or `target: nodes` script naming a container this run did not start, or `connect_node` with `network:` | Acts on, execs into or rewires containers that are not this workflow's. Nodes an earlier run left running count as not this run's. |
 | `upload_blob.file_path`, `install_application.path`, `download_blob.output_path`, `script` | Reads or writes a host file.                            |
 
 The path keys are accepted without the flag when they resolve inside the workflow's checkout; `..` is fine as long as the result stays inside.
 Even inside it, a path may not name a git control file (`.git`, `.gitmodules`, `.gitattributes`, `.gitconfig`, at any depth and any case), and a written path may not be a `HEAD`, `config` or `packed-refs` file or sit under `objects/`, `refs/` or `hooks/`, since git would run code from either.
 A workflow whose directory is your home directory, or above it, gets no host paths at all without the flag.
-Each step checks the exact path it is about to open, after `{{placeholders}}` resolve.
+Each step checks a path again after its `{{placeholders}}` resolve, and every file merobox writes or deletes for a run is opened one directory at a time without following symlinks, so a link planted in the checkout (or swapped in mid-run) makes the write fail.
+Before anything starts, merobox also refuses, whatever you pass, a run whose state directories under the current directory (`data`, `data/.pids`, `data/container-logs`, `docker-logs`, or a node's data dir) are symlinks or lead outside it.
 The same settings given as CLI flags (`--no-docker`, `--binary-path`, `--image`, `--remote-node`) are yours and need no trust.
 Node names, wherever a workflow gives them (`nodes`, `nodes.prefix`, a step's `node:` or `nodes:`), must be a single path component (`[A-Za-z0-9][A-Za-z0-9_.-]*`) whatever you pass.
-The Python API takes the same opt-in as `merobox.testing.workflow(..., trust_workflow=True)`.
+The Python API takes the same opt-in, as `merobox.testing.workflow(..., trust_workflow=True)` or `WorkflowExecutor(..., trust_workflow=True)`, and `WorkflowExecutor` applies these checks itself.
+
+Some things stay open to any workflow, so weigh them when you run one you did not write.
+Container steps and node-target scripts run as root inside the node containers and can write anything into a node's mounted data directory.
+`bootstrap_nodes` and `admitter_addrs` make your nodes dial the peers a workflow lists.
 
 <Aside type="caution" title="Local scripts are host code">
   A `script` step with `target: local` runs any file it names as a shell script on your machine, including the workflow YAML itself, so it always needs `--trust-workflow`.
