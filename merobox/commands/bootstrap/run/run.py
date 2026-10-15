@@ -178,6 +178,11 @@ async def run_workflow(
         elif effective_no_docker:
             from merobox.commands.binary_manager import BinaryManager
 
+            if bind_host:
+                console.print(
+                    "[yellow]--bind-host is only supported in Docker mode. "
+                    "Flag will be ignored.[/yellow]"
+                )
             manager = BinaryManager(binary_path=effective_binary_path)
             # When running in binary mode, auth_service is not supported
             auth_service = False

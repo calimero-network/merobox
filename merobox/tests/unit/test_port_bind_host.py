@@ -162,18 +162,21 @@ def test_run_cli_warns_that_bind_host_is_ignored_in_binary_mode():
     manager_cls.assert_called_once_with(binary_path=None)
 
 
-def test_bootstrap_cli_warns_that_bind_host_is_ignored_in_binary_mode(tmp_path):
-    workflow = tmp_path / "wf.yml"
-    workflow.touch()
-    with patch(
-        "merobox.commands.bootstrap.bootstrap.run_workflow_sync", return_value=True
+def test_run_workflow_warns_that_bind_host_is_ignored_for_yaml_binary_mode():
+    with (
+        patch(
+            "merobox.commands.bootstrap.run.run.load_workflow_config",
+            return_value={"nodes": {"count": 1}, "no_docker": True},
+        ),
+        patch("merobox.commands.binary_manager.BinaryManager"),
+        patch("merobox.commands.bootstrap.run.run.WorkflowExecutor") as executor,
+        patch("merobox.commands.bootstrap.run.run.console") as console,
     ):
-        result = CliRunner().invoke(
-            bootstrap, ["run", str(workflow), "--no-docker", "--bind-host", "0.0.0.0"]
-        )
+        executor.return_value.execute_workflow = AsyncMock(return_value=True)
+        assert asyncio.run(run_workflow("wf.yml", bind_host="0.0.0.0"))
 
-    assert result.exit_code == 0, result.output
-    assert "--bind-host is only supported in Docker mode" in result.output
+    printed = " ".join(str(c.args[0]) for c in console.print.call_args_list)
+    assert "--bind-host is only supported in Docker mode" in printed
 
 
 @pytest.mark.parametrize("value", ["127.0.0.1", "::1", "0.0.0.0", "::"])

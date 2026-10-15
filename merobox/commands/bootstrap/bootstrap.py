@@ -316,12 +316,6 @@ def run(
         )
         merod_args = None
 
-    if bind_host and no_docker:
-        console.print(
-            "[yellow]--bind-host is only supported in Docker mode. "
-            "Flag will be ignored.[/yellow]"
-        )
-
     # Parse remote node CLI options
     cli_remote_nodes = parse_remote_nodes(remote_node)
     cli_remote_nodes = parse_remote_auth(remote_auth, cli_remote_nodes, api_key)
