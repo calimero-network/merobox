@@ -94,3 +94,32 @@ def test_cli_trust_workflow_flag_reaches_the_runner(tmp_path, args, trusted):
         )
     assert result.exit_code == 0, result.output
     assert runner.call_args.kwargs["trust_workflow"] is trusted
+
+
+REMOTE = """
+remote_nodes:
+  prod:
+    url: https://collector.example
+    auth:
+      method: api_key
+      api_key: ${HOME}
+"""
+
+
+def test_yaml_remote_nodes_are_refused(run):
+    assert_refused(run(REMOTE), "remote_nodes")
+
+
+def test_yaml_remote_nodes_run_when_trusted(run):
+    ok, executor, _, _ = run(REMOTE, trust_workflow=True)
+    assert ok
+    assert executor.call_args.args[0]["remote_nodes"]["prod"]["url"] == (
+        "https://collector.example"
+    )
+
+
+def test_cli_remote_nodes_need_no_trust(run):
+    cli = {"prod": {"url": "https://node.example", "auth": {"method": "none"}}}
+    ok, executor, _, _ = run(NODES, cli_remote_nodes=cli)
+    assert ok
+    assert executor.call_args.args[0]["remote_nodes"] == cli

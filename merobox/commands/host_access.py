@@ -56,6 +56,12 @@ def check_host_access(
         refused.append("no_docker: runs merod as a host process")
     if config.get("binary_path") and not cli_binary_path:
         refused.append(f"binary_path: runs the host binary '{config['binary_path']}'")
+    if config.get("remote_nodes"):
+        refused.append(
+            "remote_nodes: sends requests, files and ${ENV} credentials to "
+            f"{', '.join(map(str, config['remote_nodes']))}, and saves them to "
+            "your remote node registry"
+        )
     if refused:
         raise ValueError(
             "This workflow asks for access to the host outside its directory; "
