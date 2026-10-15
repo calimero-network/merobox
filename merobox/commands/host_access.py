@@ -15,17 +15,17 @@ STEP_HOST_PATHS = {  # step keys naming a host path, opened from the cwd
 }
 
 
-def validate_path_within(path: str, allowed_dir: str) -> tuple[bool, str]:
-    """Check that `path` has no '..' component and resolves inside `allowed_dir`.
-
-    A relative `path` resolves against `allowed_dir`. Returns (is_valid, error).
-    """
+def validate_path_within(
+    path: str, allowed_dir: str, allow_parent_refs: bool = False
+) -> tuple[bool, str]:
+    """Check that `path` resolves inside `allowed_dir`, and unless
+    `allow_parent_refs` has no '..' component. Returns (is_valid, error)."""
     if not path:
         return False, "Path is empty"
 
     # Normalize separators for cross-platform check
     path_parts = path.replace("\\", "/").split("/")
-    if ".." in path_parts:
+    if ".." in path_parts and not allow_parent_refs:
         return False, f"Path traversal detected: path contains '..': {path}"
 
     try:
@@ -59,7 +59,9 @@ def check_host_access(
     cli_binary_path: bool = False,
 ) -> None:
     """Raise ValueError naming every YAML key that reaches the host outside
-    `workflow_dir`. Keys the CLI already overrides are not the YAML's choice."""
+    `workflow_root(workflow_dir)`. Keys the CLI already overrides are not the
+    YAML's choice."""
+    root = workflow_root(workflow_dir)
     refused = []
     if config.get("no_docker") and not cli_no_docker:
         refused.append("no_docker: runs merod as a host process")
@@ -97,7 +99,7 @@ def check_host_access(
                 f"mounted (only {TRUSTED_IMAGE_PREFIX}* images are trusted)"
             )
         for key, relative_to in paths.items():
-            reason = _outside(scope.get(key), workflow_dir, relative_to)
+            reason = host_path_refusal(scope.get(key), root, relative_to)
             if reason:
                 refused.append(f"{where} {key}: {reason}")
     if refused:
@@ -108,16 +110,30 @@ def check_host_access(
         )
 
 
-def _outside(path: Any, workflow_dir: str, relative_to: str) -> Optional[str]:
-    """Why `path`, resolved from `relative_to`, is not inside `workflow_dir`; None
-    if it is. A placeholder resolves at run time, so it cannot be checked."""
+def workflow_root(workflow_dir: str) -> str:
+    """The directory YAML host paths must stay in: the git checkout holding the
+    workflow, else the workflow's own directory (never the cwd, which may be $HOME)."""
+    current = os.path.realpath(workflow_dir)
+    while not os.path.exists(os.path.join(current, ".git")):
+        parent = os.path.dirname(current)
+        if parent == current:
+            return workflow_dir
+        current = parent
+    return current
+
+
+def host_path_refusal(path: Any, root: str, relative_to: str) -> Optional[str]:
+    """Why `path`, opened from `relative_to`, is not inside `root`; None if it is.
+    A placeholder resolves at run time, so it cannot be checked."""
     if path is None:
         return None
     path = os.path.expanduser(str(path))
     if "{{" in path:
         return f"'{path}' is only known at run time"
-    ok, _ = validate_path_within(os.path.join(relative_to, path), workflow_dir)
-    return None if ok else f"'{path}' is outside the workflow directory {workflow_dir}"
+    ok, _ = validate_path_within(
+        os.path.join(relative_to, path), root, allow_parent_refs=True
+    )
+    return None if ok else f"'{path}' is outside {root}"
 
 
 def _node_scopes(nodes: Any):

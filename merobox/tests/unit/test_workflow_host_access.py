@@ -25,13 +25,15 @@ nodes:
 
 @pytest.fixture
 def run(tmp_path, monkeypatch):
-    """Run a workflow from `<tmp>/wf/wf.yml` with cwd `<tmp>`, as CI runs the examples."""
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "wf").mkdir()
+    """Run a workflow, by default `<tmp>/wf/wf.yml` with cwd `<tmp>` as CI runs the
+    examples; `workflow` and `cwd` are relative to `<tmp>`."""
 
-    def _run(yaml_text, **kwargs):
-        workflow = tmp_path / "wf" / "wf.yml"
+    def _run(yaml_text, workflow="wf/wf.yml", cwd=".", **kwargs):
+        workflow = tmp_path / workflow
+        workflow.parent.mkdir(parents=True, exist_ok=True)
         workflow.write_text("name: t\n" + yaml_text)
+        (tmp_path / cwd).mkdir(parents=True, exist_ok=True)
+        monkeypatch.chdir(tmp_path / cwd)
         with (
             patch.object(run_module, "WorkflowExecutor") as executor,
             patch("merobox.commands.binary_manager.BinaryManager") as binary,
@@ -329,3 +331,37 @@ def test_python_api_runs_trusted_host_access(python_api, tmp_path):
     executor = python_api(REMOTE, trust_workflow=True)
     assert executor.call_args.kwargs["trust_workflow"] is True
     assert executor.call_args.kwargs["workflow_dir"] == str(tmp_path)
+
+
+@pytest.fixture
+def git_repo(tmp_path):
+    """`<tmp>/repo` is a git checkout; its `.git` is a file, as in a worktree."""
+    (tmp_path / "repo").mkdir()
+    (tmp_path / "repo" / ".git").write_text("gitdir: elsewhere\n")
+
+
+CORE_WORKFLOW = "repo/workflows/app-migration/wf.yml"
+
+
+@pytest.mark.parametrize(
+    "path,cwd",
+    [
+        ("dist/app.mpk", "repo"),
+        ("../../dist/app.mpk", "repo/apps/app"),
+        ("workflows/../dist/app.mpk", "repo"),
+    ],
+)
+def test_paths_inside_the_git_checkout_need_no_trust(run, git_repo, path, cwd):
+    steps = step("install_application", path=path)
+    ok, *_ = run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd=cwd)
+    assert ok
+
+
+@pytest.mark.parametrize(
+    "path,cwd", [("../outside.mpk", "repo"), ("../../../x.mpk", "repo/apps/app")]
+)
+def test_paths_leaving_the_git_checkout_are_refused(run, git_repo, path, cwd):
+    steps = step("install_application", path=path)
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd=cwd), "path"
+    )
