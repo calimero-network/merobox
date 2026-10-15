@@ -27,10 +27,12 @@ from merobox.commands.constants import (
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
     PROCESS_WAIT_TIMEOUT,
+    SAFE_NAME_RE,
     SOCKET_CONNECTION_TIMEOUT,
     resolved_drain_timeout,
     resolved_stop_timeout,
 )
+from merobox.commands.host_access import require_safe_node_name
 
 # Default drain wait (seconds) used by BinaryManager when SIGTERM-then-wait
 # is sent to a batch of native processes. Mirrors DockerManager's drain phase.
@@ -241,6 +243,7 @@ class BinaryManager(CleanupMixin):
 
     def _get_pid_file(self, node_name: str) -> Path:
         """Get the PID file path for a node."""
+        require_safe_node_name(node_name)
         return self.pid_file_dir / f"{node_name}.pid"
 
     def _save_pid(self, node_name: str, pid: int):
@@ -312,6 +315,7 @@ class BinaryManager(CleanupMixin):
             True if successful, False otherwise
         """
         try:
+            require_safe_node_name(node_name)
             # Default ports if None provided
             if port is None:
                 port = DEFAULT_P2P_PORT
@@ -805,6 +809,7 @@ class BinaryManager(CleanupMixin):
     def _read_rpc_port(self, node_name: str) -> Optional[int]:
         """Best-effort read RPC port from config.toml under the node data dir."""
         try:
+            require_safe_node_name(node_name)
             node_dir = Path(f"./data/{node_name}") / node_name
             config_path = node_dir / "config.toml"
             if not config_path.exists():
@@ -848,6 +853,8 @@ class BinaryManager(CleanupMixin):
 
     def get_node_logs(self, node_name: str, lines: int = 50) -> Optional[str]:
         """Get the last N lines of node logs."""
+        if not SAFE_NAME_RE.match(node_name):
+            return None
         data_dir = Path(f"./data/{node_name}")
         log_file = data_dir / "logs" / f"{node_name}.log"
 

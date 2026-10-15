@@ -3,7 +3,7 @@
 import os
 from typing import Any, Optional
 
-from merobox.commands.constants import DEFAULT_IMAGE
+from merobox.commands.constants import DEFAULT_IMAGE, SAFE_NAME_RE
 
 TRUST_WORKFLOW_FLAG = "--trust-workflow"
 ROOT_NOT_GIVEN = object()  # a step built without a root refuses host paths
@@ -51,6 +51,14 @@ def validate_path_within(
         return False, f"Path validation failed: {e}"
 
     return True, ""
+
+
+def require_safe_node_name(name: Any) -> None:
+    """Raise ValueError unless `name` is one path component; a node's name names
+    its data dir, log and pid files, so this holds whatever the workflow is trusted with.
+    """
+    if not SAFE_NAME_RE.match(str(name)):
+        raise ValueError(f"unsafe node name {name!r}")
 
 
 def strip_literal_quotes(value: Any) -> Any:

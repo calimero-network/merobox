@@ -42,6 +42,7 @@ from merobox.commands.constants import (
     resolved_drain_timeout,
     resolved_stop_timeout,
 )
+from merobox.commands.host_access import require_safe_node_name
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -501,6 +502,7 @@ class DockerManager(CleanupMixin):
     ) -> bool:
         """Run a Calimero node container."""
         try:
+            require_safe_node_name(node_name)
             # Determine the image to use
             image_to_use = image or DEFAULT_IMAGE
 
@@ -2155,6 +2157,7 @@ class DockerManager(CleanupMixin):
             True if node was stopped successfully, False otherwise
         """
         try:
+            require_safe_node_name(node_name)
             if node_name in self.nodes:
                 container = self.nodes[node_name]
                 success = self._graceful_stop_container(

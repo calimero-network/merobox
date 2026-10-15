@@ -9,6 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from merobox import testing
+from merobox.commands.binary_manager import BinaryManager
 from merobox.commands.bootstrap.run import run as run_module
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
 from merobox.commands.bootstrap.steps.blob import UploadBlobStep
@@ -17,6 +18,7 @@ from merobox.commands.bootstrap.steps.install import InstallApplicationStep
 from merobox.commands.bootstrap.steps.node_exec import NodeExecStep
 from merobox.commands.bootstrap.steps.script import ScriptStep
 from merobox.commands.errors import NodeResolutionError
+from merobox.commands.manager import DockerManager
 from merobox.commands.remote_nodes import RemoteNodeManager
 
 bootstrap_module = importlib.import_module("merobox.commands.bootstrap.bootstrap")
@@ -674,3 +676,68 @@ def test_script_step_runs_locally_when_trusted(tmp_path, monkeypatch):
         sh.return_value.stdout = ""
         assert asyncio.run(step_.execute({}, {}))
     sh.assert_called_once()
+
+
+ESCAPING_NAME = "../../../../tmp/escaped"
+
+
+@pytest.fixture
+def deep_cwd(tmp_path, monkeypatch):
+    """A cwd four levels down, so an escaping ./data/<name> stays inside <tmp>."""
+    cwd = tmp_path / "a" / "b" / "c" / "d"
+    cwd.mkdir(parents=True)
+    monkeypatch.chdir(cwd)
+    return tmp_path
+
+
+def test_binary_run_node_refuses_a_name_that_is_a_path(deep_cwd):
+    manager = BinaryManager(
+        binary_path="/usr/bin/true", require_binary=False, enable_signal_handlers=False
+    )
+    with patch("merobox.commands.binary_manager.subprocess") as proc:
+        assert not manager.run_node(ESCAPING_NAME)
+    proc.Popen.assert_not_called()
+    proc.run.assert_not_called()
+    assert not list(deep_cwd.rglob("escaped"))
+
+
+def test_binary_stop_node_never_reads_a_pid_file_outside_its_dir(deep_cwd):
+    manager = BinaryManager(
+        binary_path="/usr/bin/true", require_binary=False, enable_signal_handlers=False
+    )
+    # ./data/.pids/../../victim.pid is the cwd's victim.pid.
+    (deep_cwd / "a" / "b" / "c" / "d" / "victim.pid").write_text("1")
+    with (
+        patch("merobox.commands.binary_manager._request_stop_pid") as stop,
+        patch.object(manager, "_is_process_running", return_value=True),
+    ):
+        assert not manager.stop_node("../../victim")
+    stop.assert_not_called()
+
+
+def test_docker_run_node_refuses_a_name_that_is_a_path(deep_cwd):
+    manager = DockerManager.__new__(DockerManager)
+    manager.client = MagicMock()
+    with patch.object(manager, "_ensure_image_pulled", return_value=True):
+        assert not manager.run_node(ESCAPING_NAME)
+    manager.client.containers.run.assert_not_called()
+    assert not list(deep_cwd.rglob("escaped"))
+
+
+def test_docker_stop_node_refuses_a_name_that_is_a_path():
+    manager = DockerManager.__new__(DockerManager)
+    manager.client = MagicMock()
+    manager.nodes = {}
+    assert not manager.stop_node(ESCAPING_NAME)
+    manager.client.containers.get.assert_not_called()
+
+
+def test_binary_node_logs_are_never_read_from_outside_the_data_dir(deep_cwd):
+    manager = BinaryManager(
+        binary_path="/usr/bin/true", require_binary=False, enable_signal_handlers=False
+    )
+    cwd = deep_cwd / "a" / "b" / "c" / "d"
+    (cwd / "evil" / "logs").mkdir(parents=True)
+    # ./data/../evil/logs/../evil.log is ./evil/evil.log, outside ./data.
+    (cwd / "evil" / "evil.log").write_text("secret\n")
+    assert manager.get_node_logs("../evil") is None
