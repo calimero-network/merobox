@@ -14,6 +14,7 @@ finding the same class of bug four minutes into a CI job.
 """
 
 import glob
+import importlib.util
 import os
 
 import pytest
@@ -94,5 +95,32 @@ def _without_host_process_steps(value, no_docker: bool):
         return {
             key: _without_host_process_steps(item, no_docker)
             for key, item in value.items()
+            if key not in ("nuke_on_start", "nuke_on_end")
         }
     return value
+
+
+_NEEDS_TRUST = os.path.join(
+    _REPO_ROOT, "workflow-examples", "scripts", "needs_trust.py"
+)
+
+
+@pytest.mark.parametrize(
+    "workflow,lane,needs",
+    [
+        ("workflow-example.yml", [], False),
+        ("kv-store-benchmark.yml", [], True),
+        ("workflow-node-exec-example.yml", [], False),
+        ("workflow-node-exec-example.yml", ["--no-docker"], True),
+    ],
+)
+def test_needs_trust_tells_ci_which_examples_to_trust(
+    workflow, lane, needs, monkeypatch
+):
+    """run_with_retry.sh passes --trust-workflow only when this exits 0."""
+    monkeypatch.chdir(_REPO_ROOT)
+    spec = importlib.util.spec_from_file_location("needs_trust", _NEEDS_TRUST)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    path = os.path.join("workflow-examples", workflow)
+    assert script.main(path, *lane) == (0 if needs else 1)

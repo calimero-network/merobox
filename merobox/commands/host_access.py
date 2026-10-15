@@ -177,6 +177,11 @@ def _host_process_refusals(
             if scope.get("config_path")
         ]
     refused += [
+        f"{key}: deletes node data under the current directory and stops its nodes"
+        for key in ("nuke_on_start", "nuke_on_end")
+        if config.get(key)
+    ]
+    refused += [
         f"step '{step.get('name', step['type'])}' target local: runs a script "
         "as a host process"
         for step in _steps(config.get("steps"))

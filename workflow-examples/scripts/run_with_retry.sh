@@ -10,6 +10,12 @@ EXTRA_ARGS="$@"
 MAX_ATTEMPTS=3
 WORKFLOW_NAME=$(basename "$WORKFLOW_FILE" .yml)
 
+# Trust only the examples that need it, so the rest exercise the untrusted guards.
+TRUST=""
+if python3 "$(dirname "$0")/needs_trust.py" "$WORKFLOW_FILE" $EXTRA_ARGS; then
+    TRUST="--trust-workflow"
+fi
+
 for attempt in $(seq 1 $MAX_ATTEMPTS); do
     if [ $attempt -gt 1 ]; then
         echo "Retry $attempt/$MAX_ATTEMPTS for $WORKFLOW_NAME..."
@@ -18,8 +24,7 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
         sleep 2
     fi
 
-    # These are the repo's own examples, and several run local script steps.
-    if merobox bootstrap run "$WORKFLOW_FILE" $EXTRA_ARGS --e2e-mode --trust-workflow; then
+    if merobox bootstrap run "$WORKFLOW_FILE" $EXTRA_ARGS --e2e-mode $TRUST; then
         echo "✅ $WORKFLOW_NAME passed"
         merobox stop --all $EXTRA_ARGS || true
         merobox nuke -f || true

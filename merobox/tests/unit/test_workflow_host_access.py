@@ -1130,3 +1130,10 @@ def test_a_step_refuses_to_write_through_a_symlink_inside_the_root(
     )
     assert not ok
     download.assert_not_called()
+
+
+@pytest.mark.parametrize("key", ["nuke_on_start", "nuke_on_end"])
+def test_yaml_nuke_needs_trust(run, key):
+    assert_refused(run(NODES + f"{key}: true\n"), key)
+    ok, *_ = run(NODES + f"{key}: true\n", trust_workflow=True)
+    assert ok
