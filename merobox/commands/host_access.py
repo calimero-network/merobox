@@ -208,10 +208,15 @@ def host_path_refusal(path: Any, root: str, relative_to: str) -> Optional[str]:
     path = os.path.expanduser(str(path))
     if "{{" in path:
         return f"'{path}' is only known at run time"
-    ok, _ = validate_path_within(
-        os.path.join(relative_to, path), root, allow_parent_refs=True
-    )
-    return None if ok else f"'{path}' is outside {root}"
+    joined = os.path.join(relative_to, path)
+    ok, _ = validate_path_within(joined, root, allow_parent_refs=True)
+    if not ok:
+        return f"'{path}' is outside {root}"
+    # Git config and hooks run code and hold credentials (fsmonitor, checkout token).
+    inside = os.path.relpath(os.path.realpath(joined), os.path.realpath(root))
+    if ".git" in (part.lower() for part in inside.split(os.sep)):
+        return f"'{path}' is inside a .git directory"
+    return None
 
 
 def _node_scopes(nodes: Any):

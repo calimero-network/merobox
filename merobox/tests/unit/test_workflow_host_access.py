@@ -741,3 +741,31 @@ def test_binary_node_logs_are_never_read_from_outside_the_data_dir(deep_cwd):
     # ./data/../evil/logs/../evil.log is ./evil/evil.log, outside ./data.
     (cwd / "evil" / "evil.log").write_text("secret\n")
     assert manager.get_node_logs("../evil") is None
+
+
+@pytest.mark.parametrize(
+    "steps,key",
+    [
+        (step("download_blob", blob_id="b", output_path=".git/config"), "output_path"),
+        (step("upload_blob", file_path=".git/config"), "file_path"),
+        (step("upload_blob", file_path="vendor/lib/.git/config"), "file_path"),
+    ],
+)
+def test_paths_under_dot_git_are_refused(run, git_repo, steps, key):
+    assert_refused(
+        run(NODES + "steps:\n" + steps, workflow=CORE_WORKFLOW, cwd="repo"), key
+    )
+
+
+def test_a_step_refuses_a_resolved_path_under_dot_git(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    download = AsyncMock(return_value={"success": True, "data": b"x"})
+    ok, _ = run_step(
+        DownloadBlobStep,
+        {"type": "download_blob", "node": "n", "blob_id": "b", "output_path": "{{o}}"},
+        {"o": ".git/config"},
+        str(tmp_path),
+        _download_blob_from_node=download,
+    )
+    assert not ok
+    download.assert_not_called()
