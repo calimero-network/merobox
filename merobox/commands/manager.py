@@ -62,6 +62,12 @@ CORS_ALLOWED_HEADERS = (
     "Authorization,X-Requested-With,X-Auth-Token,Cache-Control"
 )
 
+# Label merobox puts on its Traefik container; marks a `proxy` container as ours to replace.
+PROXY_DASHBOARD_RULE_LABEL = "traefik.http.routers.proxy-dashboard.rule"
+PROXY_DASHBOARD_RULE = "Host(`proxy.127.0.0.1.nip.io`)"
+PROXY_PORTS = ("80/tcp", "8080/tcp")
+ALL_INTERFACES = ("", "0.0.0.0", "::")  # HostIp values that publish on every interface
+
 
 def _validate_cors_origins(origins: list[str]) -> list[str]:
     """
@@ -1201,10 +1207,14 @@ class DockerManager(CleanupMixin):
 
             # Check if auth service and traefik are already running
             auth_running = self._is_container_running("auth")
-            # A proxy published on another interface (e.g. by an older merobox) is replaced.
-            traefik_running = (
-                self._is_container_running("proxy") and self._proxy_bound_to_bind_host()
-            )
+            proxy_state = self._existing_proxy_state()
+            if proxy_state == "foreign":
+                console.print(
+                    "[red]✗ A container named 'proxy' that merobox did not create "
+                    "already exists. Remove or rename it to use --auth-service.[/red]"
+                )
+                return False
+            traefik_running = proxy_state == "reuse"
 
             if auth_running and traefik_running:
                 console.print("[green]✓ Auth service stack is already running[/green]")
@@ -1292,7 +1302,7 @@ class DockerManager(CleanupMixin):
                 "restart_policy": {"Name": "unless-stopped"},
                 "labels": {
                     "traefik.enable": "true",
-                    "traefik.http.routers.proxy-dashboard.rule": "Host(`proxy.127.0.0.1.nip.io`)",
+                    PROXY_DASHBOARD_RULE_LABEL: PROXY_DASHBOARD_RULE,
                     "traefik.http.routers.proxy-dashboard.entrypoints": "web",
                     "traefik.http.routers.proxy-dashboard.service": "api@internal",
                 },
@@ -1452,14 +1462,36 @@ class DockerManager(CleanupMixin):
         except Exception:
             return False
 
-    def _proxy_bound_to_bind_host(self) -> bool:
-        """Whether the existing proxy publishes port 80 on ``self.bind_host``."""
+    def _existing_proxy_state(self) -> str:
+        """Classify the `proxy` container: absent, foreign, recreate or reuse.
+
+        Only a proxy wider than requested is recreated, so sessions keep each other's.
+        """
         try:
             container = self.client.containers.get("proxy")
-            bindings = container.attrs["HostConfig"]["PortBindings"]["80/tcp"]
-            return bindings[0].get("HostIp") == self.bind_host
-        except (docker.errors.DockerException, KeyError, IndexError, TypeError):
-            return False
+        except docker.errors.NotFound:
+            return "absent"
+        labels = container.attrs.get("Config", {}).get("Labels") or {}
+        if labels.get(PROXY_DASHBOARD_RULE_LABEL) != PROXY_DASHBOARD_RULE:
+            return "foreign"
+        if container.status != "running":
+            return "recreate"
+        bindings = container.attrs.get("HostConfig", {}).get("PortBindings") or {}
+        host_ips = [
+            binding.get("HostIp", "")
+            for port in PROXY_PORTS
+            for binding in bindings.get(port) or []
+        ]
+        wide = [ip in ALL_INTERFACES for ip in host_ips]
+        if self.bind_host not in ALL_INTERFACES and any(wide):
+            return "recreate"
+        if self.bind_host in ALL_INTERFACES and not (wide and all(wide)):
+            console.print(
+                "[yellow]The running Traefik proxy is not published on every interface; "
+                "run `merobox stop --auth-service` and start again to expose it on "
+                f"{self.bind_host}.[/yellow]"
+            )
+        return "reuse"
 
     def stop_auth_service_stack(self):
         """Stop the Traefik proxy and auth service containers."""

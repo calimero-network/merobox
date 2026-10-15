@@ -72,41 +72,78 @@ def test_traefik_ports_bind_to_chosen_host(kwargs, host):
     assert configs[0]["ports"] == {"80/tcp": (host, 80), "8080/tcp": (host, 8080)}
 
 
-def _running_stack_client(proxy_host_ip):
+MEROBOX_PROXY_LABELS = {
+    "traefik.http.routers.proxy-dashboard.rule": "Host(`proxy.127.0.0.1.nip.io`)"
+}
+
+
+def _running_stack_client(port_host_ips, labels=MEROBOX_PROXY_LABELS):
     proxy = MagicMock(status="running")
     proxy.attrs = {
+        "Config": {"Labels": labels},
         "HostConfig": {
-            "PortBindings": {"80/tcp": [{"HostIp": proxy_host_ip, "HostPort": "80"}]}
-        }
+            "PortBindings": {
+                port: [{"HostIp": ip, "HostPort": port.split("/")[0]}]
+                for port, ip in port_host_ips.items()
+            }
+        },
     }
     client = MagicMock()
     client.containers.get.side_effect = lambda name: (
         proxy if name == "proxy" else MagicMock(status="running")
     )
-    return client
+    return client, proxy
+
+
+def _both(ip):
+    return {"80/tcp": ip, "8080/tcp": ip}
 
 
 @pytest.mark.parametrize(
-    "proxy_host_ip, bind_host, recreated",
+    "port_host_ips, bind_host, recreated, warned",
     [
-        ("", None, True),
-        ("0.0.0.0", None, True),
-        ("127.0.0.1", "0.0.0.0", True),
-        ("127.0.0.1", None, False),
-        ("0.0.0.0", "0.0.0.0", False),
+        (_both(""), None, True, False),
+        (_both("0.0.0.0"), None, True, False),
+        (_both("::"), None, True, False),
+        ({"80/tcp": "127.0.0.1", "8080/tcp": "0.0.0.0"}, None, True, False),
+        (_both("127.0.0.1"), None, False, False),
+        (_both("127.0.0.1"), "0.0.0.0", False, True),
+        ({"80/tcp": "0.0.0.0", "8080/tcp": "127.0.0.1"}, "0.0.0.0", False, True),
+        (_both(""), "0.0.0.0", False, False),
+        (_both("0.0.0.0"), "0.0.0.0", False, False),
     ],
 )
-def test_running_proxy_is_recreated_only_when_bound_elsewhere(
-    proxy_host_ip, bind_host, recreated
+def test_running_proxy_is_recreated_only_when_wider_than_requested(
+    port_host_ips, bind_host, recreated, warned
 ):
-    manager = _manager(_running_stack_client(proxy_host_ip), bind_host=bind_host)
+    client, _ = _running_stack_client(port_host_ips)
+    manager = _manager(client, bind_host=bind_host)
     manager._start_traefik_container = MagicMock(return_value=True)
     manager._ensure_auth_networks = MagicMock()
 
-    with patch("merobox.commands.manager.time.sleep"):
+    with (
+        patch("merobox.commands.manager.time.sleep"),
+        patch("merobox.commands.manager.console") as console,
+    ):
         assert manager._start_auth_service_stack()
 
     assert manager._start_traefik_container.called is recreated
+    printed = " ".join(str(c.args[0]) for c in console.print.call_args_list)
+    assert ("merobox stop --auth-service" in printed) is warned
+
+
+def test_foreign_proxy_container_is_never_removed():
+    client, proxy = _running_stack_client({"3000/tcp": "0.0.0.0"}, labels={})
+    manager = _manager(client)
+    manager._ensure_image_pulled = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    with patch("merobox.commands.manager.time.sleep"):
+        assert not manager._start_auth_service_stack()
+
+    proxy.remove.assert_not_called()
+    proxy.stop.assert_not_called()
+    client.containers.run.assert_not_called()
 
 
 @pytest.mark.parametrize(
