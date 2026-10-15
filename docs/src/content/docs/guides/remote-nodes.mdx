@@ -43,10 +43,11 @@ workflow can mix locally-managed and remote nodes in one run.
    ```
 
 4. **Use it in a workflow** — reference the name under `remote_nodes:` (see
-   [below](#referencing-remote-nodes-in-workflows)), then run it:
+   [below](#referencing-remote-nodes-in-workflows)), then run it, trusting the
+   workflow to contact the servers it names:
 
    ```bash
-   merobox bootstrap run workflow.yml
+   merobox bootstrap run workflow.yml --trust-workflow
    ```
 
 </Steps>
@@ -129,6 +130,12 @@ quickest way to see whether a re-login is needed.
 
 Declare remote nodes under the top-level `remote_nodes:` key. Values support
 environment-variable expansion at parse time.
+
+Because this sends requests and environment credentials to the servers the file
+names, and saves them to your registry, `bootstrap run` refuses `remote_nodes:`
+unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). The
+same goes for a step whose `node:` is a URL. Nodes you register on the command
+line (below) need no trust.
 
 ```yaml
 remote_nodes:

@@ -150,6 +150,11 @@ merobox bootstrap create-sample
 # Pass extra arguments straight to `merod run` (binary mode only)
 merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
   --merod-args="--sync-strategy delta --state-sync-strategy hash"
+
+# Let the YAML reach the host outside its directory (refused by default):
+# no_docker/binary_path, remote_nodes or URL nodes, non-Calimero node images,
+# and data_dir/config_path/file_path/output_path/install paths outside it
+merobox bootstrap run workflow.yml --trust-workflow
 ```
 
 ## Workflow YAML Structure

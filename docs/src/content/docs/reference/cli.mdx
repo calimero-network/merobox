@@ -241,12 +241,30 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 | `--auth-username`          | —                | Username for embedded auth. Must be paired with `--auth-password`.      |
 | `--auth-password`          | —                | Password for embedded auth. Must be paired with `--auth-username`.      |
 | `--dry-run`                | off              | Validate the workflow (config, variables, node config) without executing. |
+| `--trust-workflow`         | off              | Let the workflow YAML reach the host outside its directory. See below.  |
 
 <Aside type="note">
   `--auth-username` and `--auth-password` must be supplied together under
   `--auth-mode embedded`, or both omitted to drive auth declaratively with
   `login` steps. `--merod-args` only applies with `--no-docker`.
 </Aside>
+
+#### Trusting a workflow
+
+A workflow file is often written by someone other than the person running it, so by default it cannot reach the host outside its own directory.
+`bootstrap run` refuses the workflow before starting any node, naming each key below, unless you pass `--trust-workflow`:
+
+| YAML key                                                                 | Why it needs trust                                              |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `no_docker`, `binary_path`                                               | Runs a host process.                                            |
+| `remote_nodes`, or a step `node:` that is an `http(s)://` URL            | Sends requests, files and credentials to a server the workflow names. |
+| `nodes.image`, a per-node `image`, `node_exec.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as root with a host directory mounted. |
+| `data_dir`, `config_path` (shared or per-node), `node_exec.data_dir`     | Mounts or copies a host path into a node.                       |
+| `upload_blob.file_path`, `install_application.path`, `download_blob.output_path` | Reads or writes a host file.                            |
+
+The path keys are accepted without the flag when they resolve inside the workflow file's directory; a `{{placeholder}}` in one of them is only known at run time, so it always needs the flag.
+The same settings given as CLI flags (`--no-docker`, `--binary-path`, `--image`, `--remote-node`) are yours and need no trust.
+The Python API takes the same opt-in as `merobox.testing.workflow(..., trust_workflow=True)`.
 
 ### bootstrap validate
 
