@@ -68,3 +68,56 @@ def test_copy_file_refuses_a_symlinked_destination(repo):
     with pytest.raises(OSError):
         safe_fs.copy_file("src.toml", "config.toml")
     assert (repo / "victim").read_text() == "precious\n"
+
+
+@pytest.fixture
+def no_precheck(monkeypatch):
+    """Model a component swapped for a symlink after any lstat check: the open,
+    remove or rmtree must refuse it on its own."""
+    monkeypatch.setattr(safe_fs, "refuse_symlinks", lambda *a, **k: None)
+
+
+def test_open_refuses_a_symlinked_directory_without_the_precheck(repo, no_precheck):
+    os.symlink(repo, repo / "repo" / "data")
+    with pytest.raises(OSError):
+        safe_fs.open_for_write("data/victim")
+    assert (repo / "victim").read_text() == "precious\n"
+
+
+def test_remove_refuses_a_symlinked_parent_without_the_precheck(repo, no_precheck):
+    os.symlink(repo, repo / "repo" / "pids")
+    with pytest.raises(OSError):
+        safe_fs.remove("pids/victim")
+    assert (repo / "victim").exists()
+
+
+def test_rmtree_refuses_a_symlink_without_the_precheck(repo, no_precheck):
+    (repo / "keep").mkdir()
+    (repo / "keep" / "f").write_text("x")
+    os.symlink(repo / "keep", repo / "repo" / "node")
+    with pytest.raises(OSError):
+        safe_fs.rmtree("node")
+    assert (repo / "keep" / "f").exists()
+
+
+def test_rmtree_removes_links_inside_without_following_them(repo):
+    (repo / "keep").mkdir()
+    (repo / "keep" / "f").write_text("x")
+    (repo / "repo" / "node" / "sub").mkdir(parents=True)
+    os.symlink(repo / "keep", repo / "repo" / "node" / "sub" / "link")
+    os.symlink(repo / "keep" / "f", repo / "repo" / "node" / "flink")
+    safe_fs.rmtree("node")
+    assert not (repo / "repo" / "node").exists()
+    assert (repo / "keep" / "f").exists()
+
+
+def test_makedirs_refuses_a_symlinked_component(repo, no_precheck):
+    os.symlink(repo, repo / "repo" / "data")
+    with pytest.raises(OSError):
+        safe_fs.makedirs("data/a/b")
+    assert not (repo / "a").exists()
+
+
+def test_makedirs_creates_nested_directories(repo):
+    safe_fs.makedirs("data/a/b", mode=0o700)
+    assert (repo / "repo" / "data" / "a" / "b").is_dir()
