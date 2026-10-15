@@ -10,10 +10,10 @@ multi-node (count >= 2) runs, `calimero_web` for auth-service workflows,
 if you need to disconnect from something specific (or from a network the
 container is attached to alongside others).
 
-Caveat: this is not a perfect partition. Containers also bind to the host's
-exposed ports, so any peer connecting via host gateway would still see them.
-Inside merobox's default 1-host setup this is fine — all inter-node libp2p
-traffic flows over the bridge.
+Caveat: this is not a perfect partition when nodes are started with
+`--bind-host 0.0.0.0`: their published ports then stay reachable via the host
+gateway. Under the default loopback publishing, and in merobox's 1-host setup
+generally, all inter-node libp2p traffic flows over the bridge.
 
 Reconnect typically needs a few seconds for libp2p mesh reformation
 (heartbeats + peer discovery), so workflows should pair this with an
