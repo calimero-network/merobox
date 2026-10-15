@@ -50,6 +50,14 @@ Each node opens two listeners, matching `merod`'s own defaults:
 When you start more than one node, ports are allocated per node starting from
 the base (or auto-detected free ports if you omit the base flags).
 
+In Docker mode these ports, and the Traefik proxy started by `--auth-service`, are published on `127.0.0.1` only.
+Under the default `proxy` auth mode the admin API authenticates nobody, so anything that can reach the port controls the node.
+To reach nodes from another machine (for example a multi-host P2P setup), opt in with `--bind-host`, ideally together with `--auth-mode embedded`:
+
+```bash
+merobox run --count 2 --bind-host 0.0.0.0 --auth-mode embedded
+```
+
 :::note
 `merobox run` **starts nodes**. It does not run workflow YAML — that is
 `merobox bootstrap run <file>.yml` (see [workflow engine](/workflows/engine/)).
@@ -71,6 +79,7 @@ the base (or auto-detected free ports if you omit the base flags).
 | `--foreground` | Attach to `merod`'s interactive UI (binary mode, single node only). |
 | `--auth-service` | Enable the Traefik + auth stack (Docker mode). |
 | `--auth-mode` | `embedded` or `proxy` (default `proxy`). |
+| `--bind-host` | Host interface Docker ports are published on (default `127.0.0.1`). |
 
 ## Node lifecycle
 
