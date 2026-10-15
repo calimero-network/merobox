@@ -246,6 +246,14 @@ def bootstrap():
     is_flag=True,
     help="Validate workflow without executing. Checks config, resolves variables, and checks node configuration.",
 )
+@click.option(
+    "--trust-workflow",
+    is_flag=True,
+    help="Let the workflow YAML reach the host outside its own directory: run host "
+    "binaries (no_docker, binary_path), contact servers it names (remote_nodes, "
+    "URL nodes), use non-Calimero node images, and read or write paths outside the "
+    "workflow directory. Refused by default; pass only for workflows you trust.",
+)
 def run(
     config_file,
     verbose,
@@ -268,6 +276,7 @@ def run(
     auth_username,
     auth_password,
     dry_run,
+    trust_workflow,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -338,6 +347,7 @@ def run(
         auth_username=auth_username,
         auth_password=auth_password,
         dry_run=dry_run,
+        trust_workflow=trust_workflow,
     )
     if not success:
         sys.exit(1)

@@ -6,8 +6,9 @@ name: Sample Calimero Workflow (binary-mode)
 # You can still override on the CLI with --no-docker or --binary-path.
 #
 # How to run:
-#  - With the YAML-only flag (runner now honours `no_docker`):
-#      python -m merobox.cli bootstrap run workflow-examples/workflow-example-binary.yml
+#  - With the YAML-only flag, which runs a host process and so needs your
+#    explicit --trust-workflow:
+#      python -m merobox.cli bootstrap run workflow-examples/workflow-example-binary.yml --trust-workflow
 #  - Or explicitly via CLI:
 #      python -m merobox.cli bootstrap run workflow-examples/workflow-example-binary.yml --no-docker --binary-path /path/to/merod
 
