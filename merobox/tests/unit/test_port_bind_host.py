@@ -72,6 +72,43 @@ def test_traefik_ports_bind_to_chosen_host(kwargs, host):
     assert configs[0]["ports"] == {"80/tcp": (host, 80), "8080/tcp": (host, 8080)}
 
 
+def _running_stack_client(proxy_host_ip):
+    proxy = MagicMock(status="running")
+    proxy.attrs = {
+        "HostConfig": {
+            "PortBindings": {"80/tcp": [{"HostIp": proxy_host_ip, "HostPort": "80"}]}
+        }
+    }
+    client = MagicMock()
+    client.containers.get.side_effect = lambda name: (
+        proxy if name == "proxy" else MagicMock(status="running")
+    )
+    return client
+
+
+@pytest.mark.parametrize(
+    "proxy_host_ip, bind_host, recreated",
+    [
+        ("", None, True),
+        ("0.0.0.0", None, True),
+        ("127.0.0.1", "0.0.0.0", True),
+        ("127.0.0.1", None, False),
+        ("0.0.0.0", "0.0.0.0", False),
+    ],
+)
+def test_running_proxy_is_recreated_only_when_bound_elsewhere(
+    proxy_host_ip, bind_host, recreated
+):
+    manager = _manager(_running_stack_client(proxy_host_ip), bind_host=bind_host)
+    manager._start_traefik_container = MagicMock(return_value=True)
+    manager._ensure_auth_networks = MagicMock()
+
+    with patch("merobox.commands.manager.time.sleep"):
+        assert manager._start_auth_service_stack()
+
+    assert manager._start_traefik_container.called is recreated
+
+
 @pytest.mark.parametrize(
     "args, expected", [([], None), (["--bind-host", "0.0.0.0"], "0.0.0.0")]
 )

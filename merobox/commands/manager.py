@@ -1201,7 +1201,10 @@ class DockerManager(CleanupMixin):
 
             # Check if auth service and traefik are already running
             auth_running = self._is_container_running("auth")
-            traefik_running = self._is_container_running("proxy")
+            # A proxy published on another interface (e.g. by an older merobox) is replaced.
+            traefik_running = (
+                self._is_container_running("proxy") and self._proxy_bound_to_bind_host()
+            )
 
             if auth_running and traefik_running:
                 console.print("[green]✓ Auth service stack is already running[/green]")
@@ -1447,6 +1450,15 @@ class DockerManager(CleanupMixin):
         except docker.errors.NotFound:
             return False
         except Exception:
+            return False
+
+    def _proxy_bound_to_bind_host(self) -> bool:
+        """Whether the existing proxy publishes port 80 on ``self.bind_host``."""
+        try:
+            container = self.client.containers.get("proxy")
+            bindings = container.attrs["HostConfig"]["PortBindings"]["80/tcp"]
+            return bindings[0].get("HostIp") == self.bind_host
+        except (docker.errors.DockerException, KeyError, IndexError, TypeError):
             return False
 
     def stop_auth_service_stack(self):
