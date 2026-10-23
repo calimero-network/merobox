@@ -83,6 +83,7 @@ from merobox.commands.bootstrap.steps import (
     SetTeeAdmissionPolicyStep,
     SyncGroupStep,
     TeeFleetJoinStep,
+    TransferOwnershipStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
     UpgradeGroupStep,
@@ -2458,6 +2459,8 @@ class WorkflowExecutor:
             return ListGroupMembersStep(step_config, **common_kwargs)
         elif step_type == "update_member_role":
             return UpdateMemberRoleStep(step_config, **common_kwargs)
+        elif step_type == "transfer_ownership":
+            return TransferOwnershipStep(step_config, **common_kwargs)
         elif step_type == "set_member_capabilities":
             return SetMemberCapabilitiesStep(step_config, **common_kwargs)
         elif step_type == "set_member_auto_follow":

@@ -178,6 +178,15 @@ steps:
     member_id: '{{p2_account}}'
     role: Admin
 
+  # Only the owner can hand the namespace over; an admin is refused.
+  - name: Node 2 Cannot Transfer Namespace Ownership
+    type: transfer_ownership
+    node: calimero-node-2
+    group_id: '{{namespace_id}}'
+    new_owner: '{{p2_account}}'
+    expected_failure: true
+    expected_error: 'HTTP 403'
+
   - name: List Members After Role Change
     type: list_group_members
     node: calimero-node-1

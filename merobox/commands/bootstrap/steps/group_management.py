@@ -7,10 +7,15 @@ Steps for managing group membership, roles, capabilities, and lifecycle.
 import json
 from typing import Any
 
+import requests
 from rich.markup import escape
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
+from merobox.commands.constants import (
+    DEFAULT_CONNECTION_TIMEOUT,
+    DEFAULT_READ_TIMEOUT,
+)
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
@@ -203,6 +208,81 @@ class UpdateMemberRoleStep(BaseStep):
         workflow_results[f"update_member_role_{node_name}"] = result["data"]
         console.print(
             f"[green]✓ Updated role to '{role}' for {member_id} in group {group_id} on {node_name}[/green]"
+        )
+        if expected_failure:
+            return self._report_unexpected_success()
+        return True
+
+
+class TransferOwnershipStep(BaseStep):
+    """Hand a group or namespace to one of its admins (owner-only)."""
+
+    def _get_required_fields(self) -> list[str]:
+        return ["node", "group_id", "new_owner"]
+
+    def _validate_field_types(self) -> None:
+        step_name = self.config.get(
+            "name", f'Unnamed {self.config.get("type", "Unknown")} step'
+        )
+        for field in ("node", "group_id", "new_owner"):
+            if not isinstance(self.config.get(field), str):
+                raise ValueError(f"Step '{step_name}': '{field}' must be a string")
+
+    def _transfer_via_http(
+        self, rpc_url: str, token: str | None, group_id: str, new_owner: str
+    ) -> dict[str, Any]:
+        # The compiled client has no transfer method, so POST the admin-api directly.
+        resp = requests.post(
+            f"{rpc_url.rstrip('/')}/admin-api/groups/{group_id}/transfer-ownership",
+            json={"newOwner": new_owner},
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+            timeout=(DEFAULT_CONNECTION_TIMEOUT, DEFAULT_READ_TIMEOUT),
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"transfer_ownership HTTP {resp.status_code}: {resp.text}"
+            )
+        return self._parse_json(resp.text) or {}
+
+    async def execute(
+        self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
+    ) -> bool:
+        node_name = self.config["node"]
+        group_id = self._resolve_dynamic_value(
+            self.config["group_id"], workflow_results, dynamic_values
+        )
+        new_owner = self._resolve_dynamic_value(
+            self.config["new_owner"], workflow_results, dynamic_values
+        )
+        try:
+            rpc_url, cache_node_name = self._resolve_node_target(node_name)
+            token = self._resolve_token(
+                cache_node_name, workflow_results, dynamic_values
+            )
+            result = ok(self._transfer_via_http(rpc_url, token, group_id, new_owner))
+        except Exception as e:
+            result = fail(f"transfer_ownership failed: {e}", error=e)
+
+        expected_failure = self._is_expected_failure()
+
+        if not result["success"]:
+            if expected_failure:
+                return self._report_expected_failure(self._failure_detail(result))
+            console.print(
+                f"[red]transfer_ownership failed on {node_name}: "
+                f"{escape(str(result.get('error')))}[/red]"
+            )
+            return False
+        if self._check_jsonrpc_error(result["data"]):
+            if expected_failure:
+                return self._report_expected_failure(
+                    self._jsonrpc_error_detail(result["data"])
+                )
+            return False
+        workflow_results[f"transfer_ownership_{node_name}"] = result["data"]
+        self._export_variables(result["data"], node_name, dynamic_values)
+        console.print(
+            f"[green]✓ Transferred ownership of {group_id} to {new_owner} on {node_name}[/green]"
         )
         if expected_failure:
             return self._report_unexpected_success()
