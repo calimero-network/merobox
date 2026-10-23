@@ -36,7 +36,7 @@ def _step(path, **extra):
         "json_output": True,
     }
     config.update(extra)
-    return ScriptStep(config)
+    return ScriptStep(config, host_root=None)
 
 
 @pytest.fixture

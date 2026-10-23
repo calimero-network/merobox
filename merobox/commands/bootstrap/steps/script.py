@@ -11,8 +11,15 @@ import tarfile
 import time
 from typing import Any, Optional
 
+from rich.markup import escape
+
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.constants import DEFAULT_IMAGE, SCRIPT_CONTAINER_STOP_TIMEOUT
+from merobox.commands.host_access import (
+    ROOT_NOT_GIVEN,
+    TRUST_WORKFLOW_FLAG,
+    validate_path_within,
+)
 from merobox.commands.utils import console
 
 
@@ -49,8 +56,11 @@ class ScriptStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
+        host_root: Any = ROOT_NOT_GIVEN,
     ):
-        super().__init__(config, manager, resolver, auth_mode=auth_mode)
+        super().__init__(
+            config, manager, resolver, auth_mode=auth_mode, host_root=host_root
+        )
         self.script_path = config.get("script")
         self.target = config.get("target", "image")  # 'image' or 'nodes'
         self.description = config.get(
@@ -60,68 +70,8 @@ class ScriptStep(BaseStep):
         self.script_args = config.get("args", [])
 
     def _validate_script_path(self, script_path: str) -> tuple[bool, str]:
-        """
-        Validate the script path against path traversal attacks.
-
-        Ensures the script path:
-        1. Does not contain '..' path components
-        2. Resolves to a path within the current working directory
-
-        Args:
-            script_path: The script path to validate
-
-        Returns:
-            Tuple of (is_valid, error_message). If is_valid is True,
-            error_message will be empty.
-        """
-        if not script_path:
-            return False, "Script path is empty"
-
-        # Check for explicit path traversal components
-        # Normalize separators for cross-platform check
-        normalized_path = script_path.replace("\\", "/")
-        path_parts = normalized_path.split("/")
-        if ".." in path_parts:
-            return (
-                False,
-                f"Path traversal detected: script path contains '..': {script_path}",
-            )
-
-        # Get the current working directory as the allowed base directory
-        cwd = os.getcwd()
-
-        # Resolve the script path to its canonical absolute form
-        # os.path.realpath resolves symlinks and normalizes the path
-        try:
-            absolute_script_path = os.path.realpath(
-                os.path.join(cwd, script_path)
-                if not os.path.isabs(script_path)
-                else script_path
-            )
-        except (OSError, ValueError) as e:
-            return False, f"Failed to resolve script path: {e}"
-
-        # Ensure the resolved path is within the allowed directory
-        # Use os.path.commonpath to check if the script is under cwd
-        try:
-            # Normalize both paths for comparison
-            cwd_normalized = os.path.normcase(os.path.realpath(cwd))
-            script_normalized = os.path.normcase(absolute_script_path)
-
-            # Check if script path starts with cwd (is under cwd)
-            if (
-                not script_normalized.startswith(cwd_normalized + os.sep)
-                and script_normalized != cwd_normalized
-            ):
-                return False, (
-                    f"Path traversal detected: script path '{script_path}' "
-                    f"resolves to '{absolute_script_path}' which is outside "
-                    f"the allowed directory '{cwd}'"
-                )
-        except ValueError as e:
-            return False, f"Path validation failed: {e}"
-
-        return True, ""
+        """Confine the script path to the current working directory."""
+        return validate_path_within(script_path, os.getcwd())
 
     def _resolve_script_args(
         self, workflow_results: dict[str, Any], dynamic_values: dict[str, Any]
@@ -235,6 +185,16 @@ class ScriptStep(BaseStep):
         is_valid, error_message = self._validate_script_path(self.script_path)
         if not is_valid:
             console.print(f"[red]❌ {error_message}[/red]")
+            return False
+        if self._refuse_host_path("script", self.script_path):
+            return False
+        # Only an explicitly trusted run (host_root None) may run host code.
+        if self.target == "local" and self.host_root is not None:
+            console.print(
+                f"[red]Step '{escape(self._get_step_name())}': target local runs the "
+                f"script as a host process; rerun with {TRUST_WORKFLOW_FLAG} if "
+                "you trust this workflow[/red]"
+            )
             return False
 
         if not os.path.exists(self.script_path):
@@ -620,6 +580,9 @@ class ScriptStep(BaseStep):
             containers = manager.client.containers.list(
                 filters={"label": "calimero.node=true"}
             )
+            containers = [
+                c for c in containers if not self._refuse_foreign_container(c.name)
+            ]
 
             if not containers:
                 console.print(

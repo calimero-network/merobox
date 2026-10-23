@@ -811,7 +811,9 @@ class TestConnectNodeReinjectsRoute:
 
         monkeypatch.setattr(network_mod, "get_docker_client", lambda _m: _FakeClient())
 
-        step = ConnectNodeStep({"type": "connect_node", "node": "sync-resil-node-2"})
+        step = ConnectNodeStep(
+            {"type": "connect_node", "node": "sync-resil-node-2"}, host_root=None
+        )
         step.manager = object()
 
         dynamic_values = {
@@ -935,7 +937,7 @@ def _patch_docker(monkeypatch, ips):
 
 
 def _step(cls, peers):
-    step = cls({"type": cls.__name__, "node": "node-2", "peers": peers})
+    step = cls({"type": cls.__name__, "node": "node-2", "peers": peers}, host_root=None)
     step.manager = object()
     return step
 

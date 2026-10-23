@@ -30,6 +30,7 @@ from typing import Any
 
 from rich.markup import escape
 
+from merobox.commands import safe_fs
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.client import get_client_for_rpc_url
 from merobox.commands.result import fail, ok
@@ -182,6 +183,8 @@ class DownloadBlobStep(BaseStep):
             output_path = self._resolve_dynamic_value(
                 output_path, workflow_results, dynamic_values
             )
+            if self._refuse_host_path("output_path", output_path, writes=True):
+                return False
 
         expected_size = self.config.get("expected_size")
         if isinstance(expected_size, str):
@@ -272,7 +275,11 @@ class DownloadBlobStep(BaseStep):
                 parent = os.path.dirname(os.path.abspath(output_path))
                 if parent:
                     os.makedirs(parent, exist_ok=True)
-                with open(output_path, "wb") as f:
+                with safe_fs.open_for_write(
+                    output_path,
+                    binary=True,
+                    root=self.host_root if isinstance(self.host_root, str) else None,
+                ) as f:
                     f.write(blob_data)
                 console.print(f"[blue]💾 Saved to {output_path}[/blue]")
             except Exception as e:

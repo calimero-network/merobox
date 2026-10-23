@@ -503,8 +503,10 @@ class TestPerStepSmoke:
             "path": str(fake_wasm),
             "dev": True,
         }
-        step_fail = InstallApplicationStep({**base_config, "expected_failure": True})
-        step_default = InstallApplicationStep(base_config)
+        step_fail = InstallApplicationStep(
+            {**base_config, "expected_failure": True}, host_root=None
+        )
+        step_default = InstallApplicationStep(base_config, host_root=None)
 
         mock_client = MagicMock()
         mock_client.install_dev_application.side_effect = RuntimeError("boom")

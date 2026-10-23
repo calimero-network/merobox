@@ -162,7 +162,9 @@ merobox bootstrap run workflow.yml \
 
 <Aside type="note">
 A workflow can opt into binary mode itself with top-level `no_docker: true` and
-`binary_path:` keys; the CLI flags take precedence when both are set. To pin a
+`binary_path:` keys; the CLI flags take precedence when both are set. Because
+these run a host process the workflow chose, they need `--trust-workflow` unless
+the matching CLI flag is given. To pin a
 specific Docker image instead, use `--image` (or the `image:` field under
 `nodes:`).
 </Aside>

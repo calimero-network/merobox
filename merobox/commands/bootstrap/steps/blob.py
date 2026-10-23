@@ -128,6 +128,9 @@ class UploadBlobStep(BaseStep):
             file_path, workflow_results, dynamic_values
         )
 
+        if self._refuse_host_path("file_path", file_path):
+            return False
+
         # Check if file exists
         if not os.path.exists(file_path):
             console.print(f"[red]File not found: {file_path}[/red]")

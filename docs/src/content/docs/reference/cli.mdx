@@ -234,18 +234,61 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 | `--binary-path`            | search `PATH`    | Path to the `merod` binary (binary mode).                              |
 | `--merod-args`             | —                | Extra arguments passed to `merod run`. Binary mode only (ignored otherwise). |
 | `--e2e-mode`               | off              | Aggressive-sync e2e test mode with unique rendezvous namespaces and no bootstrap nodes. |
-| `--remote-node`            | —                | Register a remote node for this run: `name=url`. Repeatable.            |
+| `--remote-node`            | —                | Register a remote node for this run: `name=url`, or a bare `name` to use a registry entry as saved. Repeatable. |
 | `--remote-auth`            | —                | Auth for a remote node: `name=user:pass` or `name=apikey:KEY`. Repeatable. |
 | `--api-key`                | —                | Default API key for remote nodes without explicit auth.                |
 | `--auth-mode`              | `proxy`          | `embedded` or `proxy` authentication mode for `merod`.                  |
 | `--auth-username`          | —                | Username for embedded auth. Must be paired with `--auth-password`.      |
 | `--auth-password`          | —                | Password for embedded auth. Must be paired with `--auth-username`.      |
 | `--dry-run`                | off              | Validate the workflow (config, variables, node config) without executing. |
+| `--trust-workflow`         | off              | Allow the workflow YAML keys listed below, including local `script` steps. |
 
 <Aside type="note">
   `--auth-username` and `--auth-password` must be supplied together under
   `--auth-mode embedded`, or both omitted to drive auth declaratively with
   `login` steps. `--merod-args` only applies with `--no-docker`.
+</Aside>
+
+#### Trusting a workflow
+
+A workflow file is often written by someone other than the person running it.
+By default `bootstrap run` refuses the keys below, which run host processes, contact servers, run images from outside Calimero, or open host paths outside the workflow's checkout (the git checkout holding the workflow file below your home directory, or the workflow's own directory when it is not in one).
+The refusal comes before any node starts and names each key; pass `--trust-workflow` to allow them.
+`bootstrap validate` lists the same keys.
+
+| YAML key                                                                 | Why it needs trust                                              |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `no_docker`, `binary_path`                                               | Runs a host process.                                            |
+| A `script` step with `target: local`                                     | Runs the script as a host process, with your environment.      |
+| `remote_nodes`, or a step `node:` that is an `http(s)://` URL            | Sends requests, files and credentials to a server the workflow names. |
+| A step `node:` naming a node in your `merobox remote` registry           | Acts on your real node with your cached token.                 |
+| `nodes.init_args` in binary mode (`--no-docker`)                         | Passes flags such as `--server-host` or `--home` to a host `merod`. |
+| `config_path` (shared or per-node) and `node_exec` steps in binary mode  | Hands a host `merod` a whole `config.toml`, or runs it with the step's arguments. |
+| `nodes.image`, a per-node `image`, `node_exec.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as root with a host directory mounted. |
+| `auth_image`, `topology.boot_node.image` outside `ghcr.io/calimero-network/` | Runs an arbitrary image as a long-lived container on your Docker host. |
+| `data_dir`, `config_path` (shared or per-node), `node_exec.data_dir`     | Mounts or copies a host path into a node.                       |
+| `node_exec.files`                                                        | Writes files into the node's home on the host.                  |
+| `nuke_on_start`, `nuke_on_end`                                           | Deletes node data under the current directory and stops its nodes. |
+| A container step (`pause_container`, `restart_container`, `connect_node`, ...) or `target: nodes` script naming a container this run did not start, or `connect_node` with `network:` | Acts on, execs into or rewires containers that are not this workflow's. Nodes an earlier run left running count as not this run's. |
+| `upload_blob.file_path`, `install_application.path`, `download_blob.output_path`, `script` | Reads or writes a host file.                            |
+
+The path keys are accepted without the flag when they resolve inside the workflow's checkout; `..` is fine as long as the result stays inside.
+Even inside it, a path may not name a git control file (`.git`, `.gitmodules`, `.gitattributes`, `.gitconfig`, at any depth and any case), and a written path may not be a `HEAD`, `config` or `packed-refs` file or sit under `objects/`, `refs/` or `hooks/`, since git would run code from either.
+A workflow whose directory is your home directory, or above it, gets no host paths at all without the flag.
+Each step checks a path again after its `{{placeholders}}` resolve, and every file merobox writes or deletes for a run is opened one directory at a time without following symlinks, so a link planted in the checkout (or swapped in mid-run) makes the write fail.
+Before anything starts, merobox also refuses, whatever you pass, a run whose state directories under the current directory (`data`, `data/.pids`, `data/container-logs`, `docker-logs`, or a node's data dir) are symlinks or lead outside it.
+The same settings given as CLI flags (`--no-docker`, `--binary-path`, `--image`, `--remote-node`) are yours and need no trust.
+Node names, wherever a workflow gives them (`nodes`, `nodes.prefix`, a step's `node:` or `nodes:`), must be a single path component (`[A-Za-z0-9][A-Za-z0-9_.-]*`) whatever you pass.
+The Python API takes the same opt-in, as `merobox.testing.workflow(..., trust_workflow=True)` or `WorkflowExecutor(..., trust_workflow=True)`, and `WorkflowExecutor` applies these checks itself.
+
+Some things stay open to any workflow, so weigh them when you run one you did not write.
+Container steps and node-target scripts run as root inside the node containers and can write anything into a node's mounted data directory.
+`bootstrap_nodes` and `admitter_addrs` make your nodes dial the peers a workflow lists.
+
+<Aside type="caution" title="Local scripts are host code">
+  A `script` step with `target: local` runs any file it names as a shell script on your machine, including the workflow YAML itself, so it always needs `--trust-workflow`.
+  Steps with `target: image` or `target: nodes` run inside a container; their script file must still sit inside the workflow's checkout.
+  Read every script step, and the file it names, before trusting a workflow you did not write.
 </Aside>
 
 ### bootstrap validate

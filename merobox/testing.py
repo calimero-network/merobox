@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+from merobox.commands.host_access import check_host_access
 from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console, get_node_rpc_url
 
@@ -117,6 +118,7 @@ def workflow(
     base_rpc_port: int | None = None,
     stop_all: bool = True,
     wait_for_ready: bool = True,
+    trust_workflow: bool = False,
 ) -> WorkflowEnv:
     """Run a Merobox workflow as pretest setup and tear down automatically.
 
@@ -128,6 +130,8 @@ def workflow(
         base_rpc_port: Optional base RPC port to start from (auto-detect if None).
         stop_all: Whether to stop and remove nodes on exit.
         wait_for_ready: Whether to wait for nodes to be ready after workflow execution.
+        trust_workflow: Allow YAML keys that reach the host, as
+            `bootstrap run --trust-workflow` does.
 
     Yields:
         WorkflowEnv with node names, endpoints map, manager, workflow execution result, and captured dynamic values.
@@ -149,10 +153,15 @@ def workflow(
         from merobox.commands.bootstrap.config import load_workflow_config
 
         config = load_workflow_config(str(workflow_path))
+        workflow_dir = str(workflow_path.absolute().parent)
+        if not trust_workflow:
+            check_host_access(config, workflow_dir)
 
         executor = WorkflowExecutor(
             config,
             manager,
+            workflow_dir=workflow_dir,
+            trust_workflow=trust_workflow,
         )
         workflow_result = asyncio.run(executor.execute_workflow())
 

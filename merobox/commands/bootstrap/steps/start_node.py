@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.health import check_node_health
+from merobox.commands.host_access import ROOT_NOT_GIVEN
 from merobox.commands.utils import console
 
 # Coroutine that starts one node:
@@ -26,10 +27,13 @@ class StartNodeStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
+        host_root: Any = ROOT_NOT_GIVEN,
         workflow_config: dict[str, Any] | None = None,
         start_node_fn: Optional[StartNodeFn] = None,
     ):
-        super().__init__(config, manager, resolver, auth_mode=auth_mode)
+        super().__init__(
+            config, manager, resolver, auth_mode=auth_mode, host_root=host_root
+        )
         self.workflow_config = workflow_config or {}
         # Callable that actually starts a node (the executor's node-startup
         # logic); kept as a plain callable so the step doesn't hold a back-

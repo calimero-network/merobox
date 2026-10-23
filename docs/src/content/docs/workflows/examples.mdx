@@ -33,6 +33,9 @@ merobox bootstrap run workflow-examples/workflow-example.yml --dry-run
 Some workflows document their own switches in a top-of-file comment — e.g. the
 open-invitation example expects `--e2e-mode`, and the binary/auth examples run
 in native (`--no-docker`) mode. Read the header before running.
+Examples with a `target: local` script step (the TEE, fault-injection and
+benchmark workflows, among others) run that script on your machine, so they
+need [`--trust-workflow`](/reference/cli/#trusting-a-workflow).
 
 When you're done, stop the nodes the run left behind:
 
@@ -59,7 +62,7 @@ run-hygiene flags.
 | Example | Teaches | Key steps |
 | --- | --- | --- |
 | [`workflow-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-example.yml) | The canonical Docker two-node flow: install → namespace → context → invite/join → call → sync, with dynamic value capture via `outputs`. | `install_application`, `create_namespace`, `create_context`, `create_namespace_invitation`, `join_namespace`, `call`, `wait_for_sync` |
-| [`workflow-example-binary.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-example-binary.yml) | The same end-to-end flow run in native binary mode (`no_docker: true`) instead of containers. | same as above, `no_docker` |
+| [`workflow-example-binary.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-example-binary.yml) | The same end-to-end flow run in native binary mode (`no_docker: true`) instead of containers. | same as above, `no_docker` (run with `--no-docker` or `--trust-workflow`) |
 | [`account-identity.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/account-identity.yml) | The account plane end to end: enrol an account, pair a SECOND device onto it, assert one account holds two distinct devices, revoke one, then stop the node and export/restore its account root. **Not yet run in CI** — the export/import steps need a merod carrying `merod account export|import` (calimero-network/core#3362). Shows why enrolment must follow the context join (the link op is encrypted under the scope key) and why the backup is offline (RocksDB's lock is exclusive). | `account_create`, `account_pair`, `account_show`, `account_revoke`, `node_exec`, `stop_node`, `start_node`, `json_assert` |
 | [`workflow-account-namespace-pairing-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-account-namespace-pairing-example.yml) | Pair a device into the account namespace alone with `account_namespace: auto` and `await_self`, and assert the two `400`s pair-complete owes a tampered offer. | `node_identity`, `account_pair_init`, `account_pair_complete`, `account_pair`, `account_devices`, `assert_api_response` |
 | [`workflow-account-rescope-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-account-rescope-example.yml) | `account_rescope` REPLACES a paired device's application scope: narrow it to one application and assert the other namespace's binding is gone, then widen back to `all` and assert it is re-linked, plus the `404` an unknown device owes and the `403` a call off the account holder owes. **Not yet run in CI** - it needs a merod carrying `PUT /admin-api/account/devices/{device_id}/scope` (calimero-network/core#3977); the Docker lane probes the image for that route and starts running the scenario once it is there. | `account_pair`, `account_rescope`, `assert_api_response`, `json_assert` |

@@ -7,6 +7,7 @@ import os
 import re
 import time
 import uuid
+from collections.abc import Iterable
 from typing import Any, Optional
 
 import docker
@@ -124,6 +125,11 @@ from merobox.commands.constants import (
     RESERVED_NODE_CONFIG_KEYS,
 )
 from merobox.commands.health import check_node_health
+from merobox.commands.host_access import (
+    check_host_access,
+    check_state_dirs,
+    workflow_root,
+)
 from merobox.commands.manager import DockerManager
 from merobox.commands.node_resolver import NodeResolver, get_resolver
 from merobox.commands.utils import (
@@ -176,8 +182,23 @@ class WorkflowExecutor:
         auth_password: Optional[str] = None,
         dry_run: bool = False,
         merod_args: Optional[str] = None,
+        trust_workflow: bool = False,
+        cli_remote_nodes: Iterable[str] = (),
     ):
         self.config = config
+        self.trust_workflow = trust_workflow
+        check_state_dirs(config)
+        if not trust_workflow:
+            # The caller picked the manager, so binary mode is its choice, not the YAML's.
+            binary = getattr(manager, "binary_path", None) is not None
+            check_host_access(
+                config,
+                workflow_dir or ".",
+                cli_no_docker=binary,
+                cli_binary_path=binary,
+                cli_remote_nodes=cli_remote_nodes,
+            )
+        self.host_root = None if trust_workflow else workflow_root(workflow_dir or ".")
         self.manager = manager
         self.workflow_dir = workflow_dir or "."
         self.dry_run = dry_run
@@ -2139,16 +2160,19 @@ class WorkflowExecutor:
             self.resolver = get_resolver(
                 docker_manager=None,
                 binary_manager=None,
+                only_registered_this_run=not self.trust_workflow,
             )
         elif self.is_binary_mode:
             self.resolver = get_resolver(
                 docker_manager=None,
                 binary_manager=self.manager,
+                only_registered_this_run=not self.trust_workflow,
             )
         else:
             self.resolver = get_resolver(
                 docker_manager=self.manager,
                 binary_manager=None,
+                only_registered_this_run=not self.trust_workflow,
             )
 
         # Register remote nodes from workflow config
@@ -2161,6 +2185,15 @@ class WorkflowExecutor:
                     continue
 
                 url = node_config.get("url")
+                if (
+                    not url
+                    and node_config.get("use_registry_entry")
+                    and self.resolver.allow_registered(node_name)
+                ):
+                    console.print(
+                        f"[cyan]Using registered remote node: {node_name}[/cyan]"
+                    )
+                    continue
                 if not url:
                     console.print(
                         f"[yellow]Warning: Remote node '{node_name}' has no URL, skipping[/yellow]"
@@ -2316,6 +2349,7 @@ class WorkflowExecutor:
             "manager": self.manager,
             "resolver": self.resolver,
             "auth_mode": self.auth_mode,
+            "host_root": self.host_root,
         }
 
         if step_type in _ACCOUNT_STEP_CLASSES:

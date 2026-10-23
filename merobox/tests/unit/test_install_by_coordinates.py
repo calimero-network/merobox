@@ -140,7 +140,7 @@ class TestCoordinateInstall:
     def test_a_path_install_uses_the_dev_endpoint(self, tmp_path):
         bundle = tmp_path / "app.mpk"
         bundle.write_bytes(b"\0asm")
-        step = InstallApplicationStep(_config(path=str(bundle)))
+        step = InstallApplicationStep(_config(path=str(bundle)), host_root=None)
 
         with patch.object(step, "_is_binary_mode", return_value=True):
             result, client, _ = self._exec(step)

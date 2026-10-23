@@ -42,11 +42,15 @@ workflow can mix locally-managed and remote nodes in one run.
    merobox remote test prod
    ```
 
-4. **Use it in a workflow** — reference the name under `remote_nodes:` (see
-   [below](#referencing-remote-nodes-in-workflows)), then run it:
+4. **Use it in a workflow** - reference `prod` as a step's `node:` (see
+   [below](#referencing-remote-nodes-in-workflows)). A workflow may act on a node
+   from your registry only when you allow it, so name the node for this run with
+   a bare `--remote-node prod`, which uses the saved entry and its login as they
+   are, or run a workflow you trust with `--trust-workflow`:
 
    ```bash
-   merobox bootstrap run workflow.yml
+   merobox bootstrap run workflow.yml --remote-node prod
+   merobox bootstrap run workflow.yml --trust-workflow
    ```
 
 </Steps>
@@ -130,6 +134,13 @@ quickest way to see whether a re-login is needed.
 Declare remote nodes under the top-level `remote_nodes:` key. Values support
 environment-variable expansion at parse time.
 
+Because this sends requests and environment credentials to the servers the file
+names, and saves them to your registry, `bootstrap run` refuses `remote_nodes:`
+unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). The
+same goes for a step whose `node:` is a URL, or names a node from your registry
+that the workflow did not declare, since the step would act on it with your
+cached token. Nodes you pass on the command line (below) need no trust.
+
 ```yaml
 remote_nodes:
   production-node:
@@ -171,7 +182,9 @@ merobox bootstrap run workflow.yml \
   --remote-auth staging=apikey:sk-xxx
 ```
 
-- `--remote-node NAME=URL` — repeatable.
+- `--remote-node NAME=URL` - repeatable. A bare `--remote-node NAME` uses the
+  node saved under that name in your registry, with its saved login and without
+  changing its entry; `--remote-auth` and `--api-key` are refused for it.
 - `--remote-auth NAME=user:pass` or `NAME=apikey:KEY` — repeatable; credentials
   are inline in the value.
 - `--api-key KEY` — default API key for remotes without explicit auth.

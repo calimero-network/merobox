@@ -19,6 +19,7 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps.base import BaseStep
 from merobox.commands.errors import UnresolvedPlaceholderError
+from merobox.commands.host_access import ROOT_NOT_GIVEN
 from merobox.commands.utils import console
 
 
@@ -69,9 +70,14 @@ class JsonAssertStep(BaseStep):
         manager: object | None = None,
         resolver: object | None = None,
         auth_mode: str | None = None,
+        host_root: Any = ROOT_NOT_GIVEN,
     ):
         super().__init__(
-            config, manager=manager, resolver=resolver, auth_mode=auth_mode
+            config,
+            manager=manager,
+            resolver=resolver,
+            auth_mode=auth_mode,
+            host_root=host_root,
         )
 
     def _validate_field_types(self) -> None:

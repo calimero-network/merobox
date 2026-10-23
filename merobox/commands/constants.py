@@ -3,6 +3,7 @@ Constants and configuration values used across the merobox codebase.
 """
 
 import os
+import re
 from enum import Enum, auto
 
 
@@ -166,8 +167,14 @@ INSTALL_TIMEOUT = 30  # seconds
 # For a reproducible run, pin at the call site — `--image`, or `image:` in the
 # workflow. Every example workflow does.
 DEFAULT_IMAGE = "ghcr.io/calimero-network/merod:prerelease"
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")  # one path component
 DEFAULT_NODE_PREFIX = "calimero-node"
 DEFAULT_DATA_DIR_PREFIX = "data"
+PID_FILE_DIR = os.path.join(DEFAULT_DATA_DIR_PREFIX, ".pids")  # binary-mode pids
+# Per-container logs, kept stable so CI can collect data/container-logs/*.log.
+CONTAINER_LOG_DIR = os.path.join(DEFAULT_DATA_DIR_PREFIX, "container-logs")
+RESTART_LOG_DIR_DEFAULT = "docker-logs"  # restart_container's log snapshots
+CONTAINER_HOME = "/app/data"  # a node container's CALIMERO_HOME
 
 # Workflow node configuration - reserved keys
 # These keys in the nodes config dict are configuration parameters, not node names

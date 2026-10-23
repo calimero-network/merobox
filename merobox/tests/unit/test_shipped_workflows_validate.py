@@ -14,12 +14,14 @@ finding the same class of bug four minutes into a CI job.
 """
 
 import glob
+import importlib.util
 import os
 
 import pytest
 import yaml
 
 from merobox.commands.bootstrap.config import validate_workflow_config
+from merobox.commands.host_access import check_host_access
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _WORKFLOW_GLOB = os.path.join(_REPO_ROOT, "workflow-examples", "*.yml")
@@ -46,3 +48,79 @@ def test_shipped_workflow_passes_the_schema_gate(workflow_path):
     assert errors == [], "{} would be rejected by `bootstrap run`:\n  {}".format(
         os.path.basename(workflow_path), "\n  ".join(errors)
     )
+
+
+def _ci_lanes() -> list[tuple[str, bool]]:
+    """(workflow, --no-docker) for every lane CI can run an example in: the binary
+    lanes pass --no-docker, and the Docker lane runs those without no_docker."""
+    lanes = []
+    for path in _workflow_files():
+        lanes.append((path, True))
+        with open(path) as f:
+            if not (yaml.safe_load(f) or {}).get("no_docker"):
+                lanes.append((path, False))
+    return lanes
+
+
+@pytest.mark.parametrize(
+    "workflow_path,no_docker",
+    _ci_lanes(),
+    ids=lambda v: os.path.basename(v) if isinstance(v, str) else f"no_docker={v}",
+)
+def test_shipped_workflow_runs_without_trust(workflow_path, no_docker, monkeypatch):
+    """Apart from the host-process steps run_with_retry.sh trusts them with, every
+    example passes the host-access check as CI runs it, from the repo root."""
+    monkeypatch.chdir(_REPO_ROOT)
+    with open(workflow_path) as f:
+        config = _without_host_process_steps(yaml.safe_load(f), no_docker)
+    check_host_access(config, os.path.dirname(workflow_path), cli_no_docker=no_docker)
+
+
+def _runs_a_host_process(step, no_docker: bool) -> bool:
+    if not isinstance(step, dict):
+        return False
+    if step.get("type") == "script" and step.get("target") == "local":
+        return True
+    return no_docker and step.get("type") == "node_exec"
+
+
+def _without_host_process_steps(value, no_docker: bool):
+    if isinstance(value, list):
+        return [
+            _without_host_process_steps(item, no_docker)
+            for item in value
+            if not _runs_a_host_process(item, no_docker)
+        ]
+    if isinstance(value, dict):
+        return {
+            key: _without_host_process_steps(item, no_docker)
+            for key, item in value.items()
+            if key not in ("nuke_on_start", "nuke_on_end")
+        }
+    return value
+
+
+_NEEDS_TRUST = os.path.join(
+    _REPO_ROOT, "workflow-examples", "scripts", "needs_trust.py"
+)
+
+
+@pytest.mark.parametrize(
+    "workflow,lane,needs",
+    [
+        ("workflow-example.yml", [], False),
+        ("kv-store-benchmark.yml", [], True),
+        ("workflow-node-exec-example.yml", [], False),
+        ("workflow-node-exec-example.yml", ["--no-docker"], True),
+    ],
+)
+def test_needs_trust_tells_ci_which_examples_to_trust(
+    workflow, lane, needs, monkeypatch
+):
+    """run_with_retry.sh passes --trust-workflow only when this exits 0."""
+    monkeypatch.chdir(_REPO_ROOT)
+    spec = importlib.util.spec_from_file_location("needs_trust", _NEEDS_TRUST)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    path = os.path.join("workflow-examples", workflow)
+    assert script.main(path, *lane) == (0 if needs else 1)

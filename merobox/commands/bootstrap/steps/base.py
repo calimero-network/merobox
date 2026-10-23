@@ -4,13 +4,21 @@ Base step class for all workflow steps.
 
 import ast
 import json
+import os
 import re
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from rich.markup import escape
 
 from merobox.commands.auth import AuthManager
+from merobox.commands.bootstrap.steps._docker_utils import resolve_container
 from merobox.commands.errors import OutputCaptureError, UnresolvedPlaceholderError
+from merobox.commands.host_access import (
+    ROOT_NOT_GIVEN,
+    TRUST_WORKFLOW_FLAG,
+    host_path_refusal,
+    strip_literal_quotes,
+)
 from merobox.commands.utils import LOG_LEVEL_VERBOSE, console, get_node_rpc_url, vprint
 
 if TYPE_CHECKING:
@@ -65,8 +73,11 @@ class BaseStep:
         manager: object | None = None,
         resolver: Optional["NodeResolver"] = None,
         auth_mode: Optional[str] = None,
+        host_root: Any = ROOT_NOT_GIVEN,
     ):
         self.config = config
+        # Host paths this step names must stay inside this; None trusts the workflow.
+        self.host_root = host_root
 
         self.manager = manager
         self.resolver = resolver
@@ -82,6 +93,47 @@ class BaseStep:
         # it. The raw value stands in until an executor binds any placeholders.
         self._validate_expected_error()
         self._expected_error = self.config.get("expected_error")
+
+    def _refuse_host_path(
+        self, key: str, path: Any, writes: bool = False, mounts: bool = False
+    ) -> bool:
+        """Report and return True if this step may not open (or, with `writes`,
+        write) the host `path` it read from `key`. Pass the value it will use."""
+        if self.host_root is None or path is None:
+            return False
+        reason = (
+            "cannot be checked: the step was given no confinement root"
+            if self.host_root is ROOT_NOT_GIVEN
+            else host_path_refusal(path, self.host_root, os.getcwd(), writes, mounts)
+        )
+        if reason:
+            console.print(
+                f"[red]Step '{escape(self._get_step_name())}': '{key}' "
+                f"{escape(reason)}; rerun with {TRUST_WORKFLOW_FLAG} if you trust "
+                "this workflow[/red]"
+            )
+        return reason is not None
+
+    def _refuse_foreign_container(self, name: str) -> bool:
+        """Report and return True if an untrusted run may not act on the container
+        `name`; its own are the ones this run's manager started."""
+        if self.host_root is None:
+            return False
+        started = getattr(self.manager, "nodes", None) or {}
+        if self.host_root is not ROOT_NOT_GIVEN and name in started:
+            return False
+        console.print(
+            f"[red]Step '{escape(self._get_step_name())}': container "
+            f"'{escape(name)}' was not started by this run; rerun with "
+            f"{TRUST_WORKFLOW_FLAG} if you trust this workflow[/red]"
+        )
+        return True
+
+    def _run_container(self, name: str) -> Any:
+        """The container `name`, if this run may act on it; None after a diagnostic."""
+        if self._refuse_foreign_container(name):
+            return None
+        return resolve_container(self.manager, name)
 
     def _get_exportable_variables(self) -> list[tuple[str, str, str]]:
         """
@@ -1572,13 +1624,9 @@ class BaseStep:
 
         # Strip quotes from simple string literals (e.g., 'value' or "value" -> value)
         # This helps with assertions where string literals are quoted
-        if len(value) >= 2:
-            if (value.startswith("'") and value.endswith("'")) or (
-                value.startswith('"') and value.endswith('"')
-            ):
-                # Only strip if it's a simple string literal without placeholders
-                if "{{" not in value and "}}" not in value:
-                    return value[1:-1]
+        unquoted = strip_literal_quotes(value)
+        if unquoted != value:
+            return unquoted
 
         # Check if there are any placeholders in the string (embedded or complete)
         if "{{" in value and "}}" in value:

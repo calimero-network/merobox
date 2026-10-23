@@ -26,7 +26,6 @@ See NUKE_DOCUMENTATION.md for comprehensive usage guide.
 """
 
 import os
-import shutil
 from pathlib import Path
 
 import click
@@ -34,6 +33,7 @@ import docker
 from rich import box
 from rich.table import Table
 
+from merobox.commands import safe_fs
 from merobox.commands.constants import NUKE_STOP_TIMEOUT
 from merobox.commands.manager import DockerManager
 from merobox.commands.utils import console, format_file_size
@@ -54,7 +54,7 @@ def find_calimero_data_dirs(prefix: str = None) -> list:
         return data_dirs
 
     for item in data_path.iterdir():
-        if item.is_dir():
+        if item.is_dir() and not item.is_symlink():
             if prefix:
                 # Filter by specific prefix
                 if item.name.startswith(prefix):
@@ -102,7 +102,7 @@ def nuke_all_data_dirs(data_dirs: list, dry_run: bool = False) -> dict:
                         for f in Path(data_dir).rglob("*")
                         if f.is_file()
                     )
-                    shutil.rmtree(data_dir)
+                    safe_fs.rmtree(data_dir)
                     results.append(
                         {"path": data_dir, "status": "deleted", "size_bytes": dir_size}
                     )

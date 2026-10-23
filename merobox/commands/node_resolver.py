@@ -38,6 +38,7 @@ from merobox.commands.constants import (
     RPC_PORT_BINDING,
 )
 from merobox.commands.errors import AuthenticationError, NodeResolutionError
+from merobox.commands.host_access import TRUST_WORKFLOW_FLAG
 from merobox.commands.remote_nodes import RemoteNodeManager
 
 console = Console()
@@ -80,6 +81,7 @@ class NodeResolver:
         auth_manager: Optional[AuthManager] = None,
         docker_manager: Optional[Any] = None,
         binary_manager: Optional[Any] = None,
+        only_registered_this_run: bool = False,
     ):
         """Initialize NodeResolver.
 
@@ -88,11 +90,16 @@ class NodeResolver:
             auth_manager: Manager for authentication.
             docker_manager: Manager for Docker nodes.
             binary_manager: Manager for binary nodes.
+            only_registered_this_run: Refuse URLs and registry nodes that were not
+                registered through this resolver, and containers its Docker
+                manager did not start.
         """
         self.remote_manager = remote_manager or RemoteNodeManager()
         self.auth_manager = auth_manager or AuthManager()
         self.docker_manager = docker_manager
         self.binary_manager = binary_manager
+        self.only_registered_this_run = only_registered_this_run
+        self._registered_this_run: set[str] = set()
 
     async def resolve(
         self,
@@ -177,7 +184,7 @@ class NodeResolver:
             NodeResolutionError: If the node cannot be resolved.
         """
         # 1. Check registered remote nodes first
-        entry = self.remote_manager.get(node_ref)
+        entry = self._usable(self.remote_manager.get(node_ref))
         if entry:
             return ResolvedNode(
                 url=entry.url,
@@ -190,7 +197,7 @@ class NodeResolver:
         # 2. Check if it's a direct URL
         if self.remote_manager.is_url(node_ref):
             # Check if URL is registered under a different name
-            entry = self.remote_manager.get_by_url(node_ref)
+            entry = self._usable(self.remote_manager.get_by_url(node_ref))
             if entry:
                 return ResolvedNode(
                     url=entry.url,
@@ -200,7 +207,12 @@ class NodeResolver:
                     source="remote",
                 )
 
-            # Direct URL not registered
+            if self.only_registered_this_run:
+                raise NodeResolutionError(
+                    f"Node '{node_ref}' is a server the workflow did not declare; "
+                    f"rerun with {TRUST_WORKFLOW_FLAG} if you trust it, or "
+                    "register it with --remote-node"
+                )
             normalized_url = node_ref.rstrip("/")
             return ResolvedNode(
                 url=normalized_url,
@@ -210,8 +222,11 @@ class NodeResolver:
                 source="url",
             )
 
-        # 3. Check Docker nodes
-        if self.docker_manager:
+        # 3. Check Docker nodes; an untrusted run only reaches the ones it started.
+        started = getattr(self.docker_manager, "nodes", None) or {}
+        if self.docker_manager and (
+            not self.only_registered_this_run or node_ref in started
+        ):
             docker_url = self._resolve_docker_node(node_ref)
             if docker_url:
                 return ResolvedNode(
@@ -234,6 +249,12 @@ class NodeResolver:
                     source="binary",
                 )
 
+        if self.only_registered_this_run and self.remote_manager.get(node_ref):
+            raise NodeResolutionError(
+                f"Node '{node_ref}' is in your remote node registry, which the "
+                f"workflow may only use with {TRUST_WORKFLOW_FLAG}; or pass it "
+                "with --remote-node"
+            )
         # Node not found anywhere
         raise NodeResolutionError(
             f"Node '{node_ref}' not found. "
@@ -735,7 +756,7 @@ class NodeResolver:
         Returns:
             True if registered successfully.
         """
-        return self.remote_manager.register(
+        registered = self.remote_manager.register(
             name=name,
             url=url,
             auth_method=auth_method,
@@ -744,6 +765,22 @@ class NodeResolver:
             api_key=api_key,
             description=description,
         )
+        if registered:
+            self._registered_this_run.add(name)
+        return registered
+
+    def allow_registered(self, name: str) -> bool:
+        """Let this run use the registry entry `name` as saved; False if absent."""
+        if self.remote_manager.get(name) is None:
+            return False
+        self._registered_this_run.add(name)
+        return True
+
+    def _usable(self, entry: Optional[Any]) -> Optional[Any]:
+        """`entry`, unless this resolver only trusts nodes registered through it."""
+        if entry and self.only_registered_this_run:
+            return entry if entry.name in self._registered_this_run else None
+        return entry
 
 
 # NodeResolutionError is now imported from merobox.commands.errors
@@ -753,12 +790,15 @@ class NodeResolver:
 def get_resolver(
     docker_manager: Optional[Any] = None,
     binary_manager: Optional[Any] = None,
+    only_registered_this_run: bool = False,
 ) -> NodeResolver:
     """Create a NodeResolver with appropriate managers.
 
     Args:
         docker_manager: Docker manager (or None to skip Docker resolution).
         binary_manager: Binary manager (or None to skip binary resolution).
+        only_registered_this_run: Refuse URLs and registry nodes that were not
+            registered through this resolver.
 
     Returns:
         Configured NodeResolver instance.
@@ -768,4 +808,5 @@ def get_resolver(
         auth_manager=AuthManager(),
         docker_manager=docker_manager,
         binary_manager=binary_manager,
+        only_registered_this_run=only_registered_this_run,
     )

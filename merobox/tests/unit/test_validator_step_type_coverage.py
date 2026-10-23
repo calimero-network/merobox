@@ -66,6 +66,7 @@ def _executor() -> WorkflowExecutor:
     executor.manager = None
     executor.resolver = None
     executor.auth_mode = None
+    executor.host_root = None
     return executor
 
 
