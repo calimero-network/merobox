@@ -15,13 +15,13 @@ description: >
 
   Three properties:
 
-    1. **Delete is refused for a non-admin, at every level.** merod gates
+    1. **Delete is refused for a non-admin, below the namespace.** merod gates
        each route differently, and the refusals do NOT read alike — a
        client matching on one wording misreports the others as node
        faults:
 
-         delete_namespace → `require_admin` on the root
-              "identity {id} is not an admin of group {group}"
+         delete_namespace → not refused: a local removal any member may
+              run; it publishes nothing and the namespace stays on node 1
          delete_context   → `require_admin` on the context's OWNING group
               "identity {id} is not an admin of group {group}"
          delete_group     → NOT require_admin. Admits the subgroup's owner,
@@ -36,7 +36,7 @@ description: >
 
        Note this differs BY MEROD VERSION. The two 403s above come from
        `membership_refusal_status`, which core master added and 0.11.0-rc.28
-       does not have — on rc.28 all three refusals are the reason-stripped
+       does not have — on rc.28 the refusals are the reason-stripped
        500. A client that only recognises the message therefore recognises
        nothing on a released node, which is exactly the bug this workflow
        found in calimero-network/tauri-app#209.
@@ -290,13 +290,6 @@ steps:
     group_id: "{{direct_room_id}}"
     expected_failure: true
     expected_error: "lacks permission to delete subgroup"
-
-  - name: Non-Admin Cannot Delete the Namespace
-    type: delete_namespace
-    node: perm-node-2
-    namespace_id: "{{namespace_id}}"
-    expected_failure: true
-    expected_error: "is not an admin of group"
 
   # ── The inheritance trap ───────────────────────────────────────────
   # `list_group_members` unions inherited members in, so open-room reports
