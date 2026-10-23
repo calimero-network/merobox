@@ -544,6 +544,20 @@ Change a member's role. Fields: `node`, `group_id`, `member_id`, `role`
   role: Admin
 ```
 
+### transfer_ownership
+
+Hand a group or namespace to one of its admins. Fields: `node` (must hold the
+owner account), `group_id`, `new_owner` (account ID). A caller who is not the
+owner is refused with HTTP 403, so a negative scenario can pin it with
+`expected_failure: true` and `expected_error: 'HTTP 403'`.
+
+```yaml
+- type: transfer_ownership
+  node: calimero-node-1
+  group_id: '{{namespace_id}}'
+  new_owner: '{{account_node2}}'
+```
+
 ### set_member_capabilities
 
 Set a member's capability bitmask. Fields: `node`, `group_id`, `member_id`,

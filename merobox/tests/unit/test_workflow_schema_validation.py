@@ -836,6 +836,24 @@ class TestBucketBStepSchemas:
         errors = config_module.validate_workflow_step(step, 0)
         assert any("role" in e.lower() for e in errors)
 
+    def test_valid_transfer_ownership(self, config_module):
+        step = {
+            "type": "transfer_ownership",
+            "node": "calimero-node-1",
+            "group_id": "{{namespace_id}}",
+            "new_owner": "{{account_node2}}",
+        }
+        assert config_module.validate_workflow_step(step, 0) == []
+
+    def test_invalid_transfer_ownership_missing_new_owner(self, config_module):
+        step = {
+            "type": "transfer_ownership",
+            "node": "calimero-node-1",
+            "group_id": "{{namespace_id}}",
+        }
+        errors = config_module.validate_workflow_step(step, 0)
+        assert any("new_owner" in e for e in errors)
+
     def test_valid_set_member_capabilities(self, config_module):
         step = {
             "type": "set_member_capabilities",

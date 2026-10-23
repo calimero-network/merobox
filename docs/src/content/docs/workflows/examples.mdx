@@ -113,7 +113,7 @@ Roles, capability bitmasks, auto-follow, and metadata.
 
 | Example | Teaches | Key steps |
 | --- | --- | --- |
-| [`workflow-group-admin-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-admin-example.yml) | The full group admin-API surface: default policy, roles, capabilities, context detach, member removal, explicit governance sync. | `set_default_capabilities`, `set_member_capabilities`, `update_member_role`, `detach_context_from_group`, `remove_group_members`, `sync_group` |
+| [`workflow-group-admin-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-admin-example.yml) | The full group admin-API surface: default policy, roles, capabilities, context detach, member removal, explicit governance sync. | `set_default_capabilities`, `set_member_capabilities`, `update_member_role`, `transfer_ownership`, `detach_context_from_group`, `remove_group_members`, `sync_group` |
 | [`workflow-set-member-auto-follow-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-set-member-auto-follow-example.yml) | The `set_member_auto_follow` step (admin-or-self) toggling auto-follow of contexts and subgroups. | `set_member_auto_follow`, `add_group_members` |
 | [`workflow-group-metadata-example.yml`](https://github.com/calimero-network/merobox/blob/master/workflow-examples/workflow-group-metadata-example.yml) | The six metadata steps (group/member/context set+get) and the `CAN_MANAGE_METADATA` capability gate. | `set_group_metadata`, `get_group_metadata`, `set_member_metadata`, `set_context_metadata`, `set_member_capabilities` |
 
