@@ -30,6 +30,7 @@ from merobox.commands.config_utils import (
 )
 from merobox.commands.constants import (
     CONTAINER_STOP_TIMEOUT,
+    DEFAULT_BIND_HOST,
     DEFAULT_IMAGE,
     DEFAULT_P2P_PORT,
     DEFAULT_RPC_PORT,
@@ -60,6 +61,12 @@ CORS_ALLOWED_HEADERS = (
     "Accept,Accept-Language,Content-Language,Content-Type,"
     "Authorization,X-Requested-With,X-Auth-Token,Cache-Control"
 )
+
+# Label merobox puts on its Traefik container; marks a `proxy` container as ours to replace.
+PROXY_DASHBOARD_RULE_LABEL = "traefik.http.routers.proxy-dashboard.rule"
+PROXY_DASHBOARD_RULE = "Host(`proxy.127.0.0.1.nip.io`)"
+PROXY_PORTS = ("80/tcp", "8080/tcp")
+ALL_INTERFACES = ("", "0.0.0.0", "::")  # HostIp values that publish on every interface
 
 
 def _validate_cors_origins(origins: list[str]) -> list[str]:
@@ -254,7 +261,9 @@ class PeersProbe(NamedTuple):
 class DockerManager(CleanupMixin):
     """Manages Calimero nodes in Docker containers."""
 
-    def __init__(self, enable_signal_handlers: bool = True):
+    def __init__(
+        self, enable_signal_handlers: bool = True, bind_host: Optional[str] = None
+    ):
         """
         Initialize the DockerManager.
 
@@ -262,8 +271,11 @@ class DockerManager(CleanupMixin):
             enable_signal_handlers: If True, register signal handlers for graceful
                 shutdown on SIGINT/SIGTERM. Set to False in tests or when managing
                 signals externally.
+            bind_host: Host interface every published container port binds to.
+                Defaults to loopback; the admin API is unauthenticated under proxy auth.
         """
         self._init_cleanup_state()
+        self.bind_host = bind_host or DEFAULT_BIND_HOST
 
         # node name -> admin-API bearer token, populated lazily by the
         # connected-peers probe so a polling gate authenticates once per node.
@@ -696,9 +708,9 @@ class DockerManager(CleanupMixin):
                 "environment": node_env,
                 "ports": {
                     # Map external P2P port to internal P2P port
-                    P2P_PORT_BINDING: port,
+                    P2P_PORT_BINDING: (self.bind_host, port),
                     # Map external RPC port to internal admin server port
-                    RPC_PORT_BINDING: rpc_port,
+                    RPC_PORT_BINDING: (self.bind_host, rpc_port),
                 },
                 "volumes": {
                     os.path.abspath(data_dir): {"bind": "/app/data", "mode": "rw"}
@@ -1195,7 +1207,14 @@ class DockerManager(CleanupMixin):
 
             # Check if auth service and traefik are already running
             auth_running = self._is_container_running("auth")
-            traefik_running = self._is_container_running("proxy")
+            proxy_state = self._existing_proxy_state()
+            if proxy_state == "foreign":
+                console.print(
+                    "[red]✗ A container named 'proxy' that merobox did not create "
+                    "already exists. Remove or rename it to use --auth-service.[/red]"
+                )
+                return False
+            traefik_running = proxy_state == "reuse"
 
             if auth_running and traefik_running:
                 console.print("[green]✓ Auth service stack is already running[/green]")
@@ -1269,7 +1288,10 @@ class DockerManager(CleanupMixin):
                     "--serversTransport.forwardingTimeouts.responseHeaderTimeout=30s",
                     "--serversTransport.forwardingTimeouts.idleConnTimeout=30s",
                 ],
-                "ports": {"80/tcp": 80, "8080/tcp": 8080},
+                "ports": {
+                    "80/tcp": (self.bind_host, 80),
+                    "8080/tcp": (self.bind_host, 8080),
+                },
                 "volumes": {
                     "/var/run/docker.sock": {
                         "bind": "/var/run/docker.sock",
@@ -1280,7 +1302,7 @@ class DockerManager(CleanupMixin):
                 "restart_policy": {"Name": "unless-stopped"},
                 "labels": {
                     "traefik.enable": "true",
-                    "traefik.http.routers.proxy-dashboard.rule": "Host(`proxy.127.0.0.1.nip.io`)",
+                    PROXY_DASHBOARD_RULE_LABEL: PROXY_DASHBOARD_RULE,
                     "traefik.http.routers.proxy-dashboard.entrypoints": "web",
                     "traefik.http.routers.proxy-dashboard.service": "api@internal",
                 },
@@ -1439,6 +1461,37 @@ class DockerManager(CleanupMixin):
             return False
         except Exception:
             return False
+
+    def _existing_proxy_state(self) -> str:
+        """Classify the `proxy` container: absent, foreign, recreate or reuse.
+
+        Only a proxy wider than requested is recreated, so sessions keep each other's.
+        """
+        try:
+            container = self.client.containers.get("proxy")
+        except docker.errors.NotFound:
+            return "absent"
+        labels = container.attrs.get("Config", {}).get("Labels") or {}
+        if labels.get(PROXY_DASHBOARD_RULE_LABEL) != PROXY_DASHBOARD_RULE:
+            return "foreign"
+        if container.status != "running":
+            return "recreate"
+        bindings = container.attrs.get("HostConfig", {}).get("PortBindings") or {}
+        host_ips = [
+            binding.get("HostIp", "")
+            for port in PROXY_PORTS
+            for binding in bindings.get(port) or []
+        ]
+        wide = [ip in ALL_INTERFACES for ip in host_ips]
+        if self.bind_host not in ALL_INTERFACES and any(wide):
+            return "recreate"
+        if self.bind_host in ALL_INTERFACES and not (wide and all(wide)):
+            console.print(
+                "[yellow]The running Traefik proxy is not published on every interface; "
+                "run `merobox stop --auth-service` and start again to expose it on "
+                f"{self.bind_host}.[/yellow]"
+            )
+        return "reuse"
 
     def stop_auth_service_stack(self):
         """Stop the Traefik proxy and auth service containers."""

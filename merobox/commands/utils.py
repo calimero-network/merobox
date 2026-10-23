@@ -10,6 +10,7 @@ import os
 import sys
 from typing import Any, Optional
 
+import click
 import docker
 from rich import box
 from rich.console import Console
@@ -257,6 +258,16 @@ def validate_port(port_str: str, port_name: str) -> int:
     except ValueError as e:
         console.print(f"[red]Error: Invalid {port_name} '{port_str}'. {str(e)}[/red]")
         sys.exit(1)
+
+
+# merobox reaches its nodes via IPv4 localhost and nip.io, so only these hosts keep it working.
+bind_host_option = click.option(
+    "--bind-host",
+    type=click.Choice(["127.0.0.1", "0.0.0.0"]),
+    help="Host interface to publish Docker node and proxy ports on (default: "
+    "127.0.0.1). Use 0.0.0.0 to expose them to other machines; the admin API is "
+    "unauthenticated unless --auth-mode=embedded. Docker mode only.",
+)
 
 
 def format_file_size(size_bytes: int) -> str:

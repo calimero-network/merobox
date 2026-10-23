@@ -36,6 +36,7 @@ DEFAULT_P2P_PORT = 2428
 # Docker port binding strings (used in container port mappings)
 RPC_PORT_BINDING = f"{DEFAULT_RPC_PORT}/tcp"
 P2P_PORT_BINDING = f"{DEFAULT_P2P_PORT}/tcp"
+DEFAULT_BIND_HOST = "127.0.0.1"  # host interface published container ports bind to
 
 # Default values
 DEFAULT_TIMEOUT = 30
