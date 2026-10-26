@@ -59,9 +59,6 @@ DROPPED: dict[str, str] = {
     "delete_group": "v1 group deletion",
     "delete_namespace": "v1 namespace deletion",
     "leave_group": "v1 group membership",
-    "create_group": "v1 standalone group",
-    "join_group": "v1 standalone group",
-    "create_group_invitation": "v1 standalone group",
     "invite_open": "v1 open invitations",
     "join_open": "v1 open invitations",
     "upgrade_group": "app upgrades are per app instance (http POST apps/{app}/upgrade)",
@@ -229,6 +226,14 @@ class Porter:
                     outputs={var: "hash"},
                 )
             ]
+        if kind == "create_group":
+            # A standalone v1 group is a namespace: an organization.
+            kind = "create_namespace"
+            s = {**s, "outputs": dict.fromkeys(s.get("outputs") or {}, "namespaceId")}
+        if kind == "create_group_invitation":
+            kind = "create_namespace_invitation"
+        if kind == "join_group":
+            return [acting(type="redeem_invite", token=s.get("invitation"))]
         if kind == "create_namespace":
             outs = s.get("outputs") or {}
             var = next((v for v, p in outs.items() if p == "namespaceId"), None)
@@ -327,8 +332,12 @@ class Porter:
                 if p in ("accountId", "deviceId", "accountRootPublicKey"):
                     outs[v] = "publicKey"
             return [acting(type="whoami", outputs=outs)]
-        if kind in ("create_context", "create_mesh"):
-            creator = s.get("context_node") if kind == "create_mesh" else node
+        if kind == "create_context" and "context_node" in s:
+            kind = "create_mesh"  # the mesh form: a context and its members at once
+        if kind == "create_mesh":
+            return self._mesh(s, base)
+        if kind == "create_context":
+            creator = node
             group = s.get("group_id")
             step = {**base, "type": "deploy", "account": creator}
             step["wasm"] = self._wasm(s.get("application_id"), s.get("service_name"))
@@ -387,6 +396,56 @@ class Porter:
             return [step]
         self.dropped[f"{kind} (unknown)"] += 1
         return []
+
+    def _mesh(self, s: dict, base: dict) -> list:
+        """v1's create_mesh made a namespace, a context in it, and joined the
+        listed nodes; it published the namespace as `{{namespace_id}}`."""
+        creator = s.get("context_node")
+        members = list(s.get("nodes") or [])
+        outs = s.get("outputs") or {}
+        org_var = next((v for v, p in outs.items() if p == "groupId"), "namespace_id")
+        self.orgs.add(org_var)
+        steps: list = [
+            {
+                **base,
+                "type": "create_org",
+                "account": creator,
+                "org_name": "mesh",
+                "outputs": {org_var: "orgId"},
+            },
+        ]
+        if org_var != "namespace_id":
+            steps.append(
+                {"type": "set", "values": {"namespace_id": "{{" + org_var + "}}"}}
+            )
+        for m in members:
+            steps.append(
+                {
+                    "type": "invite",
+                    "account": creator,
+                    "org": "{{" + org_var + "}}",
+                    "role": "member",
+                    "outputs": {"_mesh_invite": "token"},
+                }
+            )
+            steps.append(
+                {"type": "redeem_invite", "account": m, "token": "{{_mesh_invite}}"}
+            )
+        deploy = {"type": "deploy", "account": creator, "org": "{{" + org_var + "}}"}
+        deploy["wasm"] = self._wasm(s.get("application_id"), s.get("service_name"))
+        deploy["app_name"] = s.get("service_name") or s.get("name", "app")
+        if "params" in s:
+            deploy["init_args"] = s["params"]
+        d_outs = {}
+        for v, p in outs.items():
+            if p == "contextId":
+                d_outs[v] = "appId"
+            elif p == "memberPublicKey":
+                d_outs[v] = "memberPublicKey"
+        if d_outs:
+            deploy["outputs"] = d_outs
+        steps.append({**base, **deploy})
+        return steps
 
     # ---------------------------------------------------------------- output
 

@@ -318,6 +318,12 @@ class Runner:
                 **access,
                 "accounts": [self._account_id(str(a)) for a in access["accounts"]],
             }
+        if isinstance(step.get("init_args"), str):
+            # v1 workflows pass init params as a JSON string.
+            try:
+                step = {**step, "init_args": json.loads(step["init_args"])}
+            except json.JSONDecodeError:
+                pass
         for key, field in (
             ("init_args", "initArgs"),
             ("org", "org"),
