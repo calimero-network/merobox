@@ -1627,7 +1627,10 @@ list. `start_node` uses the node's config from the workflow's `nodes:` section.
 ### pause_container / unpause_container / restart_container
 
 Docker-level container control. Each takes `container`. `restart_container` also
-accepts `wait_healthy` (bool, `true`) and `timeout` (int).
+accepts `wait_healthy` (bool, `true`) and `timeout` (int). A topology boot-node
+(`<workflow-slug>-boot-node`) has no admin API, so `wait_healthy` waits for it to
+log a new listener instead; the same peer id comes back, so clients re-reserve
+through it.
 
 ```yaml
 - type: pause_container

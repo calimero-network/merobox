@@ -787,7 +787,8 @@ class RestartContainerStepConfig(BaseStepConfig):
     type: Literal["restart_container"] = "restart_container"
     container: str = Field(..., description="Target container name")
     wait_healthy: Optional[bool] = Field(
-        True, description="Poll /admin-api/health until ready (default true)"
+        True,
+        description="Wait until ready (default true); a topology boot-node is ready once it logs a new listener",
     )
     timeout: Optional[int] = Field(
         None, ge=1, description="Health-wait timeout in seconds"

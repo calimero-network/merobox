@@ -50,6 +50,12 @@ _RESTART_LOG_DIR_ENV = "MEROBOX_RESTART_LOG_DIR"
 _RESTART_LOG_DIR_ENV_LEGACY = "MEROBOX_PRE_RESTART_LOG_DIR"
 _RESTART_LOG_DIR_DEFAULT = "docker-logs"
 
+# Topology boot-nodes carry this role label and are not merods: no admin API.
+_ROLE_LABEL = "merobox.role"
+_BOOT_NODE_ROLE = "boot-node"
+# Emitted by the boot-node per bound listener; `docker restart` keeps old lines.
+_BOOT_NODE_LISTEN_LINE = "Listening on"
+
 
 class RestartContainerStep(BaseStep):
     """Restart a node container with `docker restart`, optionally awaiting health."""
@@ -104,6 +110,9 @@ class RestartContainerStep(BaseStep):
         # state, and refusing to restart would compound the problem.
         self._snapshot_pre_restart_logs(container, container_name)
 
+        is_boot_node = container.labels.get(_ROLE_LABEL) == _BOOT_NODE_ROLE
+        listeners_before = self._listen_line_count(container) if is_boot_node else 0
+
         try:
             container.restart()
         except Exception as exc:
@@ -126,7 +135,12 @@ class RestartContainerStep(BaseStep):
             self._snapshot_post_restart_logs(container, container_name)
             return True
 
-        healthy = await self._wait_healthy(container_name, timeout)
+        if is_boot_node:
+            healthy = await self._wait_boot_node_listening(
+                container, container_name, timeout, listeners_before
+            )
+        else:
+            healthy = await self._wait_healthy(container_name, timeout)
         # Snapshot post-restart logs once the container is up
         # (or after the wait-healthy timeout — either way, we
         # want to capture whatever's been written). The OLD
@@ -273,6 +287,30 @@ class RestartContainerStep(BaseStep):
         console.print(
             f"[cyan]Snapshotted {phase} logs of {container_name!r} → {log_path}[/cyan]"
         )
+
+    @staticmethod
+    def _listen_line_count(container: Any) -> int:
+        logs = container.logs().decode("utf-8", errors="replace")
+        return logs.count(_BOOT_NODE_LISTEN_LINE)
+
+    async def _wait_boot_node_listening(
+        self, container: Any, container_name: str, timeout: int, listeners_before: int
+    ) -> bool:
+        """Wait until the restarted boot-node logs a new listener."""
+        deadline = time.time() + timeout
+        console.print(
+            f"[cyan]Waiting up to {timeout}s for {container_name} to listen...[/cyan]"
+        )
+        while time.time() < deadline:
+            if self._listen_line_count(container) > listeners_before:
+                console.print(f"[green]✓ {container_name} listening[/green]")
+                return True
+            await asyncio.sleep(1)
+
+        console.print(
+            f"[red]✗ {container_name} did not start listening within {timeout}s[/red]"
+        )
+        return False
 
     async def _wait_healthy(self, container_name: str, timeout: int) -> bool:
         """Poll the node's admin /health endpoint until ready or timeout.
