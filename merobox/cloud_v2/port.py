@@ -93,8 +93,9 @@ class Porter:
         self.apps: dict[str, str] = {}  # var holding an application id -> bundle path
         self.orgs: set[str] = set()  # vars holding a namespace (an org)
         self.teams: dict[str, str] = {}  # var holding a subgroup (team) -> its org var
-        self.identities = Counter()
         self.dropped: Counter = Counter()
+        # variables only a dropped step would have set
+        self.dropped_vars: set[str] = set()
         self.notes: list[str] = []
 
     # ---------------------------------------------------------------- helpers
@@ -197,14 +198,25 @@ class Porter:
 
         if kind in DROPPED:
             self.dropped[kind] += 1
+            self.dropped_vars.update((s.get("outputs") or {}).keys())
             return []
-        if kind in ("assert", "json_assert", "wait"):
-            step = dict(s)
-            if kind == "wait":
-                # v1 waited for peers to find each other and sync; a cluster
-                # needs at most a moment.
-                step["seconds"] = min(float(s.get("seconds", 0)), 1.0)
-            return [step]
+        if kind in ("assert", "json_assert"):
+            # A statement about a variable only a dropped step set checks v1
+            # governance; it goes with that step.
+            kept = []
+            for st in s.get("statements") or []:
+                text = st.get("statement", "") if isinstance(st, dict) else str(st)
+                if any(
+                    "{{" + v + "}}" in text.replace(" ", "") for v in self.dropped_vars
+                ):
+                    self.dropped[f"{kind} statement on a dropped step's output"] += 1
+                else:
+                    kept.append(st)
+            return [{**s, "statements": kept}] if kept else []
+        if kind == "wait":
+            # v1 waited for peers to find each other and sync; a cluster needs
+            # at most a moment.
+            return [{**s, "seconds": min(float(s.get("seconds", 0)), 1.0)}]
         if kind == "repeat":
             step = {**base, "type": "repeat", "count": s["count"]}
             step["steps"] = self.port_steps(s.get("steps"))
@@ -321,11 +333,10 @@ class Porter:
                 for m in s.get("members") or []
             ]
         if kind == "create_identity":
-            self.identities[node] += 1
-            name = f"{node}-id{self.identities[node]}"
-            self.accounts.append(name)
+            # In every v1 workflow this fetches the node's own member identity
+            # (one per node) before it joins: here, the node's account.
             outs = dict.fromkeys(s.get("outputs") or {}, "publicKey")
-            return [{**base, "type": "whoami", "account": name, "outputs": outs}]
+            return [{**base, "type": "whoami", "account": node, "outputs": outs}]
         if kind == "node_identity":
             outs = {}
             for v, p in (s.get("outputs") or {}).items():
@@ -359,7 +370,7 @@ class Porter:
             outs = {}
             for v, p in (s.get("outputs") or {}).items():
                 if p == "contextId":
-                    outs[v] = "appId"
+                    outs[v] = "contextId"
                 elif p == "memberPublicKey":
                     outs[v] = "memberPublicKey"
             if outs:
@@ -436,15 +447,28 @@ class Porter:
         deploy["app_name"] = s.get("service_name") or s.get("name", "app")
         if "params" in s:
             deploy["init_args"] = s["params"]
-        d_outs = {}
+        # Without outputs, v1's create_mesh exported these names.
+        d_outs = (
+            {}
+            if outs
+            else {"context_id": "contextId", "member_public_key": "memberPublicKey"}
+        )
         for v, p in outs.items():
             if p == "contextId":
-                d_outs[v] = "appId"
+                d_outs[v] = "contextId"
             elif p == "memberPublicKey":
                 d_outs[v] = "memberPublicKey"
         if d_outs:
             deploy["outputs"] = d_outs
         steps.append({**base, **deploy})
+        if not outs and len(members) == 1:
+            # ...and the single joining member's key as {{public_key}}.
+            steps.append(
+                {
+                    "type": "set",
+                    "values": {"public_key": "{{public_key_" + members[0] + "}}"},
+                }
+            )
         return steps
 
     # ---------------------------------------------------------------- output
@@ -470,7 +494,7 @@ class Porter:
         if self.dropped:
             lines.append("# Dropped (no release-v2 counterpart):")
             for kind, n in sorted(self.dropped.items()):
-                reason = DROPPED.get(kind, "not supported by the port")
+                reason = DROPPED.get(kind, "checks what the dropped steps did")
                 lines.append(f"#   {kind} x{n}: {reason}")
         for note in self.notes:
             lines.append(f"# NOTE: {note}")

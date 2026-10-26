@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
@@ -99,6 +100,11 @@ def resolve(value: Any, variables: dict) -> Any:
     if isinstance(value, list):
         return [resolve(v, variables) for v in value]
     return value
+
+
+def context_id(app_id: str) -> str:
+    """The id an app sees as `env::context_id()`; the node accepts it for the app."""
+    return hashlib.sha256(app_id.encode()).hexdigest()
 
 
 def account_key(account_id: str) -> str:
@@ -407,6 +413,7 @@ class Runner:
                 actor = self._acting(step)
                 return {
                     "appId": app,
+                    "contextId": context_id(app),
                     "bundle": bundle,
                     "memberPublicKey": account_key(self.ids[actor]) if actor else None,
                 }
@@ -416,16 +423,15 @@ class Runner:
             wasm = self._wasm(step)
             return {"hash": self._with_client(step, lambda cl: cl.upload_bundle(wasm))}
         if kind == "create_app":
-            return {
-                "appId": self._with_client(
-                    step,
-                    lambda cl: cl.create_app(
-                        step.get("app_name", "app"),
-                        step["bundle"],
-                        self._app_options(step),
-                    ),
-                )
-            }
+            app = self._with_client(
+                step,
+                lambda cl: cl.create_app(
+                    step.get("app_name", "app"),
+                    step["bundle"],
+                    self._app_options(step),
+                ),
+            )
+            return {"appId": app, "contextId": context_id(app)}
         if kind in ("call", "view"):
             out = self._call_or_view(kind, step)
             # v1 workflows read a call's JSON-RPC envelope: {"output": value}.
