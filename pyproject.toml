@@ -26,7 +26,9 @@ dependencies = [
     "docker>=6.0.0",
     "rich>=13.0.0,<14.3.4",
     "PyYAML>=6.0.0",
-    "calimero-client-py==0.9.0",
+    # release-v2: the cloud backend needs CloudClient, which only the
+    # release-v2 branch has (built from source, like the sdist on PyPI).
+    "calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@release-v2",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",

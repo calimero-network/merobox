@@ -6,6 +6,7 @@ from merobox.commands.application import application
 from merobox.commands.blob import blob
 from merobox.commands.bootstrap import bootstrap
 from merobox.commands.call import call
+from merobox.commands.cloud import cloud
 from merobox.commands.context import context
 from merobox.commands.errors import (
     AuthenticationError,
@@ -52,6 +53,7 @@ __all__ = [
     "group",
     "bootstrap",
     "call",
+    "cloud",
     "blob",
     "join",
     "proposals",

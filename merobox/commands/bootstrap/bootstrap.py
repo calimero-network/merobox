@@ -14,6 +14,7 @@ import sys
 from typing import Any
 
 import click
+import yaml
 
 from merobox.commands.bootstrap.config import (
     create_sample_workflow_config,
@@ -138,6 +139,16 @@ def bootstrap():
     • create-sample: Generate a sample workflow file
     """
     pass
+
+
+def _is_cloud_v2(config_file: str) -> bool:
+    """Whether the workflow declares `backend: cloud-v2`."""
+    try:
+        with open(config_file) as f:
+            data = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError):
+        return False
+    return isinstance(data, dict) and data.get("backend") == "cloud-v2"
 
 
 @bootstrap.command()
@@ -287,6 +298,13 @@ def run(
     These CLI-specified remote nodes are merged with any remote_nodes
     defined in the workflow YAML file, with CLI options taking precedence.
     """
+    # A release-v2 workflow runs on its own backend (merod-v2, one process per
+    # node); none of the options below apply to it except --binary-path.
+    if _is_cloud_v2(config_file):
+        from merobox.cloud_v2 import run_workflow
+
+        sys.exit(0 if run_workflow(config_file, binary=binary_path) else 1)
+
     # --verbose and --quiet are mutually exclusive; verbose wins (louder is
     # safer for debugging). Warn so the ignored flag isn't silently dropped.
     if verbose and quiet:

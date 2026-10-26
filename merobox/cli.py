@@ -11,6 +11,7 @@ import click
 from merobox import __version__
 from merobox.commands import (
     bootstrap,
+    cloud,
     group,
     health,
     logs,
@@ -31,6 +32,7 @@ def cli():
 
 # Node management and workflow commands only
 cli.add_command(bootstrap)
+cli.add_command(cloud)
 cli.add_command(group)
 cli.add_command(health)
 cli.add_command(logs)

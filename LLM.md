@@ -10,6 +10,16 @@ Merobox is a Python CLI tool for managing Calimero nodes in Docker containers. I
 - Automated workflow execution via YAML files
 - Multi-node orchestration and testing
 
+## release-v2 (Calimero Cloud)
+
+In release-v2 there is no node per user: a cluster of `merod-v2` nodes replicates
+every app, and users are clients. `merobox cloud run <workflow>` (or
+`merobox bootstrap run` on a workflow with `backend: cloud-v2`) starts that
+cluster with one process per node and runs v2 steps (`deploy`, `call`, `view`,
+`wait_for`, organizations, API keys, `ops`, and `kill_node` / `pause_node` /
+`restart_node` for faults and upgrades). Reference:
+`workflow-examples/cloud-v2/README.md`.
+
 ## Installation
 
 **Using pipx (PyPI - Recommended)**

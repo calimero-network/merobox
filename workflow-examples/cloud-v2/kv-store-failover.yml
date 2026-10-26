@@ -1,0 +1,97 @@
+# A KV store keeps serving through a crash, a frozen node and a restart.
+# KV_STORE_WASM: core's kv_store.wasm (cargo build -p kv-store --target
+# wasm32-unknown-unknown --profile app-release).
+name: KV store across node failures
+backend: cloud-v2
+cluster:
+  nodes: 3
+  base_port: 2710
+accounts: [alice]
+steps:
+  - name: Deploy kv-store
+    type: deploy
+    account: alice
+    wasm: "{{env.KV_STORE_WASM}}"
+    app_name: kv
+    outputs:
+      app_id: appId
+
+  - name: Write before any failure
+    type: call
+    account: alice
+    app: "{{app_id}}"
+    method: set
+    args: { key: a, value: "1" }
+    outputs:
+      first_index: index
+
+  - name: Crash node 1
+    type: kill_node
+    node: 1
+
+  - name: Read through the survivors (a new leader is elected if needed)
+    type: wait_for
+    account: alice
+    app: "{{app_id}}"
+    method: get
+    args: { key: a }
+    equals: "1"
+
+  - name: Write with two of three nodes
+    type: call
+    account: alice
+    app: "{{app_id}}"
+    method: set
+    args: { key: b, value: "2" }
+    outputs:
+      second_index: index
+
+  - name: Bring node 1 back on its data
+    type: start_node
+    node: 1
+
+  - name: Freeze node 2 (unreachable, not gone)
+    type: pause_node
+    node: 2
+
+  - name: Write while node 2 is frozen (nodes 1 and 3 are a majority)
+    type: call
+    account: alice
+    node: 3
+    app: "{{app_id}}"
+    method: set
+    args: { key: c, value: "3" }
+    outputs:
+      third_index: index
+
+  - name: Thaw node 2
+    type: resume_node
+    node: 2
+
+  - name: Node 2 catches up to the write it missed
+    type: wait_for
+    account: alice
+    node: 2
+    app: "{{app_id}}"
+    method: get
+    args: { key: c }
+    stale: true
+    min_index: "{{third_index}}"
+    equals: "3"
+
+  - name: Node 1 has the write made while it was down
+    type: wait_for
+    account: alice
+    node: 1
+    app: "{{app_id}}"
+    method: get
+    args: { key: b }
+    stale: true
+    min_index: "{{second_index}}"
+    equals: "2"
+
+  - name: Check the indices
+    type: assert
+    statements:
+      - "{{second_index}} > {{first_index}}"
+      - "{{third_index}} > {{second_index}}"
