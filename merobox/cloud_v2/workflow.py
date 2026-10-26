@@ -37,6 +37,7 @@ is `{{accounts.<name>.account_id}}`. `{{env.NAME}}` reads the environment, and
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import re
@@ -100,6 +101,13 @@ def resolve(value: Any, variables: dict) -> Any:
     return value
 
 
+def account_key(account_id: str) -> str:
+    """An account's public key as apps see it (`env::executor_id`): its id's
+    32 bytes in hex."""
+    padded = account_id + "=" * (-len(account_id) % 4)
+    return base64.urlsafe_b64decode(padded).hex()
+
+
 def _stringify(v: Any) -> str:
     return v if isinstance(v, str) else json.dumps(v)
 
@@ -128,6 +136,8 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "invite": ("org",),
     "redeem_invite": ("token",),
     "remove_member": ("org", "member"),
+    "team_add": ("org", "team", "members"),
+    "set_role": ("org", "member", "role"),
     "http": ("method", "path"),
     "ops": ("op",),
     "find_leader": ("app",),
@@ -137,7 +147,9 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "start_node": ("node",),
     "restart_node": ("node",),
     "wait": ("seconds",),
+    "set": ("values",),
     "assert": ("statements",),
+    "json_assert": ("statements",),
     "repeat": ("count", "steps"),
 }
 
@@ -157,6 +169,8 @@ _ACTING = {
     "invite",
     "redeem_invite",
     "remove_member",
+    "team_add",
+    "set_role",
     "http",
 }
 
@@ -224,6 +238,10 @@ class Runner:
         self.variables.update(resolve(wf.get("variables") or {}, self.variables))
         self.passkeys: dict[str, Any] = {}
         self.sessions: dict[str, dict] = {}
+        # account public key (hex) -> account name, for steps that pick their
+        # caller by key (`as_key`, as v1 workflows did with executor_public_key)
+        self.by_key: dict[str, str] = {}
+        self.ids: dict[str, str] = {}
 
     # -- clients
 
@@ -244,7 +262,7 @@ class Runner:
     def _with_client(self, step: dict, f: Callable[[Any], Any]) -> Any:
         """Run `f` on a client for the step's actor; without an explicit node,
         a node that cannot be reached is skipped for the next running one."""
-        account = step.get("account")
+        account = self.by_key.get(str(step.get("as_key") or "")) or step.get("account")
         api_key = step.get("api_key")
         last: Exception | None = None
         for node in self._node_order(step.get("node")):
@@ -265,9 +283,25 @@ class Runner:
             session = c.sign_up(pk, name)
             self.passkeys[name] = pk
             self.sessions[name] = session
-            accounts[name] = {"account_id": session["accountId"]}
+            key = account_key(session["accountId"])
+            self.by_key[key] = name
+            self.ids[name] = session["accountId"]
+            accounts[name] = {"account_id": session["accountId"], "public_key": key}
+            # What v1's create_mesh exported for each member.
+            self.variables[f"public_key_{name}"] = key
         self.variables["accounts"] = accounts
         self.variables["ops_token"] = self.cluster.ops_token
+
+    def _account_id(self, who: str) -> str:
+        """An account name, an account's public key, or an account id -> the id."""
+        if who in self.ids:
+            return self.ids[who]
+        if who in self.by_key:
+            return self.ids[self.by_key[who]]
+        return who
+
+    def _acting(self, step: dict) -> str | None:
+        return self.by_key.get(str(step.get("as_key") or "")) or step.get("account")
 
     # -- steps
 
@@ -275,9 +309,15 @@ class Runner:
         p = Path(step["wasm"])
         return (p if p.is_absolute() else self.base_dir / p).read_bytes()
 
-    @staticmethod
-    def _app_options(step: dict) -> dict:
+    def _app_options(self, step: dict) -> dict:
         opts: dict[str, Any] = {}
+        access = step.get("access")
+        if isinstance(access, dict) and isinstance(access.get("accounts"), list):
+            step = dict(step)
+            step["access"] = {
+                **access,
+                "accounts": [self._account_id(str(a)) for a in access["accounts"]],
+            }
         for key, field in (
             ("init_args", "initArgs"),
             ("org", "org"),
@@ -350,7 +390,6 @@ class Runner:
 
     def _run_one(self, step: dict) -> Any:
         kind = step["type"]
-        c = self.cluster
         if kind == "deploy":
             wasm = self._wasm(step)
 
@@ -359,7 +398,12 @@ class Runner:
                 app = cl.create_app(
                     step.get("app_name", "app"), bundle, self._app_options(step)
                 )
-                return {"appId": app, "bundle": bundle}
+                actor = self._acting(step)
+                return {
+                    "appId": app,
+                    "bundle": bundle,
+                    "memberPublicKey": account_key(self.ids[actor]) if actor else None,
+                }
 
             return self._with_client(step, deploy)
         if kind == "upload_bundle":
@@ -376,6 +420,41 @@ class Runner:
                     ),
                 )
             }
+        if kind in ("call", "view"):
+            out = self._call_or_view(kind, step)
+            # v1 workflows read a call's JSON-RPC envelope: {"output": value}.
+            return {**out, "rpc": {"output": out.get("result")}}
+        if kind == "whoami":
+            me = self._with_client(step, lambda cl: cl.me())
+            return {**me, "publicKey": account_key(me["accountId"])}
+        if kind == "team_add":
+            out = None
+            for m in step["members"]:
+                out = self._with_client(
+                    step,
+                    lambda cl, m=m: cl.post(
+                        f"orgs/{step['org']}/teams/{step['team']}/members",
+                        {
+                            "account": self._account_id(str(m)),
+                            "lead": bool(step.get("lead")),
+                        },
+                    ),
+                )
+            return out
+        if kind == "set_role":
+            return self._with_client(
+                step,
+                lambda cl: cl.post(
+                    f"orgs/{step['org']}/members",
+                    {
+                        "account": self._account_id(str(step["member"])),
+                        "role": step["role"],
+                    },
+                ),
+            )
+        return self._run_rest(step)
+
+    def _call_or_view(self, kind: str, step: dict) -> Any:
         if kind == "call":
             if step.get("confirm"):
                 pk = self.passkeys[step["account"]]
@@ -394,17 +473,20 @@ class Runner:
                     step.get("idempotency_key"),
                 ),
             )
-        if kind == "view":
-            return self._with_client(
-                step,
-                lambda cl: cl.view(
-                    step["app"],
-                    step["method"],
-                    step.get("args"),
-                    bool(step.get("stale", False)),
-                    int(step.get("min_index", 0)),
-                ),
-            )
+        return self._with_client(
+            step,
+            lambda cl: cl.view(
+                step["app"],
+                step["method"],
+                step.get("args"),
+                bool(step.get("stale", False)),
+                int(step.get("min_index", 0)),
+            ),
+        )
+
+    def _run_rest(self, step: dict) -> Any:
+        kind = step["type"]
+        c = self.cluster
         if kind == "wait_for":
             return self._wait_for(step)
         if kind == "events":
@@ -419,8 +501,6 @@ class Runner:
                     ),
                 )
             }
-        if kind == "whoami":
-            return self._with_client(step, lambda cl: cl.me())
         if kind == "create_api_key":
             opts = {
                 "label": step.get("label", "merobox"),
@@ -460,7 +540,9 @@ class Runner:
         if kind == "remove_member":
             return self._with_client(
                 step,
-                lambda cl: cl.delete(f"orgs/{step['org']}/members/{step['member']}"),
+                lambda cl: cl.delete(
+                    f"orgs/{step['org']}/members/{self._account_id(str(step['member']))}"
+                ),
             )
         if kind == "http":
             method = step["method"].lower()
@@ -504,19 +586,29 @@ class Runner:
         if kind == "wait":
             time.sleep(float(step["seconds"]))
             return None
+        if kind == "set":
+            self.variables.update(step["values"])
+            return None
         raise WorkflowError(f"unhandled step type {kind}")
 
     def _assert(self, step: dict) -> None:
-        from merobox.commands.bootstrap.steps.assertion import AssertStep
+        """v1's own `assert` and `json_assert`, over this workflow's variables."""
+        if step["type"] == "json_assert":
+            from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
 
-        ok = asyncio.run(AssertStep(step).execute({}, self.variables))
+            checker = JsonAssertStep(step)
+        else:
+            from merobox.commands.bootstrap.steps.assertion import AssertStep
+
+            checker = AssertStep(step)
+        ok = asyncio.run(checker.execute({}, self.variables))
         if not ok:
-            raise WorkflowError("assertion failed")
+            raise WorkflowError(f"{step.get('name') or step['type']}: assertion failed")
 
     def run_steps(self, steps: list, depth: int = 0) -> None:
         for _i, raw in enumerate(steps, start=1):
             label = raw.get("name") or raw["type"]
-            if raw["type"] == "assert":
+            if raw["type"] in ("assert", "json_assert"):
                 # The assert step resolves its own placeholders.
                 self._assert(raw)
                 continue
@@ -553,14 +645,23 @@ class Runner:
     def _step(self, step: dict, label: str) -> str:
         """Run one resolved step and check what it promised; returns a note."""
         expected = step.get("expected_error")
+        # v1's options: `expected_failure` (any refusal is success) and
+        # `allow_failure` (either outcome is), with the refusal in `error`.
+        any_failure = bool(step.get("expected_failure"))
+        tolerated = bool(step.get("allow_failure"))
         try:
             result = self._run_one(step)
         except self._CloudError as e:
-            if expected and e.args[2] == expected:
-                return f" (refused: {expected})"
+            if (expected and e.args[2] == expected) or any_failure or tolerated:
+                details = e.args[3] if len(e.args) > 3 else ""
+                failure = {"error": f"{e.args[0]} {details}", "code": e.args[2]}
+                for var, path in (step.get("outputs") or {}).items():
+                    if path == "error" or path.startswith("error"):
+                        self.variables[var] = failure["error"]
+                return f" (refused: {e.args[2]})"
             raise WorkflowError(f"{label}: {e.args[0]}") from e
-        if expected:
-            raise WorkflowError(f"{label}: expected {expected}, but it succeeded")
+        if expected or any_failure:
+            raise WorkflowError(f"{label}: expected a refusal, but it succeeded")
         if "expect" in step:
             got = result.get("result") if isinstance(result, dict) else result
             if got != step["expect"]:
@@ -568,6 +669,9 @@ class Runner:
                     f"{label}: expected {step['expect']!r}, got {got!r}"
                 )
         for var, path in (step.get("outputs") or {}).items():
+            if path == "error":
+                self.variables[var] = None
+                continue
             self.variables[var] = _pick(result, path)
         return ""
 

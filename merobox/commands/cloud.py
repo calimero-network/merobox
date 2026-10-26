@@ -41,3 +41,33 @@ def validate_cmd(workflow):
         click.echo(f"invalid: {e}", err=True)
         sys.exit(1)
     click.echo(f"valid: {len(wf['steps'])} steps, {len(wf['accounts'])} accounts")
+
+
+@cloud.command("port")
+@click.argument("sources", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option(
+    "--wasm-map",
+    type=click.Path(exists=True),
+    help="JSON: {bundle path: {service or '': wasm path}} for install/create steps",
+)
+@click.option(
+    "--out-dir", type=click.Path(), required=True, help="Where ported files go"
+)
+@click.option(
+    "--base-port", type=int, default=2800, help="First file's cluster port base"
+)
+def port_cmd(sources, wasm_map, out_dir, base_port):
+    """Port v1 workflows (nodes, namespaces, contexts) to cloud-v2 workflows."""
+    from pathlib import Path
+
+    from merobox.cloud_v2.port import load_wasm_map, port_file
+
+    mapping = load_wasm_map(wasm_map)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for i, src in enumerate(sources):
+        text, porter = port_file(src, mapping, base_port + 10 * i)
+        target = out / Path(src).name
+        target.write_text(text)
+        dropped = sum(porter.dropped.values())
+        click.echo(f"{src} -> {target} ({dropped} steps dropped)")
