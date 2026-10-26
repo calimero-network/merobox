@@ -121,7 +121,13 @@ def _stringify(v: Any) -> str:
 def _pick(result: Any, path: str) -> Any:
     if path in ("", "."):
         return result
-    return _lookup(result if isinstance(result, dict) else {"value": result}, path)
+    try:
+        return _lookup(result if isinstance(result, dict) else {"value": result}, path)
+    except WorkflowError:
+        shown = json.dumps(result)[:300]
+        raise WorkflowError(
+            f"output path '{path}' is not in the step's result: {shown}"
+        )
 
 
 # ----------------------------------------------------------------- loading
