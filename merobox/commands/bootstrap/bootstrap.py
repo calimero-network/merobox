@@ -300,7 +300,7 @@ def run(
     These CLI-specified remote nodes are merged with any remote_nodes
     defined in the workflow YAML file, with CLI options taking precedence.
     """
-    # A release-v2 workflow runs on its own backend (merod-v2, one process per
+    # A release-v2 workflow runs on its own backend (merod, one process per
     # node); none of the options below apply to it except --binary-path.
     if _is_cloud_v2(config_file):
         from merobox.cloud_v2 import run_workflow

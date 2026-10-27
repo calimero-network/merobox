@@ -9,12 +9,12 @@ from merobox.cloud_v2 import WorkflowError, load_workflow, run_workflow_outcome
 
 @click.group()
 def cloud():
-    """Run workflows against a release-v2 cluster (merod-v2, one process per node)."""
+    """Run workflows against a release-v2 cluster (merod, one process per node)."""
 
 
 @cloud.command("run")
 @click.argument("workflow", type=click.Path(exists=True))
-@click.option("--binary", help="merod-v2 binary (default: MEROD_V2_BINARY, then PATH)")
+@click.option("--binary", help="merod binary (default: MEROD_BINARY, then MEROD_V2_BINARY, then PATH)")
 @click.option(
     "--data-dir",
     type=click.Path(),

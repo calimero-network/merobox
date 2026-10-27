@@ -1,7 +1,7 @@
-"""Run the release-v2 example workflows against real merod-v2 processes.
+"""Run the release-v2 example workflows against real merod processes.
 
-Needs MEROD_V2_BINARY (core, branch release-v2:
-`cargo build -p calimero-cloud-node --bin merod-v2`), KV_STORE_WASM
+Needs MEROD_BINARY or MEROD_V2_BINARY (core, branch release-v2:
+`cargo build -p merod`), KV_STORE_WASM
 (`cargo build -p kv-store --target wasm32-unknown-unknown --profile app-release`)
 and calimero-client-py with `CloudClient`. Skipped otherwise.
 """
@@ -25,13 +25,13 @@ def _ready() -> bool:
         from calimero_client_py import CloudClient  # noqa: F401
     except ImportError:
         return False
-    binary = os.environ.get("MEROD_V2_BINARY", "")
+    binary = os.environ.get("MEROD_BINARY") or os.environ.get("MEROD_V2_BINARY", "")
     wasm = os.environ.get("KV_STORE_WASM", "")
     return os.path.exists(binary) and os.path.exists(wasm)
 
 
 @pytest.mark.skipif(
-    not _ready(), reason="needs merod-v2, kv_store.wasm and CloudClient"
+    not _ready(), reason="needs merod, kv_store.wasm and CloudClient"
 )
 @pytest.mark.parametrize("workflow", EXAMPLES, ids=os.path.basename)
 def test_example_workflow_passes(workflow):

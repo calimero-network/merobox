@@ -1,4 +1,4 @@
-"""A release-v2 cluster with one `merod-v2` process per node."""
+"""A release-v2 cluster with one `merod` process per node."""
 
 from __future__ import annotations
 
@@ -24,15 +24,40 @@ DEV_ORIGIN = "http://localhost:3000"
 
 
 def find_binary(binary: str | None = None) -> str:
-    """`binary`, else MEROD_V2_BINARY, else `merod-v2` on PATH."""
-    candidate = binary or os.environ.get("MEROD_V2_BINARY") or "merod-v2"
+    """`binary`, else MEROD_BINARY (or the older MEROD_V2_BINARY), else
+    `merod` on PATH."""
+    candidate = (
+        binary
+        or os.environ.get("MEROD_BINARY")
+        or os.environ.get("MEROD_V2_BINARY")
+        or "merod"
+    )
     found = shutil.which(candidate) or (candidate if Path(candidate).exists() else None)
     if not found:
         raise FileNotFoundError(
-            f"merod-v2 not found ({candidate}); build it from core's release-v2 branch "
-            "(cargo build -p calimero-cloud-node --bin merod-v2) or set MEROD_V2_BINARY"
+            f"merod not found ({candidate}); build it from core's release-v2 branch "
+            "(cargo build -p merod) or set MEROD_BINARY"
         )
     return found
+
+
+_RUN: dict[str, bool] = {}
+
+
+def run_command(binary: str) -> list[str]:
+    """How to start a node with flags: `merod run` (v1's command line), or
+    the bare binary of an older `merod-v2` build."""
+    if binary not in _RUN:
+        try:
+            out = subprocess.run(
+                [binary, "--help"], capture_output=True, text=True, timeout=10
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        _RUN[binary] = any(
+            line.split()[:1] == ["run"] for line in out.splitlines() if line.startswith("  ")
+        )
+    return [binary, "run"] if _RUN[binary] else [binary]
 
 
 def mpk_coords(mpk: bytes) -> tuple[str, str]:
@@ -88,10 +113,10 @@ class _QuietHandler(SimpleHTTPRequestHandler):
 
 
 def supports(binary: str, flag: str) -> bool:
-    """Whether `binary --help` lists `flag` (older merod-v2 builds lack some)."""
+    """Whether the node's start command lists `flag` (older builds lack some)."""
     try:
         out = subprocess.run(
-            [binary, "--help"], capture_output=True, text=True, timeout=10
+            [*run_command(binary), "--help"], capture_output=True, text=True, timeout=10
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return False
@@ -99,7 +124,7 @@ def supports(binary: str, flag: str) -> bool:
 
 
 class ProcessCluster:
-    """N `merod-v2 --dev` nodes on 127.0.0.1:base_port+1..N, each its own process.
+    """N `merod run --dev` nodes on 127.0.0.1:base_port+1..N, each its own process.
 
     State lives in `data_dir/node<i>`, so a node can be killed and started again,
     or restarted on another binary (a rolling upgrade), and keep its data.
@@ -130,7 +155,7 @@ class ProcessCluster:
         self.procs: dict[int, subprocess.Popen | None] = dict.fromkeys(self.ids)
         self.binaries: dict[int, str] = dict.fromkeys(self.ids, self.binary)
         #: The registry the nodes install signed packages from, once started
-        #: (a merod-v2 build without `--registry-url` gets none).
+        #: (a build without `--registry-url` gets none).
         self.registry: PackageRegistry | None = None
 
     @property
@@ -143,7 +168,7 @@ class ProcessCluster:
     def _args(self, node: int) -> list[str]:
         peers = ",".join(f"{i}={self.url(i)}" for i in self.ids)
         args = [
-            self.binaries[node],
+            *run_command(self.binaries[node]),
             "--node-id",
             str(node),
             "--listen",

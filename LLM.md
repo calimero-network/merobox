@@ -12,7 +12,7 @@ Merobox is a Python CLI tool for managing Calimero nodes in Docker containers. I
 
 ## release-v2 (Calimero Cloud)
 
-In release-v2 there is no node per user: a cluster of `merod-v2` nodes replicates
+In release-v2 there is no node per user: a cluster of `merod` nodes replicates
 every app, and users are clients. `merobox cloud run <workflow>` (or
 `merobox bootstrap run` on a workflow with `backend: cloud-v2`) starts that
 cluster with one process per node and runs v2 steps (`deploy`, `call`, `view`,

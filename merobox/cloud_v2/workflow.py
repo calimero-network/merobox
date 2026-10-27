@@ -624,7 +624,7 @@ class Runner:
             # that runs it fetches and verifies its own copy.
             if self.cluster.registry is None:
                 raise WorkflowError(
-                    "install_package: this merod-v2 build has no --registry-url"
+                    "install_package: this merod build has no --registry-url"
                 )
             mpk = self._file(str(step["mpk"])).read_bytes()
             package, version = self.cluster.registry.publish(mpk)
@@ -1122,7 +1122,7 @@ def run_workflow_outcome(
         logs=logs,
     )
     console.print(
-        f"[bold]{wf.get('name', path)}[/bold] on {cluster.size} merod-v2 nodes"
+        f"[bold]{wf.get('name', path)}[/bold] on {cluster.size} merod nodes"
     )
     cluster.start()
     try:

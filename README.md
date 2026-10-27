@@ -24,13 +24,13 @@ pipx install -e .
 
 ### release-v2 (Calimero Cloud) clusters
 
-Workflows that declare `backend: cloud-v2` run against `merod-v2` instead: one
+Workflows that declare `backend: cloud-v2` run against `merod` instead: one
 process per node, clients signed in with passkeys and API keys, steps that crash,
 freeze, restart and upgrade nodes. See
 [`workflow-examples/cloud-v2/`](workflow-examples/cloud-v2/README.md).
 
 ```bash
-MEROD_V2_BINARY=./merod-v2 merobox cloud run workflow-examples/cloud-v2/kv-store-failover.yml
+MEROD_BINARY=./merod merobox cloud run workflow-examples/cloud-v2/kv-store-failover.yml
 ```
 
 ### Basic Usage

@@ -1,4 +1,4 @@
-# Move every node to another merod-v2 build, one at a time, while the app keeps
+# Move every node to another merod build, one at a time, while the app keeps
 # its data: what a release's on-disk and wire compatibility has to survive.
 # MEROD_V2_UPGRADE_BINARY: the new build. It must differ from MEROD_V2_BINARY:
 # a restart on the same binary proves nothing about compatibility, so the

@@ -1,7 +1,7 @@
 """The release-v2 workflow format: loading, validation and placeholders.
 
 These need no cluster. `tests/test_cloud_v2_integration.py` runs the example
-workflows against real merod-v2 processes.
+workflows against real merod processes.
 """
 
 import textwrap

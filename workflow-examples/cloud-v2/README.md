@@ -1,13 +1,13 @@
 # Workflows for release-v2 (Calimero Cloud)
 
-A release-v2 cluster is one service: `merod-v2` nodes replicate every app by Raft,
+A release-v2 cluster is one service: `merod` nodes replicate every app by Raft,
 and people reach it as clients (passkeys, API keys) rather than running nodes.
 These workflows declare `backend: cloud-v2`. merobox starts the cluster with one
 process per node, so a step can crash, freeze, restart or upgrade a node, and
 drives it through calimero-client-py's `CloudClient`.
 
 ```bash
-export MEROD_V2_BINARY=…/core/target/debug/merod-v2      # core, branch release-v2
+export MEROD_BINARY=…/core/target/debug/merod      # core, branch release-v2 (MEROD_V2_BINARY also works)
 export KV_STORE_WASM=…/kv_store.wasm
 merobox cloud run workflow-examples/cloud-v2/kv-store-failover.yml
 merobox bootstrap run workflow-examples/cloud-v2/orgs-and-keys.yml   # routes here too
@@ -44,7 +44,7 @@ optionally `node` (otherwise the account's own node, `accounts` order modulo the
 cluster's size, then the others, skipping unreachable ones: as each v1 member
 talked to its own node, requests spread over the cluster).
 
-A merod-v2 build with `--registry-url` gets a package registry on 127.0.0.1
+A merod build with `--registry-url` gets a package registry on 127.0.0.1
 (`ProcessCluster.registry`), laid out as the real one; `install_package`
 publishes to it. A port marked `not_applicable` (see `merobox cloud port`) is
 not run and is no pass: `merobox cloud run` exits 3 for it.
