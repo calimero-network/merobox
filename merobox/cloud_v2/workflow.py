@@ -36,7 +36,6 @@ is `{{accounts.<name>.account_id}}`. `{{env.NAME}}` reads the environment, and
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import json
@@ -50,6 +49,7 @@ from typing import Any, Callable
 import yaml
 from rich.console import Console
 
+from merobox.cloud_v2.assertions import AssertionConfigError, run_assert_step
 from merobox.cloud_v2.cluster import ProcessCluster
 
 console = Console()
@@ -937,15 +937,10 @@ class Runner:
 
     def _assert(self, step: dict) -> None:
         """v1's own `assert` and `json_assert`, over this workflow's variables."""
-        if step["type"] == "json_assert":
-            from merobox.commands.bootstrap.steps.json_assertion import JsonAssertStep
-
-            checker = JsonAssertStep(step)
-        else:
-            from merobox.commands.bootstrap.steps.assertion import AssertStep
-
-            checker = AssertStep(step)
-        ok = asyncio.run(checker.execute({}, self.variables))
+        try:
+            ok = run_assert_step(step, self.variables)
+        except AssertionConfigError as e:
+            raise WorkflowError(str(e)) from e
         if not ok:
             raise WorkflowError(f"{step.get('name') or step['type']}: assertion failed")
 
