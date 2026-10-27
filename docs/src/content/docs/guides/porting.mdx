@@ -1,0 +1,44 @@
+---
+title: Port a v1 workflow
+description: Convert v1 workflows (nodes, namespaces, groups, contexts) to cloud-v2 workflows with merobox cloud port, how the two models map, and what a port drops.
+sidebar:
+  order: 1
+---
+
+v1 workflows started peer-to-peer nodes and drove each one's admin API.
+merobox no longer runs those nodes; `merobox cloud port` rewrites such a
+workflow for a release-v2 cluster.
+
+```bash
+merobox cloud port old/*.yml --out-dir ported/ [--wasm-map map.json] [--base-port 2800]
+merobox cloud run ported/workflow-example.yml
+```
+
+- `--wasm-map` is JSON, `{bundle path: {service or "": wasm path}}`, telling
+  the port which WASM an `install_application` bundle holds; an entry's
+  `_mpk` names the signed package instead, which is then installed by name.
+- Each file gets its own cluster ports, `--base-port` plus 10 per file.
+- Each ported file starts with a header listing the steps it dropped.
+
+## How the models map
+
+A v1 **node** becomes an **account**: a person signed in with a passkey on the
+cluster. v1's namespace becomes an **organization**, a group a **team**, a
+context an **app** deployed in the organization. The step-by-step table, and
+the list of steps that have no counterpart, is the docstring of
+[`merobox/cloud_v2/port.py`](https://github.com/calimero-network/merobox/blob/master/merobox/cloud_v2/port.py).
+
+Dropped: sync controls, a node going offline or cut off from its peers (a
+cluster has no user replica to partition), member metadata, admin-API and log
+assertions, and scripts.
+
+## Not applicable
+
+A port that no longer tests what its v1 workflow did is written with
+`not_applicable: <reason>`. `merobox cloud run` does not run it and exits 3, so
+it never counts as a pass.
+
+## Running a v1 file directly
+
+`merobox cloud run`, `merobox bootstrap run` and `merobox run` refuse a file
+without `backend: cloud-v2` (exit 2) and point here.

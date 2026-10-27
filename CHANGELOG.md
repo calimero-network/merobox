@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **v1 (breaking).** release-v2 is cloud-only, so everything that drove v1
+  nodes is gone: the Docker, binary and remote node managers, v1 workflow
+  steps and their executor, v1 auth and token cache, `merobox/topology`,
+  `merobox.testing`, the v1 CLI commands (`stop`, `nuke`, `logs`, `health`,
+  `remote`, `group`, `namespace`, `bootstrap create-sample`), the v1
+  workflow examples and `example-project/`, and the Docker, Binary, TEE and
+  integration CI lanes. A v1 workflow converts with `merobox cloud port`.
+- Dependencies only v1 used: `docker`, `aiohttp`, `toml`, `base58`,
+  `filelock`, `requests`, `tqdm`, `pydantic` (and `pytest-asyncio`,
+  `pytest-mock` for development).
+
+### Changed
+
+- `merobox bootstrap run`, `merobox bootstrap validate` and `merobox run`
+  are v1's names for `merobox cloud run` / `cloud validate` / `cloud run`.
+  They take a `backend: cloud-v2` workflow; a v1 workflow exits 2 with a
+  pointer to `merobox cloud port`.
+- `assert` and `json_assert` in cloud-v2 workflows are evaluated by
+  `merobox/cloud_v2/assertions.py`, with v1's statement syntax unchanged.
+- CI runs the cloud-v2 examples against core's `release-v2` branch
+  (`test-cloud-v2`).
+
 ## [0.6.84] - 2026-10-07
 
 ### Changed

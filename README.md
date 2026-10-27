@@ -1,128 +1,90 @@
 # Merobox CLI
 
-A Python CLI for managing Calimero nodes (Docker or native) and orchestrating YAML workflows.
+A Python CLI that starts a release-v2 (Calimero Cloud) cluster of `merod` nodes,
+one process per node, and drives it through declarative YAML workflows: clients
+signed in with passkeys and API keys deploy apps and call them while steps
+crash, freeze, restart and upgrade nodes.
 
 > **Full documentation**: <https://calimero-network.github.io/merobox/>
 
+v1's peer-to-peer nodes are gone, and with them merobox's Docker, binary and
+remote node managers. A v1 workflow converts with `merobox cloud port`.
+
 ## Quick Start
-
-### Installation
-
-**PyPI (recommended):**
-
-```bash
-pipx install merobox
-```
-
-**From source:**
 
 ```bash
 git clone https://github.com/calimero-network/merobox.git
 cd merobox
-pipx install -e .
+pip install -e .          # builds calimero-client-py from source: needs Rust
 ```
 
-### release-v2 (Calimero Cloud) clusters
-
-Workflows that declare `backend: cloud-v2` run against `merod` instead: one
-process per node, clients signed in with passkeys and API keys, steps that crash,
-freeze, restart and upgrade nodes. See
-[`workflow-examples/cloud-v2/`](workflow-examples/cloud-v2/README.md).
+Build `merod` and the kv-store app from
+[core](https://github.com/calimero-network/core), branch `release-v2`
+(`cargo build -p merod`, `cargo build -p kv-store --target
+wasm32-unknown-unknown --profile app-release`), then:
 
 ```bash
-MEROD_BINARY=./merod merobox cloud run workflow-examples/cloud-v2/kv-store-failover.yml
+export MEROD_BINARY=…/core/target/debug/merod
+export KV_STORE_WASM=…/core/target/wasm32-unknown-unknown/app-release/kv_store.wasm
+merobox cloud run workflow-examples/cloud-v2/kv-store-failover.yml
 ```
 
-### Basic Usage
+## Commands
 
-```bash
-# Start Calimero nodes
-merobox run --count 2
+| Command | What it does |
+| --- | --- |
+| `merobox cloud run WORKFLOW` | Start the workflow's cluster, run its steps, stop the cluster (`--binary`, `--data-dir`, `--logs`) |
+| `merobox cloud validate WORKFLOW` | Check a workflow without starting anything |
+| `merobox cloud port SOURCES... --out-dir DIR` | Port v1 workflows to cloud-v2 workflows |
+| `merobox bootstrap run` / `bootstrap validate` / `run` | v1's names, routed to `cloud run` / `cloud validate` / `cloud run` |
 
-# Start with auth service (Docker mode)
-merobox run --auth-service
-
-# Ports are published on 127.0.0.1; expose them to other machines explicitly
-merobox run --bind-host 0.0.0.0 --auth-mode embedded
-
-# Start with embedded auth (binary mode)
-merobox run --no-docker --binary-path /path/to/merod --auth-mode embedded
-
-# Pass extra arguments straight to `merod run` (binary mode only)
-merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
-  --merod-args="--sync-strategy delta --state-sync-strategy hash"
-
-# Check node status
-merobox health
-
-# Execute a workflow
-merobox bootstrap run workflow.yml
-
-# Stop all nodes
-merobox stop --all
-```
-
-### Example Workflow
+## Example Workflow
 
 ```yaml
-name: "Hello World"
-nodes:
-  count: 2
-  prefix: "node"
-
+name: KV store across a node failure
+backend: cloud-v2
+cluster: { nodes: 3, base_port: 2700 }
+accounts: [alice]
 steps:
-  - name: "Install App"
-    type: "install_application"
-    node: "node-1"
-    path: "./app.mpk"
-    outputs:
-      app_id: applicationId
-
-  - name: "Create Context"
-    type: "create_context"
-    node: "node-1"
-    application_id: "{{app_id}}"
-    outputs:
-      ctx_id: contextId
-
-  - name: "Call Method"
-    type: "call"
-    node: "node-1"
-    context_id: "{{ctx_id}}"
-    method: "hello"
+  - type: deploy
+    account: alice
+    wasm: "{{env.KV_STORE_WASM}}"
+    outputs: { app_id: appId }
+  - type: call
+    account: alice
+    app: "{{app_id}}"
+    method: set
+    args: { key: a, value: "1" }
+  - type: kill_node
+    node: 1
+  - type: wait_for
+    account: alice
+    app: "{{app_id}}"
+    method: get
+    args: { key: a }
+    equals: "1"
 ```
 
-## Features
-
-- **Node Management** — Start, stop, and monitor nodes in Docker or as native processes
-- **Workflow Orchestration** — ~100 step types for complex multi-step YAML workflows
-- **Remote Nodes** — Connect to remote Calimero nodes with user/password or API key auth
-- **Auth Integration** — Traefik proxy (Docker) or embedded JWT auth (binary mode)
-- **Fuzzy Testing** — Long-duration randomized load tests with weighted operations
-- **pytest Integration** — `cluster()` and `workflow()` context managers for test harnesses
+Every step type is listed in
+[`workflow-examples/cloud-v2/README.md`](workflow-examples/cloud-v2/README.md).
 
 ## Requirements
 
-- **Python**: 3.9 – 3.11 (3.12+ not supported due to `py-near` / `ed25519` dependency)
-- **Docker**: 20.10+ (for Docker mode)
-- **OS**: Linux, macOS (Windows via WSL only)
+- **Python** 3.9+, and a Rust toolchain to build `calimero-client-py`
+- **merod** from core's `release-v2` branch
+- **OS**: Linux, macOS
 
 ## Documentation
 
-All detailed documentation lives in the **[Documentation](https://calimero-network.github.io/merobox/)**:
-
 | Topic | Page |
 |-------|------|
-| System architecture & data flow | [System Overview](https://calimero-network.github.io/merobox/understand/system-overview/) |
-| WorkflowExecutor, BaseStep, step factory | [Workflow Engine](https://calimero-network.github.io/merobox/workflows/engine/) |
-| DockerManager, BinaryManager, Traefik | [Node Management](https://calimero-network.github.io/merobox/guides/node-management/) |
-| Remote node CLI & auth methods | [Remote Nodes](https://calimero-network.github.io/merobox/guides/remote-nodes/) |
-| Complete YAML schema & all step types | [Workflow YAML](https://calimero-network.github.io/merobox/workflows/yaml/) |
-| All CLI commands with flags & options | [CLI Reference](https://calimero-network.github.io/merobox/reference/cli/) |
-| MeroboxError hierarchy, retry patterns | [Error Handling](https://calimero-network.github.io/merobox/reference/error-handling/) |
-| cluster(), workflow(), pytest fixtures | [Testing Guide](https://calimero-network.github.io/merobox/guides/testing/) |
-| Common issues & debugging tips | [Troubleshooting](https://calimero-network.github.io/merobox/reference/troubleshooting/) |
-| Terms & definitions | [Glossary](https://calimero-network.github.io/merobox/understand/glossary/) |
+| How a run works | [System Overview](https://calimero-network.github.io/merobox/understand/system-overview/) |
+| The workflow format and every step type | [Workflow YAML](https://calimero-network.github.io/merobox/workflows/yaml/) |
+| The shipped examples and their inputs | [Examples](https://calimero-network.github.io/merobox/workflows/examples/) |
+| Converting v1 workflows | [Port a v1 workflow](https://calimero-network.github.io/merobox/guides/porting/) |
+| pytest, unit tests, CI | [Testing](https://calimero-network.github.io/merobox/guides/testing/) |
+| Every command and flag | [CLI Reference](https://calimero-network.github.io/merobox/reference/cli/) |
+| Common failures | [Troubleshooting](https://calimero-network.github.io/merobox/reference/troubleshooting/) |
 
 ## Release Process
 
@@ -140,10 +102,8 @@ git push origin master
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
+3. Make your changes (`make format-check`, `python -m pytest merobox/tests/unit`)
 4. Submit a pull request
-
-See the [Testing Guide](https://calimero-network.github.io/merobox/guides/testing/) for development setup and adding new commands/step types.
 
 ## License
 
@@ -152,6 +112,6 @@ MIT — see [LICENSE](LICENSE) for details.
 ## Links
 
 - [Documentation](https://calimero-network.github.io/merobox/)
-- [Example Workflows](workflow-examples/)
+- [Example Workflows](workflow-examples/cloud-v2/)
 - [GitHub Issues](https://github.com/calimero-network/merobox/issues)
 - [PyPI](https://pypi.org/project/merobox/)

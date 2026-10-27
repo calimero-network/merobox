@@ -15,7 +15,7 @@ export default defineConfig({
     starlight({
       title: 'merobox',
       description:
-        'A Python CLI for running Calimero nodes in Docker and driving them through declarative YAML workflow scenarios — the end-to-end test harness for Calimero.',
+        'A Python CLI that starts a release-v2 (Calimero Cloud) cluster of merod nodes, one process per node, and drives it through declarative YAML workflows.',
       logo: {
         light: './src/assets/logo-light.svg',
         dark: './src/assets/logo-dark.svg',
@@ -63,25 +63,15 @@ export default defineConfig({
         },
         {
           label: 'Workflows',
-          items: ['workflows/engine', 'workflows/yaml', 'workflows/examples'],
+          items: ['workflows/yaml', 'workflows/examples'],
         },
         {
           label: 'Guides',
-          items: [
-            'guides/node-management',
-            'guides/remote-nodes',
-            'guides/testing',
-            'guides/pytest-tutorial',
-            'guides/recipes',
-          ],
+          items: ['guides/porting', 'guides/testing'],
         },
         {
           label: 'Reference',
-          items: [
-            'reference/cli',
-            'reference/troubleshooting',
-            'reference/error-handling',
-          ],
+          items: ['reference/cli', 'reference/troubleshooting'],
         },
       ],
     }),

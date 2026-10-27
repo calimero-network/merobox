@@ -74,4 +74,7 @@ not run and is no pass: `merobox cloud run` exits 3 for it.
 | `upload_blob` | `app`, `file_path` (as given, else beside the workflow or above it) → `blobId` (base58), `blob_id`, `id` (hex), `size` |
 | `download_blob` | `app`, `blob_id`, optional `expected_size` → `size`, `data` |
 | `kill_node`, `pause_node`, `resume_node`, `start_node`, `restart_node` | `node`, `binary` (start/restart) |
-| `wait`, `repeat`, `assert` | as in v1 workflows |
+| `wait` | `seconds` |
+| `set` | `values`: variables to set |
+| `repeat` | `count`, `steps`: `{{iteration}}` (from 0) and `{{iteration_node}}` (from 1) inside |
+| `assert`, `json_assert` | `statements`, in v1's statement syntax (`merobox/cloud_v2/assertions.py`) |
