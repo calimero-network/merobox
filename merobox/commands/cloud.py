@@ -14,7 +14,10 @@ def cloud():
 
 @cloud.command("run")
 @click.argument("workflow", type=click.Path(exists=True))
-@click.option("--binary", help="merod binary (default: MEROD_BINARY, then MEROD_V2_BINARY, then PATH)")
+@click.option(
+    "--binary",
+    help="merod binary (default: MEROD_BINARY, then MEROD_V2_BINARY, then PATH)",
+)
 @click.option(
     "--data-dir",
     type=click.Path(),

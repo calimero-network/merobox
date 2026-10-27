@@ -55,7 +55,9 @@ def run_command(binary: str) -> list[str]:
         except (OSError, subprocess.SubprocessError):
             out = ""
         _RUN[binary] = any(
-            line.split()[:1] == ["run"] for line in out.splitlines() if line.startswith("  ")
+            line.split()[:1] == ["run"]
+            for line in out.splitlines()
+            if line.startswith("  ")
         )
     return [binary, "run"] if _RUN[binary] else [binary]
 
