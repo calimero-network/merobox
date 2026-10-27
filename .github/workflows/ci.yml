@@ -1,4 +1,4 @@
-name: CI - Format Check & Merobox Integration Testing
+name: CI - Format Check, Unit Tests & Cloud-v2 Examples
 
 on:
   push:
@@ -7,34 +7,13 @@ on:
     branches: [master]
 
 env:
-  CALIMERO_CONTRACTS_VERSION: "latest"
-  # An exact pin, not "whatever core released most recently". These lanes drive
-  # a RELEASED core against the client-py pinned in requirements.txt, and those
-  # two ship from different repos on different schedules — so when they briefly
-  # disagree about the wire, every PR here goes red at once and none of them
-  # touched anything related. That happened on 2026-08-21: client-py 0.6.31
-  # landed at 12:55 expecting `namespaceId` on the join response, released core
-  # rc.24 did not send it, and every namespace join died until rc.25 published
-  # at 15:19 and the resolution silently moved on. Two and a half hours of red
-  # CI, no merobox commit involved in either direction — and because the first
-  # red run lands on whatever merged that morning, it reads as that PR's fault.
-  #
-  # It happened again on 2026-09-23, in the other direction: core made
-  # `allowed_rtmr3` mandatory on the TEE admission policy and published it, and
-  # from that moment every merobox PR lost all ten TEE scenarios to an HTTP 400.
-  # No merobox commit was involved then either, and the runs that still looked
-  # green were simply the ones that had last executed before the release.
-  #
-  # Bumping is now a deliberate edit here, and the PR that makes it proves the
-  # new pair works before it becomes everyone's problem. calimero-network/core
-  # pinned merobox for the mirror-image reason (calimero-network/core#3609).
-  #
-  # Moves with the client-py pin in requirements.txt where a core release allows.
-  # calimero-client-py 0.9.0 is compiled against core master 6811e566, which no
-  # core release carries yet (rc.82 predates it), so the release lanes stay on
-  # rc.79. Only the warrant layout differs for merobox, and delegated-authorship
-  # runs in the Docker lanes on merod:edge alone.
-  CORE_VERSION: "0.11.0-rc.79"
+  # The core branch whose merod the cloud-v2 examples run against. It floats on
+  # purpose: release-v2 has no core releases to pin to yet, and this lane is the
+  # one that notices core's wire changes early, so it reports on PRs instead of
+  # gating them. Core's own e2e.yml ("merobox cloud-v2") runs the same examples
+  # against each core change, pinned to a merobox ref, which is the gate in the
+  # other direction.
+  CORE_V2_REF: "release-v2"
   # Harden crates.io downloads against transient CI network blips that fail the
   # maturin build of calimero-client-py during `pip install` (seen as
   # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,
@@ -93,689 +72,85 @@ jobs:
         run: |
           python -m pytest merobox/tests/unit -v --tb=short
 
-  # ── Discover workflow files for matrix ──
-  list-workflows:
-    name: Discover workflows
+  # ── merobox's cloud-v2 examples against core's release-v2 merod ──
+  # The same recipe as core's e2e.yml: merod, kv_store.wasm, two signed
+  # kv-store releases for packages.yml, and a second, different merod for
+  # rolling-upgrade.yml.
+  test-cloud-v2:
+    name: Cloud v2 examples
     runs-on: ubuntu-latest
-    outputs:
-      binary: ${{ steps.set.outputs.binary }}
-      docker: ${{ steps.set.outputs.docker }}
-      tee: ${{ steps.set.outputs.tee }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: set
-        run: |
-          # Binary mode: all workflows except fuzzy, auth-related, the
-          # whole fault-injection family, NAT-topology, ws-event-assertion,
-          # and the cascade-namespace workflow.
-          # ws-event-assertion partitions a node so the subscription is armed
-          # AFTER the announcement is published - that ordering is the whole
-          # assertion. `disconnect_node` short-circuits on is_binary_mode, so
-          # the peer never detaches, folds the op immediately, and the watch
-          # window opens on an event that has already gone by: 0 arrive.
-          # The fault primitives are Docker-specific (the steps short-
-          # circuit on is_binary_mode) and the paired docker-inspect
-          # assertion scripts would fail outright in binary mode where
-          # no container exists. NAT topology requires Docker bridges
-          # + an iptables-running gateway container; the executor
-          # refuses `topology: { type: nat }` in binary mode and
-          # returns a clear error, but CI counts that refusal as a
-          # workflow failure, so just don't run them.
-          # cascade-namespace requires a merod that derives
-          # app_key = blob_id(bytecode) at group creation
-          # (calimero-network/core#2507). Binary mode pulls merod from
-          # the latest core *release*, which lags master; until a
-          # release >= 0.10.1-rc.48 ships #2507, the released merod
-          # leaves app_key = [0u8; 32] and the cascade predicate matches
-          # nothing. Docker mode runs against merod:edge (master), which
-          # has the fix, so cascade-namespace keeps full coverage there.
-          # Re-add to binary once the pinned release carries #2507.
-          # blob-cross-node-download asserts a blob's BYTES reach a second node.
-          # That path is broken for every namespace-backed context until
-          # calimero-network/core#3317 ships: the announce is skipped and the
-          # outgoing blob request goes unsigned, so the serving node answers
-          # `found: false`. Neither mode can pass it yet — binary pulls the
-          # latest core release (rc.18, predates the fix), docker runs
-          # merod:edge (master, not merged). Re-add to BOTH matrices once
-          # merod:edge carries it; the workflow itself is ready.
-          # tee-* require a merod built with `--features mock-attestation`
-          # (calimero-network/core#3269). That feature is default-OFF, so
-          # neither the release binary (binary mode) nor merod:edge (docker
-          # mode) carries it — `merod run --mock-tee` hard-errors at boot and
-          # every tee-*.yml goes red before any admission logic runs. Mock-TEE
-          # testing is native/dev-only by design (build recipe documented in
-          # each tee-*.yml header). They are NOT dropped from CI — they run in
-          # the dedicated `test-tee` job against a feature-enabled merod built by
-          # `build-merod-mock`; see the `tee` matrix output below. They stay out
-          # of the binary+docker matrices here because those use feature-less
-          # merod (release binary / merod:edge).
-          # account-identity needs two things nothing in CI has yet: `node_exec`
-          # is Docker-only (a one-shot container over the node's data dir, so
-          # binary mode has nothing to run it against), and its export/import
-          # steps need a merod carrying `merod account export|import`
-          # (calimero-network/core#3362, unmerged). Re-add to the docker matrix
-          # once merod:edge carries those commands; binary mode can never run it.
-          # group-admin, group-metadata and set-member-auto-follow name members by
-          # ACCOUNT (64 hex), which merod now requires on every member-addressing
-          # endpoint. A released merod still names them by bs58 signing key and
-          # returns no account at all, so `memberAccount` / `account` capture
-          # nothing and the first member step is handed an unresolved
-          # placeholder. The two ids are unrelated values, so no single spelling
-          # satisfies both lanes; docker mode (merod:edge) keeps full coverage.
-          # Re-add here once a core release carries the account rename —
-          # 0.11.0-rc.20 and the pending rc.21 both predate it.
-          # delegated-authorship needs a merod carrying POST
-          # /admin-api/contexts/:context_id/intents. The docker lane gets it from
-          # merod:edge; binary mode downloads a RELEASE, which predates it — the
-          # run reaches the relay step and takes a 404. Note the version string
-          # does not distinguish them: both report 0.11.0-rc.25, and only the
-          # build hash differs (edge 5cc9668 vs release d630815). Re-add here once
-          # a core release carries the endpoint.
-          # non-admin-delete-vs-leave has the same shape of dependency as the
-          # three above: it captures `memberAccount` from join_namespace and
-          # hands it to add_group_members, and if that capture binds nothing the
-          # member never gets the direct row the whole leave_group half needs.
-          # Held out of this lane rather than proven in it, because this
-          # workflow has no green binary run to regress against.
-          #
-          # NOTE the shared rationale above is stale and should be re-checked
-          # for all four together: it reasons from rc.20/rc.21 being the latest
-          # release, but the account rename landed IN rc.21 and releases are now
-          # at 0.11.0-rc.32, so a released merod most likely does return an
-          # account. Re-adding is a CI experiment, not a code change — do the
-          # four as one PR rather than smuggling it into this one.
-          # Docker mode (merod:edge) keeps full coverage meanwhile.
-          BINARY=$(ls workflow-examples/*.yml | \
-            grep -v account-identity | \
-            grep -v non-admin-delete-vs-leave | \
-            grep -v delegated-authorship | \
-            grep -v fuzzy-kv-store | \
-            grep -v auth-example | \
-            grep -v auth-image | \
-            grep -v cached-frontends | \
-            grep -v fault-injection | \
-            grep -v nat-topology | \
-            grep -v ws-event-assertion | \
-            grep -v cascade-namespace | \
-            grep -v blob-cross-node-download | \
-            grep -v group-admin-example | \
-            grep -v group-metadata-example | \
-            grep -v set-member-auto-follow | \
-            grep -v '/tee-' | \
-            jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
-          echo "binary=$BINARY" >> $GITHUB_OUTPUT
-
-          # Docker mode: same but also exclude binary-only workflow.
-          # fault-injection-tc requires a custom merod image with iproute2
-          # installed (the stock image lacks `tc`); skipped in CI.
-          # tee-* excluded here too — merod:edge lacks mock-attestation
-          # (see the binary-mode note above).
-          DOCKER=$(ls workflow-examples/*.yml | \
-            grep -v account-identity | \
-            grep -v fuzzy-kv-store | \
-            grep -v auth-example | \
-            grep -v auth-image | \
-            grep -v cached-frontends | \
-            grep -v example-binary | \
-            grep -v fault-injection-tc | \
-            grep -v blob-cross-node-download | \
-            grep -v '/tee-' | \
-            jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";"") | sub("^workflow-";""))})')
-          echo "docker=$DOCKER" >> $GITHUB_OUTPUT
-
-          # TEE mode: the ten tee-*.yml mock-TEE admission/replication scenarios
-          # excluded from the binary+docker matrices above. They run NATIVELY
-          # against a merod built with --features mock-attestation (built by the
-          # build-merod-mock job); the release binary and merod:edge are both
-          # default-off (core#3269) and hard-error on `merod run --mock-tee`.
-          # build-merod-mock builds from the latest core RELEASE tag. Since
-          # 0.11.0-rc.21 that release names members by ACCOUNT, and these
-          # scenarios now do too: `assert_tee_member` / `assert_not_member` match
-          # against a member list of accounts, and `remove_group_members` is
-          # handed one.
-          #
-          # tee-matrix-open-late-join is back in. It was excluded because a TEE
-          # replica joining a namespace with a PRE-EXISTING context in an Open
-          # subgroup replicated nothing: auto-follow is purely event-driven, so
-          # such a context arrives only through a backfill, and that backfill
-          # enumerated the flag's own group rather than the subtree beneath it.
-          # An inherited-only member has no membership row in the Open subgroup,
-          # which is exactly the member the backfill exists to serve.
-          #
-          # core#3527 walks the subtree and resolves the flag at the inheritance
-          # anchor, and it ships in 0.11.0-rc.30. build-merod-mock builds from
-          # the latest core release, so this job now gets the fix. Re-enabled
-          # rather than left out: the scenario is the only thing that checks the
-          # late-arrival path end to end, and an excluded scenario proves nothing
-          # about a fix that claims to address it.
-          TEE=$(ls workflow-examples/tee-*.yml | \
-            jq -R -s -c 'split("\n") | map(select(length > 0)) | map({file: ., name: (split("/")[-1] | sub("\\.yml$";""))})')
-          echo "tee=$TEE" >> $GITHUB_OUTPUT
-
-  # ── Build phase: download merod + build WASM apps ──
-  build-binary:
-    name: Build (binary mode)
-    runs-on: ubuntu-latest
-    # Expose the resolved release tag so the binary test job pins meroctl to the
-    # exact same release merod came from (no independent "latest" re-resolution).
-    outputs:
-      core_tag: ${{ steps.download-merod.outputs.tag }}
+    timeout-minutes: 120
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download pre-built merod from latest core release
-        id: download-merod
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="$CORE_VERSION"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Downloading merod from calimero-network/core release: $TAG (pinned)"
-          bash .github/scripts/gh-release-download-retry.sh \
-            calimero-network/core "$TAG" \
-            "merod_x86_64-unknown-linux-gnu.tar.gz" /tmp/merod.tar.gz
-          tar -xzf /tmp/merod.tar.gz -C /tmp
-          chmod +x /tmp/merod
-          /tmp/merod --version
-          echo "✓ merod $TAG downloaded"
+      - name: Checkout core
+        uses: actions/checkout@v4
+        with:
+          repository: calimero-network/core
+          ref: ${{ env.CORE_V2_REF }}
+          path: core
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      # Before pip: calimero-client-py is built from source with maturin.
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-      - name: Build workflow app bundles
-        env:
-          # Build the apps from the SAME core revision the merod above came from.
-          # Core master's apps import host functions a released merod does not
-          # have — `account_id` since calimero-network/core#3320 — and a wasm that
-          # imports a missing host function dies at instantiation:
-          #   Link(Import("env", "account_id", UnknownImport))
-          # which surfaces as "create_context failed: Internal server error" in
-          # every binary-mode workflow. The reverse skew is harmless (host
-          # functions only get added), so one build from the release tag serves
-          # both the binary and docker matrices.
-          CORE_BRANCH: ${{ steps.download-merod.outputs.tag }}
-        run: |
-          chmod +x workflow-examples/scripts/build_res_bundles.sh
-          ./workflow-examples/scripts/build_res_bundles.sh
-
-      - name: Upload merod binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: merod-binary
-          path: /tmp/merod
-          retention-days: 1
-
-      - name: Upload app bundles
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-bundles
-          path: workflow-examples/res/
-          retention-days: 1
-
-  # ── Build phase (TEE): merod WITH mock-attestation, from core source ──
-  # The release binary and merod:edge are built default-off (core#3269), so they
-  # cannot run `merod --mock-tee`. Build merod from the latest core release tag
-  # with the feature enabled so the tee-*.yml scenarios get real CI coverage on
-  # the native path. Self-contained: resolves its own tag and exposes it so the
-  # tee test job pins meroctl to the exact same release.
-  build-merod-mock:
-    name: Build (merod + mock-attestation)
-    runs-on: ubuntu-latest
-    outputs:
-      core_tag: ${{ steps.resolve.outputs.tag }}
-    steps:
-      - name: Resolve latest core release tag
-        id: resolve
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="$CORE_VERSION"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Building merod (mock-attestation) from core release: $TAG (pinned)"
-
-      - name: Checkout core at the release tag
-        uses: actions/checkout@v4
-        with:
-          repository: calimero-network/core
-          ref: ${{ steps.resolve.outputs.tag }}
-          path: core
-
-      - name: Set up Rust toolchain
-        # core/rust-toolchain.toml pins 1.88.0; rustup auto-installs it on the
-        # first cargo invocation inside core/. (The mock-attestation feature
-        # exists only from core#3269 / 0.11.0-rc.17 onward — all newer releases
-        # carry it, so building the latest release tag is always valid.)
-        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: core
-          key: merod-mock-${{ steps.resolve.outputs.tag }}
+          key: cloud-v2
 
-      - name: Build merod with mock-attestation
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Build merod
         working-directory: core
         run: |
-          cargo build --release -p merod --features mock-attestation
-          ls -la target/release/merod
-          cp target/release/merod /tmp/merod-mock
-          chmod +x /tmp/merod-mock
-          /tmp/merod-mock --version
+          cargo build -p merod
+          echo "MEROD_BINARY=$GITHUB_WORKSPACE/core/target/debug/merod" >> "$GITHUB_ENV"
+          echo "MEROD_V2_BINARY=$GITHUB_WORKSPACE/core/target/debug/merod" >> "$GITHUB_ENV"
 
-      - name: Smoke-check the mock-attestation flag is honored
+      - name: Build the fixtures
+        working-directory: core
         run: |
-          # merod CLI: root args (--node/--home) MUST precede the subcommand:
-          #   merod --node <NAME> --home <PATH> run --mock-tee
-          # The feature gate is at the top of run() (crates/merod/src/cli/run.rs):
-          #   - feature ABSENT  -> bail "built without mock-attestation support"
-          #   - feature PRESENT -> passes the gate, then bails "Node is not
-          #                        initialized" (we didn't init a node here).
-          # Require the PRESENT signal and forbid the ABSENT one, so a wrong
-          # invocation (usage error -> neither string) fails instead of passing
-          # vacuously. timeout guards against the daemon actually starting.
-          set +e
-          OUT=$(timeout 20 /tmp/merod-mock --node smoke --home /tmp/smoke-home run --mock-tee 2>&1)
-          echo "$OUT"
-          if echo "$OUT" | grep -qi "without mock-attestation support"; then
-            echo "::error::merod-mock was built WITHOUT the mock-attestation feature"; exit 1
-          fi
-          if ! echo "$OUT" | grep -qi "Node is not initialized"; then
-            echo "::error::--mock-tee was not exercised as expected (see output above)"; exit 1
-          fi
-          echo "✓ --mock-tee honored past the feature gate (feature present)"
-
-      - name: Upload merod-mock binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: merod-mock-binary
-          path: /tmp/merod-mock
-          retention-days: 1
-
-  # ── Test phase (binary): run each workflow in parallel ──
-  test-merobox:
-    name: Binary (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    needs: [build-binary, list-workflows]
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.list-workflows.outputs.binary) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Download merod binary
-        uses: actions/download-artifact@v4
-        with:
-          name: merod-binary
-          path: /tmp
-
-      - name: Install merod
-        run: |
-          chmod +x /tmp/merod
-          sudo cp /tmp/merod /usr/local/bin/
-          merod --version
-
-      - name: Download and install meroctl (pinned to merod's release)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.build-binary.outputs.core_tag }}
-        run: |
-          # The tee-* replication scenarios assert via `meroctl context ls`
-          # (script step, target: local), so meroctl must be on the host PATH.
-          # Pin to the SAME release merod came from (build-binary's resolved tag)
-          # so the two binaries can't diverge if a new release lands mid-run.
-          echo "Downloading meroctl from calimero-network/core release: $TAG"
-          bash .github/scripts/gh-release-download-retry.sh \
-            calimero-network/core "$TAG" \
-            "meroctl_x86_64-unknown-linux-gnu.tar.gz" /tmp/meroctl.tar.gz
-          tar -xzf /tmp/meroctl.tar.gz -C /tmp
-          chmod +x /tmp/meroctl
-          sudo cp /tmp/meroctl /usr/local/bin/
-          meroctl --version
-          echo "✓ meroctl $TAG installed"
-
-      - name: Download app bundles
-        uses: actions/download-artifact@v4
-        with:
-          name: app-bundles
-          path: workflow-examples/res/
-
-      # Native nodes inherit os.environ, so no image to stamp.
-      - name: Serve the bundles over an http registry
-        run: |
-          sudo systemctl start docker
-          url=$(./workflow-examples/scripts/fixture-registry.sh)
-          echo "fixture registry at $url"
-          echo "CALIMERO_REGISTRY_MODE=http" >> "$GITHUB_ENV"
-          echo "CALIMERO_REGISTRY_URL=$url" >> "$GITHUB_ENV"
-
-      - name: Run ${{ matrix.name }}
-        env:
-          WORKFLOW_FILE: ${{ matrix.file }}
-        run: |
-          chmod +x workflow-examples/scripts/run_with_retry.sh
-          ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE" --no-docker
-
-      - name: Assert the registry served the bundle
-        if: always()
-        env:
-          WORKFLOW_FILE: ${{ matrix.file }}
-        run: ./workflow-examples/scripts/fixture-registry.sh --assert "$WORKFLOW_FILE"
-
-  # ── Test phase (TEE): mock-TEE scenarios, native, feature-enabled merod ──
-  # These are excluded from the binary+docker matrices and run only here, on the
-  # native path, against the merod built by build-merod-mock. Apps: all ten use
-  # res/com.calimero.kv-store-v2-1.0.0.mpk, which is gitignored, so the bundles
-  # come from build-binary rather than from the checkout.
-  test-tee:
-    name: TEE (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    needs: [build-binary, build-merod-mock, list-workflows]
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.list-workflows.outputs.tee) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Download merod-mock binary
-        uses: actions/download-artifact@v4
-        with:
-          name: merod-mock-binary
-          path: /tmp
-
-      - name: Install merod (mock-attestation build)
-        run: |
-          chmod +x /tmp/merod-mock
-          sudo cp /tmp/merod-mock /usr/local/bin/merod
-          merod --version
-
-      - name: Download and install meroctl (pinned to merod-mock's release)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.build-merod-mock.outputs.core_tag }}
-        run: |
-          # tee-* replication asserts run `meroctl context ls` on the host
-          # (script step, target: local), so meroctl must be on the host PATH.
-          # Pin to the SAME release merod-mock was built from.
-          echo "Downloading meroctl from calimero-network/core release: $TAG"
-          bash .github/scripts/gh-release-download-retry.sh \
-            calimero-network/core "$TAG" \
-            "meroctl_x86_64-unknown-linux-gnu.tar.gz" /tmp/meroctl.tar.gz
-          tar -xzf /tmp/meroctl.tar.gz -C /tmp
-          chmod +x /tmp/meroctl
-          sudo cp /tmp/meroctl /usr/local/bin/
-          meroctl --version
-          echo "✓ meroctl $TAG installed"
-
-      # build-binary bundles from the release tag its merod came from, which is
-      # the same tag build-merod-mock resolves, so these match this job's merod.
-      - name: Download app bundles
-        uses: actions/download-artifact@v4
-        with:
-          name: app-bundles
-          path: workflow-examples/res/
-
-      - name: Run ${{ matrix.name }}
-        env:
-          WORKFLOW_FILE: ${{ matrix.file }}
-        run: |
-          chmod +x workflow-examples/scripts/run_with_retry.sh
-          ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE" --no-docker
-
-      - name: Upload node logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          # Native nodes write to data/<node>/logs/*.log (the docker
-          # capture-node-logs.sh helper is docker-only and finds nothing here).
-          name: node-logs-tee-${{ matrix.name }}-${{ github.run_id }}
-          path: data/*/logs/
-          retention-days: 14
-          if-no-files-found: ignore
-
-  # ── Test phase (Docker): run each workflow in parallel ──
-  # Canary lane: `merod:edge` + force_pull_image means an upstream core change
-  # reddens it with no merobox commit involved, and ghcr keeps no immutable edge
-  # build to pin to (untagged versions are deleted after 2 days). So it reports
-  # on PRs instead of gating them, and stays a hard failure on master pushes.
-  test-merobox-docker:
-    name: Docker canary (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    needs: [list-workflows]
-    continue-on-error: ${{ github.event_name == 'pull_request' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.list-workflows.outputs.docker) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      # No setup-buildx: only the classic builder writes the stamp to the local store.
-      - name: Start Docker daemon
-        run: |
-          sudo systemctl start docker
-          sudo docker --version
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Download and install meroctl from latest core release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Docker-mode tee-* scenarios still run their assert scripts on the
-          # host (script step, target: local) via `meroctl context ls`, so
-          # meroctl must be on the host PATH even though merod runs in a container.
-          # Here merod is a container image (not a release binary), so there is no
-          # release tag to pin against — resolve latest, matching the image's edge.
-          #
-          # Deliberately NOT `$CORE_VERSION`, unlike the release-binary lanes
-          # above. This lane's node is `:edge`, a moving image; pinning meroctl
-          # to a fixed release beside it would introduce the very skew the pin
-          # exists to prevent, just in the other direction. This lane floats on
-          # purpose — it is the one that notices core's wire changes early. If it
-          # starts reddening the way the release lanes did, the answer is to pin
-          # the image and this tag together, not this tag alone.
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName --jq '.[0].tagName')
-          echo "Downloading meroctl from calimero-network/core release: $TAG"
-          bash .github/scripts/gh-release-download-retry.sh \
-            calimero-network/core "$TAG" \
-            "meroctl_x86_64-unknown-linux-gnu.tar.gz" /tmp/meroctl.tar.gz
-          tar -xzf /tmp/meroctl.tar.gz -C /tmp
-          chmod +x /tmp/meroctl
-          sudo cp /tmp/meroctl /usr/local/bin/
-          meroctl --version
-          echo "✓ meroctl $TAG installed"
-
-      - name: Set up Rust (wasm32 target for workflow apps)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Build workflow app bundles
-        run: |
-          chmod +x workflow-examples/scripts/build_res_bundles.sh
-          ./workflow-examples/scripts/build_res_bundles.sh
-
-      # No per-node env key, so a container's registry travels in its image.
-      - name: Serve the bundles over an http registry
-        run: |
-          url=$(./workflow-examples/scripts/fixture-registry.sh \
-            --stamp ghcr.io/calimero-network/merod:edge)
-          echo "fixture registry at $url"
-
-      - name: Start node log capture
-        run: |
-          chmod +x .github/scripts/capture-node-logs.sh
-          .github/scripts/capture-node-logs.sh start "$GITHUB_WORKSPACE/node-logs" /tmp/node-log-capture.state
-
-      - name: Run ${{ matrix.name }}
-        env:
-          WORKFLOW_FILE: ${{ matrix.file }}
-        run: |
-          chmod +x workflow-examples/scripts/run_with_retry.sh
-          ./workflow-examples/scripts/run_with_retry.sh "$WORKFLOW_FILE"
-
-      - name: Assert the registry served the bundle
-        if: always()
-        env:
-          WORKFLOW_FILE: ${{ matrix.file }}
-        run: ./workflow-examples/scripts/fixture-registry.sh --assert "$WORKFLOW_FILE"
-
-      # The PR run is green whatever happens here, so say what failed and how to
-      # tell drift from a defect where the reader will actually see it.
-      - name: Report canary failure
-        if: failure()
-        # Through the environment, not interpolated into the script: an
-        # expression expanded into `run:` is executed as shell.
-        env:
-          WORKFLOW_NAME: ${{ matrix.name }}
-        run: |
+          set -euo pipefail
+          # core/rust-toolchain.toml pins its own toolchain; give it the target.
+          rustup target add wasm32-unknown-unknown
+          cargo build -p kv-store --target wasm32-unknown-unknown --profile app-release
+          PATH="$(./scripts/setup-cargo-mero.sh):$PATH"
+          mkdir -p target/e2e
+          for v in 1.0.0 1.1.0; do
+            (cd apps/kv-store && cargo mero bundle --dev --no-icon --app-version "$v")
+            cp "dist/com.calimero.kv-store-$v.mpk" target/e2e/
+          done
+          # A second, different merod build for the rolling upgrade.
+          cp target/debug/merod target/e2e/merod-next
+          printf '\0' >> target/e2e/merod-next
           {
-            echo "### Docker canary failed: $WORKFLOW_NAME"
-            echo
-            echo "This lane runs against the rolling \`ghcr.io/calimero-network/merod:edge\` image, so the failure is either a merobox defect or an upstream core change."
-            echo "Check the same workflow on master: still failing there means core moved, and fixing it is not this PR's job."
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "KV_STORE_WASM=$GITHUB_WORKSPACE/core/target/wasm32-unknown-unknown/app-release/kv_store.wasm"
+            echo "KV_STORE_MPK=$GITHUB_WORKSPACE/core/target/e2e/com.calimero.kv-store-1.0.0.mpk"
+            echo "KV_STORE_MPK_NEXT=$GITHUB_WORKSPACE/core/target/e2e/com.calimero.kv-store-1.1.0.mpk"
+            echo "MEROD_V2_UPGRADE_BINARY=$GITHUB_WORKSPACE/core/target/e2e/merod-next"
+          } >> "$GITHUB_ENV"
 
-      - name: Stop node log capture
-        if: always()
-        run: .github/scripts/capture-node-logs.sh stop /tmp/node-log-capture.state
-
-      - name: Upload node logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-logs-docker-${{ matrix.name }}-${{ github.run_id }}
-          path: node-logs/
-          retention-days: 14
-          if-no-files-found: ignore
-
-  test-merobox-integration:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      # No setup-buildx: only the classic builder writes the stamp to the local store.
-      - name: Start Docker daemon
+      - name: Run the examples
         run: |
-          sudo systemctl start docker
-          sudo docker --version
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Install merobox in development mode
-        run: |
-          pip install -e .
-
-      - name: Install example project dependencies
-        run: |
-          cd example-project
-          pip install -r requirements.txt
-
-      # Nothing is committed under example-project/res/, so the bundle is built
-      # here: a stale one makes node-2 fail to deserialise node-1's deltas with
-      # `Invalid Option representation: ...` once core's op encoding moves.
-      - name: Set up Rust (wasm32 target for kv_store)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Build com.calimero.kv-store-1.0.0.mpk from current core
-        run: |
-          chmod +x workflow-examples/scripts/build_res_bundles.sh
-          ./workflow-examples/scripts/build_res_bundles.sh
-          # The build script outputs to workflow-examples/res/. Copy
-          # into example-project/res/ so the integration workflow's
-          # `path: ./res/com.calimero.kv-store-1.0.0.mpk` resolves to the fresh build.
-          mkdir -p example-project/res
-          cp workflow-examples/res/com.calimero.kv-store-1.0.0.mpk example-project/res/com.calimero.kv-store-1.0.0.mpk
-          echo "::group::Rebuilt com.calimero.kv-store-1.0.0.mpk"
-          ls -la example-project/res/com.calimero.kv-store-1.0.0.mpk
-          echo "::endgroup::"
-
-      # Only this dir holds every bundle; the copy above is one file.
-      - name: Serve the bundles over an http registry
-        run: |
-          url=$(./workflow-examples/scripts/fixture-registry.sh \
-            --stamp ghcr.io/calimero-network/merod:edge)
-          echo "fixture registry at $url"
-
-      - name: Start node log capture
-        run: |
-          chmod +x .github/scripts/capture-node-logs.sh
-          .github/scripts/capture-node-logs.sh start "$GITHUB_WORKSPACE/node-logs" /tmp/node-log-capture.state
-
-      - name: Run merobox integration tests
-        run: |
-          echo "Performing initial cleanup..."
-          merobox stop --all || true
-          merobox nuke -f || true
-          cd example-project
-          echo "🧪 Running merobox integration test suite..."
-
-          echo "🧪 Running merobox integration tests..."
-          python -m pytest tests/test_merobox_integration.py -v --tb=short
-
-          echo "✅ All merobox integration tests completed successfully!"
-          echo "Cleaning up after integration tests..."
-          cd .. && merobox stop --all || true
-          merobox nuke -f || true
-
-      - name: Assert the registry served the bundle
-        if: always()
-        run: ./workflow-examples/scripts/fixture-registry.sh --assert example-project/workflows/workflow-example.yml
-
-      - name: Stop node log capture
-        if: always()
-        run: .github/scripts/capture-node-logs.sh stop /tmp/node-log-capture.state
-
-      - name: Upload node logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-logs-integration-${{ github.run_id }}
-          path: node-logs/
-          retention-days: 14
-          if-no-files-found: ignore
+          set -uo pipefail
+          failed=0
+          for wf in workflow-examples/cloud-v2/*.yml; do
+            echo "::group::$wf"
+            merobox cloud run "$wf" || { echo "::error::$wf failed"; failed=1; }
+            echo "::endgroup::"
+          done
+          exit "$failed"
