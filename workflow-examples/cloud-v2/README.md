@@ -49,7 +49,11 @@ optionally `node` (otherwise the first running node, skipping unreachable ones).
 | `view` | `app`, `method`, `args`, `stale`, `min_index` → `index`, `result` |
 | `wait_for` | like `view`, until the result `equals` / `contains` a value (`timeout`) |
 | `events` | `app`, `from`, `count`, `timeout` → `events` |
-| `whoami`, `create_api_key`, `create_org`, `create_team`, `invite`, `redeem_invite`, `remove_member` | accounts and organizations |
+| `whoami`, `create_api_key`, `create_org`, `create_team`, `invite`, `redeem_invite`, `remove_member`, `set_role` | accounts and organizations |
+| `team_add` (`role`: `lead` / `member` / `readOnly`, `capabilities`), `team_remove`, `team_update` (`join`, `parent`, `metadata`, `name`), `team_get`, `team_list`, `team_join`, `team_delete` | teams: v1's subgroups |
+| `capabilities` | `org`, `capabilities`, optional `member` and `team` (without `member`: the org's default) |
+| `add_device` | `account`, `device`: another passkey on the account, which `device` signs in with |
+| `fuzzy_test` | `operations` (`name`, `weight`, `steps`), `accounts`, `duration_minutes`, `success_threshold`: weighted random operations as `{{random_account}}`, with `{{random_int(a, b)}}`, `{{uuid}}`, `{{timestamp}}` and `{{fuzzy_<arg>}}`; `MEROBOX_FUZZY_SECONDS` overrides the duration |
 | `http` | `method`, `path`, `body`: any API route |
 | `ops` | `op`: `status`, `quotas`, `set_quotas`, `backup`, `move` (`app`, `replicas`) |
 | `find_leader` | `app` → `leader`, `follower` |

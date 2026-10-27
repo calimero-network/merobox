@@ -229,6 +229,11 @@ class Porter:
                     if outs:
                         self.dropped_vars.update(outs)
                         self.dropped["output read during a v1 partition"] += len(outs)
+                    # A write a partitioned v1 node took locally may be refused
+                    # here, where the other side's writes are already seen; the
+                    # state the nodes converged to is still checked after.
+                    if st.get("type") == "call" and not st.get("expected_failure"):
+                        st["allow_failure"] = True
             out.extend(ported)
         return out
 

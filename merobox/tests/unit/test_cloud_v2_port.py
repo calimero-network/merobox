@@ -184,4 +184,7 @@ def test_reads_during_a_v1_partition_are_not_asserted():
     )
     kinds = [s["type"] for s in steps]
     assert kinds == ["call", "call", "call", "assert"], kinds
+    # Writes made then may be refused where the other side's are seen.
+    assert steps[0].get("allow_failure") is True
+    assert "allow_failure" not in steps[2]
     assert steps[-1]["statements"] == ["contains({{after}}, 'x')"]
