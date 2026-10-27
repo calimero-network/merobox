@@ -53,5 +53,7 @@ optionally `node` (otherwise the first running node, skipping unreachable ones).
 | `http` | `method`, `path`, `body`: any API route |
 | `ops` | `op`: `status`, `quotas`, `set_quotas`, `backup`, `move` (`app`, `replicas`) |
 | `find_leader` | `app` → `leader`, `follower` |
+| `upload_blob` | `app`, `file_path` (as given, else beside the workflow or above it) → `blobId` (base58), `blob_id`, `id` (hex), `size` |
+| `download_blob` | `app`, `blob_id`, optional `expected_size` → `size`, `data` |
 | `kill_node`, `pause_node`, `resume_node`, `start_node`, `restart_node` | `node`, `binary` (start/restart) |
 | `wait`, `repeat`, `assert` | as in v1 workflows |

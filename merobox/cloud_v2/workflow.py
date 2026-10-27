@@ -153,6 +153,8 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "http": ("method", "path"),
     "ops": ("op",),
     "find_leader": ("app",),
+    "upload_blob": ("app", "file_path"),
+    "download_blob": ("app", "blob_id"),
     "kill_node": ("node",),
     "pause_node": ("node",),
     "resume_node": ("node",),
@@ -168,6 +170,8 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
 #: Steps that act as someone: an `account` (session) or an `api_key`.
 _ACTING = {
     "deploy",
+    "upload_blob",
+    "download_blob",
     "upload_bundle",
     "create_app",
     "call",
@@ -254,6 +258,17 @@ class Runner:
         # caller by key (`as_key`, as v1 workflows did with executor_public_key)
         self.by_key: dict[str, str] = {}
         self.ids: dict[str, str] = {}
+
+    def _file(self, path: str) -> Path:
+        """A file a step names: as given, else beside the workflow or in any
+        directory above it (ported workflows keep their v1 relative paths)."""
+        p = Path(path)
+        if p.is_absolute() or p.exists():
+            return p
+        for d in [self.base_dir, *self.base_dir.parents]:
+            if (d / p).exists():
+                return d / p
+        raise WorkflowError(f"file not found: {path}")
 
     # -- clients
 
@@ -442,6 +457,24 @@ class Runner:
             out = self._call_or_view(kind, step)
             # v1 workflows read a call's JSON-RPC envelope: {"output": value}.
             return {**out, "rpc": {"output": out.get("result")}}
+        if kind == "upload_blob":
+            data = self._file(step["file_path"]).read_bytes()
+            up = self._with_client(step, lambda cl: cl.upload_blob(step["app"], data))
+            # v1's output names (`blob_id`, `size`) beside the node's.
+            return {**up, "blob_id": up["blobId"]}
+        if kind == "download_blob":
+            data = self._with_client(
+                step, lambda cl: cl.download_blob(step["app"], step["blob_id"])
+            )
+            label = step.get("name", "download_blob")
+            want = step.get("expected_size")
+            if want is not None and len(data) != int(want):
+                raise WorkflowError(f"{label}: expected {want} bytes, got {len(data)}")
+            digest = hashlib.sha256(data).hexdigest()
+            want = step.get("expected_sha256")
+            if want and str(want).lower() != digest:
+                raise WorkflowError(f"{label}: expected sha256 {want}, got {digest}")
+            return {"size": len(data), "sha256": digest, "data": data}
         if kind == "whoami":
             me = self._with_client(step, lambda cl: cl.me())
             return {**me, "publicKey": account_key(me["accountId"])}
@@ -677,7 +710,11 @@ class Runner:
                     if path == "error" or path.startswith("error"):
                         self.variables[var] = failure["error"]
                 return f" (refused: {e.args[2]})"
-            raise WorkflowError(f"{label}: {e.args[0]}") from e
+            details = e.args[3] if len(e.args) > 3 else None
+            why = details.get("error") if isinstance(details, dict) else details
+            raise WorkflowError(
+                f"{label}: {e.args[0]}" + (f" ({why})" if why else "")
+            ) from e
         if expected or any_failure:
             raise WorkflowError(f"{label}: expected a refusal, but it succeeded")
         if "expect" in step:

@@ -29,6 +29,7 @@ counterpart in a cluster), admin-API and log assertions, scripts.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -59,16 +60,12 @@ DROPPED: dict[str, str] = {
     "delete_group": "v1 group deletion",
     "delete_namespace": "v1 namespace deletion",
     "leave_group": "v1 group membership",
-    "invite_open": "v1 open invitations",
-    "join_open": "v1 open invitations",
     "upgrade_group": "app upgrades are per app instance (http POST apps/{app}/upgrade)",
     "get_migration_status": "v1 group migration",
     "assert_migration_complete": "v1 group migration",
     "account_pair": "devices: in release-v2 a person is their account",
     "stop_node": "a user's node going offline has no counterpart in a cluster",
     "start_node": "a user's node going offline has no counterpart in a cluster",
-    "upload_blob": "release-v2 has no blob API yet",
-    "download_blob": "release-v2 has no blob API yet",
     "assert_api_response": "v1 admin API",
     "assert_log_present": "v1 node logs",
     "assert_log_absent": "v1 node logs",
@@ -84,6 +81,32 @@ _V1_ROLE = {
 }
 
 
+_TIME_WORDS = (
+    "time",
+    "deadline",
+    "expire",
+    "expires",
+    "expiry",
+    "timer",
+    "tick",
+    "later",
+    "clock",
+    "ttl",
+    "lease",
+    "timeout",
+)
+
+
+def _waits_for_time(name: str) -> bool:
+    """Whether a v1 `wait` lets time pass on purpose, judged by its name's words."""
+    words = set(re.findall(r"[a-z]+", name.lower()))
+    return bool(words & set(_TIME_WORDS)) and not words & {
+        "sync",
+        "settle",
+        "propagate",
+    }
+
+
 class Porter:
     def __init__(self, wf: dict, wasm_map: dict, base_port: int):
         self.wf = wf
@@ -92,6 +115,7 @@ class Porter:
         self.accounts: list[str] = list(self._node_names())
         self.apps: dict[str, str] = {}  # var holding an application id -> bundle path
         self.orgs: set[str] = set()  # vars holding a namespace (an org)
+        self.invitations: dict[str, Any] = {}  # open-invitation var -> its context
         self.teams: dict[str, str] = {}  # var holding a subgroup (team) -> its org var
         self.dropped: Counter = Counter()
         # variables only a dropped step would have set
@@ -215,8 +239,12 @@ class Porter:
             return [{**s, "statements": kept}] if kept else []
         if kind == "wait":
             # v1 waited for peers to find each other and sync; a cluster needs
-            # at most a moment.
-            return [{**s, "seconds": min(float(s.get("seconds", 0)), 1.0)}]
+            # at most a moment. A wait for time itself to pass (a deadline, a
+            # timer) is kept.
+            seconds = float(s.get("seconds", 0))
+            if not _waits_for_time(s.get("name", "")):
+                seconds = min(seconds, 1.0)
+            return [{**s, "seconds": seconds}]
         if kind == "repeat":
             step = {**base, "type": "repeat", "count": s["count"]}
             step["steps"] = self.port_steps(s.get("steps"))
@@ -376,6 +404,29 @@ class Porter:
             if outs:
                 step["outputs"] = outs
             return [step]
+        if kind == "invite_open":
+            # A context outside a namespace is open to every account of the
+            # scenario already (see create_context); the invitation names it.
+            outs = s.get("outputs") or {}
+            var = next((v for v, p in outs.items() if p == "invitation"), None)
+            if not var:
+                return []
+            self.invitations[var] = s.get("context_id")
+            return [{**base, "type": "set", "values": {var: s.get("context_id")}}]
+        if kind == "join_open":
+            inv = str(s.get("invitation", ""))
+            ctx = self.invitations.get(inv.strip("{} "), inv)
+            outs = s.get("outputs") or {}
+            steps = []
+            keys = {v: "publicKey" for v, p in outs.items() if p == "memberPublicKey"}
+            if keys:
+                steps.append(
+                    {**base, "type": "whoami", "account": node, "outputs": keys}
+                )
+            ctxs = {v: ctx for v, p in outs.items() if p == "contextId"}
+            if ctxs:
+                steps.append({"type": "set", "values": ctxs})
+            return steps
         if kind == "join_context":
             steps: list = []
             outs = s.get("outputs") or {}
@@ -394,6 +445,31 @@ class Porter:
             if ctx:
                 steps.append({"type": "set", "values": ctx})
             return steps
+        if (
+            kind == "download_blob"
+            and not s.get("context_id")
+            and s.get("expected_failure")
+        ):
+            # v1's negative control: a node without the bytes, reading only its
+            # own store. A cluster's blob store has no such node.
+            self.dropped["download_blob (a node-local miss)"] += 1
+            self.dropped_vars.update((s.get("outputs") or {}).keys())
+            return []
+        if kind in ("upload_blob", "download_blob"):
+            # Blobs are an app's own in release-v2: v1 named the context only
+            # to announce one, and a download without one means the mesh's.
+            step = acting(
+                type=kind,
+                app=s.get("context_id") or "{{context_id}}",
+                file_path=s.get("file_path"),
+                blob_id=s.get("blob_id"),
+                expected_size=s.get("expected_size"),
+                expected_sha256=s.get("expected_sha256"),
+            )
+            outs = s.get("outputs")
+            if outs:
+                step["outputs"] = outs
+            return [step]
         if kind == "call":
             step = acting(
                 type="call",
