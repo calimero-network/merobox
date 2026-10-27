@@ -449,7 +449,11 @@ class Runner:
                 )
             return {}
         if kind == "team_update":
-            body = {k: step[k] for k in ("name", "join", "metadata") if k in step}
+            # `name` is every step's label, so a rename is `team_name` (as in
+            # create_team): sending the label renamed the team on every update.
+            body = {k: step[k] for k in ("join", "metadata") if k in step}
+            if "team_name" in step:
+                body["name"] = step["team_name"]
             if "parent" in step:
                 body["parent"] = step["parent"]
             return self._with_client(step, lambda cl: cl.post(base, body))
