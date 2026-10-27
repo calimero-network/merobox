@@ -34,6 +34,14 @@ def test_a_minimal_workflow_loads(tmp_path):
     assert wf["cluster"] == {}
 
 
+def test_a_not_applicable_port_may_keep_no_steps(tmp_path):
+    # `merobox cloud port` drops every step of a scenario with no counterpart.
+    wf = load_workflow(
+        write(tmp_path, "backend: cloud-v2\nnot_applicable: v1 only\nsteps: []\n")
+    )
+    assert wf["not_applicable"] == "v1 only"
+
+
 @pytest.mark.parametrize(
     "body, message",
     [

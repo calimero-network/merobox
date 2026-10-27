@@ -295,7 +295,9 @@ def load_workflow(path: str) -> dict:
     accounts = wf.setdefault("accounts", [])
     if not isinstance(accounts, list) or not all(isinstance(a, str) for a in accounts):
         raise WorkflowError("'accounts' must be a list of names")
-    _validate_steps(wf.get("steps"), set(accounts), "workflow")
+    # A port marked not_applicable is never run: it may keep no steps at all.
+    if not (wf.get("not_applicable") and not wf.get("steps")):
+        _validate_steps(wf.get("steps"), set(accounts), "workflow")
     wf["_dir"] = str(Path(path).resolve().parent)
     return wf
 
@@ -678,7 +680,10 @@ class Runner:
             unknown = [a for a in apps if a not in versions]
             if unknown:
                 raise _Refused(
-                    f"migration_status: no such app {unknown[0]}", 404, "NOT_FOUND", None
+                    f"migration_status: no such app {unknown[0]}",
+                    404,
+                    "NOT_FOUND",
+                    None,
                 )
             mine = [versions.get(a) for a in apps]
             known = [v for v in mine if v]
@@ -1141,9 +1146,7 @@ def run_workflow_outcome(
         data_dir=keep_data,
         logs=logs,
     )
-    console.print(
-        f"[bold]{wf.get('name', path)}[/bold] on {cluster.size} merod nodes"
-    )
+    console.print(f"[bold]{wf.get('name', path)}[/bold] on {cluster.size} merod nodes")
     cluster.start()
     try:
         Runner(wf, cluster).run()
