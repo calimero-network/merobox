@@ -142,6 +142,7 @@ class ProcessCluster:
         origins: list | None = None,
         ops_token: str | None = None,
         logs: bool = False,
+        settings: str | None = None,
     ):
         if nodes < 1:
             raise ValueError("a cluster needs at least one node")
@@ -154,6 +155,9 @@ class ProcessCluster:
         self.origins = origins or [DEV_ORIGIN]
         self.ops_token = ops_token or secrets.token_hex(16)
         self.logs = logs
+        #: TOML every node starts with (`merod run --settings`): its
+        #: `[outbound]` table, for one. None: the node's defaults.
+        self.settings = settings
         self.procs: dict[int, subprocess.Popen | None] = dict.fromkeys(self.ids)
         self.binaries: dict[int, str] = dict.fromkeys(self.ids, self.binary)
         #: The registry the nodes install signed packages from, once started
@@ -166,6 +170,11 @@ class ProcessCluster:
 
     def url(self, node: int) -> str:
         return f"http://127.0.0.1:{self.base_port + node}/"
+
+    def settings_path(self, node: int) -> Path:
+        """Where node `node`'s copy of `settings` is written (outside its
+        `--data-dir`, which is merod's own)."""
+        return self.data_dir / f"node{node}-settings.toml"
 
     def _args(self, node: int) -> list[str]:
         peers = ",".join(f"{i}={self.url(i)}" for i in self.ids)
@@ -193,6 +202,8 @@ class ProcessCluster:
         ]
         if self.registry and supports(self.binaries[node], "--registry-url"):
             args += ["--registry-url", self.registry.url]
+        if self.settings is not None:
+            args += ["--settings", str(self.settings_path(node))]
         if node == 1:
             args.append("--bootstrap")
         return args
@@ -214,6 +225,8 @@ class ProcessCluster:
         if binary:
             self.binaries[node] = find_binary(binary)
         (self.data_dir / f"node{node}").mkdir(parents=True, exist_ok=True)
+        if self.settings is not None:
+            self.settings_path(node).write_text(self.settings)
         out = None if self.logs else subprocess.DEVNULL
         self.procs[node] = subprocess.Popen(self._args(node), stdout=out, stderr=out)
         if wait:

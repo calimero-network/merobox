@@ -46,6 +46,7 @@ merobox run WORKFLOW
 name: KV store across a node failure
 backend: cloud-v2                      # required
 cluster: { nodes: 3, base_port: 2700 } # node i on 127.0.0.1:base_port+i
+                                      # settings: TOML or a path, each node's --settings
 accounts: [alice, bob]                 # each signed up with its own passkey
 variables: { greeting: hello }
 steps:

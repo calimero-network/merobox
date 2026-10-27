@@ -8,7 +8,13 @@ import textwrap
 
 import pytest
 
-from merobox.cloud_v2.workflow import WorkflowError, load_workflow, resolve
+from merobox.cloud_v2.workflow import (
+    WorkflowError,
+    cluster_binary,
+    cluster_settings,
+    load_workflow,
+    resolve,
+)
 
 
 def write(tmp_path, body):
@@ -107,3 +113,80 @@ def test_member_rows_carry_the_accounts_public_key():
     assert len(rows[0]["publicKey"]) == 64
     assert rows[1] == "x"
     assert with_member_keys(None) is None
+
+
+def test_cluster_settings_inline_toml_is_kept_as_text(tmp_path):
+    wf = load_workflow(
+        write(
+            tmp_path,
+            """
+            backend: cloud-v2
+            cluster:
+              settings: |
+                [outbound]
+                enabled = true
+            steps: [{type: wait, seconds: 0}]
+            """,
+        )
+    )
+    assert cluster_settings(wf) == "[outbound]\nenabled = true\n"
+
+
+def test_cluster_settings_path_is_read_beside_the_workflow(tmp_path):
+    (tmp_path / "node.toml").write_text("[outbound]\nenabled = false\n")
+    wf = load_workflow(
+        write(
+            tmp_path,
+            """
+            backend: cloud-v2
+            cluster: { settings: node.toml }
+            steps: [{type: wait, seconds: 0}]
+            """,
+        )
+    )
+    assert cluster_settings(wf) == "[outbound]\nenabled = false\n"
+
+
+def test_a_workflow_without_cluster_settings_has_none(tmp_path):
+    wf = load_workflow(
+        write(tmp_path, "backend: cloud-v2\nsteps: [{type: wait, seconds: 0}]\n")
+    )
+    assert cluster_settings(wf) is None
+
+
+@pytest.mark.parametrize(
+    "settings, message",
+    [
+        ("missing.toml", "missing.toml"),
+        ("{enabled: true}", "a TOML path or inline TOML"),
+    ],
+)
+def test_bad_cluster_settings_are_refused(tmp_path, settings, message):
+    body = f"backend: cloud-v2\ncluster:\n  settings: {settings}\nsteps: [{{type: wait, seconds: 0}}]\n"
+    with pytest.raises(WorkflowError, match=message):
+        load_workflow(write(tmp_path, body))
+
+
+def test_cluster_binary_reads_the_environment(tmp_path, monkeypatch):
+    wf = load_workflow(
+        write(
+            tmp_path,
+            """
+            backend: cloud-v2
+            cluster: { binary: "{{env.MEROD_TEST_FEATURE ?? env.MEROD_TEST_PLAIN}}" }
+            steps: [{type: wait, seconds: 0}]
+            """,
+        )
+    )
+    monkeypatch.delenv("MEROD_TEST_FEATURE", raising=False)
+    monkeypatch.setenv("MEROD_TEST_PLAIN", "/bin/plain")
+    assert cluster_binary(wf) == "/bin/plain"
+    monkeypatch.setenv("MEROD_TEST_FEATURE", "/bin/feature")
+    assert cluster_binary(wf) == "/bin/feature"
+
+
+def test_no_cluster_binary_leaves_the_default(tmp_path):
+    wf = load_workflow(
+        write(tmp_path, "backend: cloud-v2\nsteps: [{type: wait, seconds: 0}]\n")
+    )
+    assert cluster_binary(wf) is None

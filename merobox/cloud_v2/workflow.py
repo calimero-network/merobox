@@ -32,6 +32,12 @@ that code the step's success, and `assert` is merobox's own assertion step.
 Each account in `accounts` is signed up with its own software passkey; its id
 is `{{accounts.<name>.account_id}}`. `{{env.NAME}}` reads the environment, and
 `{{ops_token}}` is the cluster's operator token.
+
+`cluster.binary` names the merod to run (default: MEROD_BINARY, then `merod`
+on PATH) and may read the environment (`{{env.NAME}}`). `cluster.settings` is
+the TOML every node starts with (`merod run --settings`), for its `[outbound]`
+table: a path beside the workflow, or the TOML itself (a string with a
+newline, e.g. a `|` block).
 """
 
 from __future__ import annotations
@@ -312,6 +318,10 @@ def load_workflow(path: str) -> dict:
     cluster = wf.setdefault("cluster", {})
     if not isinstance(cluster, dict):
         raise WorkflowError("'cluster' must be a mapping")
+    if "settings" in cluster and not isinstance(cluster["settings"], str):
+        raise WorkflowError(
+            "'cluster.settings' must be a TOML path or inline TOML (a string)"
+        )
     accounts = wf.setdefault("accounts", [])
     if not isinstance(accounts, list) or not all(isinstance(a, str) for a in accounts):
         raise WorkflowError("'accounts' must be a list of names")
@@ -320,7 +330,32 @@ def load_workflow(path: str) -> dict:
         _validate_steps(wf.get("steps"), set(accounts), "workflow")
     wf["_dir"] = str(Path(path).resolve().parent)
     wf["_path"] = str(path)
+    cluster_settings(wf)
     return wf
+
+
+def cluster_binary(wf: dict) -> str | None:
+    """`cluster.binary`, its `{{env.NAME}}` placeholders filled in: a
+    workflow that needs a feature build names it by an environment variable
+    (`{{env.MEROD_OUTBOUND_BINARY ?? env.MEROD_BINARY}}`). None: the default
+    (MEROD_BINARY, then `merod` on PATH)."""
+    binary = wf.get("cluster", {}).get("binary")
+    if binary is None:
+        return None
+    return str(resolve(binary, {"env": dict(os.environ)}))
+
+
+def cluster_settings(wf: dict) -> str | None:
+    """The TOML text of `cluster.settings`: inline when it has a newline,
+    else the file it names, relative to the workflow's directory."""
+    settings = wf.get("cluster", {}).get("settings")
+    if settings is None or "\n" in settings:
+        return settings
+    path = Path(wf.get("_dir", ".")) / settings
+    try:
+        return path.read_text()
+    except OSError as e:
+        raise WorkflowError(f"cluster.settings: cannot read {settings}: {e}") from e
 
 
 # ----------------------------------------------------------------- running
@@ -1228,13 +1263,14 @@ def run_workflow_outcome(
     cluster = ProcessCluster(
         nodes=int(spec.get("nodes", 3)),
         base_port=int(spec.get("base_port", 2700)),
-        binary=binary or spec.get("binary"),
+        binary=binary or cluster_binary(wf),
         data_dir=keep_data,
         logs=logs,
+        settings=cluster_settings(wf),
     )
     console.print(f"[bold]{wf.get('name', path)}[/bold] on {cluster.size} merod nodes")
-    cluster.start()
     try:
+        cluster.start()
         Runner(wf, cluster).run()
         console.print("[bold green]Workflow passed[/bold green]")
         return "passed"

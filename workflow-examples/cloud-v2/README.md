@@ -31,6 +31,13 @@ variables: { next: "{{env.NEXT ?? env.MEROD_V2_BINARY}}" }
 steps: [...]
 ```
 
+`cluster.settings` is the TOML each node starts with (`merod run --settings`),
+e.g. its `[outbound]` table: a path beside the workflow, or the TOML itself as a
+`|` block. Without it, nodes run with merod's defaults (outbound off).
+`cluster.binary` names the merod to run instead of MEROD_BINARY and may read the
+environment, e.g. `"{{env.MEROD_OUTBOUND_BINARY ?? env.MEROD_BINARY}}"` for a
+workflow that needs a feature build.
+
 Placeholders: `{{var}}` (a whole-string placeholder keeps its type), dotted paths
 into results (`{{res.events.0.kind}}`), fallbacks (`{{a ?? b}}`), `{{env.NAME}}`,
 `{{accounts.<name>.account_id}}`, `{{ops_token}}`, and `{{iteration}}` /
