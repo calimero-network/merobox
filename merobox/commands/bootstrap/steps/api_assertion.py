@@ -115,7 +115,9 @@ class AssertApiResponseStep(BaseStep):
             console.print(f"[red]Failed to resolve node {node_name}: {str(e)}[/red]")
             return False
 
-        token = self._resolve_token(cache_node_name, workflow_results, dynamic_values)
+        token = self._resolve_token(
+            cache_node_name, rpc_url, workflow_results, dynamic_values
+        )
         headers = {"Authorization": f"Bearer {token}"} if token else {}
 
         try:

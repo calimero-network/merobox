@@ -10,7 +10,9 @@ Token Persistence:
 
     For this to work correctly:
     1. Merobox must write initial tokens to the path returned by
-       `calimero_client_py.get_token_cache_path(node_name)`
+       `calimero_client_py.get_token_cache_path(rpc_url, node_name)` (see
+       `merobox.commands.auth.token_cache_path`), with the same `rpc_url`
+       passed to `create_connection` below
     2. The same `node_name` must be used consistently across sessions
 
 Request timeouts:

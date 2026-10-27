@@ -53,7 +53,7 @@ class RefreshStep(BaseStep):
             return False
 
         auth_manager = AuthManager()
-        cached = auth_manager.get_cached_token(cache_node_name)
+        cached = auth_manager.get_cached_token(cache_node_name, rpc_url)
         if cached is None:
             console.print(
                 f"[red]❌ No cached token for {node_name}; run a 'login' step "
@@ -96,7 +96,7 @@ class RefreshStep(BaseStep):
             self._report_unexpected_success()
             return False
 
-        if not auth_manager.save_token(new_token, cache_node_name):
+        if not auth_manager.save_token(new_token, cache_node_name, rpc_url):
             console.print(
                 f"[yellow]⚠️  Refreshed token for {node_name} but failed to "
                 f"write the token cache[/yellow]"

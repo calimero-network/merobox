@@ -869,7 +869,7 @@ class AccountRescopeStep(_AccountStepBase):
         try:
             rpc_url, cache_node_name = self._resolve_node_target(node_name)
             token = self._resolve_token(
-                cache_node_name, workflow_results, dynamic_values
+                cache_node_name, rpc_url, workflow_results, dynamic_values
             )
             # Off the loop: `requests` is synchronous, so a `parallel:` sibling
             # keeps running while this one waits.

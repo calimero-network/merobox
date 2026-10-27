@@ -257,7 +257,7 @@ class TransferOwnershipStep(BaseStep):
         try:
             rpc_url, cache_node_name = self._resolve_node_target(node_name)
             token = self._resolve_token(
-                cache_node_name, workflow_results, dynamic_values
+                cache_node_name, rpc_url, workflow_results, dynamic_values
             )
             result = ok(self._transfer_via_http(rpc_url, token, group_id, new_owner))
         except Exception as e:

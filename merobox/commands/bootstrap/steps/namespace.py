@@ -147,7 +147,7 @@ class CreateGroupInNamespaceStep(BaseStep):
                 # not forward it yet — #2771).
                 rpc_url, cache_node_name = self._resolve_node_target(node_name)
                 token = self._resolve_token(
-                    cache_node_name, workflow_results, dynamic_values
+                    cache_node_name, rpc_url, workflow_results, dynamic_values
                 )
                 result = ok(
                     self._create_via_http(

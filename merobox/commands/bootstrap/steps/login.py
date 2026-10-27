@@ -109,7 +109,7 @@ class LoginStep(BaseStep):
             return False
 
         # Seed the on-disk cache so downstream calls auto-attach this token.
-        if not auth_manager.save_token(token, cache_node_name):
+        if not auth_manager.save_token(token, cache_node_name, rpc_url):
             console.print(
                 f"[yellow]⚠️  Authenticated with {node_name} but failed to "
                 f"write the token cache[/yellow]"

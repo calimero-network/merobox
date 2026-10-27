@@ -9,7 +9,9 @@ This module provides AuthToken dataclass and AuthManager for handling:
 Token Cache Integration:
     This module uses calimero-client-py's token cache helpers to ensure
     merobox and the Rust client use identical cache paths:
-    - `calimero_client_py.get_token_cache_path(node_name)` for cache file paths
+    - `calimero_client_py.get_token_cache_path(api_url, node_name)` for cache
+      file paths (via `token_cache_path`, which also accepts PyPI 0.9.0's
+      one-argument form)
     - `calimero_client_py.get_token_cache_dir()` for the cache directory
 
     This ensures that:
@@ -37,6 +39,27 @@ from merobox.commands.constants import (
 from merobox.commands.errors import AuthenticationError
 
 console = Console()
+
+
+def token_cache_path(node_url: str, node_name: str) -> Path:
+    """Return the token cache file the Rust client uses for this connection.
+
+    ``node_url`` must be the URL handed to
+    ``create_connection(rpc_url, node_name=...)`` (see
+    merobox/commands/client.py), so merobox writes the token where the client
+    reads it.
+
+    calimero-client-py on release-v2-parity (client-py #137) hashes the node's
+    base URL together with its name: ``get_token_cache_path(api_url,
+    node_name)``. PyPI 0.9.0, which master merobox pins, reports the same
+    version but takes the name alone, so a two-argument call there raises
+    TypeError and we fall back to the one-argument form.
+    """
+    try:
+        return Path(get_token_cache_path(node_url, node_name))
+    except TypeError:
+        return Path(get_token_cache_path(node_name))
+
 
 # Auth endpoints
 AUTH_TOKEN_ENDPOINT = "/auth/token"
@@ -431,16 +454,17 @@ class AuthManager:
         except aiohttp.ClientError as e:
             raise AuthenticationError(f"Network error during token refresh: {e}") from e
 
-    def get_cached_token(self, node_name: str) -> Optional[AuthToken]:
+    def get_cached_token(self, node_name: str, node_url: str) -> Optional[AuthToken]:
         """Get a cached token for a node.
 
         Args:
             node_name: The stable node name/identifier.
+            node_url: The node URL the client connects to (part of the cache key).
 
         Returns:
             The cached AuthToken if found, None otherwise.
         """
-        cache_path = Path(get_token_cache_path(node_name))
+        cache_path = token_cache_path(node_url, node_name)
         if not cache_path.exists():
             return None
 
@@ -454,18 +478,19 @@ class AuthManager:
             )
             return None
 
-    def save_token(self, token: AuthToken, node_name: str) -> bool:
+    def save_token(self, token: AuthToken, node_name: str, node_url: str) -> bool:
         """Save a token to the cache.
 
         Args:
             token: The AuthToken to save.
             node_name: The stable node name/identifier.
+            node_url: The node URL the client connects to (part of the cache key).
 
         Returns:
             True if saved successfully, False otherwise.
         """
         self._ensure_cache_dir()
-        cache_path = Path(get_token_cache_path(node_name))
+        cache_path = token_cache_path(node_url, node_name)
 
         try:
             # Write atomically using temp file
@@ -487,16 +512,17 @@ class AuthManager:
             console.print(f"[red]Error saving token cache for {node_name}: {e}[/red]")
             return False
 
-    def delete_token(self, node_name: str) -> bool:
+    def delete_token(self, node_name: str, node_url: str) -> bool:
         """Delete a cached token.
 
         Args:
             node_name: The stable node name/identifier.
+            node_url: The node URL the client connects to (part of the cache key).
 
         Returns:
             True if deleted (or didn't exist), False on error.
         """
-        cache_path = Path(get_token_cache_path(node_name))
+        cache_path = token_cache_path(node_url, node_name)
         if not cache_path.exists():
             return True
 
@@ -567,7 +593,7 @@ class AuthManager:
             A valid AuthToken, or None if authentication info is missing.
         """
         # Try to get cached token
-        cached_token = self.get_cached_token(node_name)
+        cached_token = self.get_cached_token(node_name, node_url)
 
         if cached_token:
             if cached_token.auth_method == AUTH_METHOD_USER_PASSWORD:
@@ -579,7 +605,7 @@ class AuthManager:
                 if cached_token.refresh_token:
                     try:
                         new_token = await self.refresh(node_url, cached_token)
-                        self.save_token(new_token, node_name)
+                        self.save_token(new_token, node_name, node_url)
                         return new_token
                     except AuthenticationError as e:
                         console.print(f"[yellow]Token refresh failed: {e}[/yellow]")
@@ -595,7 +621,7 @@ class AuthManager:
 
         try:
             token = await self.authenticate(node_url, username, password)
-            self.save_token(token, node_name)
+            self.save_token(token, node_name, node_url)
             return token
         except AuthenticationError:
             return None

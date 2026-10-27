@@ -142,7 +142,7 @@ def login(
                 auth_method=AUTH_METHOD_API_KEY,
                 username=None,
             )
-            if auth_manager.save_token(token, node_name):
+            if auth_manager.save_token(token, node_name, url):
                 console.print(f"[green]✓ API key saved for {url}[/green]")
             else:
                 console.print("[red]Failed to save API key[/red]")
@@ -162,7 +162,7 @@ def login(
     async def do_login():
         try:
             token = await auth_manager.authenticate(url, username, password)
-            auth_manager.save_token(token, node_name)
+            auth_manager.save_token(token, node_name, url)
             return True
         except AuthenticationError as e:
             console.print(f"[red]Authentication failed: {e}[/red]")
@@ -199,16 +199,23 @@ def logout(url_or_name: Optional[str], logout_all: bool):
         console.print("[red]Please specify a node URL/name or use --all[/red]")
         return
 
-    # Determine node name for cache
+    # Determine the node name and URL the token is cached under (as in login)
     if remote_manager.is_url(url_or_name):
-        entry = remote_manager.get_by_url(url_or_name)
-        node_name = (
-            entry.name if entry else remote_manager.get_stable_node_name(url_or_name)
-        )
+        url = url_or_name.rstrip("/")
+        entry = remote_manager.get_by_url(url)
+        node_name = entry.name if entry else remote_manager.get_stable_node_name(url)
     else:
-        node_name = url_or_name
+        entry = remote_manager.get(url_or_name)
+        if not entry:
+            console.print(
+                f"[red]Node '{url_or_name}' is not registered. "
+                f"Use its URL or 'merobox remote logout --all'.[/red]"
+            )
+            return
+        url = entry.url
+        node_name = entry.name
 
-    if auth_manager.delete_token(node_name):
+    if auth_manager.delete_token(node_name, url):
         console.print(f"[green]✓ Logged out from {url_or_name}[/green]")
     else:
         console.print(f"[yellow]No cached credentials for {url_or_name}[/yellow]")
@@ -406,7 +413,7 @@ def test(
         console.print("[cyan]3. Testing authentication...[/cyan]")
 
         # Check for cached token
-        cached_token = auth_manager.get_cached_token(node_name)
+        cached_token = auth_manager.get_cached_token(node_name, url)
 
         if api_key:
             # Use provided API key
@@ -426,7 +433,7 @@ def test(
             # Authenticate with provided credentials
             try:
                 token = await auth_manager.authenticate(url, username, password)
-                auth_manager.save_token(token, node_name)
+                auth_manager.save_token(token, node_name, url)
                 results.append(("Auth Method", True, "User/Password (authenticated)"))
                 console.print("   [green]✓ Authenticated successfully[/green]")
                 auth_token = token.access_token
@@ -438,7 +445,7 @@ def test(
             # Try to refresh expired token
             try:
                 new_token = await auth_manager.refresh(url, cached_token)
-                auth_manager.save_token(new_token, node_name)
+                auth_manager.save_token(new_token, node_name, url)
                 results.append(("Auth Method", True, "Cached (refreshed)"))
                 console.print("   [green]✓ Token refreshed successfully[/green]")
                 auth_token = new_token.access_token
@@ -589,10 +596,13 @@ def unregister(name: str, remove_token: bool):
         console.print(f"[yellow]Node '{name}' is not registered[/yellow]")
         return
 
+    # The token is cached under the node's URL too; read it before unregistering
+    entry = remote_manager.get(name)
+
     # Unregister
     if remote_manager.unregister(name):
-        if remove_token:
-            if auth_manager.delete_token(name):
+        if remove_token and entry:
+            if auth_manager.delete_token(entry.name, entry.url):
                 console.print(
                     f"[green]✓ Also removed cached token for '{name}'[/green]"
                 )

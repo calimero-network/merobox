@@ -443,7 +443,7 @@ class NodeResolver:
         # Handle API key auth
         if auth_method == AUTH_METHOD_API_KEY:
             # Try cached token first (same as user_password path)
-            cached = self.auth_manager.get_cached_token(node_name)
+            cached = self.auth_manager.get_cached_token(node_name, url)
             if (
                 cached
                 and cached.auth_method == AUTH_METHOD_API_KEY
@@ -462,7 +462,7 @@ class NodeResolver:
                     auth_method=AUTH_METHOD_API_KEY,
                     username=None,
                 )
-                self.auth_manager.save_token(token, node_name)
+                self.auth_manager.save_token(token, node_name, url)
                 console.print(f"[green]✓ Using API key for {url}[/green]")
                 return token
             elif prompt_for_credentials:
@@ -479,7 +479,7 @@ class NodeResolver:
                         auth_method=AUTH_METHOD_API_KEY,
                         username=None,
                     )
-                    self.auth_manager.save_token(token, node_name)
+                    self.auth_manager.save_token(token, node_name, url)
                     console.print(f"[green]✓ API key saved for {url}[/green]")
                     return token
             return None
@@ -520,7 +520,7 @@ class NodeResolver:
                 token = await self.auth_manager.authenticate(
                     url, resolved_username, resolved_password
                 )
-                self.auth_manager.save_token(token, node_name)
+                self.auth_manager.save_token(token, node_name, url)
                 return token
             except AuthenticationError as e:
                 console.print(f"[red]Authentication failed: {e}[/red]")

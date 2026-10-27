@@ -831,10 +831,14 @@ class BaseStep:
     def _resolve_token(
         self,
         cache_node_name: str,
+        rpc_url: str,
         workflow_results: dict[str, Any],
         dynamic_values: dict[str, Any],
     ) -> Optional[str]:
         """Resolve the JWT to attach: explicit ``token`` field wins, else cache.
+
+        ``rpc_url`` is part of the cache key, so it must be the URL
+        ``_resolve_node_target`` returned for ``cache_node_name``.
 
         A node running without auth issues no token, so None is a normal answer
         and not an error - the request's own outcome is the auth signal.
@@ -844,7 +848,7 @@ class BaseStep:
             return self._resolve_dynamic_value(
                 explicit, workflow_results, dynamic_values
             )
-        cached = AuthManager().get_cached_token(cache_node_name)
+        cached = AuthManager().get_cached_token(cache_node_name, rpc_url)
         return cached.access_token if cached else None
 
     def _parse_json(self, value: Any) -> Any:

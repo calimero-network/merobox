@@ -2057,7 +2057,7 @@ class WorkflowExecutor:
                 )
 
                 # Save token to cache (so calimero-client can use it)
-                auth_manager.save_token(token, node_name)
+                auth_manager.save_token(token, node_name, rpc_url)
                 authenticated_nodes.append(node_name)
                 console.print(f"[green]  ✓ Authenticated with {node_name}[/green]")
 

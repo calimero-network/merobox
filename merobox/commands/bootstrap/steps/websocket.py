@@ -117,7 +117,7 @@ class WebSocketConnectStep(_WebSocketStepBase):
         token: str | None = None
         if not unauthenticated:
             token = self._resolve_token(
-                cache_node_name, workflow_results, dynamic_values
+                cache_node_name, rpc_url, workflow_results, dynamic_values
             )
             if token is None:
                 console.print(
@@ -315,7 +315,9 @@ class WebSocketEventAssertStep(_WebSocketStepBase):
         # A node running without auth issues no token, and its WS treats every
         # connection as node owner, so a missing token is not an error here.
         # The subscribe acknowledgement below is the real authorization signal.
-        token = self._resolve_token(cache_node_name, workflow_results, dynamic_values)
+        token = self._resolve_token(
+            cache_node_name, rpc_url, workflow_results, dynamic_values
+        )
         ws_url = self._build_ws_url(rpc_url, token)
 
         wanted = (
