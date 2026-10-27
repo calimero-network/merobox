@@ -6,7 +6,7 @@ The two models line up like this:
 | --- | --- |
 | a node (`nodes: {count, prefix}`) | an account: a person, signed in with a passkey |
 | `create_identity` on a node | that node's account |
-| `account_pair` (a second device) | the paired node acts as the holder's account |
+| `account_pair` (a second device) | `add_device`: another passkey on the holder's account, signed in on the paired node |
 | `install_application` | `upload_bundle` (the WASM, from the wasm map) |
 | `create_namespace` | `create_org` |
 | `create_namespace_invitation` / `join_namespace` | `invite` / `redeem_invite` |
@@ -54,7 +54,6 @@ DROPPED: dict[str, str] = {
     "list_namespaces": "v1 namespace listing",
     "list_namespace_groups": "v1 namespace listing",
     "delete_namespace": "v1 namespace deletion",
-    "upgrade_group": "app upgrades are per app instance (http POST apps/{app}/upgrade)",
     "get_migration_status": "v1 group migration",
     "assert_migration_complete": "v1 group migration",
     "stop_node": "a user's node going offline has no counterpart in a cluster",
@@ -120,8 +119,10 @@ class Porter:
         self.apps: dict[str, str] = {}  # var holding an application id -> bundle path
         self.orgs: set[str] = set()  # vars holding a namespace (an org)
         self.invitations: dict[str, Any] = {}  # open-invitation var -> its context
-        # A node paired onto another's account (v1 devices) acts as that account.
-        self.alias: dict[str, str] = {}
+        self.group_contexts: dict[str, list[str]] = (
+            {}
+        )  # group var -> context vars in it
+
         self.teams: dict[str, str] = {}  # var holding a subgroup (team) -> its org var
         self.dropped: Counter = Counter()
         # variables only a dropped step would have set
@@ -218,7 +219,6 @@ class Porter:
         kind = s.get("type")
         base = {"name": s["name"]} if "name" in s else {}
         node = s.get("node")
-        node = self.alias.get(node, node)
 
         def acting(**fields: Any) -> dict:
             step = {**base, **{k: v for k, v in fields.items() if v is not None}}
@@ -266,16 +266,44 @@ class Porter:
             path = str(s.get("path"))
             if var:
                 self.apps[var] = path
-            entry = self.wasm_map.get(path, {})
+            entry = {
+                k: v
+                for k, v in self.wasm_map.get(path, {}).items()
+                if not k.startswith("_")
+            }
             if not var:
                 return []  # v1 installed on every node; one upload is enough
-            return [
+            steps = [
                 acting(
                     type="upload_bundle",
                     wasm=entry.get("")
                     or next(iter(entry.values()), "{{env.APP_WASM}}"),
-                    outputs={var: "hash"},
+                    outputs={f"{var}_bundle": "hash"},
                 )
+            ]
+            # v1's application id names the package, the same across its
+            # versions; the bundle hash is the build. The map names the package.
+            package = self.wasm_map.get(path, {}).get("_package")
+            value = package if package else "{{" + f"{var}_bundle" + "}}"
+            steps.append({"type": "set", "values": {var: value}})
+            return steps
+        if kind == "upgrade_group":
+            # v1 upgraded every context of a group; here each app instance is
+            # upgraded, and the node plans the migration from the two ABIs.
+            target = self._var(s.get("target_application_id"))
+            bundle = "{{" + f"{target}_bundle" + "}}" if target else None
+            ctxs = self.group_contexts.get(self._var(s.get("group_id")) or "", [])
+            if not bundle or not ctxs:
+                self.dropped["upgrade_group (no context to upgrade)"] += 1
+                return []
+            return [
+                acting(
+                    type="http",
+                    method="post",
+                    path="apps/{{" + c + "}}/upgrade",
+                    body={"bundle": bundle},
+                )
+                for c in ctxs
             ]
         if kind == "create_group":
             # A standalone v1 group is a namespace: an organization.
@@ -522,8 +550,11 @@ class Porter:
         if kind == "node_identity":
             outs = {}
             for v, p in (s.get("outputs") or {}).items():
-                if p in ("accountId", "deviceId", "accountRootPublicKey"):
+                if p in ("accountId", "accountRootPublicKey"):
                     outs[v] = "publicKey"
+                elif p == "deviceId":
+                    # A device is a passkey: the one this session signed in with.
+                    outs[v] = "passkeyId"
             return [acting(type="whoami", outputs=outs)]
         if kind == "create_context" and "context_node" in s:
             kind = "create_mesh"  # the mesh form: a context and its members at once
@@ -555,24 +586,29 @@ class Porter:
             for v, p in (s.get("outputs") or {}).items():
                 if p == "contextId":
                     outs[v] = "contextId"
+                    if group and self._var(group):
+                        self.group_contexts.setdefault(self._var(group), []).append(v)
                 elif p == "memberPublicKey":
                     outs[v] = "memberPublicKey"
             if outs:
                 step["outputs"] = outs
             return [step]
         if kind == "account_pair":
-            # v1 paired a second device onto an account. In release-v2 a person
-            # is their account, signed in from any device: the paired node acts
-            # as the holder from here on.
-            holder = s.get("holder")
-            if node and holder:
-                self.alias[s["node"]] = self.alias.get(holder, holder)
-            outs = {
-                v: True
-                for v, p in (s.get("outputs") or {}).items()
-                if p == "keyDelivered"
+            # v1 paired a second device onto an account. In release-v2 a device
+            # is another passkey of the account: the paired node signs in with
+            # its own and acts as the holder's account from here on.
+            step = {
+                **base,
+                "type": "add_device",
+                "account": s.get("holder"),
+                "device": s.get("node"),
             }
-            return [{**base, "type": "set", "values": outs}] if outs else []
+            outs = {
+                v: p for v, p in (s.get("outputs") or {}).items() if p == "keyDelivered"
+            }
+            if outs:
+                step["outputs"] = outs
+            return [step]
         if kind == "invite_open":
             # A context outside a namespace is open to every account of the
             # scenario already (see create_context); the invitation names it.

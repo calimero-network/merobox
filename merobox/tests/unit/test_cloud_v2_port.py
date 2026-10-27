@@ -104,7 +104,7 @@ def test_an_open_invitation_joins_the_context_it_names():
     assert steps[2] == {"type": "set", "values": {"c2": "{{ctx}}"}}
 
 
-def test_a_paired_device_acts_as_its_account():
+def test_a_paired_device_is_another_passkey_of_the_account():
     p = porter()
     pair, call = p.port_steps(
         [
@@ -117,5 +117,11 @@ def test_a_paired_device_acts_as_its_account():
             {"type": "call", "node": "n-2", "context_id": "{{c}}", "method": "m"},
         ]
     )
-    assert pair == {"type": "set", "values": {"ok": True}}
-    assert call["account"] == "n-1"
+    assert pair == {
+        "type": "add_device",
+        "account": "n-1",
+        "device": "n-2",
+        "outputs": {"ok": "keyDelivered"},
+    }
+    # The paired node acts with its own session, on the holder's account.
+    assert call["account"] == "n-2"

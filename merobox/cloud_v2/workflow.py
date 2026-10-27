@@ -156,6 +156,7 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "team_join": ("org", "team"),
     "team_delete": ("org", "team"),
     "capabilities": ("org", "capabilities"),
+    "add_device": ("account", "device"),
     "set_role": ("org", "member", "role"),
     "http": ("method", "path"),
     "ops": ("op",),
@@ -216,6 +217,7 @@ _ACTING = {
     "team_join",
     "team_delete",
     "capabilities",
+    "add_device",
     "set_role",
     "http",
 }
@@ -596,6 +598,24 @@ class Runner:
             return out
         if kind in _TEAM_STEPS:
             return self._team_step(kind, step)
+        if kind == "add_device":
+            # Another passkey on `account`'s account; `device` signs in with it
+            # and acts as that account from here on (v1: a paired device).
+            pk = self._SoftPasskey()
+            cred = self._with_client(step, lambda cl: cl.add_passkey(pk))
+            c = self._CloudClient(
+                self.cluster.url(self._node_order(None)[0]), allow_mock=True
+            )
+            session = c.sign_in(pk)
+            device = step["device"]
+            self.passkeys[device] = pk
+            self.sessions[device] = session
+            self.ids[device] = session["accountId"]
+            return {
+                "passkeyId": cred,
+                "accountId": session["accountId"],
+                "keyDelivered": True,
+            }
         if kind == "set_role":
             return self._with_client(
                 step,
