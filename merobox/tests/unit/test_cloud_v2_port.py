@@ -549,12 +549,12 @@ def test_node_identity_outputs_with_no_counterpart_are_not_asserted():
             {
                 "type": "node_identity",
                 "node": "n-1",
-                "outputs": {"dev": "deviceId", "cert": "certified"},
+                "outputs": {"dev": "deviceId", "cert": "certified", "key": "publicKey"},
             },
             {"type": "assert", "statements": ["equal({{cert}}, true)"]},
         ]
     )
-    assert steps[0]["outputs"] == {"dev": "passkeyId"}
+    assert steps[0]["outputs"] == {"dev": "passkeyId", "key": "publicKey"}
     assert len(steps) == 1
 
 
@@ -580,4 +580,29 @@ def test_a_groups_pinned_application_is_not_read_from_a_team():
             "account": "n-1",
             "outputs": {"gid": "groupId"},
         }
+    ]
+
+
+def test_ownership_moves_by_role_and_leaving_removes_oneself():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {
+                "type": "transfer_ownership",
+                "node": "n-1",
+                "group_id": "{{ns}}",
+                "new_owner": "{{k2}}",
+            },
+            {"type": "leave_namespace", "node": "n-1", "namespace_id": "{{ns}}"},
+        ]
+    )
+    assert steps == [
+        {
+            "type": "set_role",
+            "org": "{{ns}}",
+            "member": "{{k2}}",
+            "role": "owner",
+            "account": "n-1",
+        },
+        {"type": "remove_member", "org": "{{ns}}", "member": "n-1", "account": "n-1"},
     ]

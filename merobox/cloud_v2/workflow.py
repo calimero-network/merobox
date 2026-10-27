@@ -496,14 +496,28 @@ class Runner:
                 else t.get("name")
             ),
             "contexts": [a.get("contextId") for a in t.get("apps") or []],
+            # v1's names for a subgroup's join rule and its metadata record.
+            "subgroupVisibility": (
+                "open" if t.get("join") == "everyone" else "restricted"
+            ),
+            "data": meta.get("data") if isinstance(meta, dict) else None,
         }
         if kind == "team_join":
-            # Joining an open team one reaches is nothing to do; one does not
-            # reach is refused, as in v1.
+            # Joining an open team one reaches writes one's own plain row (v1's
+            # join_subgroup_inheritance materialised the membership); one does
+            # not reach is refused, as in v1.
             if not t.get("member"):
                 raise _Refused(f"not a member of {team}", 404, "NOT_FOUND", None)
             me = self._with_client(step, lambda cl: cl.me())
-            out["wasInherited"] = t.get("myRole") is None
+            inherited = t.get("myRole") is None
+            if inherited:
+                self._with_client(
+                    step,
+                    lambda cl: cl.post(
+                        f"{base}/members", {"account": me["accountId"], "lead": False}
+                    ),
+                )
+            out["wasInherited"] = inherited
             out["memberPublicKey"] = account_key(me["accountId"])
         return out
 

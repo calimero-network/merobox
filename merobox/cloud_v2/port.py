@@ -26,6 +26,7 @@ The two models line up like this:
 | `get_migration_status` | `migration_status`: each app's release (an upgrade runs at once) |
 | `wait` | the same wait: a name cannot tell a sync wait from a lease or a timer |
 | `fuzzy_test` | `fuzzy_test`: the same weighted operations, across accounts |
+| `transfer_ownership` / `leave_namespace` | `set_role` owner (the previous owner becomes an admin) / `remove_member` of oneself |
 | `account_revoke` | removing the device's passkey (`DELETE auth/passkeys/{id}`), which ends its sessions |
 | `call` with `executor_public_key` | `call` with `as_key` |
 | `wait_for_sync` | nothing to wait for: a read sees every committed write |
@@ -748,7 +749,7 @@ class Porter:
         if kind == "node_identity":
             outs = {}
             for v, p in (s.get("outputs") or {}).items():
-                if p in ("accountId", "accountRootPublicKey"):
+                if p in ("accountId", "accountRootPublicKey", "publicKey"):
                     outs[v] = "publicKey"
                 elif p == "deviceId":
                     # A device is a passkey: the one this session signed in with.
@@ -820,6 +821,27 @@ class Porter:
             if outs:
                 step["outputs"] = outs
             return [step]
+        if kind == "transfer_ownership":
+            # Ownership moves by the owner naming a new owner; the previous
+            # one becomes an admin, as in v1.
+            group = s.get("group_id") or s.get("namespace_id")
+            return [
+                acting(
+                    type="set_role",
+                    org=self._org_of(group),
+                    member=s.get("new_owner"),
+                    role="owner",
+                )
+            ]
+        if kind == "leave_namespace":
+            # Leaving the organization is removing oneself.
+            return [
+                acting(
+                    type="remove_member",
+                    org=s.get("namespace_id") or s.get("group_id"),
+                    member=node,
+                )
+            ]
         if kind == "account_revoke":
             # v1 revoked a device's key in a namespace (and rotated the key);
             # here a device is a passkey of the account, and removing it ends
