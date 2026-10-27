@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Soak metrics.** A `fuzzy_test` step times every step it sends to the
+  cluster and prints, per operation, its calls/s and p50/p95/p99 latency.
+  `MEROBOX_SOAK_REPORT=file.json` appends the run's report (per operation,
+  per step kind such as `call set`, and in total) to that file, and
+  `merobox cloud soak-report file.json` renders it as a Markdown table
+  (core's nightly soak puts it in the job summary). The pass rate and
+  `success_threshold` are unchanged.
+
 ### Removed
 
 - **v1 (breaking).** release-v2 is cloud-only, so everything that drove v1

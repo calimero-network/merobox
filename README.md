@@ -36,6 +36,7 @@ merobox cloud run workflow-examples/cloud-v2/kv-store-failover.yml
 | `merobox cloud run WORKFLOW` | Start the workflow's cluster, run its steps, stop the cluster (`--binary`, `--data-dir`, `--logs`) |
 | `merobox cloud validate WORKFLOW` | Check a workflow without starting anything |
 | `merobox cloud port SOURCES... --out-dir DIR` | Port v1 workflows to cloud-v2 workflows |
+| `merobox cloud soak-report REPORT...` | Print `fuzzy_test` soak reports (`MEROBOX_SOAK_REPORT`) as a Markdown table of latency and throughput |
 | `merobox bootstrap run` / `bootstrap validate` / `run` | v1's names, routed to `cloud run` / `cloud validate` / `cloud run` |
 
 ## Example Workflow

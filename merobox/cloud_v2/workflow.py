@@ -319,6 +319,7 @@ def load_workflow(path: str) -> dict:
     if not (wf.get("not_applicable") and not wf.get("steps")):
         _validate_steps(wf.get("steps"), set(accounts), "workflow")
     wf["_dir"] = str(Path(path).resolve().parent)
+    wf["_path"] = str(path)
     return wf
 
 
@@ -1037,9 +1038,19 @@ class Runner:
         `{{random_int(a, b)}}`, `{{uuid}}`, `{{timestamp}}` and, after a call,
         `{{fuzzy_<arg>}}` for each argument it sent. An operation passes when
         every step does; the run passes at `success_threshold` percent.
-        `MEROBOX_FUZZY_SECONDS` overrides the duration (CI runs it short)."""
+        `MEROBOX_FUZZY_SECONDS` overrides the duration (CI runs it short).
+        Each step sent to the cluster is timed (`merobox/cloud_v2/soak.py`):
+        the run prints p50/p95/p99 and calls/s per operation, and appends them
+        to `MEROBOX_SOAK_REPORT` when that names a file."""
         import random
         import uuid
+
+        from merobox.cloud_v2.soak import (
+            REPORT_ENV,
+            SoakMetrics,
+            append_report,
+            step_kind,
+        )
 
         seconds = float(
             os.environ.get("MEROBOX_FUZZY_SECONDS")
@@ -1075,9 +1086,11 @@ class Runner:
 
         passed = failed = 0
         failures: Counter = Counter()
+        metrics = SoakMetrics()
         deadline = time.time() + seconds
         while time.time() < deadline:
             op = random.choices(ops, weights)[0]
+            name = op.get("name", "fuzzy")
             pick = random.choice(accounts)
             self.variables["random_account"] = (
                 pick["account"] if isinstance(pick, dict) else pick
@@ -1085,6 +1098,8 @@ class Runner:
             self.variables["random_key"] = (
                 pick.get("as_key") if isinstance(pick, dict) else None
             )
+            # The operation's time is its steps' time, less its waits.
+            busy = 0.0
             try:
                 for st in op["steps"]:
                     st = fill(st)
@@ -1098,13 +1113,24 @@ class Runner:
                     if step["type"] == "call":
                         for k, v in (step.get("args") or {}).items():
                             self.variables[f"fuzzy_{k}"] = v
-                    self._step(step, op.get("name", "fuzzy"))
+                    started = time.perf_counter()
+                    ok = False
+                    try:
+                        self._step(step, name)
+                        ok = True
+                    finally:
+                        took = time.perf_counter() - started
+                        busy += took
+                        metrics.call(name, step_kind(step), took, ok)
                 passed += 1
+                metrics.operation(name, busy, True)
             except WorkflowError as e:
                 failed += 1
-                failures[f"{op.get('name', 'fuzzy')}: {str(e)[:120]}"] += 1
+                failures[f"{name}: {str(e)[:120]}"] += 1
+                metrics.operation(name, busy, False)
             if delay:
                 time.sleep(delay)
+        metrics.stop()
         total = passed + failed
         rate = 100.0 * passed / total if total else 0.0
         console.print(
@@ -1112,6 +1138,28 @@ class Runner:
         )
         for why, n in failures.most_common(5):
             console.print(f"    {n}x {why}")
+        summary = metrics.summary()
+        for op_name, s in summary["operations"].items():
+            lat = s["calls"]["latency_ms"]
+            console.print(
+                f"    {op_name}: {s['attempts']} ops, {s['calls']['count']} calls "
+                f"({s['calls']['per_s']:.1f}/s), p50 {lat['p50']:.1f} ms, "
+                f"p95 {lat['p95']:.1f} ms, p99 {lat['p99']:.1f} ms"
+            )
+        report = os.environ.get(REPORT_ENV)
+        if report:
+            append_report(
+                report,
+                {
+                    "workflow": self.wf.get("name") or self.wf.get("_path", "?"),
+                    "file": self.wf.get("_path"),
+                    "step": label,
+                    "nodes": self.cluster.size,
+                    "duration_requested": seconds,
+                    "success_threshold": threshold,
+                    **summary,
+                },
+            )
         if rate < threshold:
             raise WorkflowError(f"{label}: {rate:.1f}% passed, under {threshold}%")
 

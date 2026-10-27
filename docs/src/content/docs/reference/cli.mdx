@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: Every merobox command and flag — cloud run, cloud validate, cloud port, and v1's names bootstrap run, bootstrap validate and run.
+description: Every merobox command and flag — cloud run, cloud validate, cloud port, cloud soak-report, and v1's names bootstrap run, bootstrap validate and run.
 sidebar:
   order: 1
 ---
@@ -25,6 +25,13 @@ Check a workflow without starting anything. Exits 1 when it is invalid.
 ## `merobox cloud port SOURCES... --out-dir DIR`
 
 Port v1 workflows to cloud-v2 workflows; see [Port a v1 workflow](/guides/porting/).
+
+## `merobox cloud soak-report REPORT... [--title TEXT]`
+
+Print the soak reports a `fuzzy_test` step writes (to the file
+`MEROBOX_SOAK_REPORT` names) as one Markdown table: per operation, its count,
+pass rate, operations and calls per second, and the p50/p95/p99 latency of its
+calls in milliseconds. CI appends it to `$GITHUB_STEP_SUMMARY`.
 
 | Flag | Meaning |
 | --- | --- |

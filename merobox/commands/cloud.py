@@ -101,6 +101,18 @@ def port_cmd(sources, wasm_map, out_dir, base_port):
         click.echo(f"{src} -> {target} ({dropped} steps dropped)")
 
 
+@cloud.command("soak-report")
+@click.argument("reports", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option(
+    "--title", default="Soak latency and throughput", help="The table's heading"
+)
+def soak_report_cmd(reports, title):
+    """Print MEROBOX_SOAK_REPORT files as a Markdown table (for a CI summary)."""
+    from merobox.cloud_v2.soak import load_runs, markdown
+
+    click.echo(markdown(load_runs(reports), title=title))
+
+
 # --------------------------------------------------------- v1's command names
 
 _NO_DOCKER_HELP = "Accepted for v1 scripts: nodes always run as merod processes"
