@@ -90,6 +90,7 @@ merobox run --auth-service                      # with Traefik + auth stack
 | `--foreground`             | off                | Attach to `merod`'s interactive UI. Binary mode only; requires `--count 1`. |
 | `--use-image-entrypoint`   | off                | Preserve the image entrypoint instead of running `merod` directly (Docker mode). |
 | `--auth-mode`              | `proxy`            | `embedded` (built-in JWT auth on all endpoints) or `proxy` (no embedded auth). |
+| `--bind-host`              | `127.0.0.1`        | `127.0.0.1` or `0.0.0.0`: host interface the Docker node and proxy ports are published on. Docker mode only. |
 
 <Aside type="note">
   `--foreground` is only valid with `--no-docker` and a single node; combining
@@ -242,6 +243,7 @@ merobox bootstrap run workflow.yml --no-docker --binary-path ./merod \
 | `--auth-password`          | —                | Password for embedded auth. Must be paired with `--auth-username`.      |
 | `--dry-run`                | off              | Validate the workflow (config, variables, node config) without executing. |
 | `--trust-workflow`         | off              | Allow the workflow YAML keys listed below, including local `script` steps. |
+| `--bind-host`              | `127.0.0.1`      | `127.0.0.1` or `0.0.0.0`: host interface the Docker node and proxy ports are published on. Docker mode only. |
 
 <Aside type="note">
   `--auth-username` and `--auth-password` must be supplied together under

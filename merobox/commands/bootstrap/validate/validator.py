@@ -63,6 +63,7 @@ from merobox.commands.bootstrap.steps.group_management import (
     SetMemberAutoFollowStep,
     SetMemberCapabilitiesStep,
     SetSubgroupVisibilityStep,
+    TransferOwnershipStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
@@ -338,6 +339,8 @@ def validate_step_config(step: dict, step_name: str, step_type: str) -> list:
             step_class = ListGroupContextsStep
         elif step_type == "update_member_role":
             step_class = UpdateMemberRoleStep
+        elif step_type == "transfer_ownership":
+            step_class = TransferOwnershipStep
         elif step_type == "set_member_capabilities":
             step_class = SetMemberCapabilitiesStep
         elif step_type == "set_member_auto_follow":

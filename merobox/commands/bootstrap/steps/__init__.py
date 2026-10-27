@@ -49,6 +49,7 @@ from merobox.commands.bootstrap.steps.group_management import (
     SetMemberAutoFollowStep,
     SetMemberCapabilitiesStep,
     SetSubgroupVisibilityStep,
+    TransferOwnershipStep,
     UninstallApplicationStep,
     UpdateMemberRoleStep,
 )
@@ -179,6 +180,7 @@ __all__ = [
     "FuzzyTestStep",
     "RemoveGroupMembersStep",
     "ListGroupMembersStep",
+    "TransferOwnershipStep",
     "UpdateMemberRoleStep",
     "SetMemberCapabilitiesStep",
     "SetMemberAutoFollowStep",

@@ -80,6 +80,7 @@ VALID_STEP_TYPES = frozenset(
         "remove_group_members",
         "list_group_members",
         "update_member_role",
+        "transfer_ownership",
         "set_member_capabilities",
         "set_member_auto_follow",
         "get_member_capabilities",
@@ -791,7 +792,8 @@ class RestartContainerStepConfig(BaseStepConfig):
     type: Literal["restart_container"] = "restart_container"
     container: str = Field(..., description="Target container name")
     wait_healthy: Optional[bool] = Field(
-        True, description="Poll /admin-api/health until ready (default true)"
+        True,
+        description="Wait until ready (default true); a topology boot-node is ready once it logs a new listener",
     )
     timeout: Optional[int] = Field(
         None, ge=1, description="Health-wait timeout in seconds"
@@ -1531,6 +1533,15 @@ class UpdateMemberRoleStepConfig(BaseStepConfig):
     ] = Field(..., description="New role for the member")
 
 
+class TransferOwnershipStepConfig(BaseStepConfig):
+    """Configuration for transfer_ownership step."""
+
+    type: Literal["transfer_ownership"] = "transfer_ownership"
+    node: str = Field(..., description="Target node (must hold the owner account)")
+    group_id: str = Field(..., description="Group or namespace ID")
+    new_owner: str = Field(..., description="Account ID of the new owner")
+
+
 class SetMemberCapabilitiesStepConfig(BaseStepConfig):
     """Configuration for set_member_capabilities step."""
 
@@ -2048,6 +2059,7 @@ STEP_TYPE_MODELS: dict[str, type[BaseStepConfig]] = {
     "list_group_members": ListGroupMembersStepConfig,
     "list_group_contexts": ListGroupContextsStepConfig,
     "update_member_role": UpdateMemberRoleStepConfig,
+    "transfer_ownership": TransferOwnershipStepConfig,
     "set_member_capabilities": SetMemberCapabilitiesStepConfig,
     "set_member_auto_follow": SetMemberAutoFollowStepConfig,
     "get_member_capabilities": GetMemberCapabilitiesStepConfig,

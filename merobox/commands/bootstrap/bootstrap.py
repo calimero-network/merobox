@@ -24,7 +24,7 @@ from merobox.commands.bootstrap.config import (
 from merobox.commands.bootstrap.run import run_workflow_sync
 from merobox.commands.bootstrap.validate import validate_workflow_config
 from merobox.commands.host_access import check_host_access
-from merobox.commands.utils import console
+from merobox.commands.utils import bind_host_option, console
 
 
 def parse_remote_nodes(remote_node_args: tuple[str, ...]) -> dict[str, dict[str, Any]]:
@@ -272,6 +272,7 @@ def bootstrap():
     "non-Calimero images, and paths outside the git checkout holding the "
     "workflow. Pass only for workflows you have read and trust.",
 )
+@bind_host_option
 def run(
     config_file,
     verbose,
@@ -295,6 +296,7 @@ def run(
     auth_password,
     dry_run,
     trust_workflow,
+    bind_host,
 ):
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -366,6 +368,7 @@ def run(
         auth_password=auth_password,
         dry_run=dry_run,
         trust_workflow=trust_workflow,
+        bind_host=bind_host,
     )
     if not success:
         sys.exit(1)
