@@ -28,7 +28,7 @@ dependencies = [
     "PyYAML>=6.0.0",
     # release-v2: the cloud backend needs CloudClient, which only the
     # release-v2 branch has (built from source, like the sdist on PyPI).
-    "calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@release-v2",
+    "calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@release-v2-parity",
     "aiohttp>=3.9.0",
     "toml>=0.10.2",
     "base58>=2.1.0",

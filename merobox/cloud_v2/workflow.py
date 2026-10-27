@@ -371,6 +371,18 @@ class Runner:
                 last = e
         raise last or WorkflowError("no node to reach")
 
+    def _post_approved(self, step: dict, path: str, body: Any) -> Any:
+        """POST, and where the node asks the account's owner to approve this
+        exact request (`412 CONFIRM_REQUIRED`: an upgrade, an approval), answer
+        with the account's passkey, as its owner would."""
+        try:
+            return self._with_client(step, lambda cl: cl.post(path, body))
+        except self._CloudError as e:
+            pk = self.passkeys.get(str(step.get("account")))
+            if e.args[2] != "CONFIRM_REQUIRED" or pk is None:
+                raise
+            return self._with_client(step, lambda cl: cl.post_confirmed(path, body, pk))
+
     def _sign_up(self) -> None:
         node = self._node_order(None)[0]
         accounts = {}
@@ -637,9 +649,7 @@ class Runner:
             return {**out, "package": package, "version": version}
         if kind == "upgrade_app":
             body = {k: step[k] for k in ("version", "bundle", "migrate") if step.get(k)}
-            out = self._with_client(
-                step, lambda cl: cl.post(f"apps/{step['app']}/upgrade", body)
-            )
+            out = self._post_approved(step, f"apps/{step['app']}/upgrade", body)
             if out.get("status") not in (None, "ok"):
                 raise _Refused(
                     f"upgrade refused: {out.get('error')}",
@@ -659,11 +669,21 @@ class Runner:
             # Each app's release: on the newest version they reach is migrated.
             apps = list(step["apps"])
             listed = self._with_client(step, lambda cl: cl.get("apps"))
-            versions = {a["appId"]: a.get("version") for a in listed.get("apps", [])}
+            # Steps name an app by its id or its context id (what a ported
+            # workflow holds); an app not found must not count as migrated.
+            versions = {}
+            for a in listed.get("apps", []):
+                versions[a["appId"]] = a.get("version")
+                versions[context_id(a["appId"])] = a.get("version")
+            unknown = [a for a in apps if a not in versions]
+            if unknown:
+                raise _Refused(
+                    f"migration_status: no such app {unknown[0]}", 404, "NOT_FOUND", None
+                )
             mine = [versions.get(a) for a in apps]
             known = [v for v in mine if v]
             target = max(known, key=_version_key) if known else None
-            migrated = sum(1 for v in mine if v == target)
+            migrated = sum(1 for v in mine if v is not None and v == target)
             return {
                 "target_version": target,
                 "total": len(apps),
@@ -870,7 +890,7 @@ class Runner:
                 return self._with_client(step, lambda cl: cl.get(path))
             if method == "delete":
                 return self._with_client(step, lambda cl: cl.delete(path))
-            return self._with_client(step, lambda cl: cl.post(path, step.get("body")))
+            return self._post_approved(step, path, step.get("body"))
         if kind == "ops":
             return self._ops(step)
         if kind == "find_leader":
