@@ -7,13 +7,11 @@ on:
     branches: [master]
 
 env:
-  # The core branch whose merod the cloud-v2 examples run against. It floats on
-  # purpose: release-v2 has no core releases to pin to yet, and this lane is the
-  # one that notices core's wire changes early, so it reports on PRs instead of
-  # gating them. Core's own e2e.yml ("merobox cloud-v2") runs the same examples
-  # against each core change, pinned to a merobox ref, which is the gate in the
-  # other direction.
-  CORE_V2_REF: "release-v2"
+  # The core branch whose merod the cloud-v2 examples run against. It floats:
+  # release-v2 has no core release to pin to yet. Core's own e2e.yml ("merobox
+  # cloud-v2") runs the same examples against each core change, pinned to a
+  # merobox ref, which is the gate in the other direction.
+  CORE_V2_REF: "release-v2-parity"
   # Harden crates.io downloads against transient CI network blips that fail the
   # maturin build of calimero-client-py during `pip install` (seen as
   # "[16] HTTP2 framing layer" / "[56] SSL_read: unexpected eof"). More retries,
@@ -72,7 +70,7 @@ jobs:
         run: |
           python -m pytest merobox/tests/unit -v --tb=short
 
-  # ── merobox's cloud-v2 examples against core's release-v2 merod ──
+  # ── merobox's cloud-v2 examples against core's release-v2-parity merod ──
   # The same recipe as core's e2e.yml: merod, kv_store.wasm, two signed
   # kv-store releases for packages.yml, and a second, different merod for
   # rolling-upgrade.yml.
@@ -80,7 +78,6 @@ jobs:
     name: Cloud v2 examples
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    continue-on-error: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
 
