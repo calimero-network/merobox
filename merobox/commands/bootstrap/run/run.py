@@ -98,6 +98,7 @@ async def run_workflow(
     auth_password: Optional[str] = None,
     dry_run: bool = False,
     quiet: bool = False,
+    bind_host: Optional[str] = None,
 ) -> bool:
     """
     Execute a Calimero workflow from a YAML configuration file.
@@ -113,6 +114,7 @@ async def run_workflow(
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps
+        bind_host: Host interface Docker node and proxy ports are published on
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -176,13 +178,18 @@ async def run_workflow(
         elif effective_no_docker:
             from merobox.commands.binary_manager import BinaryManager
 
+            if bind_host:
+                console.print(
+                    "[yellow]--bind-host is only supported in Docker mode. "
+                    "Flag will be ignored.[/yellow]"
+                )
             manager = BinaryManager(binary_path=effective_binary_path)
             # When running in binary mode, auth_service is not supported
             auth_service = False
         else:
             from merobox.commands.manager import DockerManager
 
-            manager = DockerManager()
+            manager = DockerManager(bind_host=bind_host)
 
         # Debug: show incoming log level from CLI/defaults (verbose-only).
         vprint(
@@ -258,6 +265,7 @@ def run_workflow_sync(
     auth_password: Optional[str] = None,
     dry_run: bool = False,
     quiet: bool = False,
+    bind_host: Optional[str] = None,
 ) -> bool:
     """
     Synchronous wrapper for workflow execution.
@@ -273,6 +281,7 @@ def run_workflow_sync(
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps
+        bind_host: Host interface Docker node and proxy ports are published on
 
     Returns:
         True if workflow completed successfully, False otherwise
@@ -298,5 +307,6 @@ def run_workflow_sync(
             auth_password=auth_password,
             dry_run=dry_run,
             quiet=quiet,
+            bind_host=bind_host,
         )
     )

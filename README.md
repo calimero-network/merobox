@@ -31,6 +31,9 @@ merobox run --count 2
 # Start with auth service (Docker mode)
 merobox run --auth-service
 
+# Ports are published on 127.0.0.1; expose them to other machines explicitly
+merobox run --bind-host 0.0.0.0 --auth-mode embedded
+
 # Start with embedded auth (binary mode)
 merobox run --no-docker --binary-path /path/to/merod --auth-mode embedded
 
