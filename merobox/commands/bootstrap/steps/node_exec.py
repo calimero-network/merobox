@@ -32,13 +32,22 @@ import subprocess
 from functools import partial
 from typing import Any, Optional
 
+from rich.markup import escape
+
+from merobox.commands import safe_fs
 from merobox.commands.bootstrap.steps._docker_utils import is_binary_mode
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.constants import CONTAINER_HOME, SAFE_NAME_RE
+from merobox.commands.host_access import (
+    ROOT_NOT_GIVEN,
+    TRUST_WORKFLOW_FLAG,
+    container_file_targets,
+    node_exec_refusals,
+)
 from merobox.commands.result import fail, ok
 from merobox.commands.utils import console
 
 #: Where merobox mounts a node's home inside the container.
-CONTAINER_HOME = "/app/data"
 
 #: Offline commands are local disk work; generous, but bounded so a wedged
 #: invocation fails the step instead of hanging the scenario.
@@ -248,28 +257,37 @@ class NodeExecStep(BaseStep):
     def _write_files(files: dict[str, str], host_home: str) -> list[str]:
         """Write each `/app/data/…` input file under `host_home`, readable by its
         owner alone since it is usually a recovery phrase; the paths written."""
-        targets = {}
-        for container_path, content in files.items():
-            relative = os.path.normpath(container_path[len(CONTAINER_HOME) + 1 :])
-            if (
-                not container_path.startswith(f"{CONTAINER_HOME}/")
-                or relative in (os.curdir, os.pardir)
-                or relative.startswith(os.pardir + os.sep)
-            ):
-                raise RuntimeError(
-                    f"'{container_path}' is not a file under {CONTAINER_HOME}, so "
-                    "merod would not see it"
-                )
-            targets[os.path.join(host_home, relative)] = content
+        try:
+            targets = container_file_targets(files)
+        except ValueError as error:
+            raise RuntimeError(str(error)) from error
         written = []
-        for host_path, content in targets.items():
-            os.makedirs(os.path.dirname(host_path), mode=0o700, exist_ok=True)
-            fd = os.open(host_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with open(fd, "w", encoding="utf-8") as handle:
+        for relative, content in targets.items():
+            host_path = os.path.join(host_home, *relative.split("/"))
+            safe_fs.makedirs(os.path.dirname(host_path), mode=0o700)
+            with safe_fs.open_for_write(host_path, perms=0o600) as handle:
+                os.fchmod(handle.fileno(), 0o600)
                 handle.write(content if content.endswith("\n") else content + "\n")
-            os.chmod(host_path, 0o600)
             written.append(host_path)
         return written
+
+    def _refuse_untrusted(self, binary: bool) -> bool:
+        """Report and return True if an untrusted run may not run this step, by
+        the same rules check_host_access applied to the YAML."""
+        if self.host_root is None:
+            return False
+        if self.host_root is ROOT_NOT_GIVEN:
+            reasons = ["the step was given no confinement root"]
+        else:
+            reasons = node_exec_refusals(
+                self.config, binary, self.host_root, os.getcwd()
+            )
+        for reason in reasons:
+            console.print(
+                f"[red]node_exec: {escape(reason)}; rerun with {TRUST_WORKFLOW_FLAG} "
+                "if you trust this workflow[/red]"
+            )
+        return bool(reasons)
 
     @staticmethod
     def _on_host(arg: str, host_home: str) -> str:
@@ -359,8 +377,13 @@ class NodeExecStep(BaseStep):
             for path, content in (self.config.get("files") or {}).items()
         }
         allow_running = bool(self.config.get("allow_running", False))
-
+        # The node name becomes a host path component below (home, input files).
+        if not SAFE_NAME_RE.match(node_name):
+            console.print(f"[red]node_exec: unsafe node name {node_name!r}[/red]")
+            return False
         binary = is_binary_mode(self.manager)
+        if self._refuse_untrusted(binary):
+            return False
         if self.manager is None or not (binary or hasattr(self.manager, "client")):
             console.print(
                 "[red]node_exec needs a local node merobox started, in binary or "
@@ -390,7 +413,7 @@ class NodeExecStep(BaseStep):
                 # An input is often a recovery phrase, which must not outlive the command.
                 for path in written:
                     with contextlib.suppress(FileNotFoundError):
-                        os.remove(path)
+                        safe_fs.remove(path)
 
             if exit_code != 0:
                 raise RuntimeError(

@@ -23,13 +23,17 @@ from typing import Any
 
 import aiohttp
 
+from merobox.commands import safe_fs
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
     reinject_nat_default_route,
-    resolve_container,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
-from merobox.commands.constants import HEALTH_CHECK_TIMEOUT, NODE_READY_TIMEOUT
+from merobox.commands.constants import (
+    HEALTH_CHECK_TIMEOUT,
+    NODE_READY_TIMEOUT,
+    RESTART_LOG_DIR_DEFAULT,
+)
 from merobox.commands.utils import console, get_node_rpc_url
 
 # Directory where pre/post-restart log snapshots get written. CI
@@ -48,7 +52,6 @@ from merobox.commands.utils import console, get_node_rpc_url
 # precedence if both are set.
 _RESTART_LOG_DIR_ENV = "MEROBOX_RESTART_LOG_DIR"
 _RESTART_LOG_DIR_ENV_LEGACY = "MEROBOX_PRE_RESTART_LOG_DIR"
-_RESTART_LOG_DIR_DEFAULT = "docker-logs"
 
 # Topology boot-nodes carry this role label and are not merods: no admin API.
 _ROLE_LABEL = "merobox.role"
@@ -97,7 +100,7 @@ class RestartContainerStep(BaseStep):
 
         console.print(f"[yellow]Restarting container {container_name}...[/yellow]")
 
-        container = resolve_container(self.manager, container_name)
+        container = self._run_container(container_name)
         if container is None:
             return False
 
@@ -237,7 +240,7 @@ class RestartContainerStep(BaseStep):
         """
         log_dir = os.environ.get(
             _RESTART_LOG_DIR_ENV,
-            os.environ.get(_RESTART_LOG_DIR_ENV_LEGACY, _RESTART_LOG_DIR_DEFAULT),
+            os.environ.get(_RESTART_LOG_DIR_ENV_LEGACY, RESTART_LOG_DIR_DEFAULT),
         )
         try:
             os.makedirs(log_dir, exist_ok=True)
@@ -275,7 +278,7 @@ class RestartContainerStep(BaseStep):
             log_text = str(log_bytes)
 
         try:
-            with open(log_path, "w", encoding="utf-8") as f:
+            with safe_fs.open_for_write(log_path) as f:
                 f.write(log_text)
         except OSError as exc:
             console.print(

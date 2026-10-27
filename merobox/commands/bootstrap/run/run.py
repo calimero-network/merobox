@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from merobox.commands.bootstrap.config import load_workflow_config
 from merobox.commands.bootstrap.run.executor import WorkflowExecutor
+from merobox.commands.host_access import check_host_access, check_state_dirs
 from merobox.commands.utils import (
     LOG_LEVEL_VERBOSE,
     console,
@@ -98,6 +99,7 @@ async def run_workflow(
     auth_password: Optional[str] = None,
     dry_run: bool = False,
     quiet: bool = False,
+    trust_workflow: bool = False,
     bind_host: Optional[str] = None,
 ) -> bool:
     """
@@ -114,6 +116,7 @@ async def run_workflow(
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps
+        trust_workflow: Allow YAML keys that reach the host (see --trust-workflow)
         bind_host: Host interface Docker node and proxy ports are published on
 
     Returns:
@@ -127,6 +130,14 @@ async def run_workflow(
         # Load configuration
         config = load_workflow_config(config_file)
         workflow_dir = os.path.dirname(os.path.abspath(config_file))
+        check_state_dirs(config)
+        if not trust_workflow:
+            check_host_access(
+                config,
+                workflow_dir,
+                cli_no_docker=no_docker,
+                cli_binary_path=bool(binary_path),
+            )
 
         # Merge CLI-provided remote nodes with YAML config
         config = merge_remote_nodes_config(config, cli_remote_nodes or {})
@@ -218,6 +229,8 @@ async def run_workflow(
             auth_password=auth_password,
             dry_run=dry_run,
             merod_args=merod_args,
+            trust_workflow=trust_workflow,
+            cli_remote_nodes=(cli_remote_nodes or {}).keys(),
         )
 
         # Execute workflow
@@ -265,6 +278,7 @@ def run_workflow_sync(
     auth_password: Optional[str] = None,
     dry_run: bool = False,
     quiet: bool = False,
+    trust_workflow: bool = False,
     bind_host: Optional[str] = None,
 ) -> bool:
     """
@@ -281,6 +295,7 @@ def run_workflow_sync(
         auth_username: Username for embedded auth authentication
         auth_password: Password for embedded auth authentication
         dry_run: If True, validate workflow without executing steps
+        trust_workflow: Allow YAML keys that reach the host (see --trust-workflow)
         bind_host: Host interface Docker node and proxy ports are published on
 
     Returns:
@@ -307,6 +322,7 @@ def run_workflow_sync(
             auth_password=auth_password,
             dry_run=dry_run,
             quiet=quiet,
+            trust_workflow=trust_workflow,
             bind_host=bind_host,
         )
     )

@@ -46,7 +46,9 @@ def run_restart(monkeypatch, tmp_path):
 
     async def run(container, timeout=2):
         monkeypatch.setattr(restart_mod, "is_binary_mode", lambda _m: False)
-        monkeypatch.setattr(restart_mod, "resolve_container", lambda _m, _n: container)
+        monkeypatch.setattr(
+            RestartContainerStep, "_run_container", lambda _s, _n: container
+        )
         step = _step(timeout)
         step.manager = SimpleNamespace()
         return await step.execute({}, {})

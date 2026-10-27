@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import sys
 import time
 import uuid
@@ -18,6 +17,7 @@ import requests
 from rich.console import Console
 from rich.table import Table
 
+from merobox.commands import safe_fs
 from merobox.commands.auth import fetch_access_token_blocking
 from merobox.commands.cleanup_mixin import CleanupMixin
 from merobox.commands.config_utils import (
@@ -29,6 +29,7 @@ from merobox.commands.config_utils import (
     read_peer_id,
 )
 from merobox.commands.constants import (
+    CONTAINER_LOG_DIR,
     CONTAINER_STOP_TIMEOUT,
     DEFAULT_BIND_HOST,
     DEFAULT_IMAGE,
@@ -38,10 +39,12 @@ from merobox.commands.constants import (
     NODE_STARTUP_DELAY,
     P2P_PORT_BINDING,
     RPC_PORT_BINDING,
+    SAFE_NAME_RE,
     CleanupResult,
     resolved_drain_timeout,
     resolved_stop_timeout,
 )
+from merobox.commands.host_access import require_safe_node_name
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -117,12 +120,6 @@ def _get_node_hostname(node_name: str) -> str:
     return node_name.replace("calimero-", "").replace("-", "")
 
 
-# Directory, relative to the workflow's working directory, where per-container
-# logs are persisted. Kept stable so CI can collect ``data/container-logs/*.log``
-# as build artifacts regardless of the ``stop_all_nodes`` setting.
-CONTAINER_LOG_DIR = os.path.join("data", "container-logs")
-
-
 def _dump_container_log(container, container_name: str, log_dir: str) -> bool:
     """Write a single container's full log to ``<log_dir>/<name>.log``.
 
@@ -134,7 +131,7 @@ def _dump_container_log(container, container_name: str, log_dir: str) -> bool:
     try:
         log_content = container.logs(timestamps=True).decode("utf-8", errors="replace")
         log_file = os.path.join(log_dir, f"{container_name}.log")
-        with open(log_file, "w") as f:
+        with safe_fs.open_for_write(log_file) as f:
             f.write(log_content)
         return True
     except Exception:
@@ -206,7 +203,7 @@ def _dump_container_state(
             "finished_at": state.get("FinishedAt"),
         }
         state_file = os.path.join(log_dir, f"{container_name}.state.json")
-        with open(state_file, "w") as f:
+        with safe_fs.open_for_write(state_file) as f:
             json.dump(summary, f, indent=2, sort_keys=True)
         return summary
     except Exception:
@@ -512,6 +509,7 @@ class DockerManager(CleanupMixin):
     ) -> bool:
         """Run a Calimero node container."""
         try:
+            require_safe_node_name(node_name)
             # Determine the image to use
             image_to_use = image or DEFAULT_IMAGE
 
@@ -597,7 +595,7 @@ class DockerManager(CleanupMixin):
 
                 config_dest = os.path.join(node_data_dir, "config.toml")
                 try:
-                    shutil.copy2(config_source, config_dest)
+                    safe_fs.copy_file(config_source, config_dest)
                     console.print(
                         f"[green]✓ Copied custom config from {config_path} to {config_dest}[/green]"
                     )
@@ -1159,11 +1157,6 @@ class DockerManager(CleanupMixin):
     CLUSTER_PEER_TIMEOUT_ENV = "MEROBOX_CLUSTER_PEER_TIMEOUT"
     DEFAULT_CLUSTER_PEER_TIMEOUT = 60.0
 
-    # Safe container/node name: no path-traversal, no separators — a subset of
-    # Docker's own container-name rules. Used before interpolating node names
-    # into filesystem paths or multiaddrs.
-    SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-
     def _ensure_cluster_network(self) -> Optional[str]:
         """Ensure the user-defined bridge for multi-node clusters exists.
 
@@ -1690,7 +1683,7 @@ class DockerManager(CleanupMixin):
         and custom ``data_dir``); falls back to the default ``./data/`` layout.
         Returns ``None`` if ``node_name`` isn't a safe path component.
         """
-        if not self.SAFE_NAME_RE.match(node_name):
+        if not SAFE_NAME_RE.match(node_name):
             console.print(
                 f"[yellow]⚠️  Skipping unsafe node name: {node_name!r}[/yellow]"
             )
@@ -2212,6 +2205,7 @@ class DockerManager(CleanupMixin):
             True if node was stopped successfully, False otherwise
         """
         try:
+            require_safe_node_name(node_name)
             if node_name in self.nodes:
                 container = self.nodes[node_name]
                 success = self._graceful_stop_container(

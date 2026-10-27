@@ -676,6 +676,7 @@ class ParallelStep(BaseStep):
             "manager": self.manager,
             "resolver": self.resolver,
             "auth_mode": self.auth_mode,
+            "host_root": self.host_root,
         }
 
         if step_type == "install_application":

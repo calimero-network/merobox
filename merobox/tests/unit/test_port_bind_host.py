@@ -182,7 +182,9 @@ def test_run_workflow_passes_bind_host_to_docker_manager():
         patch("merobox.commands.bootstrap.run.run.WorkflowExecutor") as executor,
     ):
         executor.return_value.execute_workflow = AsyncMock(return_value=True)
-        assert asyncio.run(run_workflow("wf.yml", bind_host="0.0.0.0"))
+        assert asyncio.run(
+            run_workflow("wf.yml", bind_host="0.0.0.0", trust_workflow=True)
+        )
 
     manager_cls.assert_called_once_with(bind_host="0.0.0.0")
 
@@ -210,7 +212,9 @@ def test_run_workflow_warns_that_bind_host_is_ignored_for_yaml_binary_mode():
         patch("merobox.commands.bootstrap.run.run.console") as console,
     ):
         executor.return_value.execute_workflow = AsyncMock(return_value=True)
-        assert asyncio.run(run_workflow("wf.yml", bind_host="0.0.0.0"))
+        assert asyncio.run(
+            run_workflow("wf.yml", bind_host="0.0.0.0", trust_workflow=True)
+        )
 
     printed = " ".join(str(c.args[0]) for c in console.print.call_args_list)
     assert "--bind-host is only supported in Docker mode" in printed

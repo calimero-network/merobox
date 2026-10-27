@@ -10,10 +10,12 @@ The bootstrap command is designed as a Click command group to provide
 a clean, organized interface for workflow management.
 """
 
+import os
 import sys
 from typing import Any
 
 import click
+from rich.markup import escape
 
 from merobox.commands.bootstrap.config import (
     create_sample_workflow_config,
@@ -21,6 +23,7 @@ from merobox.commands.bootstrap.config import (
 )
 from merobox.commands.bootstrap.run import run_workflow_sync
 from merobox.commands.bootstrap.validate import validate_workflow_config
+from merobox.commands.host_access import check_host_access
 from merobox.commands.utils import bind_host_option, console
 
 
@@ -28,17 +31,18 @@ def parse_remote_nodes(remote_node_args: tuple[str, ...]) -> dict[str, dict[str,
     """Parse --remote-node arguments into a config dict.
 
     Args:
-        remote_node_args: Tuple of "name=url" strings.
+        remote_node_args: Tuple of "name=url" strings, or a bare "name" for a
+            node already in the remote registry, used as saved.
 
     Returns:
-        Dict mapping node names to their config: {name: {"url": url, "auth": {...}}}
+        Dict mapping node names to their config: {name: {"url": url, "auth": {...}}},
+        or {name: {"use_registry_entry": True}} for a bare name
     """
     remote_nodes = {}
     for arg in remote_node_args:
         if "=" not in arg:
-            console.print(
-                f"[yellow]Warning: Invalid --remote-node format '{arg}', expected 'name=url'[/yellow]"
-            )
+            if arg.strip():
+                remote_nodes[arg.strip()] = {"use_registry_entry": True}
             continue
         name, url = arg.split("=", 1)
         name = name.strip()
@@ -86,6 +90,13 @@ def parse_remote_auth(
             )
             continue
 
+        if remote_nodes.get(name, {}).get("use_registry_entry"):
+            raise click.UsageError(
+                f"--remote-auth {name}=...: a bare --remote-node {name} uses the "
+                "login saved in your remote registry; pass --remote-node "
+                f"{name}=URL to give this run its own credentials"
+            )
+
         # Create node entry if it doesn't exist yet
         if name not in remote_nodes:
             console.print(
@@ -116,6 +127,12 @@ def parse_remote_auth(
 
     # Apply default API key to nodes without explicit auth
     if default_api_key:
+        bare = [n for n, c in remote_nodes.items() if c.get("use_registry_entry")]
+        if bare:
+            raise click.UsageError(
+                f"--api-key does not apply to a bare --remote-node ({', '.join(bare)}), "
+                "which uses the login saved in your remote registry"
+            )
         for name, config in remote_nodes.items():
             auth = config.get("auth", {})
             if auth.get("method") == "none" or not auth.get("method"):
@@ -214,8 +231,8 @@ def bootstrap():
 @click.option(
     "--remote-node",
     multiple=True,
-    metavar="NAME=URL",
-    help="Register a remote node for this workflow run. Format: name=url (e.g., 'prod=https://node.example.com'). Can be specified multiple times.",
+    metavar="NAME[=URL]",
+    help="Register a remote node for this workflow run. Format: name=url (e.g., 'prod=https://node.example.com'), or a bare name to use a node already saved with `merobox remote register`, unchanged. Can be specified multiple times.",
 )
 @click.option(
     "--remote-auth",
@@ -246,6 +263,15 @@ def bootstrap():
     is_flag=True,
     help="Validate workflow without executing. Checks config, resolves variables, and checks node configuration.",
 )
+@click.option(
+    "--trust-workflow",
+    is_flag=True,
+    help="Allow workflow YAML keys that reach the host, refused by default: local "
+    "script steps and a host merod (no_docker, binary_path, init_args in binary "
+    "mode), servers and registry nodes it names (remote_nodes, URL nodes), "
+    "non-Calimero images, and paths outside the git checkout holding the "
+    "workflow. Pass only for workflows you have read and trust.",
+)
 @bind_host_option
 def run(
     config_file,
@@ -269,6 +295,7 @@ def run(
     auth_username,
     auth_password,
     dry_run,
+    trust_workflow,
     bind_host,
 ):
     """
@@ -340,6 +367,7 @@ def run(
         auth_username=auth_username,
         auth_password=auth_password,
         dry_run=dry_run,
+        trust_workflow=trust_workflow,
         bind_host=bind_host,
     )
     if not success:
@@ -372,6 +400,10 @@ def validate(config_file, verbose):
             console.print(
                 "\n[bold green]✅ Workflow configuration is valid![/bold green]"
             )
+            try:
+                check_host_access(config, os.path.dirname(os.path.abspath(config_file)))
+            except ValueError as refusal:
+                console.print(f"[yellow]{escape(str(refusal))}[/yellow]")
             if verbose:
                 console.print("\n[bold]Configuration Summary:[/bold]")
                 console.print(f"  Name: {config.get('name', 'Unnamed')}")

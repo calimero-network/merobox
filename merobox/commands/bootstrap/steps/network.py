@@ -36,6 +36,7 @@ from merobox.commands.bootstrap.steps._docker_utils import (
     warn_if_mdns_enabled,
 )
 from merobox.commands.bootstrap.steps.base import BaseStep
+from merobox.commands.host_access import TRUST_WORKFLOW_FLAG
 from merobox.commands.utils import console
 
 
@@ -68,6 +69,8 @@ class DisconnectNodeStep(BaseStep):
             self.config["node"], workflow_results, dynamic_values
         )
 
+        if self._refuse_foreign_container(node_name):
+            return False
         client = get_docker_client(self.manager)
         try:
             container = client.containers.get(node_name)
@@ -143,6 +146,15 @@ class ConnectNodeStep(BaseStep):
             self.config["node"], workflow_results, dynamic_values
         )
 
+        if self._refuse_foreign_container(node_name):
+            return False
+        # Attaching a node to a network the YAML names could join it to anything.
+        if self.config.get("network") is not None and self.host_root is not None:
+            console.print(
+                f"[red]connect_node: an untrusted workflow may not choose the "
+                f"network; rerun with {TRUST_WORKFLOW_FLAG} if you trust it[/red]"
+            )
+            return False
         client = get_docker_client(self.manager)
         try:
             container = client.containers.get(node_name)
@@ -361,6 +373,8 @@ class _PeerPartitionBase(BaseStep):
             name = self._resolve_dynamic_value(
                 raw_name, workflow_results, dynamic_values
             )
+            if self._refuse_foreign_container(name):
+                return name, None
             try:
                 return name, client.containers.get(name)
             except docker.errors.NotFound:

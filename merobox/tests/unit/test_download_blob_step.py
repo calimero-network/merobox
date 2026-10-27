@@ -154,7 +154,9 @@ class TestDownloadBlobExecute:
 
     def test_output_path_writes_the_bytes(self, tmp_path):
         target = tmp_path / "nested" / "blob.bin"
-        step = DownloadBlobStep({**self.config, "output_path": str(target)})
+        step = DownloadBlobStep(
+            {**self.config, "output_path": str(target)}, host_root=None
+        )
         p1, p2, p3 = self._patched(step, self._client())
         with p1, p2, p3:
             assert _run(step.execute({}, {})) is True

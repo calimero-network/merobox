@@ -56,14 +56,14 @@ steps:
 | `wait_timeout` | no | int (`60`) | Default timeout (seconds) for waiting operations. |
 | `force_pull_image` | no | bool (`false`) | Re-pull Docker images before the run (Docker mode only). |
 | `auth_service` | no | bool (`false`) | Run a mero-auth container behind a Traefik proxy (Docker mode only). |
-| `auth_image` | no | string | Custom auth-service image. |
+| `auth_image` | no | string | Custom auth-service image. Images outside `ghcr.io/calimero-network/` need [`--trust-workflow`](/reference/cli/#trusting-a-workflow); so does such a `topology.boot_node.image`. |
 | `auth_use_cached` | no | bool (`false`) | Use a cached auth frontend. |
 | `webui_use_cached` | no | bool (`false`) | Use a cached WebUI frontend. |
 | `auth_mode` | no | string | Node auth mode, e.g. `embedded`, enabling [`login`](#login)/[`refresh`](#refresh)/[`ws_connect`](#ws_connect) steps. |
 | `log_level` | no | string (`debug`) | Log level applied to nodes. |
 | `rust_backtrace` | no | string (`0`) | `RUST_BACKTRACE` value for nodes. |
-| `no_docker` | no | bool (`false`) | Run nodes as native `merod` binaries instead of containers. |
-| `binary_path` | no | string | Path to the `merod` binary for `no_docker` mode. |
+| `no_docker` | no | bool (`false`) | Run nodes as native `merod` binaries instead of containers. Needs [`--trust-workflow`](/reference/cli/#trusting-a-workflow) (or `--no-docker` on the CLI). |
+| `binary_path` | no | string | Path to the `merod` binary for `no_docker` mode. Needs [`--trust-workflow`](/reference/cli/#trusting-a-workflow) (or `--binary-path` on the CLI). |
 | `e2e_mode` | no | bool (`false`) | Clear merod's default public bootstrap list and assign a private per-workflow rendezvous namespace. |
 | `preserve_default_bootstrap` | no | bool (`false`) | Under `e2e_mode`, keep merod's default boot-node list instead of clearing it. |
 | `bootstrap_nodes` | no | list | Explicit bootstrap peers to connect to. |
@@ -88,13 +88,14 @@ nodes:
 | --- | --- | --- | --- |
 | `count` | yes (this mode) | int ≥ 1 | Number of nodes to create. |
 | `prefix` | no | string (`calimero-node`) | Name prefix; nodes are `<prefix>-<n>`. |
-| `image` | no | string | Docker image for the nodes. |
+| `image` | no | string | Docker image for the nodes. Images outside `ghcr.io/calimero-network/` need [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `base_port` | no | int | Server port of the first node (increments). |
 | `base_rpc_port` | no | int | RPC port of the first node (increments). |
-| `config_path` | no | string | Shared `config.toml` for all nodes (skips init). |
+| `config_path` | no | string | Shared `config.toml` for all nodes (skips init). Resolved from the workflow directory, and must stay inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `use_image_entrypoint` | no | bool (`false`) | Use the Docker image's entrypoint. |
 | `mdns` | no | bool | Force `discovery.mdns` on/off (set `false` to exercise the rendezvous/relay path). |
 | `network_admin` | no | bool (`true`) | Add `NET_ADMIN` capability so `inject_network_fault` works. |
+| `init_args` | no | map | Extra `merod init` flags keyed by full node name, appended after merobox's own. In binary mode they reach a host `merod`, so they need [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 
 ### Explicit mode
 
@@ -112,8 +113,10 @@ nodes:
     mock_tee: true               # boot as `merod run --mock-tee`
 ```
 
-Per-node keys include `port`, `rpc_port`, `config_path` (per-node override), and
-`mock_tee`. Explicit mode is mutually exclusive with `count`.
+Per-node keys include `port`, `rpc_port`, `config_path` (per-node override),
+`image`, `data_dir`, and `mock_tee`. Explicit mode is mutually exclusive with
+`count`. A per-node `data_dir` must resolve inside the workflow's checkout unless
+you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow).
 
 :::caution
 `config_path` (shared or per-node) skips node initialization and is not
@@ -124,6 +127,12 @@ supported together with `count` mode.
 
 Address already-running nodes by URL instead of managing containers. A workflow
 with only `remote_nodes` runs in remote-only mode (no local node lifecycle).
+
+`remote_nodes` sends requests and `${ENV}` credentials to the servers it names,
+so `bootstrap run` refuses it unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). To run a workflow you did
+not write against your own servers, register them on the CLI with
+`--remote-node name=url` instead; the same applies to a step whose `node:` is a
+URL or a node from your `merobox remote` registry.
 
 ```yaml
 remote_nodes:
@@ -233,7 +242,7 @@ node is configured with. Name exactly one source: `path`, or `package` plus
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
 | `node` | yes | string | Target node. |
-| `path` | no | string | Path to a local `.mpk` bundle. |
+| `path` | no | string | Path to a local `.mpk` bundle, inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `package` | no | string | Registry package to install. |
 | `version` | no | string | Version of that package. |
 | `dev` | no | bool (`false`) | Accepted and ignored; a `path` install is always local. |
@@ -1025,8 +1034,8 @@ yields an opaque lock error several layers down, which reads like a node fault.
 | `args` | yes | list[string] | Subcommand and flags, e.g. `['account', 'export']`. |
 | `files` | no | map | `/app/data/…` path → contents, written into the node's home before running and removed once it exits. Other paths are refused. |
 | `capture` | no | map | Name → regex with one capturing group, pulled out of stdout. |
-| `data_dir` | no | string | The directory holding `<node>/config.toml`, when merobox has no record of it. |
-| `image` | no | string | Docker only: the image to run when the container is gone and merobox has no record. |
+| `data_dir` | no | string | The directory holding `<node>/config.toml`, when merobox has no record of it. Inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
+| `image` | no | string | Docker only: the image to run when the container is gone and merobox has no record. Outside `ghcr.io/calimero-network/` it needs [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `allow_running` | no | bool | Run even if the node is up. Unsafe for anything that opens the datastore. |
 | `expected_failure` | no | bool | Assert the command is refused rather than succeeding. |
 
@@ -1427,7 +1436,9 @@ Proposals are *created and approved* via ordinary [`call`](#call) steps
 ### upload_blob
 
 Upload a file to a node's blob store. Fields: `node`, `file_path`, optional
-`context_id`.
+`context_id`. `file_path` is opened from the current directory and must resolve
+inside the workflow's checkout unless you pass [`--trust-workflow`](/reference/cli/#trusting-a-workflow); the same holds for
+`download_blob`'s `output_path`.
 
 ```yaml
 - type: upload_blob
@@ -1576,8 +1587,8 @@ Run a shell script.
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
-| `script` | yes | string | Path to the script. |
-| `target` | no | `image`\|`nodes`\|`local` (`image`) | Where to run: inside the image build, on running nodes, or on the host. |
+| `script` | yes | string | Path to the script, under the current directory and inside the workflow's checkout. |
+| `target` | no | `image`\|`nodes`\|`local` (`image`) | Where to run: inside the image build, on running nodes, or on the host. `local` is host code and needs [`--trust-workflow`](/reference/cli/#trusting-a-workflow). |
 | `description` | no | string | Human label. |
 | `args` | no | list of strings | Arguments passed to the script; `{{var}}` placeholders resolve. |
 | `json_output` | no | bool (`false`) | `target: local` only. Parse the script's last output line as a JSON object so `outputs:` captures its fields. |

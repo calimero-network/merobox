@@ -15,6 +15,8 @@ from typing import Optional, Union
 import toml
 from rich.console import Console
 
+from merobox.commands import safe_fs
+
 console = Console()
 
 # A libp2p peer ID rendered in base58btc (the alphabet excludes 0/O/I/l and any
@@ -84,9 +86,10 @@ def apply_bootstrap_nodes(
         set_nested_config(config, "bootstrap.nodes", bootstrap_nodes)
 
         # Ensure file is writable
+        safe_fs.refuse_symlinks(config_path)
         config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
 
-        with open(config_path, "w", encoding="utf-8") as f:
+        with safe_fs.open_for_write(config_path) as f:
             toml.dump(config, f)
 
         console.print(
@@ -119,8 +122,9 @@ def apply_config_value(
 
         set_nested_config(config, key, value)
 
+        safe_fs.refuse_symlinks(config_path)
         config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
-        with open(config_path, "w", encoding="utf-8") as f:
+        with safe_fs.open_for_write(config_path) as f:
             toml.dump(config, f)
 
         console.print(f"[green]✓ Set {key}={value} for {node_name}[/green]")
@@ -339,10 +343,11 @@ def apply_e2e_defaults(
             set_nested_config(config, key, value)
 
         # Ensure file is writable
+        safe_fs.refuse_symlinks(config_path)
         config_path.chmod(config_path.stat().st_mode | stat.S_IWUSR)
 
         # Write back to file
-        with open(config_path, "w", encoding="utf-8") as f:
+        with safe_fs.open_for_write(config_path) as f:
             toml.dump(config, f)
 
         console.print(

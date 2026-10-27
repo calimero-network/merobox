@@ -16,7 +16,6 @@ from typing import Any
 
 from merobox.commands.bootstrap.steps._docker_utils import (
     is_binary_mode,
-    resolve_container,
     safe_console_error,
     warn_if_mdns_enabled,
 )
@@ -106,7 +105,7 @@ class InjectNetworkFaultStep(BaseStep):
         duration = self.config["duration"]
         netem_args = self._build_netem_args()
 
-        container = resolve_container(self.manager, container_name)
+        container = self._run_container(container_name)
         if container is None:
             return False
 

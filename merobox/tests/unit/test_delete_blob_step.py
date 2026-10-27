@@ -16,6 +16,7 @@ import pytest
 from merobox.commands.bootstrap.steps.delete_blob import DeleteBlobOnDiskStep
 
 _MODULE = "merobox.commands.bootstrap.steps.delete_blob"
+_BASE = "merobox.commands.bootstrap.steps.base"  # where steps look containers up
 
 # A valid 64-hex blob id and a deterministic expected on-disk path.
 _BLOB = "abababababababababababababababababababababababababababababababab"
@@ -48,7 +49,7 @@ def _container(*exec_results, state="running"):
 def _step(**overrides):
     cfg = {"type": "delete_blob_on_disk", "node": "node-1", "blob_id": _BLOB}
     cfg.update(overrides)
-    step = DeleteBlobOnDiskStep(cfg, manager=MagicMock())
+    step = DeleteBlobOnDiskStep(cfg, manager=MagicMock(), host_root=None)
     # Identity dynamic-value resolution, like the other step tests.
     step._resolve_dynamic_value = lambda v, *_a, **_k: v
     return step
@@ -132,7 +133,7 @@ class TestDeleteBlobExecute:
     def _patched(self, container):
         return (
             patch(f"{_MODULE}.is_binary_mode", return_value=False),
-            patch(f"{_MODULE}.resolve_container", return_value=container),
+            patch(f"{_BASE}.resolve_container", return_value=container),
         )
 
     def test_present_blob_removed(self):
@@ -192,7 +193,7 @@ class TestDeleteBlobExecute:
         step = _step()
         with (
             patch(f"{_MODULE}.is_binary_mode", return_value=False),
-            patch(f"{_MODULE}.resolve_container", return_value=None),
+            patch(f"{_BASE}.resolve_container", return_value=None),
         ):
             result = _run(step.execute({}, {}))
         assert result is False
