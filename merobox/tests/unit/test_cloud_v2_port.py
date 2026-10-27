@@ -125,3 +125,33 @@ def test_a_paired_device_is_another_passkey_of_the_account():
     }
     # The paired node acts with its own session, on the holder's account.
     assert call["account"] == "n-2"
+
+
+def test_a_fuzzy_soak_keeps_its_operations_as_accounts():
+    (step,) = porter().port_steps(
+        [
+            {
+                "type": "fuzzy_test",
+                "duration_minutes": 15,
+                "nodes": [{"name": "n-1"}, {"name": "n-2"}],
+                "operations": [
+                    {
+                        "name": "set",
+                        "weight": 3,
+                        "steps": [
+                            {
+                                "type": "call",
+                                "node": "{{random_node}}",
+                                "context_id": "{{c}}",
+                                "method": "set",
+                                "args": {"key": "k_{{random_int(1, 9)}}"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    assert step["type"] == "fuzzy_test" and step["accounts"] == ["n-1", "n-2"]
+    (call,) = step["operations"][0]["steps"]
+    assert call["account"] == "{{random_account}}" and call["app"] == "{{c}}"

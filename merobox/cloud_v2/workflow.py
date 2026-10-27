@@ -43,6 +43,7 @@ import json
 import os
 import re
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
 
@@ -173,6 +174,7 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "assert": ("statements",),
     "json_assert": ("statements",),
     "repeat": ("count", "steps"),
+    "fuzzy_test": ("operations",),
 }
 
 
@@ -795,7 +797,14 @@ class Runner:
                 for n in range(int(resolve(raw["count"], self.variables))):
                     self.variables["iteration"] = n
                     self.variables["iteration_node"] = n + 1
+                    # v1's `outputs: {var: iteration}` names the counter.
+                    for var, path in (raw.get("outputs") or {}).items():
+                        if path in ("iteration", "iteration_node"):
+                            self.variables[var] = self.variables[path]
                     self.run_steps(raw["steps"], depth + 1)
+                continue
+            if raw["type"] == "fuzzy_test":
+                self._fuzzy(raw, label)
                 continue
             step = resolve(
                 {k: v for k, v in raw.items() if k != "steps"}, self.variables
@@ -820,6 +829,90 @@ class Runner:
                     f"{label}: took {took:.1f}s, over its {step['max_seconds']}s budget"
                 )
             console.print(f"{indent}[green]✓[/green] {label}{note}")
+
+    def _fuzzy(self, raw: dict, label: str) -> None:
+        """v1's soak test: weighted operations, picked at random, for a while.
+        Each operation's steps run as ordinary steps with `{{random_account}}`,
+        `{{random_int(a, b)}}`, `{{uuid}}`, `{{timestamp}}` and, after a call,
+        `{{fuzzy_<arg>}}` for each argument it sent. An operation passes when
+        every step does; the run passes at `success_threshold` percent.
+        `MEROBOX_FUZZY_SECONDS` overrides the duration (CI runs it short)."""
+        import random
+        import uuid
+
+        seconds = float(
+            os.environ.get("MEROBOX_FUZZY_SECONDS")
+            or float(raw.get("duration_minutes", 1)) * 60
+        )
+        accounts = raw.get("accounts") or list(self.wf["accounts"])
+        ops = raw["operations"]
+        weights = [float(o.get("weight", 1)) for o in ops]
+        delay = float(raw.get("operation_delay_ms", 0)) / 1000
+        threshold = float(raw.get("success_threshold", 95.0))
+        gen = re.compile(
+            r"\{\{\s*(random_int\((\d+)\s*,\s*(\d+)\)|uuid|timestamp)\s*\}\}"
+        )
+
+        def fill(v: Any) -> Any:
+            if isinstance(v, str):
+
+                def one(m: re.Match) -> str:
+                    if m.group(2):
+                        return str(random.randint(int(m.group(2)), int(m.group(3))))
+                    return (
+                        str(uuid.uuid4())
+                        if m.group(1) == "uuid"
+                        else str(int(time.time()))
+                    )
+
+                return gen.sub(one, v)
+            if isinstance(v, list):
+                return [fill(x) for x in v]
+            if isinstance(v, dict):
+                return {k: fill(x) for k, x in v.items()}
+            return v
+
+        passed = failed = 0
+        failures: Counter = Counter()
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            op = random.choices(ops, weights)[0]
+            pick = random.choice(accounts)
+            self.variables["random_account"] = (
+                pick["account"] if isinstance(pick, dict) else pick
+            )
+            self.variables["random_key"] = (
+                pick.get("as_key") if isinstance(pick, dict) else None
+            )
+            try:
+                for st in op["steps"]:
+                    st = fill(st)
+                    if st["type"] in ("assert", "json_assert"):
+                        self._assert(st)
+                        continue
+                    if st["type"] == "wait":
+                        time.sleep(min(float(st.get("seconds", 0)), 1.0))
+                        continue
+                    step = resolve(st, self.variables)
+                    if step["type"] == "call":
+                        for k, v in (step.get("args") or {}).items():
+                            self.variables[f"fuzzy_{k}"] = v
+                    self._step(step, op.get("name", "fuzzy"))
+                passed += 1
+            except WorkflowError as e:
+                failed += 1
+                failures[f"{op.get('name', 'fuzzy')}: {str(e)[:120]}"] += 1
+            if delay:
+                time.sleep(delay)
+        total = passed + failed
+        rate = 100.0 * passed / total if total else 0.0
+        console.print(
+            f"[green]✓[/green] {label}: {passed}/{total} operations passed ({rate:.1f}%)"
+        )
+        for why, n in failures.most_common(5):
+            console.print(f"    {n}x {why}")
+        if rate < threshold:
+            raise WorkflowError(f"{label}: {rate:.1f}% passed, under {threshold}%")
 
     def _step(self, step: dict, label: str) -> str:
         """Run one resolved step and check what it promised; returns a note."""

@@ -21,6 +21,8 @@ The two models line up like this:
 | `join_context` | nothing to do: access comes from the org, the team or the app's list |
 | `invite_open` / `join_open` | the context the invitation names |
 | `upload_blob` / `download_blob` | the same steps, on the app's blobs |
+| `upgrade_group` | upgrade each app deployed in the group (the node plans the migration) |
+| `fuzzy_test` | `fuzzy_test`: the same weighted operations, across accounts |
 | `call` with `executor_public_key` | `call` with `as_key` |
 | `wait_for_sync` | nothing to wait for: a read sees every committed write |
 
@@ -62,7 +64,6 @@ DROPPED: dict[str, str] = {
     "assert_log_present": "v1 node logs",
     "assert_log_absent": "v1 node logs",
     "script": "scripts drive v1 node RPC URLs",
-    "fuzzy_test": "v1 fuzzy runner",
 }
 
 #: v1 group roles as a team row's role.
@@ -256,8 +257,39 @@ class Porter:
             if not _waits_for_time(s.get("name", "")):
                 seconds = min(seconds, 1.0)
             return [{**s, "seconds": seconds}]
+        if kind == "fuzzy_test":
+            # v1's soak: the same weighted operations, as accounts instead of
+            # nodes. `{{random_node}}` names a random account.
+            ops = []
+            for op in s.get("operations") or []:
+                steps = self.port_steps(op.get("steps"))
+                text = json.dumps(steps).replace(
+                    "{{random_node}}", "{{random_account}}"
+                )
+                ops.append(
+                    {
+                        "name": op.get("name"),
+                        "weight": op.get("weight", 1),
+                        "steps": json.loads(text),
+                    }
+                )
+            step = {
+                **base,
+                "type": "fuzzy_test",
+                "operations": ops,
+                "accounts": [
+                    n.get("name") for n in s.get("nodes") or [] if n.get("name")
+                ]
+                or list(self.accounts),
+            }
+            for k in ("duration_minutes", "success_threshold", "operation_delay_ms"):
+                if k in s:
+                    step[k] = s[k]
+            return [step]
         if kind == "repeat":
             step = {**base, "type": "repeat", "count": s["count"]}
+            if s.get("outputs"):
+                step["outputs"] = s["outputs"]
             step["steps"] = self.port_steps(s.get("steps"))
             return [step] if step["steps"] else []
         if kind == "install_application":
