@@ -120,6 +120,7 @@ class Porter:
         self.apps: dict[str, str] = {}  # var holding an application id -> bundle path
         self.orgs: set[str] = set()  # vars holding a namespace (an org)
         self.invitations: dict[str, Any] = {}  # open-invitation var -> its context
+        self.offline: set[str] = set()  # v1 nodes stopped at this point
         self.group_contexts: dict[str, list[str]] = (
             {}
         )  # group var -> context vars in it
@@ -213,7 +214,22 @@ class Porter:
         for step in steps or []:
             if not isinstance(step, dict):
                 continue
-            out.extend(self.port_step(step))
+            kind = step.get("type")
+            if kind == "stop_node":
+                self.offline.add(str(step.get("node") or step.get("nodes")))
+            elif kind == "start_node":
+                self.offline.discard(str(step.get("node") or step.get("nodes")))
+            ported = self.port_step(step)
+            if self.offline and kind not in ("assert", "json_assert"):
+                # Read while a v1 node was offline: the partition's view, which
+                # a cluster never has. The writes stand; what was read is only
+                # checked once the nodes met again.
+                for st in ported:
+                    outs = set((st.get("outputs") or {}).keys())
+                    if outs:
+                        self.dropped_vars.update(outs)
+                        self.dropped["output read during a v1 partition"] += len(outs)
+            out.extend(ported)
         return out
 
     def port_step(self, s: dict) -> list:

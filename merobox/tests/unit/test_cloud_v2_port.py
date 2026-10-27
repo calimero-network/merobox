@@ -155,3 +155,33 @@ def test_a_fuzzy_soak_keeps_its_operations_as_accounts():
     assert step["type"] == "fuzzy_test" and step["accounts"] == ["n-1", "n-2"]
     (call,) = step["operations"][0]["steps"]
     assert call["account"] == "{{random_account}}" and call["app"] == "{{c}}"
+
+
+def test_reads_during_a_v1_partition_are_not_asserted():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {"type": "stop_node", "node": "n-1"},
+            {"type": "call", "node": "n-2", "context_id": "{{c}}", "method": "w"},
+            {
+                "type": "call",
+                "node": "n-2",
+                "context_id": "{{c}}",
+                "method": "r",
+                "outputs": {"seen": "result"},
+            },
+            {"type": "assert", "statements": ["not_contains({{seen}}, 'x')"]},
+            {"type": "start_node", "node": "n-1"},
+            {
+                "type": "call",
+                "node": "n-1",
+                "context_id": "{{c}}",
+                "method": "r",
+                "outputs": {"after": "result"},
+            },
+            {"type": "assert", "statements": ["contains({{after}}, 'x')"]},
+        ]
+    )
+    kinds = [s["type"] for s in steps]
+    assert kinds == ["call", "call", "call", "assert"], kinds
+    assert steps[-1]["statements"] == ["contains({{after}}, 'x')"]
