@@ -9,7 +9,19 @@ calimero-client-py's `CloudClient`.
 A workflow opts in with `backend: cloud-v2`; see `workflow-examples/cloud-v2/`.
 """
 
-from merobox.cloud_v2.cluster import ProcessCluster
-from merobox.cloud_v2.workflow import WorkflowError, load_workflow, run_workflow
+from merobox.cloud_v2.cluster import PackageRegistry, ProcessCluster
+from merobox.cloud_v2.workflow import (
+    WorkflowError,
+    load_workflow,
+    run_workflow,
+    run_workflow_outcome,
+)
 
-__all__ = ["ProcessCluster", "WorkflowError", "load_workflow", "run_workflow"]
+__all__ = [
+    "PackageRegistry",
+    "ProcessCluster",
+    "WorkflowError",
+    "load_workflow",
+    "run_workflow",
+    "run_workflow_outcome",
+]

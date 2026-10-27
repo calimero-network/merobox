@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import gzip
+import io
 import json
 import os
 import secrets
 import shutil
 import signal
 import subprocess
+import tarfile
 import tempfile
+import threading
 import time
 import urllib.request
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 #: The origin dev passkeys claim; the cluster allows it.
@@ -27,6 +33,69 @@ def find_binary(binary: str | None = None) -> str:
             "(cargo build -p calimero-cloud-node --bin merod-v2) or set MEROD_V2_BINARY"
         )
     return found
+
+
+def mpk_coords(mpk: bytes) -> tuple[str, str]:
+    """`(package, appVersion)` from a `.mpk`'s top-level `manifest.json`."""
+    with tarfile.open(fileobj=io.BytesIO(gzip.decompress(mpk))) as tar:
+        for member in tar.getmembers():
+            if member.name.lstrip("./") == "manifest.json":
+                f = tar.extractfile(member)
+                manifest = json.load(f) if f else {}
+                return str(manifest["package"]), str(manifest["appVersion"])
+    raise ValueError("not a .mpk: no manifest.json")
+
+
+class PackageRegistry:
+    """A package registry on 127.0.0.1, laid out as the real one is:
+    `artifacts/{package}/{version}/{package}-{version}.mpk`. The cluster's
+    nodes install from it, and every node that runs a release fetches it here."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        (root / "artifacts").mkdir(parents=True, exist_ok=True)
+        handler = partial(_QuietHandler, directory=str(root))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/"
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def publish(self, mpk: bytes) -> tuple[str, str]:
+        """Put a `.mpk` where the nodes fetch it; answers its (package, version)."""
+        package, version = mpk_coords(mpk)
+        d = self.root / "artifacts" / package / version
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{package}-{version}.mpk").write_bytes(mpk)
+        return package, version
+
+    def hits(self) -> list[str]:
+        return list(_QuietHandler.paths)
+
+    def stop(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class _QuietHandler(SimpleHTTPRequestHandler):
+    paths: list[str] = []
+
+    def do_GET(self) -> None:  # noqa: N802 (http.server's name)
+        _QuietHandler.paths.append(self.path)
+        super().do_GET()
+
+    def log_message(self, *args) -> None:
+        pass
+
+
+def supports(binary: str, flag: str) -> bool:
+    """Whether `binary --help` lists `flag` (older merod-v2 builds lack some)."""
+    try:
+        out = subprocess.run(
+            [binary, "--help"], capture_output=True, text=True, timeout=10
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return flag in out
 
 
 class ProcessCluster:
@@ -60,6 +129,9 @@ class ProcessCluster:
         self.logs = logs
         self.procs: dict[int, subprocess.Popen | None] = dict.fromkeys(self.ids)
         self.binaries: dict[int, str] = dict.fromkeys(self.ids, self.binary)
+        #: The registry the nodes install signed packages from, once started
+        #: (a merod-v2 build without `--registry-url` gets none).
+        self.registry: PackageRegistry | None = None
 
     @property
     def ids(self) -> list[int]:
@@ -92,6 +164,8 @@ class ProcessCluster:
             "--backup-dir",
             str(self.data_dir / "backups"),
         ]
+        if self.registry and supports(self.binaries[node], "--registry-url"):
+            args += ["--registry-url", self.registry.url]
         if node == 1:
             args.append("--bootstrap")
         return args
@@ -99,6 +173,8 @@ class ProcessCluster:
     # ------------------------------------------------------------- lifecycle
 
     def start(self, timeout: float = 60) -> None:
+        if self.registry is None and supports(self.binary, "--registry-url"):
+            self.registry = PackageRegistry(self.data_dir / "registry")
         for i in self.ids:
             self.start_node(i, wait=False)
         self.wait_ready(timeout)
@@ -148,6 +224,9 @@ class ProcessCluster:
                 proc.kill()
                 proc.wait()
                 self.procs[node] = None
+        if self.registry:
+            self.registry.stop()
+            self.registry = None
         if self._own_dir:
             shutil.rmtree(self.data_dir, ignore_errors=True)
 

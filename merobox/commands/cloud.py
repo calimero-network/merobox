@@ -4,7 +4,7 @@ import sys
 
 import click
 
-from merobox.cloud_v2 import WorkflowError, load_workflow, run_workflow
+from merobox.cloud_v2 import WorkflowError, load_workflow, run_workflow_outcome
 
 
 @click.group()
@@ -22,13 +22,17 @@ def cloud():
 )
 @click.option("--logs", is_flag=True, help="Show the nodes' logs")
 def run_cmd(workflow, binary, data_dir, logs):
-    """Start the workflow's cluster, run its steps, stop the cluster."""
+    """Start the workflow's cluster, run its steps, stop the cluster.
+
+    Exits 0 when it passes, 1 when it fails, 3 for a port marked not applicable."""
     try:
-        ok = run_workflow(workflow, binary=binary, keep_data=data_dir, logs=logs)
+        outcome = run_workflow_outcome(
+            workflow, binary=binary, keep_data=data_dir, logs=logs
+        )
     except (WorkflowError, FileNotFoundError) as e:
         click.echo(f"error: {e}", err=True)
         sys.exit(2)
-    sys.exit(0 if ok else 1)
+    sys.exit({"passed": 0, "failed": 1, "not_applicable": 3}[outcome])
 
 
 @cloud.command("validate")

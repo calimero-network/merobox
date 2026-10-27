@@ -18,7 +18,8 @@ merobox bootstrap run workflow-examples/cloud-v2/orgs-and-keys.yml   # routes he
 | `kv-store-failover.yml` | A crash, a frozen node and a restart; replicas catch up |
 | `frozen-leader.yml` | The app's leader stops answering; writes reroute within a 10 s budget |
 | `orgs-and-keys.yml` | Organizations gate apps, scoped API keys, passkey confirmations, removal |
-| `rolling-upgrade.yml` | Every node moved to another build in turn (`MEROD_V2_UPGRADE_BINARY`) |
+| `packages.yml` | Signed releases installed from the registry, verified on every node, upgraded by version, uninstalled (`KV_STORE_MPK`, `KV_STORE_MPK_NEXT`) |
+| `rolling-upgrade.yml` | Every node moved to another build in turn (`MEROD_V2_UPGRADE_BINARY`, which must differ from `MEROD_V2_BINARY`) |
 
 ## Format
 
@@ -39,12 +40,25 @@ Every step takes `name`, `outputs` (variable → path in its result),
 `expected_error` (a refusal with that code is success), `expect` (the result
 must equal this), `retry_for` (seconds to keep retrying) and `max_seconds`
 (a latency budget). Steps that act as someone take `account` or `api_key`, and
-optionally `node` (otherwise the first running node, skipping unreachable ones).
+optionally `node` (otherwise the account's own node, `accounts` order modulo the
+cluster's size, then the others, skipping unreachable ones: as each v1 member
+talked to its own node, requests spread over the cluster).
+
+A merod-v2 build with `--registry-url` gets a package registry on 127.0.0.1
+(`ProcessCluster.registry`), laid out as the real one; `install_package`
+publishes to it. A port marked `not_applicable` (see `merobox cloud port`) is
+not run and is no pass: `merobox cloud run` exits 3 for it.
 
 | Step | Fields |
 | --- | --- |
-| `deploy` | `wasm`, `app_name`, `init_args`, `org`, `access`, `confirm_methods` → `appId`, `bundle` |
-| `upload_bundle` / `create_app` | `wasm` → `hash` / `bundle`, … → `appId` |
+| `deploy` | `wasm` or `package` (+ `version`, `service`), `app_name`, `init_args`, `org`, `access`, `confirm_methods` → `appId`, `bundle` |
+| `upload_bundle` / `create_app` | `wasm` → `hash` (development nodes) / `bundle` or `package` (+ `version`, `service`), … → `appId` |
+| `install_package` | `mpk` (a signed `.mpk`, published to the cluster's registry, installed by name) → `package`, `version`, `signerId` |
+| `upgrade_app` | `app`, `version` (of its package) or `bundle`, `migrate` |
+| `uninstall_package` | `package`, optional `version`: refused while an app runs the release |
+| `delete_app`, `packages` | `app` / → `packages` |
+| `migration_status` | `apps` → `target_version`, `total`, `migrated`, `failed`, `residue_total` (each app's release; an upgrade runs at once) |
+| `member_capabilities` | `org`, `member`, optional `team` → `capabilities` (the team's row, else the org's, its default unless set) |
 | `call` | `app`, `method`, `args`, `idempotency_key`, `confirm` (passkey approval) → `index`, `result`, `events` |
 | `view` | `app`, `method`, `args`, `stale`, `min_index` → `index`, `result` |
 | `wait_for` | like `view`, until the result `equals` / `contains` a value (`timeout`) |

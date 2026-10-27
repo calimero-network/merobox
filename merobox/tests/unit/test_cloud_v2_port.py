@@ -58,23 +58,17 @@ def test_a_node_local_miss_has_no_cluster_counterpart():
     assert p.dropped["download_blob (a node-local miss)"] == 1
 
 
-def test_waits_for_sync_shrink_and_waits_for_time_stay():
-    p = porter()
-    sync, time_ = p.port_steps(
+def test_waits_keep_v1s_duration():
+    # A name cannot tell a wait for peers from one for a lease to run out:
+    # hyperfeed's 18 s lease failed when every wait was cut to a second.
+    sync, lease = porter().port_steps(
         [
             {"type": "wait", "name": "Let node-2 sync", "seconds": 10},
-            {"type": "wait", "name": "Let the time come", "seconds": 18},
+            {"type": "wait", "name": "Settle the feed", "seconds": 18},
         ]
     )
-    assert sync["seconds"] == 1.0
-    assert time_["seconds"] == 18.0
-
-
-def test_a_settle_is_not_a_wait_for_time():
-    (step,) = porter().port_steps(
-        [{"type": "wait", "name": "Settle before the mesh joins", "seconds": 12}]
-    )
-    assert step["seconds"] == 1.0
+    assert sync["seconds"] == 10.0
+    assert lease["seconds"] == 18.0
 
 
 def test_an_open_invitation_joins_the_context_it_names():
@@ -188,3 +182,178 @@ def test_reads_during_a_v1_partition_are_not_asserted():
     assert steps[0].get("allow_failure") is True
     assert "allow_failure" not in steps[2]
     assert steps[-1]["statements"] == ["contains({{after}}, 'x')"]
+
+
+def mpk_map() -> dict:
+    return {
+        "res/app-v1.mpk": {"": "v1.wasm", "_package": "com.x", "_mpk": "out/x-1.mpk"},
+        "dist/com.x.mpk": {"": "v2.wasm", "_package": "com.x", "_mpk": "out/x-2.mpk"},
+    }
+
+
+def test_a_signed_bundle_installs_as_a_package_and_upgrades_by_version():
+    p = Porter({"nodes": {"count": 2, "prefix": "n"}, "steps": []}, mpk_map(), 3000)
+    steps = p.port_steps(
+        [
+            {
+                "type": "install_application",
+                "node": "n-1",
+                "path": "res/app-v1.mpk",
+                "outputs": {"app_v1": "applicationId"},
+            },
+            # v1 installed on each node; one install serves the cluster.
+            {"type": "install_application", "node": "n-2", "path": "res/app-v1.mpk"},
+            {
+                "type": "create_namespace",
+                "node": "n-1",
+                "outputs": {"ns": "namespaceId"},
+            },
+            {
+                "type": "create_context",
+                "node": "n-1",
+                "application_id": "{{app_v1}}",
+                "group_id": "{{ns}}",
+                "outputs": {"ctx": "contextId"},
+            },
+            {
+                "type": "install_application",
+                "node": "n-1",
+                "path": "dist/com.x.mpk",
+                "outputs": {"app_v2": "applicationId"},
+            },
+            {
+                "type": "upgrade_group",
+                "node": "n-1",
+                "group_id": "{{ns}}",
+                "target_application_id": "{{app_v2}}",
+            },
+            {
+                "type": "get_migration_status",
+                "node": "n-1",
+                "namespace_id": "{{ns}}",
+                "outputs": {"migrated": "migrated"},
+            },
+        ]
+    )
+    installs = [s for s in steps if s["type"] == "install_package"]
+    assert [s["mpk"] for s in installs] == ["out/x-1.mpk", "out/x-2.mpk"]
+    assert installs[0]["outputs"] == {"app_v1": "package", "app_v1_version": "version"}
+    deploy = next(s for s in steps if s["type"] == "deploy")
+    assert (
+        deploy["package"] == "{{app_v1}}" and deploy["version"] == "{{app_v1_version}}"
+    )
+    assert "wasm" not in deploy
+    (up,) = [s for s in steps if s["type"] == "upgrade_app"]
+    assert up["app"] == "{{ctx}}" and up["version"] == "{{app_v2_version}}"
+    (status,) = [s for s in steps if s["type"] == "migration_status"]
+    assert status["apps"] == ["{{ctx}}"] and status["outputs"] == {
+        "migrated": "migrated"
+    }
+    assert not p.dropped
+
+
+def test_without_a_signed_bundle_the_wasm_is_uploaded():
+    p = Porter({"nodes": {"count": 1}, "steps": []}, {"a.mpk": {"": "a.wasm"}}, 3000)
+    up, _set = p.port_steps(
+        [
+            {
+                "type": "install_application",
+                "node": "calimero-node-1",
+                "path": "a.mpk",
+                "outputs": {"app": "applicationId"},
+            }
+        ]
+    )
+    assert up["type"] == "upload_bundle" and up["wasm"] == "a.wasm"
+
+
+def test_member_capabilities_are_read_from_the_teams_row_or_the_orgs():
+    p = porter()
+    p.teams["folder"] = "ns"
+    on_team, on_org = p.port_steps(
+        [
+            {
+                "type": "get_member_capabilities",
+                "node": "n-1",
+                "group_id": "{{folder}}",
+                "member_id": "{{bob}}",
+                "outputs": {"caps": "capabilities"},
+            },
+            {
+                "type": "get_member_capabilities",
+                "node": "n-1",
+                "group_id": "{{ns}}",
+                "member_id": "{{bob}}",
+            },
+        ]
+    )
+    assert on_team["type"] == "member_capabilities" and on_team["team"] == "{{folder}}"
+    assert on_team["outputs"] == {"caps": "capabilities"}
+    assert "team" not in on_org
+
+
+def wf(steps: list) -> dict:
+    return {"nodes": {"count": 1}, "steps": steps}
+
+
+def test_a_port_that_keeps_none_of_its_checks_is_not_applicable():
+    out = Porter(
+        wf(
+            [
+                {
+                    "type": "call",
+                    "node": "calimero-node-1",
+                    "context_id": "c",
+                    "method": "m",
+                },
+                {
+                    "type": "assert_log_present",
+                    "node": "calimero-node-1",
+                    "pattern": "x",
+                },
+                {
+                    "type": "assert_log_absent",
+                    "node": "calimero-node-1",
+                    "pattern": "y",
+                },
+            ]
+        ),
+        {},
+        3000,
+    ).port()
+    assert "keeps 0" in out["not_applicable"]
+
+
+def test_a_port_that_drops_what_it_reads_is_not_applicable():
+    out = Porter(
+        wf(
+            [
+                {"type": "create_namespace", "node": "calimero-node-1"},
+                {"type": "list_namespaces", "node": "calimero-node-1"},
+                {"type": "delete_namespace", "node": "calimero-node-1"},
+            ]
+        ),
+        {},
+        3000,
+    ).port()
+    assert "list_namespaces" in out["not_applicable"]
+
+
+def test_a_port_that_runs_the_app_and_keeps_its_checks_applies():
+    out = Porter(
+        wf(
+            [
+                {
+                    "type": "call",
+                    "node": "calimero-node-1",
+                    "context_id": "c",
+                    "method": "get",
+                    "outputs": {"r": "result"},
+                },
+                {"type": "assert", "statements": ["is_set({{r}})"]},
+            ]
+        ),
+        {},
+        3000,
+    ).port()
+    assert "not_applicable" not in out

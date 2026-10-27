@@ -1,6 +1,8 @@
 # Move every node to another merod-v2 build, one at a time, while the app keeps
 # its data: what a release's on-disk and wire compatibility has to survive.
-# MEROD_V2_UPGRADE_BINARY: the new build (defaults to MEROD_V2_BINARY).
+# MEROD_V2_UPGRADE_BINARY: the new build. It must differ from MEROD_V2_BINARY:
+# a restart on the same binary proves nothing about compatibility, so the
+# workflow refuses to pass as one.
 name: Rolling upgrade
 backend: cloud-v2
 cluster:
@@ -9,7 +11,12 @@ cluster:
 accounts: [alice]
 variables:
   next: "{{env.MEROD_V2_UPGRADE_BINARY ?? env.MEROD_V2_BINARY}}"
+  from: "{{env.MEROD_V2_BINARY}}"
 steps:
+  - name: The upgrade is to another build
+    type: assert
+    statements:
+      - "'{{next}}' != '{{from}}'"
   - type: deploy
     account: alice
     wasm: "{{env.KV_STORE_WASM}}"

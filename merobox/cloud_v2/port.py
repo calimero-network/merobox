@@ -7,7 +7,7 @@ The two models line up like this:
 | a node (`nodes: {count, prefix}`) | an account: a person, signed in with a passkey |
 | `create_identity` on a node | that node's account |
 | `account_pair` (a second device) | `add_device`: another passkey on the holder's account, signed in on the paired node |
-| `install_application` | `upload_bundle` (the WASM, from the wasm map) |
+| `install_application` | `install_package` when the wasm map names the signed `.mpk` (`_mpk`): installed by name from the cluster's registry; else `upload_bundle` (the WASM) |
 | `create_namespace` | `create_org` |
 | `create_namespace_invitation` / `join_namespace` | `invite` / `redeem_invite` |
 | `create_group_in_namespace` | `create_team` (restricted unless `visibility: open`) |
@@ -16,12 +16,15 @@ The two models line up like this:
 | `get_group_info` / `get_group_metadata` / `list_group_members` / `list_group_contexts` | `team_get` |
 | `list_subgroups` / `join_subgroup_inheritance` / `delete_group` | `team_list` / `team_join` / `team_delete` |
 | `set_member_capabilities` / `set_default_capabilities` | `capabilities` |
+| `get_member_capabilities` | `member_capabilities` (the team's row, or the organization's) |
 | `create_context` | `deploy`: in the org; scoped to the team in a subgroup |
 | `create_mesh` | `deploy` for the listed members |
 | `join_context` | nothing to do: access comes from the org, the team or the app's list |
 | `invite_open` / `join_open` | the context the invitation names |
 | `upload_blob` / `download_blob` | the same steps, on the app's blobs |
-| `upgrade_group` | upgrade each app deployed in the group (the node plans the migration) |
+| `upgrade_group` | `upgrade_app` for each app deployed in the group: by `version` for a package, else by bundle (the node plans the migration) |
+| `get_migration_status` | `migration_status`: each app's release (an upgrade runs at once) |
+| `wait` | the same wait: a name cannot tell a sync wait from a lease or a timer |
 | `fuzzy_test` | `fuzzy_test`: the same weighted operations, across accounts |
 | `call` with `executor_public_key` | `call` with `as_key` |
 | `wait_for_sync` | nothing to wait for: a read sees every committed write |
@@ -31,14 +34,19 @@ statements written against v1 results keep working.
 
 Steps with no counterpart are dropped and listed in the ported file's header:
 sync controls, a node going offline (a cluster has no user replica to
-partition), member metadata, v1 migrations, admin-API and log assertions,
-scripts.
+partition), member metadata, admin-API and log assertions, scripts.
+
+A port that no longer tests what its v1 workflow did is marked
+`not_applicable` with the reason, and is neither run nor counted as a pass: one
+that drops most of what the workflow reads or removes (`list_*`, `get_*`,
+`delete_*`), keeps under half of v1's checks (a dropped log or script check
+counts twice: it is how v1 saw what a result cannot show), or never runs the
+app and keeps none.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -52,11 +60,9 @@ DROPPED: dict[str, str] = {
     "set_member_metadata": "member metadata is v1 governance",
     "get_member_metadata": "member metadata is v1 governance",
     "set_default_visibility": "subgroup visibility is v1 governance",
-    "get_member_capabilities": "capabilities are v1 governance",
     "list_namespaces": "v1 namespace listing",
     "list_namespace_groups": "v1 namespace listing",
     "delete_namespace": "v1 namespace deletion",
-    "get_migration_status": "v1 group migration",
     "assert_migration_complete": "v1 group migration",
     "stop_node": "a user's node going offline has no counterpart in a cluster",
     "start_node": "a user's node going offline has no counterpart in a cluster",
@@ -85,30 +91,32 @@ _V1_ROLE = {
 }
 
 
-_TIME_WORDS = (
-    "time",
-    "deadline",
-    "expire",
-    "expires",
-    "expiry",
-    "timer",
-    "tick",
-    "later",
-    "clock",
-    "ttl",
-    "lease",
-    "timeout",
-)
+#: v1 steps that check something; a port that drops most of them is hollow.
+_CHECKS = {"assert_log_present", "assert_log_absent", "script"}
+
+#: Below this share of v1's checks kept, a port does not test its subject.
+MIN_CHECKS_KEPT = 0.5
+
+#: How many assertion statements one dropped log or script check counts as.
+LOG_CHECK_WEIGHT = 2
 
 
-def _waits_for_time(name: str) -> bool:
-    """Whether a v1 `wait` lets time pass on purpose, judged by its name's words."""
-    words = set(re.findall(r"[a-z]+", name.lower()))
-    return bool(words & set(_TIME_WORDS)) and not words & {
-        "sync",
-        "settle",
-        "propagate",
-    }
+def _subject_kind(kind: str) -> bool:
+    """A v1 step that reads or removes what a workflow is about."""
+    return kind.startswith(("list_", "get_", "delete_"))
+
+
+def _reads_state(steps: list) -> bool:
+    """Whether a ported workflow ever runs the app (a call, view or event read)."""
+    for st in steps:
+        if st.get("type") in ("call", "view", "wait_for", "events", "download_blob"):
+            return True
+        if _reads_state(st.get("steps") or []):
+            return True
+        for op in st.get("operations") or []:
+            if _reads_state(op.get("steps") or []):
+                return True
+    return False
 
 
 class Porter:
@@ -118,6 +126,8 @@ class Porter:
         self.base_port = base_port
         self.accounts: list[str] = list(self._node_names())
         self.apps: dict[str, str] = {}  # var holding an application id -> bundle path
+        # vars holding a package installed as a signed release (`_mpk` in the map)
+        self.packages: set[str] = set()
         self.orgs: set[str] = set()  # vars holding a namespace (an org)
         self.invitations: dict[str, Any] = {}  # open-invitation var -> its context
         self.offline: set[str] = set()  # v1 nodes stopped at this point
@@ -127,6 +137,12 @@ class Porter:
 
         self.teams: dict[str, str] = {}  # var holding a subgroup (team) -> its org var
         self.dropped: Counter = Counter()
+        # v1's checks (assertion statements, log and script checks) and how
+        # many survive the port: a port that keeps too few tests nothing.
+        self.checks_v1 = 0
+        self.checks_kept = 0
+        self.subject_kinds: set[str] = set()  # v1 read/remove kinds seen
+        self.subject_dropped: set[str] = set()  # ...and those the port drops
         # variables only a dropped step would have set
         self.dropped_vars: set[str] = set()
         self.notes: list[str] = []
@@ -168,6 +184,19 @@ class Porter:
         if var in self.teams:
             return "{{" + self.teams[var] + "}}"
         return group_expr
+
+    def _source(self, app_expr: Any, service: str | None) -> dict:
+        """What a deploy runs: a release of an installed package, else a WASM."""
+        var = self._var(app_expr)
+        if var in self.packages:
+            src = {
+                "package": "{{" + var + "}}",
+                "version": "{{" + f"{var}_version" + "}}",
+            }
+            if service:
+                src["service"] = service
+            return src
+        return {"wasm": self._wasm(app_expr, service)}
 
     def _wasm(self, app_expr: Any, service: str | None) -> str:
         var = self._var(app_expr)
@@ -239,6 +268,10 @@ class Porter:
 
     def port_step(self, s: dict) -> list:
         kind = s.get("type")
+        if _subject_kind(str(kind)):
+            self.subject_kinds.add(str(kind))
+            if kind in DROPPED:
+                self.subject_dropped.add(str(kind))
         base = {"name": s["name"]} if "name" in s else {}
         node = s.get("node")
 
@@ -254,6 +287,10 @@ class Porter:
             return step
 
         if kind in DROPPED:
+            if kind in _CHECKS:
+                # A log or script check is a workflow's own subject (it is how
+                # v1 saw what a call's result cannot show), so it weighs more.
+                self.checks_v1 += LOG_CHECK_WEIGHT
             self.dropped[kind] += 1
             self.dropped_vars.update((s.get("outputs") or {}).keys())
             return []
@@ -269,15 +306,14 @@ class Porter:
                     self.dropped[f"{kind} statement on a dropped step's output"] += 1
                 else:
                     kept.append(st)
+            self.checks_v1 += len(s.get("statements") or [])
+            self.checks_kept += len(kept)
             return [{**s, "statements": kept}] if kept else []
         if kind == "wait":
-            # v1 waited for peers to find each other and sync; a cluster needs
-            # at most a moment. A wait for time itself to pass (a deadline, a
-            # timer) is kept.
-            seconds = float(s.get("seconds", 0))
-            if not _waits_for_time(s.get("name", "")):
-                seconds = min(seconds, 1.0)
-            return [{**s, "seconds": seconds}]
+            # Kept as long as v1 waited: a name does not tell a wait for peers
+            # to sync from one for a lease or a timer to run out (hyperfeed's
+            # lease needs its 18 s), and a shortened one fails the latter.
+            return [{**s, "seconds": float(s.get("seconds", 0))}]
         if kind == "fuzzy_test":
             # v1's soak: the same weighted operations, as accounts instead of
             # nodes. `{{random_node}}` names a random account.
@@ -325,7 +361,19 @@ class Porter:
                 if not k.startswith("_")
             }
             if not var:
-                return []  # v1 installed on every node; one upload is enough
+                return []  # v1 installed on every node; one install is enough
+            mpk = self.wasm_map.get(path, {}).get("_mpk")
+            if mpk:
+                # A signed release, installed by name from the cluster's
+                # registry: the node checks the publisher's signature.
+                self.packages.add(var)
+                return [
+                    acting(
+                        type="install_package",
+                        mpk=mpk,
+                        outputs={var: "package", f"{var}_version": "version"},
+                    )
+                ]
             steps = [
                 acting(
                     type="upload_bundle",
@@ -344,20 +392,29 @@ class Porter:
             # v1 upgraded every context of a group; here each app instance is
             # upgraded, and the node plans the migration from the two ABIs.
             target = self._var(s.get("target_application_id"))
-            bundle = "{{" + f"{target}_bundle" + "}}" if target else None
             ctxs = self.group_contexts.get(self._var(s.get("group_id")) or "", [])
-            if not bundle or not ctxs:
+            if not target or not ctxs:
                 self.dropped["upgrade_group (no context to upgrade)"] += 1
                 return []
-            return [
-                acting(
-                    type="http",
-                    method="post",
-                    path="apps/{{" + c + "}}/upgrade",
-                    body={"bundle": bundle},
-                )
-                for c in ctxs
+            # A release upgrades by its version, within the package; a raw
+            # upload by its bundle hash.
+            to = (
+                {"version": "{{" + f"{target}_version" + "}}"}
+                if target in self.packages
+                else {"bundle": "{{" + f"{target}_bundle" + "}}"}
+            )
+            return [acting(type="upgrade_app", app="{{" + c + "}}", **to) for c in ctxs]
+        if kind == "get_migration_status":
+            # v1 migrated a group's contexts lazily and reported progress; an
+            # upgrade here runs at once, so the report is each app's version.
+            group = self._var(s.get("group_id") or s.get("namespace_id"))
+            ctxs = self.group_contexts.get(group or "") or [
+                c for cs in self.group_contexts.values() for c in cs
             ]
+            step = acting(type="migration_status", apps=["{{" + c + "}}" for c in ctxs])
+            if s.get("outputs"):
+                step["outputs"] = s["outputs"]
+            return [step]
         if kind == "create_group":
             # A standalone v1 group is a namespace: an organization.
             kind = "create_namespace"
@@ -577,6 +634,20 @@ class Porter:
                 self.dropped["delete_group (a namespace)"] += 1
                 return []
             return [acting(type="team_delete", org=self._org_of(group), team=group)]
+        if kind == "get_member_capabilities":
+            # The member's row: a team's for a subgroup, the organization's
+            # (its default unless set for them) for the namespace.
+            group = s.get("group_id")
+            step = acting(
+                type="member_capabilities",
+                org=self._org_of(group),
+                member=s.get("member_id") or s.get("identity"),
+            )
+            if self._team(group):
+                step["team"] = group
+            if s.get("outputs"):
+                step["outputs"] = s["outputs"]
+            return [step]
         if kind in ("set_member_capabilities", "set_default_capabilities"):
             group = s.get("group_id")
             team = group if self._team(group) else None
@@ -617,7 +688,7 @@ class Porter:
             creator = node
             group = s.get("group_id")
             step = {**base, "type": "deploy", "account": creator}
-            step["wasm"] = self._wasm(s.get("application_id"), s.get("service_name"))
+            step.update(self._source(s.get("application_id"), s.get("service_name")))
             step["app_name"] = s.get("service_name") or s.get("name", "app")
             if "params" in s:
                 step["init_args"] = s["params"]
@@ -777,7 +848,7 @@ class Porter:
                 {"type": "redeem_invite", "account": m, "token": "{{_mesh_invite}}"}
             )
         deploy = {"type": "deploy", "account": creator, "org": "{{" + org_var + "}}"}
-        deploy["wasm"] = self._wasm(s.get("application_id"), s.get("service_name"))
+        deploy.update(self._source(s.get("application_id"), s.get("service_name")))
         deploy["app_name"] = s.get("service_name") or s.get("name", "app")
         if "params" in s:
             deploy["init_args"] = s["params"]
@@ -817,8 +888,28 @@ class Porter:
         out["backend"] = "cloud-v2"
         out["cluster"] = {"nodes": 3, "base_port": self.base_port}
         out["accounts"] = self.accounts
+        why = self.hollow(steps)
+        if why:
+            out["not_applicable"] = why
         out["steps"] = steps
         return out
+
+    def hollow(self, steps: list) -> str | None:
+        """Why the port does not test what the v1 workflow did, if it does not."""
+        if self.subject_kinds and len(self.subject_dropped) * 2 > len(
+            self.subject_kinds
+        ):
+            return "the port drops what the workflow reads or removes: " + ", ".join(
+                sorted(self.subject_dropped)
+            )
+        if not _reads_state(steps) and not self.checks_kept:
+            return "the port never runs the app and keeps none of v1's checks"
+        if self.checks_v1 and self.checks_kept < MIN_CHECKS_KEPT * self.checks_v1:
+            return (
+                f"the port keeps {self.checks_kept} of v1's {self.checks_v1} checks; "
+                "the rest checked what has no release-v2 counterpart"
+            )
+        return None
 
     def header(self, source: str) -> str:
         lines = [

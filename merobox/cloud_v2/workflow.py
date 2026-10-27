@@ -124,20 +124,26 @@ def _pick(result: Any, path: str) -> Any:
         return result
     try:
         return _lookup(result if isinstance(result, dict) else {"value": result}, path)
-    except WorkflowError:
+    except WorkflowError as e:
         shown = json.dumps(result)[:300]
         raise WorkflowError(
             f"output path '{path}' is not in the step's result: {shown}"
-        )
+        ) from e
 
 
 # ----------------------------------------------------------------- loading
 
 STEP_TYPES: dict[str, tuple[str, ...]] = {
     # type: required fields
-    "deploy": ("wasm",),
+    "deploy": (),
+    "migration_status": ("apps",),
     "upload_bundle": ("wasm",),
-    "create_app": ("bundle",),
+    "create_app": (),
+    "install_package": ("mpk",),
+    "upgrade_app": ("app",),
+    "uninstall_package": ("package",),
+    "delete_app": ("app",),
+    "packages": (),
     "call": ("app", "method"),
     "view": ("app", "method"),
     "wait_for": ("app", "method"),
@@ -157,6 +163,7 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "team_join": ("org", "team"),
     "team_delete": ("org", "team"),
     "capabilities": ("org", "capabilities"),
+    "member_capabilities": ("org", "member"),
     "add_device": ("account", "device"),
     "set_role": ("org", "member", "role"),
     "http": ("method", "path"),
@@ -196,10 +203,16 @@ _TEAM_STEPS = {
 #: Steps that act as someone: an `account` (session) or an `api_key`.
 _ACTING = {
     "deploy",
+    "migration_status",
     "upload_blob",
     "download_blob",
     "upload_bundle",
     "create_app",
+    "install_package",
+    "upgrade_app",
+    "uninstall_package",
+    "delete_app",
+    "packages",
     "call",
     "view",
     "wait_for",
@@ -219,10 +232,18 @@ _ACTING = {
     "team_join",
     "team_delete",
     "capabilities",
+    "member_capabilities",
     "add_device",
     "set_role",
     "http",
 }
+
+
+def _version_key(v: str) -> tuple:
+    """Semver-ish order: numeric parts compare as numbers."""
+    return tuple(
+        (0, int(p), "") if p.isdigit() else (1, 0, p) for p in re.split(r"[.+-]", v)
+    )
 
 
 def _validate_steps(steps: Any, accounts: set, where: str) -> None:
@@ -246,6 +267,14 @@ def _validate_steps(steps: Any, accounts: set, where: str) -> None:
             acct = step.get("account")
             if isinstance(acct, str) and "{{" not in acct and acct not in accounts:
                 raise WorkflowError(f"{label}: account '{acct}' is not in 'accounts'")
+        if kind == "deploy" and ("wasm" in step) == ("package" in step):
+            raise WorkflowError(f"{label} (deploy): name a 'wasm' or a 'package'")
+        if kind == "create_app" and ("bundle" in step) == ("package" in step):
+            raise WorkflowError(f"{label} (create_app): name a 'bundle' or a 'package'")
+        if kind == "upgrade_app" and not ({"bundle", "version"} & set(step)):
+            raise WorkflowError(
+                f"{label} (upgrade_app): name a 'version' or a 'bundle'"
+            )
         if kind == "repeat":
             _validate_steps(step["steps"], accounts, f"{label} (repeat)")
         if "outputs" in step and not isinstance(step["outputs"], dict):
@@ -306,11 +335,18 @@ class Runner:
 
     # -- clients
 
-    def _node_order(self, node: int | None) -> list[int]:
-        running = self.cluster.running()
+    def _node_order(self, node: int | None, account: str | None = None) -> list[int]:
+        running = self.cluster.running() or self.cluster.ids
         if node is not None:
             return [int(node)]
-        return running or self.cluster.ids
+        # Each account starts at its own node, as each v1 member talked to its
+        # own node: requests spread over the cluster, so forwarding to the
+        # leader and replication are exercised, not just node 1.
+        names = list(self.wf.get("accounts") or [])
+        if account in names and running:
+            home = names.index(account) % len(running)
+            return running[home:] + running[:home]
+        return running
 
     def _client(self, node: int, account: str | None, api_key: str | None):
         c = self._CloudClient(self.cluster.url(node), allow_mock=True)
@@ -326,7 +362,7 @@ class Runner:
         account = self.by_key.get(str(step.get("as_key") or "")) or step.get("account")
         api_key = step.get("api_key")
         last: Exception | None = None
-        for node in self._node_order(step.get("node")):
+        for node in self._node_order(step.get("node"), account):
             try:
                 return f(self._client(node, account, api_key))
             except (self._CloudError, _Refused) as e:
@@ -524,13 +560,30 @@ class Runner:
     def _run_one(self, step: dict) -> Any:
         kind = step["type"]
         if kind == "deploy":
-            wasm = self._wasm(step)
+            wasm = self._wasm(step) if "wasm" in step else None
 
             def deploy(cl):
-                bundle = cl.upload_bundle(wasm)
-                app = cl.create_app(
-                    step.get("app_name", "app"), bundle, self._app_options(step)
-                )
+                if wasm is None:
+                    # A release of an installed package.
+                    created = cl.post(
+                        "apps",
+                        {
+                            "name": step.get("app_name", "app"),
+                            "package": step["package"],
+                            **{
+                                k: step[k]
+                                for k in ("version", "service")
+                                if step.get(k)
+                            },
+                            **self._app_options(step),
+                        },
+                    )
+                    app, bundle = created["appId"], None
+                else:
+                    bundle = cl.upload_bundle(wasm)
+                    app = cl.create_app(
+                        step.get("app_name", "app"), bundle, self._app_options(step)
+                    )
                 actor = self._acting(step)
                 return {
                     "appId": app,
@@ -544,15 +597,82 @@ class Runner:
             wasm = self._wasm(step)
             return {"hash": self._with_client(step, lambda cl: cl.upload_bundle(wasm))}
         if kind == "create_app":
-            app = self._with_client(
+            if "package" in step:
+                # From a signed release; the node installs it from the
+                # registry first if the fleet lacks it.
+                body = {
+                    "name": step.get("app_name", "app"),
+                    "package": step["package"],
+                    **{k: step[k] for k in ("version", "service") if step.get(k)},
+                    **self._app_options(step),
+                }
+                created = self._with_client(step, lambda cl: cl.post("apps", body))
+                app = created["appId"]
+            else:
+                app = self._with_client(
+                    step,
+                    lambda cl: cl.create_app(
+                        step.get("app_name", "app"),
+                        step["bundle"],
+                        self._app_options(step),
+                    ),
+                )
+            return {"appId": app, "contextId": context_id(app)}
+        if kind == "install_package":
+            # Publish the signed .mpk to the cluster's registry, then have the
+            # fleet install it by name: the node verifies it, and every node
+            # that runs it fetches and verifies its own copy.
+            if self.cluster.registry is None:
+                raise WorkflowError(
+                    "install_package: this merod-v2 build has no --registry-url"
+                )
+            mpk = self._file(str(step["mpk"])).read_bytes()
+            package, version = self.cluster.registry.publish(mpk)
+            out = self._with_client(
                 step,
-                lambda cl: cl.create_app(
-                    step.get("app_name", "app"),
-                    step["bundle"],
-                    self._app_options(step),
+                lambda cl: cl.post(
+                    "packages/install", {"package": package, "version": version}
                 ),
             )
-            return {"appId": app, "contextId": context_id(app)}
+            return {**out, "package": package, "version": version}
+        if kind == "upgrade_app":
+            body = {k: step[k] for k in ("version", "bundle", "migrate") if step.get(k)}
+            out = self._with_client(
+                step, lambda cl: cl.post(f"apps/{step['app']}/upgrade", body)
+            )
+            if out.get("status") not in (None, "ok"):
+                raise _Refused(
+                    f"upgrade refused: {out.get('error')}",
+                    422,
+                    "UPGRADE_FAILED",
+                    out,
+                )
+            return out
+        if kind == "uninstall_package":
+            path = f"packages/{step['package']}"
+            if step.get("version"):
+                path += f"/{step['version']}"
+            return self._with_client(step, lambda cl: cl.delete(path))
+        if kind == "delete_app":
+            return self._with_client(step, lambda cl: cl.delete(f"apps/{step['app']}"))
+        if kind == "migration_status":
+            # Each app's release: on the newest version they reach is migrated.
+            apps = list(step["apps"])
+            listed = self._with_client(step, lambda cl: cl.get("apps"))
+            versions = {a["appId"]: a.get("version") for a in listed.get("apps", [])}
+            mine = [versions.get(a) for a in apps]
+            known = [v for v in mine if v]
+            target = max(known, key=_version_key) if known else None
+            migrated = sum(1 for v in mine if v == target)
+            return {
+                "target_version": target,
+                "total": len(apps),
+                "migrated": migrated,
+                "failed": len(apps) - migrated,
+                "residue_total": 0,
+            }
+        if kind == "packages":
+            return self._with_client(step, lambda cl: cl.get("packages"))
         if kind in ("call", "view"):
             out = self._call_or_view(kind, step)
             # v1 workflows read a call's JSON-RPC envelope: {"output": value}.
@@ -618,6 +738,24 @@ class Runner:
                 "accountId": session["accountId"],
                 "keyDelivered": True,
             }
+        if kind == "member_capabilities":
+            who = self._account_id(str(step["member"]))
+            if step.get("team"):
+                t = self._with_client(
+                    step, lambda cl: cl.get(f"orgs/{step['org']}/teams/{step['team']}")
+                )
+                row = next(
+                    (m for m in t.get("members", []) if m["account"] == who), None
+                )
+                if row is None:
+                    raise _Refused("not a member of the team", 404, "NOT_FOUND", t)
+                return {"capabilities": row["capabilities"]}
+            o = self._with_client(step, lambda cl: cl.get(f"orgs/{step['org']}"))
+            if who not in (o.get("members") or {}):
+                raise _Refused("not a member of the organization", 404, "NOT_FOUND", o)
+            caps = o.get("capabilities") or {}
+            default = o.get("defaultCapabilities", o.get("default_capabilities"))
+            return {"capabilities": caps.get(who, default)}
         if kind == "set_role":
             return self._with_client(
                 step,
@@ -956,14 +1094,25 @@ class Runner:
         self.run_steps(self.wf["steps"])
 
 
-def run_workflow(
+def run_workflow_outcome(
     path: str,
     binary: str | None = None,
     keep_data: str | None = None,
     logs: bool = False,
-) -> bool:
-    """Start the workflow's cluster, run it, stop the cluster. True on success."""
+) -> str:
+    """Start the workflow's cluster, run it, stop the cluster.
+
+    Answers "passed", "failed", or "not_applicable" for a port that does not
+    test what its v1 workflow did (`not_applicable` in the file, set by
+    `merobox cloud port`): it is not run, and it is not a pass.
+    """
     wf = load_workflow(path)
+    if wf.get("not_applicable"):
+        console.print(
+            f"[bold]{wf.get('name', path)}[/bold]: [yellow]not applicable[/yellow] "
+            f"({wf['not_applicable']})"
+        )
+        return "not_applicable"
     spec = wf["cluster"]
     cluster = ProcessCluster(
         nodes=int(spec.get("nodes", 3)),
@@ -979,9 +1128,19 @@ def run_workflow(
     try:
         Runner(wf, cluster).run()
         console.print("[bold green]Workflow passed[/bold green]")
-        return True
+        return "passed"
     except WorkflowError as e:
         console.print(f"[bold red]Workflow failed:[/bold red] {e}")
-        return False
+        return "failed"
     finally:
         cluster.stop()
+
+
+def run_workflow(
+    path: str,
+    binary: str | None = None,
+    keep_data: str | None = None,
+    logs: bool = False,
+) -> bool:
+    """`run_workflow_outcome` == "passed": a not-applicable port is no pass."""
+    return run_workflow_outcome(path, binary, keep_data, logs) == "passed"
