@@ -41,7 +41,7 @@ from merobox.commands.bootstrap.steps.subgroup import AddGroupMembersStep
 
 def _run(coro):
     """Run a coroutine inside pytest without relying on pytest-asyncio."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # =============================================================================

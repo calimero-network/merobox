@@ -78,9 +78,7 @@ class TestCreateNamespaceStep:
                 return_value=client,
             ),
         ):
-            assert asyncio.get_event_loop().run_until_complete(
-                step.execute({}, {"who": "Alpha"})
-            )
+            assert asyncio.run(step.execute({}, {"who": "Alpha"}))
         client.create_namespace.assert_called_once_with(
             application_id="app123", name="Team Alpha"
         )
@@ -98,7 +96,7 @@ class TestCreateNamespaceStep:
                 return_value=client,
             ),
         ):
-            assert asyncio.get_event_loop().run_until_complete(step.execute({}, {}))
+            assert asyncio.run(step.execute({}, {}))
         client.create_namespace.assert_called_once_with(application_id="app123")
 
     def test_node_none_raises(self):
@@ -327,9 +325,7 @@ class TestJoinContextStepGroupMembership:
                 side_effect=lambda val, *_: val,
             ),
         ):
-            result = asyncio.get_event_loop().run_until_complete(
-                step.execute(workflow_results, dynamic_values)
-            )
+            result = asyncio.run(step.execute(workflow_results, dynamic_values))
 
         assert result is True
         # context_id was already there and should remain unchanged
