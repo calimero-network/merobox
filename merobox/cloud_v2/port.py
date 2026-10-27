@@ -26,6 +26,7 @@ The two models line up like this:
 | `get_migration_status` | `migration_status`: each app's release (an upgrade runs at once) |
 | `wait` | the same wait: a name cannot tell a sync wait from a lease or a timer |
 | `fuzzy_test` | `fuzzy_test`: the same weighted operations, across accounts |
+| `account_revoke` | removing the device's passkey (`DELETE auth/passkeys/{id}`), which ends its sessions |
 | `call` with `executor_public_key` | `call` with `as_key` |
 | `wait_for_sync` | nothing to wait for: a read sees every committed write |
 | `parallel` | its groups' steps, one group after another: the app's log orders concurrent calls |
@@ -111,6 +112,9 @@ def _partition_key(kind: str, s: dict) -> str:
         return str(who)
     return f"{start}:{who}"
 
+
+#: v1 group fields naming the application a group pinned (a team pins none).
+_GROUP_PINNED = {"targetApplicationId"}
 
 #: v1 group roles as a team row's role.
 _TEAM_ROLE = {
@@ -685,6 +689,13 @@ class Porter:
             else:
                 # The namespace itself: the organization's top level.
                 step = acting(type="team_list", org=group)
+            # A v1 group pinned the application its contexts run; a team pins
+            # none (each app has its own release), so what reads it goes.
+            pinned = {v for v, p in outs.items() if p in _GROUP_PINNED}
+            if pinned:
+                self.dropped[f"{kind} output (v1 group's application)"] += len(pinned)
+                self.dropped_vars.update(pinned)
+                outs = {v: p for v, p in outs.items() if v not in pinned}
             if outs:
                 step["outputs"] = {
                     v: ("contexts" if kind == "list_group_contexts" else p)
@@ -742,6 +753,10 @@ class Porter:
                 elif p == "deviceId":
                     # A device is a passkey: the one this session signed in with.
                     outs[v] = "passkeyId"
+                else:
+                    # v1's device certificate and namespace bindings.
+                    self.dropped[f"node_identity output {p} (v1 device key)"] += 1
+                    self.dropped_vars.add(v)
             return [acting(type="whoami", outputs=outs)]
         if kind == "create_context" and "context_node" in s:
             kind = "create_mesh"  # the mesh form: a context and its members at once
@@ -790,12 +805,44 @@ class Porter:
                 "account": s.get("holder"),
                 "device": s.get("node"),
             }
-            outs = {
-                v: p for v, p in (s.get("outputs") or {}).items() if p == "keyDelivered"
-            }
+            # The new device is the passkey added; its account is the
+            # holder's. v1's credential and account namespace have no
+            # counterpart, so what reads them goes with them.
+            same = {"keyDelivered": "keyDelivered", "accountId": "accountId"}
+            same["deviceId"] = "passkeyId"
+            outs = {}
+            for v, p in (s.get("outputs") or {}).items():
+                if p in same:
+                    outs[v] = same[p]
+                else:
+                    self.dropped[f"account_pair output {p} (v1 device key)"] += 1
+                    self.dropped_vars.add(v)
             if outs:
                 step["outputs"] = outs
             return [step]
+        if kind == "account_revoke":
+            # v1 revoked a device's key in a namespace (and rotated the key);
+            # here a device is a passkey of the account, and removing it ends
+            # every session it opened. What v1 reported about the rotation and
+            # the namespaces it reached has no counterpart.
+            outs = s.get("outputs") or {}
+            if s.get("proof"):
+                # Published with a proof minted from the account root's
+                # recovery phrase by a node holding no authority: an account
+                # here has passkeys, no root key to prove with.
+                self.dropped["account_revoke with a root proof (v1 account root)"] += 1
+                self.dropped_vars.update(outs)
+                return []
+            if outs:
+                self.dropped["account_revoke output (v1 key rotation)"] += len(outs)
+                self.dropped_vars.update(outs)
+            return [
+                acting(
+                    type="http",
+                    method="delete",
+                    path="auth/passkeys/" + str(s.get("device_id")),
+                )
+            ]
         if kind == "invite_open":
             # A context outside a namespace is open to every account of the
             # scenario already (see create_context); the invitation names it.
@@ -874,6 +921,8 @@ class Porter:
                 step["outputs"] = outs
             return [step]
         self.dropped[f"{kind} (unknown)"] += 1
+        # What only this step set cannot be checked: the asserts on it go too.
+        self.dropped_vars.update((s.get("outputs") or {}).keys())
         return []
 
     def _mesh(self, s: dict, base: dict) -> list:

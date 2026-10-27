@@ -96,3 +96,14 @@ def test_the_examples_are_valid():
     assert examples
     for path in examples:
         load_workflow(path)
+
+
+def test_member_rows_carry_the_accounts_public_key():
+    from merobox.cloud_v2.workflow import account_key, with_member_keys
+
+    acct = "iVZPrrgu8N46mG7Xs1JMPV0sv3D2xwYo77KhqOU-YX4"
+    rows = with_member_keys([{"account": acct, "role": "lead"}, "x"])
+    assert rows[0] == {"account": acct, "role": "lead", "publicKey": account_key(acct)}
+    assert len(rows[0]["publicKey"]) == 64
+    assert rows[1] == "x"
+    assert with_member_keys(None) is None

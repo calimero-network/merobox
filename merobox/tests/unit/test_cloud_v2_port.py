@@ -465,3 +465,119 @@ def test_parallel_groups_run_one_after_another():
         ("call", "n-2", {"by": "b"}),
     ]
     assert not any("parallel" in k for k in p.dropped)
+
+
+def test_revoking_a_device_removes_its_passkey():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {
+                "type": "account_revoke",
+                "node": "n-1",
+                "namespace_id": "{{ns}}",
+                "device_id": "{{phone}}",
+                "outputs": {"rotated": "keyRotated"},
+            },
+            {"type": "assert", "statements": ["equal({{rotated}}, true)"]},
+        ]
+    )
+    assert steps == [
+        {
+            "type": "http",
+            "method": "delete",
+            "path": "auth/passkeys/{{phone}}",
+            "account": "n-1",
+        }
+    ]
+    assert "rotated" in p.dropped_vars
+
+
+def test_a_pairings_device_is_its_passkey_and_v1_only_outputs_go():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {
+                "type": "account_pair",
+                "holder": "n-1",
+                "node": "n-2",
+                "outputs": {
+                    "phone": "deviceId",
+                    "acct": "accountId",
+                    "cred": "credential",
+                },
+            },
+            {"type": "assert", "statements": ["is_set({{cred}})", "is_set({{phone}})"]},
+        ]
+    )
+    assert steps[0]["outputs"] == {"phone": "passkeyId", "acct": "accountId"}
+    assert steps[1]["statements"] == ["is_set({{phone}})"]
+
+
+def test_an_unknown_steps_outputs_are_not_asserted():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {"type": "node_exec", "node": "n-1", "outputs": {"out": "stdout"}},
+            {"type": "assert", "statements": ["contains({{out}}, 'x')"]},
+        ]
+    )
+    assert steps == []
+    assert "out" in p.dropped_vars
+
+
+def test_a_revocation_proven_by_the_account_root_has_no_counterpart():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {
+                "type": "account_revoke",
+                "node": "n-2",
+                "device_id": "{{lost}}",
+                "proof": "{{proof}}",
+                "outputs": {"ok": "revoked"},
+            },
+            {"type": "assert", "statements": ["is_set({{ok}})"]},
+        ]
+    )
+    assert steps == []
+
+
+def test_node_identity_outputs_with_no_counterpart_are_not_asserted():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {
+                "type": "node_identity",
+                "node": "n-1",
+                "outputs": {"dev": "deviceId", "cert": "certified"},
+            },
+            {"type": "assert", "statements": ["equal({{cert}}, true)"]},
+        ]
+    )
+    assert steps[0]["outputs"] == {"dev": "passkeyId"}
+    assert len(steps) == 1
+
+
+def test_a_groups_pinned_application_is_not_read_from_a_team():
+    p = porter()
+    p.teams["g"] = "ns"
+    steps = p.port_steps(
+        [
+            {
+                "type": "get_group_info",
+                "node": "n-1",
+                "group_id": "{{g}}",
+                "outputs": {"target": "targetApplicationId", "gid": "groupId"},
+            },
+            {"type": "json_assert", "statements": ['equal("{{target}}", "{{app}}")']},
+        ]
+    )
+    assert steps == [
+        {
+            "type": "team_get",
+            "org": "{{ns}}",
+            "team": "{{g}}",
+            "account": "n-1",
+            "outputs": {"gid": "groupId"},
+        }
+    ]

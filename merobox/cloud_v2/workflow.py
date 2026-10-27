@@ -115,6 +115,23 @@ def account_key(account_id: str) -> str:
     return base64.urlsafe_b64decode(padded).hex()
 
 
+def with_member_keys(rows: Any) -> Any:
+    """Member rows (`{"account": id, ...}`) with each account's public key as
+    `publicKey`: v1 listed members by their public key, and the workflows
+    ported from it check a listing for the key they hold."""
+    if not isinstance(rows, list):
+        return rows
+    out = []
+    for r in rows:
+        if isinstance(r, dict) and isinstance(r.get("account"), str):
+            try:
+                r = {**r, "publicKey": account_key(r["account"])}
+            except ValueError:
+                pass
+        out.append(r)
+    return out
+
+
 def _stringify(v: Any) -> str:
     return v if isinstance(v, str) else json.dumps(v)
 
@@ -460,11 +477,16 @@ class Runner:
             members = [
                 {"account": a, "role": r} for a, r in (o.get("members") or {}).items()
             ]
-            return {"subgroups": kids, "teams": kids, "members": members}
+            return {
+                "subgroups": kids,
+                "teams": kids,
+                "members": with_member_keys(members),
+            }
         t = self._with_client(step, lambda cl: cl.get(base))
         meta = t.get("metadata") or {}
         out = {
             **t,
+            "members": with_member_keys(t.get("members")),
             "groupId": t.get("teamId"),
             "memberCount": len(t.get("members") or []),
             "subgroups": t.get("children") or [],
