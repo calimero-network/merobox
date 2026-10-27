@@ -26,7 +26,7 @@ setup(
     version=version,
     author="Merobox Team",
     author_email="team@merobox.com",
-    description="A Python CLI tool for managing Calimero nodes in Docker containers",
+    description="Run workflows against release-v2 (Calimero Cloud) merod clusters",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/merobox/merobox",

@@ -288,7 +288,10 @@ def load_workflow(path: str) -> dict:
     if not isinstance(wf, dict):
         raise WorkflowError("a workflow is a mapping")
     if wf.get("backend") != "cloud-v2":
-        raise WorkflowError("not a release-v2 workflow (expected 'backend: cloud-v2')")
+        raise WorkflowError(
+            "not a release-v2 workflow (expected 'backend: cloud-v2'); "
+            "a v1 workflow ports with `merobox cloud port`"
+        )
     cluster = wf.setdefault("cluster", {})
     if not isinstance(cluster, dict):
         raise WorkflowError("'cluster' must be a mapping")

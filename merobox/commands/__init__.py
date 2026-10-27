@@ -1,75 +1,9 @@
-"""
-Commands module - All available CLI commands.
+"""merobox's CLI commands.
+
+`cloud` is the release-v2 backend (`merobox cloud run|validate|port`);
+`bootstrap` and `run` keep v1's workflow-running names and route to it.
 """
 
-from merobox.commands.application import application
-from merobox.commands.blob import blob
-from merobox.commands.bootstrap import bootstrap
-from merobox.commands.call import call
-from merobox.commands.cloud import cloud
-from merobox.commands.context import context
-from merobox.commands.errors import (
-    AuthenticationError,
-    ClientError,
-    ConfigurationError,
-    MeroboxError,
-    MeroboxTimeoutError,
-    NodeResolutionError,
-    OutputCaptureError,
-    StepExecutionError,
-    StepValidationError,
-    UnresolvedPlaceholderError,
-    ValidationError,
-    WorkflowError,
-)
-from merobox.commands.group import group
-from merobox.commands.health import health
-from merobox.commands.identity import identity
-from merobox.commands.install import install
-from merobox.commands.join import join
-from merobox.commands.list import list
-from merobox.commands.logs import logs
-from merobox.commands.manager import DockerManager
-from merobox.commands.namespace import namespace
-from merobox.commands.nuke import nuke
-from merobox.commands.proposals import proposals
-from merobox.commands.remote import remote
-from merobox.commands.run import run
-from merobox.commands.stop import stop
+from merobox.commands.cloud import bootstrap, cloud, run
 
-__all__ = [
-    # Commands
-    "DockerManager",
-    "run",
-    "stop",
-    "list",
-    "logs",
-    "health",
-    "install",
-    "application",
-    "nuke",
-    "identity",
-    "context",
-    "group",
-    "bootstrap",
-    "call",
-    "cloud",
-    "blob",
-    "join",
-    "proposals",
-    "remote",
-    "namespace",
-    # Error classes
-    "MeroboxError",
-    "NodeResolutionError",
-    "AuthenticationError",
-    "WorkflowError",
-    "StepValidationError",
-    "StepExecutionError",
-    "OutputCaptureError",
-    "UnresolvedPlaceholderError",
-    "ValidationError",
-    "ClientError",
-    "MeroboxTimeoutError",
-    "ConfigurationError",
-]
+__all__ = ["bootstrap", "cloud", "run"]

@@ -1,21 +1,11 @@
 click>=8.0.0
-docker>=6.0.0
 rich>=13.0.0,<14.3.4
 PyYAML>=6.0.0
+# merobox uses only its CloudClient, CloudError and SoftPasskey.
 calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@release-v2-parity
-aiohttp>=3.9.0
-toml>=0.10.2
-pydantic>=2.0.0
-filelock>=3.0.0
 
 # Development dependencies
 black>=25.0.0
 ruff>=0.1.0
 pytest>=8.0.0
-pytest-asyncio>=0.21.0,<1.0
-pytest-mock>=3.10.0
 pre-commit>=3.0.0
-
-base58>=2.1.0
-requests>=2.31.0
-tqdm>=4.65.0
