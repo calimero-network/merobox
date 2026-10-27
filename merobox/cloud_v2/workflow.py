@@ -149,6 +149,13 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "redeem_invite": ("token",),
     "remove_member": ("org", "member"),
     "team_add": ("org", "team", "members"),
+    "team_remove": ("org", "team", "members"),
+    "team_update": ("org", "team"),
+    "team_get": ("org", "team"),
+    "team_list": ("org",),
+    "team_join": ("org", "team"),
+    "team_delete": ("org", "team"),
+    "capabilities": ("org", "capabilities"),
     "set_role": ("org", "member", "role"),
     "http": ("method", "path"),
     "ops": ("op",),
@@ -165,6 +172,22 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "assert": ("statements",),
     "json_assert": ("statements",),
     "repeat": ("count", "steps"),
+}
+
+
+class _Refused(Exception):
+    """A refusal the runner decides itself, shaped like a client's
+    `CloudError` (message, status, code, details)."""
+
+
+_TEAM_STEPS = {
+    "team_remove",
+    "team_update",
+    "team_get",
+    "team_list",
+    "team_join",
+    "team_delete",
+    "capabilities",
 }
 
 #: Steps that act as someone: an `account` (session) or an `api_key`.
@@ -186,6 +209,13 @@ _ACTING = {
     "redeem_invite",
     "remove_member",
     "team_add",
+    "team_remove",
+    "team_update",
+    "team_get",
+    "team_list",
+    "team_join",
+    "team_delete",
+    "capabilities",
     "set_role",
     "http",
 }
@@ -295,7 +325,7 @@ class Runner:
         for node in self._node_order(step.get("node")):
             try:
                 return f(self._client(node, account, api_key))
-            except self._CloudError as e:
+            except (self._CloudError, _Refused) as e:
                 if e.args[2] != "TRANSPORT" or step.get("node") is not None:
                     raise
                 last = e
@@ -331,6 +361,72 @@ class Runner:
         return self.by_key.get(str(step.get("as_key") or "")) or step.get("account")
 
     # -- steps
+
+    def _team_step(self, kind: str, step: dict) -> Any:
+        org, team = step["org"], step.get("team")
+        base = f"orgs/{org}/teams/{team}"
+        if kind == "team_remove":
+            for m in step["members"]:
+                self._with_client(
+                    step,
+                    lambda cl, m=m: cl.delete(
+                        f"{base}/members/{self._account_id(str(m))}"
+                    ),
+                )
+            return {}
+        if kind == "team_update":
+            body = {k: step[k] for k in ("name", "join", "metadata") if k in step}
+            if "parent" in step:
+                body["parent"] = step["parent"]
+            return self._with_client(step, lambda cl: cl.post(base, body))
+        if kind == "team_delete":
+            return self._with_client(step, lambda cl: cl.delete(base))
+        if kind == "capabilities":
+            body = {"capabilities": int(step["capabilities"])}
+            if step.get("member"):
+                body["account"] = self._account_id(str(step["member"]))
+            if team:
+                body["team"] = team
+            return self._with_client(
+                step, lambda cl: cl.post(f"orgs/{org}/capabilities", body)
+            )
+        if kind == "team_list":
+            # The teams the caller sees below `team` (the organization's top
+            # level without one), and, at the top, any team whose parent they
+            # do not see (v1's "Shared with me").
+            o = self._with_client(step, lambda cl: cl.get(f"orgs/{org}"))
+            teams = o.get("teams") or {}
+            if team:
+                kids = [t for t, r in teams.items() if r.get("parent") == team]
+            else:
+                kids = [t for t, r in teams.items() if r.get("parent") not in teams]
+            members = [
+                {"account": a, "role": r} for a, r in (o.get("members") or {}).items()
+            ]
+            return {"subgroups": kids, "teams": kids, "members": members}
+        t = self._with_client(step, lambda cl: cl.get(base))
+        meta = t.get("metadata") or {}
+        out = {
+            **t,
+            "groupId": t.get("teamId"),
+            "memberCount": len(t.get("members") or []),
+            "subgroups": t.get("children") or [],
+            "name": (
+                meta.get("name", t.get("name"))
+                if isinstance(meta, dict)
+                else t.get("name")
+            ),
+            "contexts": [a.get("contextId") for a in t.get("apps") or []],
+        }
+        if kind == "team_join":
+            # Joining an open team one reaches is nothing to do; one does not
+            # reach is refused, as in v1.
+            if not t.get("member"):
+                raise _Refused(f"not a member of {team}", 404, "NOT_FOUND", None)
+            me = self._with_client(step, lambda cl: cl.me())
+            out["wasInherited"] = t.get("myRole") is None
+            out["memberPublicKey"] = account_key(me["accountId"])
+        return out
 
     def _wasm(self, step: dict) -> bytes:
         p = Path(step["wasm"])
@@ -380,7 +476,7 @@ class Runner:
             payload = {"replicas": step["replicas"]}
             try:
                 return c.post(path, payload)
-            except self._CloudError as e:
+            except (self._CloudError, _Refused) as e:
                 if e.args[2] != "NOT_LEADER":
                     raise
                 leader = json.loads(e.args[3])["leaderUrl"]
@@ -413,7 +509,7 @@ class Runner:
                     return out
                 if "equals" not in step and "contains" not in step and last is not None:
                     return out
-            except self._CloudError as e:
+            except (self._CloudError, _Refused) as e:
                 last = e.args[0]
             if time.time() > deadline:
                 raise WorkflowError(
@@ -488,10 +584,18 @@ class Runner:
                         {
                             "account": self._account_id(str(m)),
                             "lead": bool(step.get("lead")),
+                            **({"role": step["role"]} if step.get("role") else {}),
+                            **(
+                                {"capabilities": int(step["capabilities"])}
+                                if step.get("capabilities") is not None
+                                else {}
+                            ),
                         },
                     ),
                 )
             return out
+        if kind in _TEAM_STEPS:
+            return self._team_step(kind, step)
         if kind == "set_role":
             return self._with_client(
                 step,
@@ -570,7 +674,11 @@ class Runner:
                 step,
                 lambda cl: cl.post(
                     f"orgs/{step['org']}/teams",
-                    {"name": step["team_name"], "join": step.get("join", "invite")},
+                    {
+                        "name": step["team_name"],
+                        "join": step.get("join", "invite"),
+                        **({"parent": step["parent"]} if step.get("parent") else {}),
+                    },
                 ),
             )
         if kind == "invite":
@@ -702,7 +810,7 @@ class Runner:
         tolerated = bool(step.get("allow_failure"))
         try:
             result = self._run_one(step)
-        except self._CloudError as e:
+        except (self._CloudError, _Refused) as e:
             if (expected and e.args[2] == expected) or any_failure or tolerated:
                 details = e.args[3] if len(e.args) > 3 else ""
                 failure = {"error": f"{e.args[0]} {details}", "code": e.args[2]}

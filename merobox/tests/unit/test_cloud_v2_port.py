@@ -102,3 +102,20 @@ def test_an_open_invitation_joins_the_context_it_names():
         "outputs": {"k2": "publicKey"},
     }
     assert steps[2] == {"type": "set", "values": {"c2": "{{ctx}}"}}
+
+
+def test_a_paired_device_acts_as_its_account():
+    p = porter()
+    pair, call = p.port_steps(
+        [
+            {
+                "type": "account_pair",
+                "node": "n-2",
+                "holder": "n-1",
+                "outputs": {"ok": "keyDelivered"},
+            },
+            {"type": "call", "node": "n-2", "context_id": "{{c}}", "method": "m"},
+        ]
+    )
+    assert pair == {"type": "set", "values": {"ok": True}}
+    assert call["account"] == "n-1"

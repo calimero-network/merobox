@@ -5,15 +5,22 @@ The two models line up like this:
 | v1 | cloud-v2 |
 | --- | --- |
 | a node (`nodes: {count, prefix}`) | an account: a person, signed in with a passkey |
-| `create_identity` on a node | another account |
+| `create_identity` on a node | that node's account |
+| `account_pair` (a second device) | the paired node acts as the holder's account |
 | `install_application` | `upload_bundle` (the WASM, from the wasm map) |
 | `create_namespace` | `create_org` |
 | `create_namespace_invitation` / `join_namespace` | `invite` / `redeem_invite` |
-| `create_group_in_namespace` / `add_group_members` | `create_team` / `team_add` |
-| `update_member_role` / `remove_group_members` on the namespace | `set_role` / `remove_member` |
-| `create_context` | `deploy` (in the org when created in a namespace) |
+| `create_group_in_namespace` | `create_team` (restricted unless `visibility: open`) |
+| `add_group_members` / `update_member_role` / `remove_group_members` | `team_add` (with the row's role) / `team_remove`, or org roles on the namespace |
+| `set_subgroup_visibility` / `reparent_group` / `set_group_metadata` | `team_update` (`join`, `parent`, `metadata`) |
+| `get_group_info` / `get_group_metadata` / `list_group_members` / `list_group_contexts` | `team_get` |
+| `list_subgroups` / `join_subgroup_inheritance` / `delete_group` | `team_list` / `team_join` / `team_delete` |
+| `set_member_capabilities` / `set_default_capabilities` | `capabilities` |
+| `create_context` | `deploy`: in the org; scoped to the team in a subgroup |
 | `create_mesh` | `deploy` for the listed members |
-| `join_context` | nothing to do: access comes from the org or the app's account list |
+| `join_context` | nothing to do: access comes from the org, the team or the app's list |
+| `invite_open` / `join_open` | the context the invitation names |
+| `upload_blob` / `download_blob` | the same steps, on the app's blobs |
 | `call` with `executor_public_key` | `call` with `as_key` |
 | `wait_for_sync` | nothing to wait for: a read sees every committed write |
 
@@ -21,9 +28,9 @@ A call's `result` (`{"output": value}`) stays readable as `rpc`, so `json_assert
 statements written against v1 results keep working.
 
 Steps with no counterpart are dropped and listed in the ported file's header:
-subgroup visibility and capabilities, metadata, reparenting, sync controls,
-device pairing, blobs, node restarts (a user's node going offline has no
-counterpart in a cluster), admin-API and log assertions, scripts.
+sync controls, a node going offline (a cluster has no user replica to
+partition), member metadata, v1 migrations, admin-API and log assertions,
+scripts.
 """
 
 from __future__ import annotations
@@ -40,30 +47,16 @@ import yaml
 DROPPED: dict[str, str] = {
     "wait_for_sync": "replication is synchronous: a read sees every committed write",
     "sync_group": "replication is synchronous",
-    "set_group_metadata": "group metadata is v1 governance",
-    "get_group_metadata": "group metadata is v1 governance",
     "set_member_metadata": "member metadata is v1 governance",
     "get_member_metadata": "member metadata is v1 governance",
-    "set_subgroup_visibility": "subgroup visibility is v1 governance",
     "set_default_visibility": "subgroup visibility is v1 governance",
-    "join_subgroup_inheritance": "subgroup inheritance is v1 governance",
-    "set_default_capabilities": "capabilities are v1 governance",
-    "set_member_capabilities": "capabilities are v1 governance",
     "get_member_capabilities": "capabilities are v1 governance",
-    "reparent_group": "reparenting is v1 governance",
-    "list_subgroups": "v1 group listing",
-    "list_group_members": "v1 group listing",
-    "list_group_contexts": "v1 group listing",
     "list_namespaces": "v1 namespace listing",
     "list_namespace_groups": "v1 namespace listing",
-    "get_group_info": "v1 group info",
-    "delete_group": "v1 group deletion",
     "delete_namespace": "v1 namespace deletion",
-    "leave_group": "v1 group membership",
     "upgrade_group": "app upgrades are per app instance (http POST apps/{app}/upgrade)",
     "get_migration_status": "v1 group migration",
     "assert_migration_complete": "v1 group migration",
-    "account_pair": "devices: in release-v2 a person is their account",
     "stop_node": "a user's node going offline has no counterpart in a cluster",
     "start_node": "a user's node going offline has no counterpart in a cluster",
     "assert_api_response": "v1 admin API",
@@ -72,6 +65,17 @@ DROPPED: dict[str, str] = {
     "script": "scripts drive v1 node RPC URLs",
     "fuzzy_test": "v1 fuzzy runner",
 }
+
+#: v1 group roles as a team row's role.
+_TEAM_ROLE = {
+    "admin": "lead",
+    "member": "member",
+    "readonly": "readOnly",
+    "read_only": "readOnly",
+}
+
+#: v1 subgroup visibility as a team's join.
+_JOIN = {"open": "everyone", "restricted": "invite"}
 
 _V1_ROLE = {
     "admin": "admin",
@@ -116,6 +120,8 @@ class Porter:
         self.apps: dict[str, str] = {}  # var holding an application id -> bundle path
         self.orgs: set[str] = set()  # vars holding a namespace (an org)
         self.invitations: dict[str, Any] = {}  # open-invitation var -> its context
+        # A node paired onto another's account (v1 devices) acts as that account.
+        self.alias: dict[str, str] = {}
         self.teams: dict[str, str] = {}  # var holding a subgroup (team) -> its org var
         self.dropped: Counter = Counter()
         # variables only a dropped step would have set
@@ -147,6 +153,10 @@ class Porter:
             if e.startswith("{{") and e.endswith("}}") and e.count("{{") == 1:
                 return e[2:-2].strip()
         return None
+
+    def _team(self, group_expr: Any) -> bool:
+        """Whether a v1 group reference is a subgroup (a team)."""
+        return self._var(group_expr) in self.teams
 
     def _org_of(self, group_expr: Any) -> str:
         """The org a v1 group reference belongs to (a namespace is an org; a
@@ -208,6 +218,7 @@ class Porter:
         kind = s.get("type")
         base = {"name": s["name"]} if "name" in s else {}
         node = s.get("node")
+        node = self.alias.get(node, node)
 
         def acting(**fields: Any) -> dict:
             step = {**base, **{k: v for k, v in fields.items() if v is not None}}
@@ -292,14 +303,22 @@ class Porter:
             org_var = self._var(s.get("namespace_id"))
             if var and org_var:
                 self.teams[var] = org_var
-            return [
-                acting(
-                    type="create_team",
-                    org=s["namespace_id"],
-                    team_name=s.get("group_name", "team"),
-                    outputs={var: "teamId"} if var else None,
-                )
-            ]
+            step = acting(
+                type="create_team",
+                org=s["namespace_id"],
+                team_name=s.get("group_name", "team"),
+                # v1 creates a subgroup restricted unless told otherwise.
+                join=_JOIN.get(
+                    str(s.get("visibility", "restricted")).lower(), "invite"
+                ),
+                outputs={var: "teamId"} if var else None,
+            )
+            if (
+                s.get("parent_group_id")
+                and self._var(s["parent_group_id"]) in self.teams
+            ):
+                step["parent"] = s["parent_group_id"]
+            return [step]
         if kind == "create_namespace_invitation":
             group = s.get("group_id") or s.get("namespace_id")
             gvar = self._var(group)
@@ -321,45 +340,180 @@ class Porter:
             group = s.get("group_id")
             members = [
                 (
-                    m.get("identity") or m.get("public_key") or m.get("member_id")
+                    (
+                        (
+                            m.get("identity")
+                            or m.get("public_key")
+                            or m.get("member_id")
+                        ),
+                        (
+                            str(m.get("role", "member")).lower()
+                            if isinstance(m, dict)
+                            else "member"
+                        ),
+                    )
                     if isinstance(m, dict)
-                    else m
+                    else (m, "member")
                 )
                 for m in s.get("members") or []
             ]
-            gvar = self._var(group)
-            if gvar in self.teams:
+            if self._team(group):
                 return [
                     acting(
                         type="team_add",
                         org=self._org_of(group),
                         team=group,
-                        members=members,
+                        members=[m],
+                        role=_TEAM_ROLE.get(role, "member"),
                     )
+                    for m, role in members
                 ]
-            return [
-                acting(type="set_role", org=group, member=m, role="member")
-                for m in members
-            ]
-        if kind == "update_member_role":
-            role = _V1_ROLE.get(str(s.get("role", "member")).lower(), "member")
             return [
                 acting(
                     type="set_role",
-                    org=self._org_of(s.get("group_id")),
-                    member=s.get("member_id") or s.get("identity"),
-                    role=role,
+                    org=group,
+                    member=m,
+                    role=_V1_ROLE.get(role, "member"),
+                )
+                for m, role in members
+            ]
+        if kind == "update_member_role":
+            group = s.get("group_id")
+            role = str(s.get("role", "member")).lower()
+            member = s.get("member_id") or s.get("identity")
+            if self._team(group):
+                return [
+                    acting(
+                        type="team_add",
+                        org=self._org_of(group),
+                        team=group,
+                        members=[member],
+                        role=_TEAM_ROLE.get(role, "member"),
+                    )
+                ]
+            return [
+                acting(
+                    type="set_role",
+                    org=self._org_of(group),
+                    member=member,
+                    role=_V1_ROLE.get(role, "member"),
                 )
             ]
         if kind == "remove_group_members":
             group = s.get("group_id")
-            if self._var(group) in self.teams:
-                self.dropped["remove_group_members (team)"] += 1
+            members = s.get("members") or []
+            if self._team(group):
+                return [
+                    acting(
+                        type="team_remove",
+                        org=self._org_of(group),
+                        team=group,
+                        members=members,
+                    )
+                ]
+            return [acting(type="remove_member", org=group, member=m) for m in members]
+        if kind == "leave_group":
+            group = s.get("group_id")
+            if not self._team(group):
+                return [acting(type="remove_member", org=group, member=node)]
+            return [
+                acting(
+                    type="team_remove",
+                    org=self._org_of(group),
+                    team=group,
+                    members=[node],
+                )
+            ]
+        if kind == "set_subgroup_visibility":
+            group = s.get("group_id")
+            join = _JOIN.get(str(s.get("visibility", "")).lower())
+            if not self._team(group) or not join:
+                self.dropped["set_subgroup_visibility (not a subgroup)"] += 1
                 return []
             return [
-                acting(type="remove_member", org=group, member=m)
-                for m in s.get("members") or []
+                acting(
+                    type="team_update", org=self._org_of(group), team=group, join=join
+                )
             ]
+        if kind == "reparent_group":
+            child = s.get("child_group_id") or s.get("group_id")
+            parent = s.get("new_parent_id")
+            to = parent if self._team(parent) else None
+            return [
+                acting(
+                    type="team_update", org=self._org_of(child), team=child, parent=to
+                )
+            ]
+        if kind == "set_group_metadata":
+            group = s.get("group_id")
+            meta = {"name": s.get("record_name"), "data": s.get("data") or {}}
+            if not self._team(group):
+                self.dropped["set_group_metadata (on a namespace)"] += 1
+                return []
+            return [
+                acting(
+                    type="team_update",
+                    org=self._org_of(group),
+                    team=group,
+                    metadata=meta,
+                )
+            ]
+        if kind in (
+            "get_group_metadata",
+            "get_group_info",
+            "list_group_members",
+            "list_group_contexts",
+            "list_subgroups",
+            "join_subgroup_inheritance",
+        ):
+            group = s.get("group_id")
+            outs = s.get("outputs") or {}
+            if self._team(group):
+                step_type = (
+                    "team_join"
+                    if kind == "join_subgroup_inheritance"
+                    else ("team_list" if kind == "list_subgroups" else "team_get")
+                )
+                step = acting(type=step_type, org=self._org_of(group), team=group)
+            elif kind == "join_subgroup_inheritance":
+                return []
+            elif kind == "get_group_metadata":
+                self.dropped["get_group_metadata (on a namespace)"] += 1
+                self.dropped_vars.update(outs.keys())
+                return []
+            else:
+                # The namespace itself: the organization's top level.
+                step = acting(type="team_list", org=group)
+            if outs:
+                step["outputs"] = {
+                    v: ("contexts" if kind == "list_group_contexts" else p)
+                    for v, p in outs.items()
+                }
+            return [step]
+        if kind == "delete_group":
+            group = s.get("group_id")
+            if not self._team(group):
+                self.dropped["delete_group (a namespace)"] += 1
+                return []
+            return [acting(type="team_delete", org=self._org_of(group), team=group)]
+        if kind in ("set_member_capabilities", "set_default_capabilities"):
+            group = s.get("group_id")
+            team = group if self._team(group) else None
+            step = acting(
+                type="capabilities",
+                org=self._org_of(group),
+                capabilities=s.get("capabilities", 0),
+            )
+            if kind == "set_member_capabilities":
+                step["member"] = s.get("member_id") or s.get("identity")
+                if team:
+                    step["team"] = team
+            elif team:
+                # A subgroup's default capabilities have no counterpart: a
+                # team row starts from the organization's.
+                self.dropped["set_default_capabilities (on a subgroup)"] += 1
+                return []
+            return [step]
         if kind == "create_identity":
             # In every v1 workflow this fetches the node's own member identity
             # (one per node) before it joins: here, the node's account.
@@ -385,6 +539,8 @@ class Porter:
                 step["init_args"] = s["params"]
             if group:
                 step["org"] = self._org_of(group)
+                if self._team(group):
+                    step["access"] = {"kind": "team", "team": group}
             else:
                 members = (
                     [creator, *(s.get("nodes") or [])] if kind == "create_mesh" else []
@@ -404,6 +560,19 @@ class Porter:
             if outs:
                 step["outputs"] = outs
             return [step]
+        if kind == "account_pair":
+            # v1 paired a second device onto an account. In release-v2 a person
+            # is their account, signed in from any device: the paired node acts
+            # as the holder from here on.
+            holder = s.get("holder")
+            if node and holder:
+                self.alias[s["node"]] = self.alias.get(holder, holder)
+            outs = {
+                v: True
+                for v, p in (s.get("outputs") or {}).items()
+                if p == "keyDelivered"
+            }
+            return [{**base, "type": "set", "values": outs}] if outs else []
         if kind == "invite_open":
             # A context outside a namespace is open to every account of the
             # scenario already (see create_context); the invitation names it.
