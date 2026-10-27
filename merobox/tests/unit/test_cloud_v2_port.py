@@ -357,3 +357,111 @@ def test_a_port_that_runs_the_app_and_keeps_its_checks_applies():
         3000,
     ).port()
     assert "not_applicable" not in out
+
+
+def test_reads_while_peers_are_partitioned_are_not_asserted():
+    # partition_peers / heal_peers, disconnect_node / connect_node and
+    # pause_container / unpause_container cut a v1 node off as stop_node did.
+    for start, end, who in (
+        ("partition_peers", "heal_peers", {"node": "n-1", "peers": ["n-2"]}),
+        ("disconnect_node", "connect_node", {"node": "n-2"}),
+        ("pause_container", "unpause_container", {"container": "n-2"}),
+    ):
+        p = porter()
+        steps = p.port_steps(
+            [
+                {"type": start, **who},
+                {"type": "call", "node": "n-1", "context_id": "{{c}}", "method": "w"},
+                {
+                    "type": "call",
+                    "node": "n-2",
+                    "context_id": "{{c}}",
+                    "method": "r",
+                    "outputs": {"seen": "result"},
+                },
+                {"type": "json_assert", "statements": ["equal({{seen}}, 'old')"]},
+                {"type": end, **who},
+                {
+                    "type": "call",
+                    "node": "n-2",
+                    "context_id": "{{c}}",
+                    "method": "r",
+                    "outputs": {"after": "result"},
+                },
+                {"type": "json_assert", "statements": ["equal({{after}}, 'new')"]},
+            ]
+        )
+        kinds = [s["type"] for s in steps]
+        assert kinds == ["call", "call", "call", "json_assert"], (start, kinds)
+        assert steps[0].get("allow_failure") is True
+        assert "outputs" in steps[2]
+        assert steps[-1]["statements"] == ["equal({{after}}, 'new')"]
+        assert p.dropped[start] == 1 and p.dropped[end] == 1
+
+
+def test_a_network_fault_ends_after_its_duration_of_waits():
+    p = porter()
+    read = {
+        "type": "call",
+        "node": "n-2",
+        "context_id": "{{c}}",
+        "method": "r",
+        "outputs": {"seen": "result"},
+    }
+    steps = p.port_steps(
+        [
+            {"type": "inject_network_fault", "container": "n-2", "duration": 20},
+            {**read, "outputs": {"during": "result"}},
+            {"type": "wait", "seconds": 10},
+            {**read, "outputs": {"still": "result"}},
+            {"type": "wait", "seconds": 15},
+            {**read, "outputs": {"after": "result"}},
+        ]
+    )
+    assert len(steps) == 5
+    # What node-2 read while its link dropped packets is its side of it.
+    assert {"during", "still"} <= p.dropped_vars
+    assert "after" not in p.dropped_vars
+
+
+def test_parallel_groups_run_one_after_another():
+    p = porter()
+    steps = p.port_steps(
+        [
+            {
+                "type": "parallel",
+                "failure_mode": "fail-slow",
+                "groups": [
+                    {
+                        "name": "a",
+                        "steps": [
+                            {
+                                "type": "call",
+                                "node": "n-1",
+                                "context_id": "{{c}}",
+                                "method": "claim",
+                                "args": {"by": "a"},
+                            }
+                        ],
+                    },
+                    {
+                        "name": "b",
+                        "steps": [
+                            {
+                                "type": "call",
+                                "node": "n-2",
+                                "context_id": "{{c}}",
+                                "method": "claim",
+                                "args": {"by": "b"},
+                            }
+                        ],
+                    },
+                ],
+            }
+        ]
+    )
+    assert [(s["type"], s["account"], s["args"]) for s in steps] == [
+        ("call", "n-1", {"by": "a"}),
+        ("call", "n-2", {"by": "b"}),
+    ]
+    assert not any("parallel" in k for k in p.dropped)

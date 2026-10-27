@@ -28,13 +28,16 @@ The two models line up like this:
 | `fuzzy_test` | `fuzzy_test`: the same weighted operations, across accounts |
 | `call` with `executor_public_key` | `call` with `as_key` |
 | `wait_for_sync` | nothing to wait for: a read sees every committed write |
+| `parallel` | its groups' steps, one group after another: the app's log orders concurrent calls |
 
 A call's `result` (`{"output": value}`) stays readable as `rpc`, so `json_assert`
 statements written against v1 results keep working.
 
 Steps with no counterpart are dropped and listed in the ported file's header:
-sync controls, a node going offline (a cluster has no user replica to
-partition), member metadata, admin-API and log assertions, scripts.
+sync controls, a node going offline or cut off from its peers (`stop_node`,
+`partition_peers`, `disconnect_node`, `pause_container`, `inject_network_fault`:
+a cluster has no user replica to partition, so what a node read meanwhile is
+not asserted), member metadata, admin-API and log assertions, scripts.
 
 A port that no longer tests what its v1 workflow did is marked
 `not_applicable` with the reason, and is neither run nor counted as a pass: one
@@ -66,11 +69,48 @@ DROPPED: dict[str, str] = {
     "assert_migration_complete": "v1 group migration",
     "stop_node": "a user's node going offline has no counterpart in a cluster",
     "start_node": "a user's node going offline has no counterpart in a cluster",
+    "partition_peers": "a user's node cut off from its peers has no counterpart in a cluster",
+    "heal_peers": "a user's node cut off from its peers has no counterpart in a cluster",
+    "disconnect_node": "a user's node cut off from its peers has no counterpart in a cluster",
+    "connect_node": "a user's node cut off from its peers has no counterpart in a cluster",
+    "pause_container": "a user's node going offline has no counterpart in a cluster",
+    "unpause_container": "a user's node going offline has no counterpart in a cluster",
+    "inject_network_fault": "a lossy link to a user's node has no counterpart in a cluster",
+    "restart_container": "a user's node restarting has no counterpart in a cluster",
     "assert_api_response": "v1 admin API",
     "assert_log_present": "v1 node logs",
     "assert_log_absent": "v1 node logs",
     "script": "scripts drive v1 node RPC URLs",
 }
+
+#: v1 steps that cut a node off (`node`/`container` -> its partition) and
+#: those that end it. While any is in effect, what a node reads is its side of
+#: the partition, which a cluster never has.
+_PARTITION_STARTS = {
+    "stop_node",
+    "partition_peers",
+    "disconnect_node",
+    "pause_container",
+    "inject_network_fault",
+}
+_PARTITION_ENDS = {
+    "start_node": "stop_node",
+    "heal_peers": "partition_peers",
+    "connect_node": "disconnect_node",
+    "unpause_container": "pause_container",
+}
+
+
+def _partition_key(kind: str, s: dict) -> str:
+    """The partition a v1 step starts or ends: its kind (the starting one) and
+    the node it names, so `heal_peers` ends what `partition_peers` began."""
+    start = _PARTITION_ENDS.get(kind, kind)
+    who = s.get("node") or s.get("nodes") or s.get("container")
+    if start == "stop_node":
+        # v1 stopped and started a node by either name.
+        return str(who)
+    return f"{start}:{who}"
+
 
 #: v1 group roles as a team row's role.
 _TEAM_ROLE = {
@@ -130,7 +170,9 @@ class Porter:
         self.packages: set[str] = set()
         self.orgs: set[str] = set()  # vars holding a namespace (an org)
         self.invitations: dict[str, Any] = {}  # open-invitation var -> its context
-        self.offline: set[str] = set()  # v1 nodes stopped at this point
+        self.offline: set[str] = set()  # v1 partitions in effect at this point
+        # an `inject_network_fault` partition -> the seconds of v1 waits left
+        self.fault_left: dict[str, float] = {}
         self.group_contexts: dict[str, list[str]] = (
             {}
         )  # group var -> context vars in it
@@ -244,10 +286,31 @@ class Porter:
             if not isinstance(step, dict):
                 continue
             kind = step.get("type")
-            if kind == "stop_node":
-                self.offline.add(str(step.get("node") or step.get("nodes")))
-            elif kind == "start_node":
-                self.offline.discard(str(step.get("node") or step.get("nodes")))
+            if kind in _PARTITION_STARTS:
+                key = _partition_key(kind, step)
+                self.offline.add(key)
+                if kind == "inject_network_fault":
+                    # The fault clears on its own after `duration` seconds:
+                    # the v1 waits that follow tell when.
+                    self.fault_left[key] = float(step.get("duration", 0))
+            elif kind in _PARTITION_ENDS:
+                self.offline.discard(_partition_key(kind, step))
+            elif kind == "wait" and self.fault_left:
+                for key in list(self.fault_left):
+                    self.fault_left[key] -= float(step.get("seconds", 0))
+                    if self.fault_left[key] <= 0:
+                        del self.fault_left[key]
+                        self.offline.discard(key)
+            if kind == "parallel":
+                # v1 ran each group at once from its own node; the app's log
+                # orders concurrent calls anyway, so the groups run one after
+                # another and leave the state concurrent calls would.
+                self.notes.append(
+                    "parallel groups run one after another: the app's log orders them"
+                )
+                for g in step.get("groups") or []:
+                    out.extend(self.port_steps(g.get("steps")))
+                continue
             ported = self.port_step(step)
             if self.offline and kind not in ("assert", "json_assert"):
                 # Read while a v1 node was offline: the partition's view, which
