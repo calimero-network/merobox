@@ -294,9 +294,9 @@ def _validate_steps(steps: Any, accounts: set, where: str) -> None:
             raise WorkflowError(f"{label} (deploy): name a 'wasm' or a 'package'")
         if kind == "create_app" and ("bundle" in step) == ("package" in step):
             raise WorkflowError(f"{label} (create_app): name a 'bundle' or a 'package'")
-        if kind == "upgrade_app" and not ({"bundle", "version"} & set(step)):
+        if kind == "upgrade_app" and not ({"bundle", "version", "package"} & set(step)):
             raise WorkflowError(
-                f"{label} (upgrade_app): name a 'version' or a 'bundle'"
+                f"{label} (upgrade_app): name a 'version', a 'package' or a 'bundle'"
             )
         if kind == "repeat":
             _validate_steps(step["steps"], accounts, f"{label} (repeat)")
@@ -414,10 +414,14 @@ class Runner:
             c.use_session(self.sessions[account])
         return c
 
+    def _actor(self, step: dict) -> str | None:
+        """The account a step acts as: `as_key`'s account, else `account`."""
+        return self.by_key.get(str(step.get("as_key") or "")) or step.get("account")
+
     def _with_client(self, step: dict, f: Callable[[Any], Any]) -> Any:
         """Run `f` on a client for the step's actor; without an explicit node,
         a node that cannot be reached is skipped for the next running one."""
-        account = self.by_key.get(str(step.get("as_key") or "")) or step.get("account")
+        account = self._actor(step)
         api_key = step.get("api_key")
         last: Exception | None = None
         for node in self._node_order(step.get("node"), account):
@@ -436,10 +440,21 @@ class Runner:
         try:
             return self._with_client(step, lambda cl: cl.post(path, body))
         except self._CloudError as e:
-            pk = self.passkeys.get(str(step.get("account")))
+            pk = self.passkeys.get(str(self._actor(step)))
             if e.args[2] != "CONFIRM_REQUIRED" or pk is None:
                 raise
             return self._with_client(step, lambda cl: cl.post_confirmed(path, body, pk))
+
+    def _delete_approved(self, step: dict, path: str) -> Any:
+        """DELETE, answering a `412 CONFIRM_REQUIRED` (deleting an organization)
+        with the account's passkey, as `_post_approved` does."""
+        try:
+            return self._with_client(step, lambda cl: cl.delete(path))
+        except self._CloudError as e:
+            pk = self.passkeys.get(str(self._actor(step)))
+            if e.args[2] != "CONFIRM_REQUIRED" or pk is None:
+                raise
+            return self._with_client(step, lambda cl: cl.delete_confirmed(path, pk))
 
     def _sign_up(self) -> None:
         node = self._node_order(None)[0]
@@ -729,16 +744,13 @@ class Runner:
             )
             return {**out, "package": package, "version": version}
         if kind == "upgrade_app":
-            body = {k: step[k] for k in ("version", "bundle", "migrate") if step.get(k)}
-            out = self._post_approved(step, f"apps/{step['app']}/upgrade", body)
-            if out.get("status") not in (None, "ok"):
-                raise _Refused(
-                    f"upgrade refused: {out.get('error')}",
-                    422,
-                    "UPGRADE_FAILED",
-                    out,
-                )
-            return out
+            body = {
+                k: step[k]
+                for k in ("version", "package", "service", "bundle", "migrate")
+                if step.get(k)
+            }
+            # A failed migration is the node's 422 UPGRADE_FAILED, raised as such.
+            return self._post_approved(step, f"apps/{step['app']}/upgrade", body)
         if kind == "uninstall_package":
             path = f"packages/{step['package']}"
             if step.get("version"):
@@ -973,7 +985,13 @@ class Runner:
             if method == "get":
                 return self._with_client(step, lambda cl: cl.get(path))
             if method == "delete":
-                return self._with_client(step, lambda cl: cl.delete(path))
+                return self._delete_approved(step, path)
+            if method == "put":
+                return self._with_client(
+                    step, lambda cl: cl.put(path, step.get("body") or {})
+                )
+            if method != "post":
+                raise WorkflowError(f"http: unsupported method '{step['method']}'")
             return self._post_approved(step, path, step.get("body"))
         if kind == "ops":
             return self._ops(step)
