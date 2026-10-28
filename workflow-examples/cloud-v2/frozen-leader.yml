@@ -1,0 +1,51 @@
+# The worst partition for a Raft app: its leader stops answering but does not
+# die. Followers keep forwarding to it until an election replaces it, so this
+# measures how long a write waits in that window.
+name: A frozen leader
+backend: cloud-v2
+cluster:
+  nodes: 3
+  base_port: 2740
+accounts: [alice]
+steps:
+  - type: deploy
+    account: alice
+    wasm: "{{env.KV_STORE_WASM}}"
+    outputs: { app: appId }
+  - type: call
+    account: alice
+    app: "{{app}}"
+    method: set
+    args: { key: a, value: "1" }
+  - name: Which node leads the app
+    type: find_leader
+    app: "{{app}}"
+    outputs: { leader: leader, follower: follower }
+  - name: Freeze the leader
+    type: pause_node
+    node: "{{leader}}"
+  - name: A follower to send the write to
+    type: assert
+    statements:
+      - "is_set({{leader}})"
+  - name: A write through a follower still lands
+    type: call
+    account: alice
+    node: "{{follower}}"
+    app: "{{app}}"
+    method: set
+    args: { key: b, value: "2" }
+    # An election replaces the leader in about 2-3 s; the write must not wait
+    # out the forward to the frozen one.
+    max_seconds: 10
+  - name: Thaw the old leader
+    type: resume_node
+    node: "{{leader}}"
+  - name: It catches up as a follower
+    type: wait_for
+    account: alice
+    node: "{{leader}}"
+    app: "{{app}}"
+    method: get
+    args: { key: b }
+    equals: "2"

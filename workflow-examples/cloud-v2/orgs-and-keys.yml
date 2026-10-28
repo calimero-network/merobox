@@ -1,0 +1,100 @@
+# Organizations gate apps; API keys are scoped; confirm methods need a passkey.
+name: Organizations, API keys and confirmations
+backend: cloud-v2
+cluster:
+  nodes: 3
+  base_port: 2720
+accounts: [alice, bob, carol]
+steps:
+  - name: Alice founds an organization
+    type: create_org
+    account: alice
+    org_name: Acme
+    outputs: { org: orgId }
+
+  - name: An invite for Bob
+    type: invite
+    account: alice
+    org: "{{org}}"
+    role: member
+    outputs: { token: token }
+
+  - name: Bob joins
+    type: redeem_invite
+    account: bob
+    token: "{{token}}"
+
+  - name: An app in the organization, with a confirm method
+    type: deploy
+    account: alice
+    wasm: "{{env.KV_STORE_WASM}}"
+    app_name: team-kv
+    org: "{{org}}"
+    confirm_methods: [clear]
+    outputs: { app: appId }
+
+  - name: Bob writes as a member
+    type: call
+    account: bob
+    app: "{{app}}"
+    method: set
+    args: { key: from, value: bob }
+
+  - name: Carol is not in the organization
+    type: call
+    account: carol
+    app: "{{app}}"
+    method: get
+    args: { key: from }
+    expected_error: NOT_FOUND
+
+  - name: clear needs a fresh passkey assertion
+    type: call
+    account: alice
+    app: "{{app}}"
+    method: clear
+    expected_error: CONFIRM_REQUIRED
+
+  - name: Alice confirms with her passkey
+    type: call
+    account: alice
+    app: "{{app}}"
+    method: clear
+    confirm: true
+
+  - name: A read-only key for a service
+    type: create_api_key
+    account: alice
+    read_only: true
+    apps: ["{{app}}"]
+    outputs: { key: key }
+
+  - name: The key reads
+    type: view
+    api_key: "{{key}}"
+    app: "{{app}}"
+    method: len
+    expect: 0
+
+  - name: The key cannot write
+    type: call
+    api_key: "{{key}}"
+    app: "{{app}}"
+    method: set
+    args: { key: x, value: y }
+    expected_error: FORBIDDEN
+
+  - name: Removing Bob cuts him off
+    type: remove_member
+    account: alice
+    org: "{{org}}"
+    member: "{{accounts.bob.account_id}}"
+
+  - name: Bob is refused once the removal reaches his node
+    type: call
+    account: bob
+    app: "{{app}}"
+    method: set
+    args: { key: x, value: y }
+    expected_error: NOT_FOUND
+    retry_for: 5

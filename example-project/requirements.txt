@@ -1,7 +1,0 @@
-# Local development dependencies
--e ../
--e .
-
-# Standard dependencies
-requests>=2.31.0
-pytest>=8.0.0

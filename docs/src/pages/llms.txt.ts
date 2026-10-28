@@ -10,10 +10,11 @@ const SITE = 'https://calimero-network.github.io';
 const BASE = '/merobox';
 
 const TRACKS: Record<string, string> = {
+  'get-started': 'Get Started — install, run an example, write a workflow',
   understand: 'Understand — what merobox is, and the glossary',
-  workflows: 'Workflows — the YAML scenario engine and step reference',
-  guides: 'Guides — node management, remote nodes, testing',
-  reference: 'Reference — CLI, troubleshooting, error handling',
+  workflows: 'Workflows — the cloud-v2 YAML format, step reference and examples',
+  guides: 'Guides — porting v1 workflows, testing',
+  reference: 'Reference — CLI, troubleshooting',
 };
 
 export const GET: APIRoute = async () => {
@@ -34,9 +35,9 @@ export const GET: APIRoute = async () => {
   const lines: string[] = [
     '# merobox',
     '',
-    '> A Python CLI for running Calimero nodes in Docker and driving them through',
-    '> declarative YAML workflow scenarios — the end-to-end test harness for',
-    '> Calimero: bootstrap nodes, create contexts, invite members, assert on state.',
+    '> A Python CLI that starts a release-v2 (Calimero Cloud) cluster of merod',
+    '> nodes, one process per node, and drives it through declarative YAML',
+    '> workflows: deploy apps, call them, crash and upgrade nodes, assert on state.',
     '',
     `Docs site: ${SITE}${BASE}/`,
     '',

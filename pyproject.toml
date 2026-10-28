@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "merobox"
 dynamic = ["version"]
-description = "A Python CLI tool for managing Calimero nodes in Docker containers"
+description = "Run workflows against release-v2 (Calimero Cloud) merod clusters"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -23,17 +23,12 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0.0",
-    "docker>=6.0.0",
     "rich>=13.0.0,<14.3.4",
     "PyYAML>=6.0.0",
-    "calimero-client-py==0.9.0",
-    "aiohttp>=3.9.0",
-    "toml>=0.10.2",
-    "base58>=2.1.0",
-    "filelock>=3.0.0",
-    "requests>=2.31.0",
-    "tqdm>=4.65.0",
-    "pydantic>=2.0.0",
+    # release-v2: the cloud backend needs CloudClient, which only the
+    # release-v2 branch has (built from source, like the sdist on PyPI).
+    # merobox uses only its CloudClient, CloudError and SoftPasskey.
+    "calimero-client-py @ git+https://github.com/calimero-network/calimero-client-py@release-v2-parity",
 ]
 
 [project.optional-dependencies]
@@ -41,8 +36,6 @@ dev = [
     "black>=25.0.0",
     "ruff>=0.1.0",
     "pytest>=8.0.0",
-    "pytest-asyncio>=0.21.0,<1.0",
-    "pytest-mock>=3.10.0",
     "pre-commit>=3.0.0",
     "pyinstaller>=6.0.0",
 ]

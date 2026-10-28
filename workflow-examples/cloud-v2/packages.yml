@@ -1,0 +1,77 @@
+# Signed packages, as v1 installed apps: the cluster installs a release by name
+# from its registry (merobox serves one on 127.0.0.1), every node that runs it
+# fetches and verifies its own copy, an app upgrades by version, and a release
+# an app still runs cannot be uninstalled.
+# KV_STORE_MPK / KV_STORE_MPK_NEXT: two signed releases of one package, e.g.
+#   cargo mero bundle --dev --manifest-path apps/kv-store/Cargo.toml --app-version 1.0.0
+#   cargo mero bundle --dev --manifest-path apps/kv-store/Cargo.toml --app-version 1.1.0
+name: Signed packages
+backend: cloud-v2
+cluster:
+  nodes: 3
+  base_port: 2740
+accounts: [alice]
+steps:
+  - name: Install the first release from the registry
+    type: install_package
+    account: alice
+    mpk: "{{env.KV_STORE_MPK}}"
+    outputs: { package: package, first: version }
+  - name: Create an app from it
+    type: create_app
+    account: alice
+    app_name: kv
+    package: "{{package}}"
+    version: "{{first}}"
+    outputs: { app: appId }
+  - type: call
+    account: alice
+    app: "{{app}}"
+    method: set
+    args: { key: k, value: v1 }
+  - type: repeat
+    count: 3
+    steps:
+      - name: Each node runs the app from its own verified copy
+        type: view
+        account: alice
+        node: "{{iteration_node}}"
+        stale: true
+        app: "{{app}}"
+        method: get
+        args: { key: k }
+        expect: v1
+  - name: Install the next release
+    type: install_package
+    account: alice
+    mpk: "{{env.KV_STORE_MPK_NEXT}}"
+    outputs: { next: version }
+  - name: Upgrade the app by version
+    type: upgrade_app
+    account: alice
+    app: "{{app}}"
+    version: "{{next}}"
+  - name: The data survives the upgrade
+    type: view
+    account: alice
+    app: "{{app}}"
+    method: get
+    args: { key: k }
+    expect: v1
+  - name: A package an app still runs cannot be uninstalled
+    type: uninstall_package
+    account: alice
+    package: "{{package}}"
+    expected_failure: true
+  - type: delete_app
+    account: alice
+    app: "{{app}}"
+  - type: uninstall_package
+    account: alice
+    package: "{{package}}"
+  - type: packages
+    account: alice
+    outputs: { left: packages }
+  - type: json_assert
+    statements:
+      - "json_equal({{left}}, [])"

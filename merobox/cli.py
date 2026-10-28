@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Merobox CLI
-A Python CLI tool for managing Calimero nodes in Docker containers.
+Run workflows against release-v2 (Calimero Cloud) clusters of merod nodes.
 """
 
 import sys
@@ -9,36 +9,20 @@ import sys
 import click
 
 from merobox import __version__
-from merobox.commands import (
-    bootstrap,
-    group,
-    health,
-    logs,
-    namespace,
-    nuke,
-    remote,
-    run,
-    stop,
-)
+from merobox.commands import bootstrap, cloud, run
 
 
 @click.group()
 @click.version_option(version=__version__)
 def cli():
-    """Merobox CLI - Manage Calimero nodes in Docker containers."""
+    """Merobox CLI - run workflows against release-v2 merod clusters."""
     pass
 
 
-# Node management and workflow commands only
+cli.add_command(cloud)
+# v1's names for running and checking a workflow, routed to `cloud`.
 cli.add_command(bootstrap)
-cli.add_command(group)
-cli.add_command(health)
-cli.add_command(logs)
-cli.add_command(namespace)
-cli.add_command(nuke)
-cli.add_command(remote)
 cli.add_command(run)
-cli.add_command(stop)
 
 
 def _use_utf8_stdio() -> None:

@@ -1,12 +1,12 @@
 ---
 title: merobox
-description: Run real Calimero nodes in Docker and drive them through declarative YAML scenarios — the end-to-end test harness for Calimero.
+description: Run YAML workflows against a release-v2 (Calimero Cloud) cluster of merod nodes, one process per node, so a workflow can crash, freeze, restart and upgrade nodes while clients keep working.
 template: splash
 hero:
-  tagline: A Python CLI that boots real Calimero nodes as Docker containers and drives them through declarative YAML workflows — bootstrap nodes, create contexts, invite members, call methods, and assert on the result. The way Calimero's end-to-end flows are tested.
+  tagline: A Python CLI that starts a release-v2 cluster of `merod` nodes, one process per node, and drives it through declarative YAML workflows as clients signed in with passkeys and API keys — deploy apps, call them, kill and freeze nodes, upgrade them, and assert on what clients see.
   actions:
-    - text: Read the System Overview
-      link: /understand/system-overview/
+    - text: Quickstart
+      link: /get-started/quickstart/
       icon: right-arrow
       variant: primary
     - text: View on GitHub
@@ -17,27 +17,26 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-{/* Audience-routed landing — pick your track. */}
-
 <CardGrid>
   <Card title="Understand" icon="open-book">
-    What merobox is and how the pieces fit — the Docker node manager, the
-    workflow engine, and the testing harness. [Start here →](/understand/system-overview/)
+    How merobox starts a cluster and runs a workflow against it.
+    [System overview →](/understand/system-overview/)
   </Card>
   <Card title="Workflows" icon="rocket">
-    The declarative YAML scenario system: how workflows execute and the full
-    reference for every step type. [Write a workflow →](/workflows/yaml/)
+    The `backend: cloud-v2` YAML format and every step type.
+    [Workflow YAML →](/workflows/yaml/)
   </Card>
   <Card title="Guides" icon="setting">
-    Task guides: managing nodes, driving remote nodes, the pytest testing
-    harness. [Browse the guides →](/guides/node-management/)
+    Porting v1 workflows, and testing with merobox from pytest.
+    [Port a v1 workflow →](/guides/porting/)
   </Card>
   <Card title="Reference" icon="list-format">
-    Every CLI command and flag, the error hierarchy, and troubleshooting.
+    Every CLI command and flag, and troubleshooting.
     [Open the reference →](/reference/cli/)
   </Card>
 </CardGrid>
 
-merobox drives [Calimero Core](https://calimero-network.github.io/core/) nodes.
-For the protocol those nodes implement, see the
-[Calimero Core docs](https://calimero-network.github.io/core/).
+merobox drives [Calimero Core](https://calimero-network.github.io/core/)'s
+release-v2 node. v1's peer-to-peer nodes, and merobox's Docker, binary and
+remote node managers for them, are gone; a v1 workflow converts with
+[`merobox cloud port`](/guides/porting/).
