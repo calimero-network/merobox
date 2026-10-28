@@ -194,6 +194,17 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "find_leader": ("app",),
     "upload_blob": ("app", "file_path"),
     "download_blob": ("app", "blob_id"),
+    "list_blobs": ("app",),
+    "blob_info": ("app", "blob_id"),
+    "delete_blob": ("app", "blob_id"),
+    "publish_presence": ("app", "seq"),
+    "presence": ("app",),
+    "transfer_app": ("app", "to"),
+    "approve_release": ("version",),
+    "approve_outbound": ("package",),
+    "upgrade_org": ("org", "package", "version"),
+    "upgrade_run": ("org", "run"),
+    "retry_upgrade_run": ("org", "run"),
     "kill_node": ("node",),
     "pause_node": ("node",),
     "resume_node": ("node",),
@@ -205,6 +216,16 @@ STEP_TYPES: dict[str, tuple[str, ...]] = {
     "json_assert": ("statements",),
     "repeat": ("count", "steps"),
     "fuzzy_test": ("operations",),
+}
+
+
+#: Steps the node answers 412 CONFIRM_REQUIRED: run with the acting account's passkey.
+_CONFIRMED_STEPS = {
+    "transfer_app",
+    "approve_release",
+    "approve_outbound",
+    "upgrade_org",
+    "retry_upgrade_run",
 }
 
 
@@ -229,6 +250,17 @@ _ACTING = {
     "migration_status",
     "upload_blob",
     "download_blob",
+    "list_blobs",
+    "blob_info",
+    "delete_blob",
+    "publish_presence",
+    "presence",
+    "transfer_app",
+    "approve_release",
+    "approve_outbound",
+    "upgrade_org",
+    "upgrade_run",
+    "retry_upgrade_run",
     "upload_bundle",
     "create_app",
     "install_package",
@@ -417,6 +449,16 @@ class Runner:
     def _actor(self, step: dict) -> str | None:
         """The account a step acts as: `as_key`'s account, else `account`."""
         return self.by_key.get(str(step.get("as_key") or "")) or step.get("account")
+
+    def _passkey(self, step: dict) -> Any:
+        """The acting account's passkey, for a step the node asks its owner
+        to approve (412 CONFIRM_REQUIRED)."""
+        pk = self.passkeys.get(str(self._actor(step)))
+        if pk is None:
+            raise WorkflowError(
+                f"{step['type']}: needs an 'account' (or 'as_key') whose passkey approves it"
+            )
+        return pk
 
     def _with_client(self, step: dict, f: Callable[[Any], Any]) -> Any:
         """Run `f` on a client for the step's actor; without an explicit node,
@@ -811,6 +853,71 @@ class Runner:
             if want and str(want).lower() != digest:
                 raise WorkflowError(f"{label}: expected sha256 {want}, got {digest}")
             return {"size": len(data), "sha256": digest, "data": data}
+        if kind == "list_blobs":
+            return self._with_client(step, lambda cl: cl.list_blobs(step["app"]))
+        if kind == "blob_info":
+            return self._with_client(
+                step, lambda cl: cl.blob_info(step["app"], step["blob_id"])
+            )
+        if kind == "delete_blob":
+            return self._with_client(
+                step, lambda cl: cl.delete_blob(step["app"], step["blob_id"])
+            )
+        if kind == "publish_presence":
+            state = step.get("state")
+            data = None if state is None else str(state).encode()
+            return self._with_client(
+                step,
+                lambda cl: cl.publish_presence(step["app"], int(step["seq"]), data),
+            )
+        if kind == "presence":
+            return {
+                "presence": self._with_client(step, lambda cl: cl.presence(step["app"]))
+            }
+        if kind in _CONFIRMED_STEPS:
+            pk = self._passkey(step)
+            if kind == "transfer_app":
+                to = self._account_id(str(step["to"]))
+                return self._with_client(
+                    step, lambda cl: cl.transfer_app(step["app"], to, pk)
+                )
+            if kind == "approve_release":
+                return self._with_client(
+                    step,
+                    lambda cl: cl.approve_release(
+                        str(step["version"]), pk, org=step.get("org")
+                    ),
+                )
+            if kind == "approve_outbound":
+                return self._with_client(
+                    step,
+                    lambda cl: cl.approve_outbound(
+                        step["package"],
+                        pk,
+                        org=step.get("org"),
+                        prefixes=step.get("prefixes"),
+                        replace=bool(step.get("replace", False)),
+                    ),
+                )
+            if kind == "upgrade_org":
+                return self._with_client(
+                    step,
+                    lambda cl: cl.upgrade_org(
+                        step["org"],
+                        step["package"],
+                        str(step["version"]),
+                        pk,
+                        team=step.get("team"),
+                        cascade=bool(step.get("cascade", False)),
+                    ),
+                )
+            return self._with_client(
+                step, lambda cl: cl.retry_upgrade_run(step["org"], step["run"], pk)
+            )
+        if kind == "upgrade_run":
+            return self._with_client(
+                step, lambda cl: cl.upgrade_run(step["org"], step["run"])
+            )
         if kind == "whoami":
             me = self._with_client(step, lambda cl: cl.me())
             return {**me, "publicKey": account_key(me["accountId"])}

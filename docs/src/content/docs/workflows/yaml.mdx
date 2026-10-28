@@ -62,6 +62,17 @@ not run and is no pass: `merobox cloud run` exits 3 for it.
 | `find_leader` | `app` → `leader`, `follower` |
 | `upload_blob` | `app`, `file_path` (as given, else beside the workflow or above it) → `blobId` (base58), `blob_id`, `id` (hex), `size` |
 | `download_blob` | `app`, `blob_id`, optional `expected_size` → `size`, `data` |
+| `list_blobs` | `app` → `blobs` |
+| `blob_info` | `app`, `blob_id` → `id`, `size` |
+| `delete_blob` | `app`, `blob_id` (the app's owner or an org admin) |
+| `publish_presence` | `app`, `seq`, optional `state` (a string; absent retracts) |
+| `presence` | `app` → `presence` |
+| `transfer_app` | `app`, `to` (an account name or id); the acting account's passkey approves it |
+| `approve_release` | `version`, optional `org`; the acting account's passkey approves it |
+| `approve_outbound` | `package`, optional `org`, `prefixes` (default: every prefix the manifest declares), `replace` (`[]` with `replace: true` revokes); passkey-approved |
+| `upgrade_org` | `org`, `package`, `version`, optional `team`, `cascade`; passkey-approved → `runId` |
+| `upgrade_run` | `org`, `run` → the run's status and per-app results |
+| `retry_upgrade_run` | `org`, `run`; passkey-approved → the new run |
 | `kill_node`, `pause_node`, `resume_node`, `start_node`, `restart_node` | `node`, `binary` (start/restart) |
 | `wait` | `seconds` |
 | `set` | `values`: variables to set |

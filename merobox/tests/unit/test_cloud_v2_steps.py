@@ -111,3 +111,59 @@ def test_an_unknown_http_method_is_refused_not_sent_as_a_post():
             {"type": "http", "method": "patch", "path": "x", "account": "alice"}
         )
     assert cl.calls == []
+
+
+class TypedClient(FakeClient):
+    def transfer_app(self, app, to, passkey):
+        self.calls.append(("transfer", app, to, passkey))
+        return {}
+
+    def approve_outbound(
+        self, package, passkey, org=None, prefixes=None, replace=False
+    ):
+        self.calls.append(("outbound", package, passkey, org, prefixes, replace))
+        return {}
+
+    def publish_presence(self, app, seq, state):
+        self.calls.append(("presence", app, seq, state))
+        return {}
+
+
+def test_a_transfer_names_the_account_and_brings_the_owners_passkey():
+    cl = TypedClient()
+    r = runner(cl)
+    r.ids = {"bob": "acct-bob"}
+    r._run_one({"type": "transfer_app", "app": "a", "to": "bob", "account": "alice"})
+    assert cl.calls == [("transfer", "a", "acct-bob", "alice-pk")]
+
+
+def test_an_outbound_revocation_passes_its_prefixes_and_replace():
+    cl = TypedClient()
+    runner(cl)._run_one(
+        {
+            "type": "approve_outbound",
+            "package": "p",
+            "org": "o",
+            "prefixes": [],
+            "replace": True,
+            "account": "alice",
+        }
+    )
+    assert cl.calls == [("outbound", "p", "alice-pk", "o", [], True)]
+
+
+def test_a_confirmed_step_without_a_passkey_is_refused_before_sending():
+    cl = TypedClient()
+    with pytest.raises(WorkflowError, match="passkey"):
+        runner(cl)._run_one(
+            {"type": "transfer_app", "app": "a", "to": "x", "account": "carol"}
+        )
+    assert cl.calls == []
+
+
+def test_presence_without_a_state_retracts():
+    cl = TypedClient()
+    runner(cl)._run_one(
+        {"type": "publish_presence", "app": "a", "seq": 3, "account": "alice"}
+    )
+    assert cl.calls == [("presence", "a", 3, None)]
